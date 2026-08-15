@@ -62,19 +62,36 @@ type test struct {
 	BlocksPerIt uint32
 	Checks      []check
 	EmuCycles   uint64
+	Exports     []export // symbol macros for firmware experiments
+}
+
+type export struct {
+	Name string
+	Addr uint32
 }
 
 // hilSpec declares one HIL test in terms of assembly symbols.
 type hilSpec struct {
-	name  string
-	file  string            // prog/hil/<file>.dasm
-	patch map[string]uint32 // data words poked before encoding
-	mem   map[string]uint32 // symbol -> intended value (done=1 implied)
-	gpio  *check            // optional pin-level check
-	perf  *struct {
+	name   string
+	file   string            // prog/hil/<file>.dasm
+	patch  map[string]uint32 // data words poked before encoding
+	mem    map[string]uint32 // symbol -> intended value (done=1 implied)
+	gpio   *check            // optional pin-level check
+	export []string          // symbols emitted as HIL_SYM_<name>_<sym> macros
+	perf   *struct {
 		counterSym  string
 		blocksPerIt uint32
 	}
+}
+
+func perfInfo(counterSym string, bpi uint32) *struct {
+	counterSym  string
+	blocksPerIt uint32
+} {
+	return &struct {
+		counterSym  string
+		blocksPerIt uint32
+	}{counterSym, bpi}
 }
 
 var hilSpecs = []hilSpec{
@@ -86,11 +103,13 @@ var hilSpecs = []hilSpec{
 		patch: map[string]uint32{"vin": ^uint32(5) + 1},
 		mem:   map[string]uint32{"r": 0x909}},
 	{name: "gpio", file: "gpio", gpio: &check{checkGPIO, 2, 1, "gpio2 level"}},
-	{name: "perf", file: "perf",
-		perf: &struct {
-			counterSym  string
-			blocksPerIt uint32
-		}{"counter", 4}},
+	{name: "perf", file: "perf", perf: perfInfo("counter", 4)},
+	// Phase 3 interrupt programs: endless loops driven by the firmware's
+	// approach experiments (prompts/006).
+	{name: "irq", file: "irq", perf: perfInfo("counter", 7),
+		export: []string{"isrvec", "dispatch", "irqresume", "isrcount", "counter"}},
+	{name: "poll", file: "poll", perf: perfInfo("counter", 9),
+		export: []string{"pending", "isrcount", "counter"}},
 }
 
 // build assembles a spec's program for the SKU and applies patches.
@@ -115,6 +134,13 @@ func build(spec hilSpec, v *emu.Variant, lay layout) (*test, error) {
 		}
 	}
 	t := &test{Name: spec.name, Image: res.Image}
+	for _, sym := range spec.export {
+		addr, err := res.Symbol(sym)
+		if err != nil {
+			return nil, fmt.Errorf("%s: export: %w", spec.name, err)
+		}
+		t.Exports = append(t.Exports, export{sym, addr})
+	}
 	if spec.perf != nil {
 		addr, err := res.Symbol(spec.perf.counterSym)
 		if err != nil {
@@ -277,6 +303,25 @@ func emitHeader(v *emu.Variant, lay layout, tests []*test) string {
 	p("#define HIL_CAL_SNIFF_SUM 0x%08Xu", sumCtrl)
 	p("#define HIL_CAL_EXPECT_CRC32 0x%08Xu /* silicon-verified */", calExpect(v, crcCtrl, 0xFFFFFFFF, 0x12345678))
 	p("#define HIL_CAL_EXPECT_SUM 0x%08Xu", calExpect(v, sumCtrl, 0x1000, 0x234))
+	p("")
+	p("/* Interrupt injector (ABI channel 3, HIGH_PRIORITY). */")
+	injBase := emu.CtrlEN | emu.CtrlHighPriority | emu.CtrlSize32 | v.CtrlChainTo(3) | v.CtrlIRQQuiet
+	p("#define HIL_INJ_CH_BASE 0x%08Xu", emu.ChanRegAddr(3, 0))
+	p("#define HIL_INJ_CTRL_TIMER1 0x%08Xu", injBase|v.CtrlTreq(emu.TreqTimer1))
+	p("#define HIL_INJ_CTRL_PIO0RX0 0x%08Xu", injBase|v.CtrlTreq(v.DreqPIO0RX0))
+	p("")
+	p("/* Machine restart constants (approach-D experiment). */")
+	p("#define HIL_FETCH_CTRL 0x%08Xu",
+		emu.CtrlEN|emu.CtrlSize32|emu.CtrlIncrRead|v.CtrlIncrWrite|
+			v.CtrlTreq(emu.TreqPermanent)|v.CtrlChainTo(0)|v.CtrlIRQQuiet)
+	p("#define HIL_EXEC_REGS 0x%08Xu", emu.ChanRegAddr(1, 0))
+	p("")
+	p("/* Program symbols for the interrupt experiments. */")
+	for _, t := range tests {
+		for _, e := range t.Exports {
+			p("#define HIL_SYM_%s_%s 0x%08Xu", t.Name, e.Name, e.Addr)
+		}
+	}
 	p("")
 	p("typedef struct { int kind; uint32_t addr; uint32_t want; const char *what; } hil_check;")
 	p("typedef struct {")

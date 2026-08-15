@@ -47,6 +47,10 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   convention, safepoint rule, HALT/NOP encodings). Changing it means a
   version bump and updating dmaasm, img, target/loader, dmxgen, and the
   doc together.
+- Interrupts use approach B only (injector channel + safepoints;
+  `prompts/006-phase3-results.md`). Never freeze (EN-clear) or
+  abort-divert a running machine expecting to resume it — both wedge
+  ~71 % of the time on silicon; CHAN_ABORT is for full restarts only.
 - DMA-machine programs are written in `.dasm` (assembled by `dmaasm`,
   SKU chosen at assembly); the HIL images in `prog/hil/` are the
   reference programs — `cmd/dmxgen` assembles them into the firmware
@@ -63,9 +67,11 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   pico-sdk 2.3.0 + GCC + CMake + Ninja under `~/.pico-sdk/`, OpenOCD at
   `~/dev/github.com/raspberrypi/openocd/prefix/bin/`.
 - HIL bench: Pico 2 (RP2350) on a Debug Probe; UART `/dev/cu.usbmodem102`
-  at 115200 prints TEST/CAL lines every ~2.5 s. Gotchas: a running VS
-  Code OpenOCD claims the probe (flash through its telnet console on port
-  50002 instead of killing it) and a `minicom` may hold the UART device.
+  at 115200 prints TEST/CAL/EXP lines every few seconds. Gotchas: a
+  VS Code OpenOCD or `minicom` may hold the probe/UART; if SWD
+  examination fails (wild-machine episode), rescue once with
+  `target/rp2350-rescue.cfg`, then flash; avoid flashing while the
+  stress experiments are mid-run.
 
 ## Conventions
 

@@ -1,0 +1,34 @@
+; Approach B (overview §3.2, ABI safepoint rule): main loop with a
+; safepoint; the interrupt injector (channel 3) patches `dispatch` from
+; the resume thunk to `isr`. The injector is armed by the host with
+; READ_ADDR = &isrvec, WRITE_ADDR = &dispatch, count 1, TREQ = the
+; interrupt's DREQ, HIGH_PRIORITY.
+;
+; Channel-3 re-arm address (AL1_TRANS_COUNT_TRIG) is 0x500000DC on every
+; RP2 SKU (channel registers are SKU-invariant).
+.data
+.regs
+counter:  .word 0
+isrcount: .word 0
+one:      .word 1
+isrvec:   .word isr        ; the word the injector copies over `dispatch`
+
+.text
+.entry start
+start:
+    move $thunk, dispatch   ; initialize the dispatcher
+loop:
+    add counter, one, counter
+    safepoint
+    jump loop
+
+thunk:                      ; resume thunk: fall back into the program
+    jumpr irqresume
+
+isr:
+    add isrcount, one, isrcount
+    move @0x50200020, null  ; drain one PIO0 RX FIFO word (interrupt ack;
+                            ; harmless garbage read for non-PIO sources)
+    move $thunk, dispatch   ; EOI: restore the dispatcher
+    move $1, @0x500000DC    ; re-arm the injector
+    jumpr irqresume         ; return from interrupt

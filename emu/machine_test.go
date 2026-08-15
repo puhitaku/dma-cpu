@@ -765,3 +765,114 @@ func TestCreditClearedOnTrigger(t *testing.T) {
 		}
 	})
 }
+
+// TestFreezeThawSweep quantifies the approach-C race (overview §3.3):
+// freeze the 3-channel machine by clearing EN on channels 0-2 (via the
+// atomic CLR aliases), thaw by setting EN again, at *every* cycle offset
+// of the loop period. A "wedge" (machine never resumes) at any offset
+// means asynchronous freeze is unsafe without a quiescence protocol.
+// This is the best case for approach C: the emulator performs the three
+// EN writes with no machine progress in between; real hardware
+// interleaves them, which can only be worse.
+func TestFreezeThawSweep(t *testing.T) {
+	v := emu.RP2350
+	buildLoop := func() (*emu.Machine, uint32) {
+		p := newProg(t, v)
+		p.sniffSum()
+		counter, one := p.word(0), p.word(1)
+		entry := p.word(progBase)
+		sniff := v.SniffDataAddr()
+		pc := emu.ChanRegAddr(p.cfg.Fetch, emu.OffReadAddr)
+		p.move(counter, sniff)
+		p.move(one, p.bucket, v.CtrlSniffEn)
+		p.move(sniff, counter)
+		p.emit(entry, pc, 1, p.cfg.ExecCtrl(v))
+		p.start()
+		return p.m, counter
+	}
+
+	const sweep = 48 // two full 24-cycle loop periods
+	var wedged []int
+	for k := 0; k < sweep; k++ {
+		m, counter := buildLoop()
+		if _, err := m.Run(emu.RunConfig{MaxCycles: uint64(k)}); err != nil {
+			t.Fatal(err)
+		}
+		// Freeze: clear EN on fetch, exec, fix (order as an ISR would).
+		for ch := 0; ch < 3; ch++ {
+			m.Poke32(emu.DMABase+emu.AliasClr+uint32(ch)*emu.ChanStride+emu.OffAl1Ctrl, emu.CtrlEN)
+		}
+		c1 := m.Peek32(counter)
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 50}); err != nil {
+			t.Fatal(err)
+		}
+		if c2 := m.Peek32(counter); c2 != c1 {
+			t.Errorf("offset %d: machine advanced while frozen (%d -> %d)", k, c1, c2)
+		}
+		// Thaw.
+		for ch := 2; ch >= 0; ch-- {
+			m.Poke32(emu.DMABase+emu.AliasSet+uint32(ch)*emu.ChanStride+emu.OffAl1Ctrl, emu.CtrlEN)
+		}
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 400}); err != nil {
+			t.Fatal(err)
+		}
+		if m.Peek32(counter) == c1 {
+			wedged = append(wedged, k)
+		}
+	}
+	t.Logf("approach C sweep: %d/%d offsets wedge after freeze/thaw: %v",
+		len(wedged), sweep, wedged)
+	if len(wedged) == 0 {
+		t.Log("NOTE: no wedges — approach C may be viable; re-examine on hardware")
+	}
+}
+
+// TestFreezeThawInterleaved is the realistic approach-C model: the three
+// EN-clear writes are separated by machine cycles (as an ARM core's or a
+// freezer channel's bus writes would be). A chain/trigger crossing the
+// partially-frozen machine is dropped, wedging or corrupting it.
+func TestFreezeThawInterleaved(t *testing.T) {
+	v := emu.RP2350
+	for _, gap := range []uint64{1, 2, 3} {
+		var wedged, ran []int
+		const sweep = 48
+		for k := 0; k < sweep; k++ {
+			p := newProg(t, v)
+			p.sniffSum()
+			counter, one := p.word(0), p.word(1)
+			entry := p.word(progBase)
+			sniff := v.SniffDataAddr()
+			pc := emu.ChanRegAddr(p.cfg.Fetch, emu.OffReadAddr)
+			p.move(counter, sniff)
+			p.move(one, p.bucket, v.CtrlSniffEn)
+			p.move(sniff, counter)
+			p.emit(entry, pc, 1, p.cfg.ExecCtrl(v))
+			p.start()
+			m := p.m
+			if _, err := m.Run(emu.RunConfig{MaxCycles: uint64(k)}); err != nil {
+				t.Fatal(err)
+			}
+			for ch := 0; ch < 3; ch++ {
+				m.Poke32(emu.DMABase+emu.AliasClr+uint32(ch)*emu.ChanStride+emu.OffAl1Ctrl, emu.CtrlEN)
+				if ch < 2 {
+					if _, err := m.Run(emu.RunConfig{MaxCycles: gap}); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			c1 := m.Peek32(counter)
+			for ch := 2; ch >= 0; ch-- {
+				m.Poke32(emu.DMABase+emu.AliasSet+uint32(ch)*emu.ChanStride+emu.OffAl1Ctrl, emu.CtrlEN)
+			}
+			if _, err := m.Run(emu.RunConfig{MaxCycles: 400}); err != nil {
+				t.Fatal(err)
+			}
+			if m.Peek32(counter) == c1 {
+				wedged = append(wedged, k)
+			} else {
+				ran = append(ran, k)
+			}
+		}
+		t.Logf("gap=%d: %d/%d offsets wedge: %v", gap, len(wedged), 48, wedged)
+	}
+}

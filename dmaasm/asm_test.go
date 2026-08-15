@@ -288,3 +288,144 @@ func TestErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestIRQProgram runs the approach-B interrupt program end to end in the
+// emulator: injector armed on an external DREQ, delivery at a safepoint,
+// ISR, EOI, re-arm, resume — twice.
+func TestIRQProgram(t *testing.T) {
+	forEachVariant(t, func(t *testing.T, v *emu.Variant) {
+		src, err := prog.HIL("irq")
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := dmaasm.Assemble(src, dmaasm.Options{Variant: v})
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := emu.NewMachine(v)
+		if err := res.Image.LoadAndStart(m, nil, img.DefaultMachine()); err != nil {
+			t.Fatal(err)
+		}
+		// Arm the injector: ch3 copies *isrvec over dispatch on DREQ.
+		isrvec, _ := res.Symbol("isrvec")
+		dispatch, _ := res.Symbol("dispatch")
+		isrcount, _ := res.Symbol("isrcount")
+		counter, _ := res.Symbol("counter")
+		const injCh = 3
+		injCtrl := emu.CtrlEN | emu.CtrlHighPriority | emu.CtrlSize32 |
+			v.CtrlTreq(v.DreqPIO0RX0) | v.CtrlChainTo(injCh) | v.CtrlIRQQuiet
+		m.Poke32(emu.ChanRegAddr(injCh, emu.OffAl1ReadAddr), isrvec)
+		m.Poke32(emu.ChanRegAddr(injCh, emu.OffAl1WriteAddr), dispatch)
+		m.Poke32(emu.ChanRegAddr(injCh, emu.OffTransCount), 1)
+		m.Poke32(emu.ChanRegAddr(injCh, emu.OffCtrlTrig), injCtrl)
+
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 2000}); err != nil {
+			t.Fatal(err)
+		}
+		if got := m.Peek32(isrcount); got != 0 {
+			t.Fatalf("spurious ISR: %d", got)
+		}
+		c1 := m.Peek32(counter)
+
+		for i := uint32(1); i <= 2; i++ {
+			m.PulseDREQ(v.DreqPIO0RX0)
+			rr, err := m.Run(emu.RunConfig{MaxCycles: 2000, WatchWrites: []uint32{isrcount}})
+			if err != nil || rr.Reason != emu.StopWatch {
+				t.Fatalf("delivery %d: %+v %v", i, rr, err)
+			}
+			if got := m.Peek32(isrcount); got != i {
+				t.Fatalf("isrcount = %d, want %d", got, i)
+			}
+			if _, err := m.Run(emu.RunConfig{MaxCycles: 2000}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if c2 := m.Peek32(counter); c2 <= c1 {
+			t.Fatalf("main loop did not resume: %d -> %d", c1, c2)
+		}
+	})
+}
+
+// TestPollProgram runs the approach-A polling program: raising is a
+// memory write of a negative value; the handler acknowledges.
+func TestPollProgram(t *testing.T) {
+	forEachVariant(t, func(t *testing.T, v *emu.Variant) {
+		src, err := prog.HIL("poll")
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := dmaasm.Assemble(src, dmaasm.Options{Variant: v})
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := emu.NewMachine(v)
+		if err := res.Image.LoadAndStart(m, nil, img.DefaultMachine()); err != nil {
+			t.Fatal(err)
+		}
+		pending, _ := res.Symbol("pending")
+		isrcount, _ := res.Symbol("isrcount")
+		counter, _ := res.Symbol("counter")
+
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 2000}); err != nil {
+			t.Fatal(err)
+		}
+		if got := m.Peek32(isrcount); got != 0 {
+			t.Fatalf("spurious ISR: %d", got)
+		}
+		// Raise with -1: jneg's byte-swap trick needs |value| < 2^28, so
+		// 0x80000000 would NOT be seen as negative (doc/abi.md).
+		m.Poke32(pending, 0xFFFFFFFF)
+		rr, err := m.Run(emu.RunConfig{MaxCycles: 2000, WatchWrites: []uint32{isrcount}})
+		if err != nil || rr.Reason != emu.StopWatch {
+			t.Fatalf("delivery: %+v %v", rr, err)
+		}
+		if got := m.Peek32(pending); got != 0 {
+			t.Errorf("pending not acknowledged: %#x", got)
+		}
+		c1 := m.Peek32(counter)
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 2000}); err != nil {
+			t.Fatal(err)
+		}
+		if c2 := m.Peek32(counter); c2 <= c1 {
+			t.Fatalf("main loop did not resume: %d -> %d", c1, c2)
+		}
+	})
+}
+
+// TestLoopOverhead pins the steady-state cost per loop iteration of the
+// two delivery mechanisms: approach B's safepoint vs approach A's poll.
+func TestLoopOverhead(t *testing.T) {
+	v := emu.RP2350
+	measure := func(file, counterSym string) uint64 {
+		src, err := prog.HIL(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := dmaasm.Assemble(src, dmaasm.Options{Variant: v})
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := emu.NewMachine(v)
+		if err := res.Image.LoadAndStart(m, nil, img.DefaultMachine()); err != nil {
+			t.Fatal(err)
+		}
+		const cycles = 6000
+		if _, err := m.Run(emu.RunConfig{MaxCycles: cycles}); err != nil {
+			t.Fatal(err)
+		}
+		addr, _ := res.Symbol(counterSym)
+		iters := m.Peek32(addr)
+		if iters == 0 {
+			t.Fatalf("%s: no iterations", file)
+		}
+		return cycles / uint64(iters)
+	}
+	irq := measure("irq", "counter")
+	poll := measure("poll", "counter")
+	t.Logf("cycles/iteration: irq (safepoint) = %d, poll (jneg) = %d", irq, poll)
+	// B's safepoint loop: add(3)+safepoint(2)+jump(1)+thunk(1) = 7 blocks;
+	// A's poll loop: add(3)+jneg-not-taken(5)+jump(1) = 9 blocks.
+	if irq >= poll {
+		t.Errorf("safepoint loop should be cheaper than polling loop (%d vs %d)", irq, poll)
+	}
+}

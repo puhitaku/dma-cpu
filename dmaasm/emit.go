@@ -256,6 +256,22 @@ func (a *asm) emit() (*Result, error) {
 				return nil, err
 			}
 			mv(lrP, pcP, 1, execCtrl)
+		case "safepoint":
+			resume := nextGen()
+			resumeP, err := resolve(resume, s.line)
+			if err != nil {
+				return nil, err
+			}
+			irqResumeP, err := symP("irqresume", s.line)
+			if err != nil {
+				return nil, err
+			}
+			dispatchP, err := symP("dispatch", s.line)
+			if err != nil {
+				return nil, err
+			}
+			mv(resumeP, irqResumeP, 1, execCtrl)
+			mv(dispatchP, pcP, 1, execCtrl)
 		case "gpio":
 			pin, _ := parseNum(s.args[0])
 			word := a.v.GPIOOutCtrl(s.args[1] == "hi")

@@ -197,6 +197,12 @@ ARM-paced fetch triggers).
 
 ### 3.5 Decision
 
+**Settled by measurement — see `prompts/006-phase3-results.md`.** B is
+adopted as the sole mechanism (≤1 µs delivery, 0 losses, 2-block
+safepoints); A is a fallback niche; C wedged 71 % of freezes on silicon;
+D wedged 71 % of resumes and can require a rescue-DP recovery. Original
+plan for reference:
+
 Adopt **B** as the architecture (with safepoint placement rules in the
 compiler), keep **A** as a degenerate fallback (it needs no extra channels),
 prototype **D** first as scaffolding, and pursue **C** as a stretch research

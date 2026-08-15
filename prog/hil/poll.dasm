@@ -1,0 +1,25 @@
+; Approach A (overview §3.1): software interrupt polling. The loop checks
+; a `pending` word at the back-edge with jneg; the interrupt source (host
+; or another channel) raises by writing a negative value of magnitude
+; < 2^28 (e.g. -1; jneg's byte-swap trick cannot see 0x80000000 as
+; negative), and the handler clears it.
+.data
+.regs
+counter:  .word 0
+isrcount: .word 0
+one:      .word 1
+pending:  .word 0
+
+.text
+.entry start
+start:
+loop:
+    add counter, one, counter
+    jneg pending, isr, cont
+cont:
+    jump loop
+
+isr:
+    move zero, pending      ; acknowledge
+    add isrcount, one, isrcount
+    jump loop

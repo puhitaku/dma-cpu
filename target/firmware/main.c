@@ -16,6 +16,7 @@
 
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
+#include "hardware/pio.h"
 
 #include "dmx.h"
 #include "images.h"
@@ -221,6 +222,273 @@ static void cal_sniff(const char *name, uint32_t sniff_ctrl, uint32_t seed,
            (unsigned long)expect);
 }
 
+/* --- Phase 3: interrupt-approach experiments (prompts/006) --- */
+
+static inline uint32_t chreg(int ch, uint32_t off)
+{
+    return 0x50000000u + (uint32_t)ch * 0x40u + off;
+}
+
+static const hil_test *find_test(const char *name)
+{
+    for (int i = 0; i < HIL_N_TESTS; i++) {
+        for (int j = 0;; j++) {
+            if (hil_tests[i].name[j] != name[j]) {
+                break;
+            }
+            if (name[j] == 0) {
+                return &hil_tests[i];
+            }
+        }
+    }
+    return NULL;
+}
+
+static bool load_start(const hil_test *t)
+{
+    machine_reset();
+    uint32_t entry = 0;
+    if (dmx_load(t->dmx, t->dmx_len, NULL, &entry) != DMX_OK) {
+        return false;
+    }
+    dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH};
+    return dmx_start(&cfg, entry) == DMX_OK;
+}
+
+static void arm_injector(uint32_t ctrl)
+{
+    reg_wr(HIL_INJ_CH_BASE + CH_AL1_CTRL, 0);
+    reg_wr(chreg(3, 0x14), HIL_SYM_irq_isrvec);   /* AL1_READ_ADDR */
+    reg_wr(chreg(3, 0x18), HIL_SYM_irq_dispatch); /* AL1_WRITE_ADDR */
+    reg_wr(HIL_INJ_CH_BASE + CH_TRANS_COUNT, 1);
+    reg_wr(HIL_INJ_CH_BASE + CH_CTRL_TRIG, ctrl);
+}
+
+/* PIO0 SM0 GPIO-edge -> DREQ bridge: wait for a rising edge on the pin,
+ * push one word (raising DREQ_PIO0_RX0), wait for the falling edge.
+ * The pin is driven by this firmware over SIO — an internal loopback, so
+ * no external wiring is needed. */
+#define IRQ_PIN 3
+
+static void pio_bridge_init(void)
+{
+    static bool ready;
+    if (ready) {
+        return;
+    }
+    ready = true;
+    static const uint16_t insns[] = {
+        0x20a0, /* wait 1 pin 0 */
+        0x8020, /* push block   */
+        0x2020, /* wait 0 pin 0 */
+    };
+    struct pio_program p = {.instructions = insns, .length = 3, .origin = -1};
+    uint off = pio_add_program(pio0, &p);
+    pio_sm_config c = pio_get_default_sm_config();
+    sm_config_set_in_pins(&c, IRQ_PIN);
+    sm_config_set_wrap(&c, off, off + 2);
+    pio_sm_init(pio0, 0, off, &c);
+    pio_sm_set_enabled(pio0, 0, true);
+    gpio_init(IRQ_PIN);
+    gpio_set_dir(IRQ_PIN, true);
+    gpio_put(IRQ_PIN, 0);
+}
+
+/* Steady-state loop throughput of the two interruptible programs (B's
+ * safepoint loop vs A's polling loop), no interrupts delivered. */
+static void exp_throughput(void)
+{
+    const char *names[] = {"irq", "poll"};
+    uint32_t syms[] = {HIL_SYM_irq_counter, HIL_SYM_poll_counter};
+    for (int i = 0; i < 2; i++) {
+        load_start(find_test(names[i]));
+        sleep_ms(100);
+        uint32_t iters = reg_rd(syms[i]);
+        machine_reset();
+        printf("EXP throughput_%s: %lu iters in 100 ms (%lu/s)\n", names[i],
+               (unsigned long)iters, (unsigned long)(iters * 10u));
+    }
+}
+
+/* Approach B with a pacing-timer tick at several rates, 100 ms each.
+ * Compares delivered ISR count against the tick count to characterize
+ * delivery loss (fixed per-delivery cost vs systematic fraction). */
+static void exp_irq_timer(void)
+{
+    static const struct { uint32_t y, expect; } rates[] = {
+        {15000, 1000}, /* 10 kHz  */
+        {30000, 500},  /* 5 kHz   */
+        {60000, 250},  /* 2.5 kHz */
+    };
+    for (unsigned r = 0; r < 3; r++) {
+        load_start(find_test("irq"));
+        reg_wr(HIL_TIMER0_ADDR + 4, (1u << 16) | rates[r].y); /* TIMER1 */
+        arm_injector(HIL_INJ_CTRL_TIMER1);
+        sleep_ms(100);
+        uint32_t isr = reg_rd(HIL_SYM_irq_isrcount);
+        uint32_t ctr = reg_rd(HIL_SYM_irq_counter);
+        reg_wr(HIL_TIMER0_ADDR + 4, 0);
+        machine_reset();
+        printf("EXP irq_timer y=%lu: isr=%lu/%lu counter=%lu\n",
+               (unsigned long)rates[r].y, (unsigned long)isr,
+               (unsigned long)rates[r].expect, (unsigned long)ctr);
+    }
+}
+
+/* Approach B with a GPIO edge through the PIO bridge: delivery latency
+ * distribution over 1000 edges, plus a 3-edge burst (FIFO queueing). */
+static void exp_irq_gpio(void)
+{
+    pio_bridge_init();
+    load_start(find_test("irq"));
+    arm_injector(HIL_INJ_CTRL_PIO0RX0);
+    pio_sm_clear_fifos(pio0, 0);
+    busy_wait_us(100);
+
+    uint32_t hist[5] = {0}; /* latency in us: 0,1,2,3,>=4 */
+    uint32_t miss = 0;
+    for (int i = 0; i < 1000; i++) {
+        uint32_t base = reg_rd(HIL_SYM_irq_isrcount);
+        uint32_t t0 = time_us_32();
+        gpio_put(IRQ_PIN, 1);
+        uint32_t d;
+        for (;;) {
+            if (reg_rd(HIL_SYM_irq_isrcount) != base) {
+                d = time_us_32() - t0;
+                break;
+            }
+            if (time_us_32() - t0 > 1000u) {
+                d = 1000;
+                miss++;
+                break;
+            }
+        }
+        gpio_put(IRQ_PIN, 0);
+        hist[d < 4 ? d : 4]++;
+        busy_wait_us(5);
+    }
+    /* Burst: three fast edges; the PIO FIFO queues them. */
+    uint32_t base = reg_rd(HIL_SYM_irq_isrcount);
+    for (int i = 0; i < 3; i++) {
+        gpio_put(IRQ_PIN, 1);
+        busy_wait_us(1);
+        gpio_put(IRQ_PIN, 0);
+        busy_wait_us(1);
+    }
+    busy_wait_us(200);
+    uint32_t burst = reg_rd(HIL_SYM_irq_isrcount) - base;
+    machine_reset();
+    printf("EXP irq_gpio: lat_us[0,1,2,3,>=4]=%lu,%lu,%lu,%lu,%lu miss=%lu burst3=%lu\n",
+           (unsigned long)hist[0], (unsigned long)hist[1], (unsigned long)hist[2],
+           (unsigned long)hist[3], (unsigned long)hist[4], (unsigned long)miss,
+           (unsigned long)burst);
+}
+
+/* Approach A latency: raise by writing -1 to `pending`. */
+static void exp_poll_latency(void)
+{
+    load_start(find_test("poll"));
+    uint32_t hist[5] = {0};
+    uint32_t miss = 0;
+    for (int i = 0; i < 1000; i++) {
+        uint32_t base = reg_rd(HIL_SYM_poll_isrcount);
+        uint32_t t0 = time_us_32();
+        reg_wr(HIL_SYM_poll_pending, 0xFFFFFFFFu);
+        uint32_t d;
+        for (;;) {
+            if (reg_rd(HIL_SYM_poll_isrcount) != base) {
+                d = time_us_32() - t0;
+                break;
+            }
+            if (time_us_32() - t0 > 1000u) {
+                d = 1000;
+                miss++;
+                break;
+            }
+        }
+        hist[d < 4 ? d : 4]++;
+        busy_wait_us(5);
+    }
+    machine_reset();
+    printf("EXP poll_latency: lat_us[0,1,2,3,>=4]=%lu,%lu,%lu,%lu,%lu miss=%lu\n",
+           (unsigned long)hist[0], (unsigned long)hist[1], (unsigned long)hist[2],
+           (unsigned long)hist[3], (unsigned long)hist[4], (unsigned long)miss);
+}
+
+/* Approach C: asynchronous freeze/thaw via EN clear/set on channels 0-2.
+ * The emulator predicts ~35% of offsets wedge on a dropped trigger. */
+static void exp_freeze(void)
+{
+    const hil_test *t = find_test("irq");
+    load_start(t);
+    uint32_t wedges = 0, notfrozen = 0;
+    for (int i = 0; i < 500; i++) {
+        busy_wait_us(3 + (i % 17)); /* stagger the freeze phase */
+        for (int ch = 0; ch < 3; ch++) {
+            reg_wr(0x50000000u + 0x3000u + (uint32_t)ch * 0x40u + CH_AL1_CTRL, 1u); /* CLR EN */
+        }
+        busy_wait_us(5);
+        uint32_t c1 = reg_rd(HIL_SYM_irq_counter);
+        busy_wait_us(20);
+        if (reg_rd(HIL_SYM_irq_counter) != c1) {
+            notfrozen++;
+        }
+        for (int ch = 2; ch >= 0; ch--) {
+            reg_wr(0x50000000u + 0x2000u + (uint32_t)ch * 0x40u + CH_AL1_CTRL, 1u); /* SET EN */
+        }
+        busy_wait_us(50);
+        if (reg_rd(HIL_SYM_irq_counter) == c1) {
+            wedges++;
+            load_start(t); /* recover */
+        }
+    }
+    machine_reset();
+    printf("EXP freeze: wedges=%lu/500 notfrozen=%lu\n",
+           (unsigned long)wedges, (unsigned long)notfrozen);
+}
+
+/* Approach D: abort-and-divert. CHAN_ABORT the machine, realign the PC,
+ * jam the ISR, let it return. Counts PC misalignment (aborted mid block
+ * fetch) and exec-busy-at-abort (replay hazard) — the two reasons D
+ * cannot resume correctly in general. */
+static void exp_abort(void)
+{
+    const hil_test *t = find_test("irq");
+    load_start(t);
+    uint32_t mis = 0, execbusy = 0, wedges = 0;
+    for (int i = 0; i < 500; i++) {
+        busy_wait_us(3 + (i % 17));
+        uint32_t eb = reg_rd(chreg(1, CH_AL1_CTRL)) & HIL_CTRL_BUSY_MASK;
+        reg_wr(HIL_CHAN_ABORT_ADDR, 0x7);
+        busy_wait_us(2);
+        if (eb) {
+            execbusy++;
+        }
+        uint32_t pc = reg_rd(chreg(0, CH_READ_ADDR));
+        if (pc & 0xFu) {
+            mis++;
+        }
+        pc &= ~0xFu;
+        reg_wr(HIL_SYM_irq_irqresume, pc);
+        uint32_t isr0 = reg_rd(HIL_SYM_irq_isrcount);
+        reg_wr(chreg(0, CH_READ_ADDR), reg_rd(HIL_SYM_irq_isrvec));
+        reg_wr(chreg(0, CH_WRITE_ADDR), HIL_EXEC_REGS);
+        reg_wr(chreg(0, CH_TRANS_COUNT), 4);
+        reg_wr(chreg(0, CH_CTRL_TRIG), HIL_FETCH_CTRL);
+        busy_wait_us(20);
+        uint32_t c1 = reg_rd(HIL_SYM_irq_counter);
+        busy_wait_us(30);
+        if (reg_rd(HIL_SYM_irq_isrcount) == isr0 ||
+            reg_rd(HIL_SYM_irq_counter) == c1) {
+            wedges++;
+            load_start(t);
+        }
+    }
+    machine_reset();
+    printf("EXP abort: misaligned_pc=%lu/500 exec_busy=%lu/500 wedges=%lu/500\n",
+           (unsigned long)mis, (unsigned long)execbusy, (unsigned long)wedges);
+}
+
 extern char __bss_end__;
 
 int main(void)
@@ -254,6 +522,12 @@ int main(void)
         cal_sniff("sniff_sum", HIL_CAL_SNIFF_SUM, 0x1000, 0x234, HIL_CAL_EXPECT_SUM);
         cal_sniff("sniff_crc32", HIL_CAL_SNIFF_CRC32, 0xFFFFFFFFu, 0x12345678u,
                   HIL_CAL_EXPECT_CRC32);
+        exp_throughput();
+        exp_irq_timer();
+        exp_irq_gpio();
+        exp_poll_latency();
+        exp_freeze();
+        exp_abort();
         printf("=== END iter=%u\n", iter);
         sleep_ms(2000);
     }

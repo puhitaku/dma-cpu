@@ -349,6 +349,9 @@ var instrs = map[string]instrSpec{
 	"gpio":  {2, 2, fixed(1)},
 	"halt":  {0, 0, fixed(1)},
 	"nop":   {0, 0, fixed(1)},
+	// safepoint: the ABI interrupt delivery point (doc/abi.md) — store
+	// the resume address, then jump indirectly through `dispatch`.
+	"safepoint": {0, 0, fixed(2)},
 }
 
 func fixed(n uint32) func([]string) (uint32, error) {
@@ -593,6 +596,13 @@ func (a *asm) scanInstr(s *stmt, nblocks uint32) error {
 		return nil
 	case "ret":
 		return needRegs("ret")
+	case "safepoint":
+		if err := needRegs("safepoint"); err != nil {
+			return err
+		}
+		// Resume address: the block after the 2-block sequence.
+		a.genTextLabel(a.textOff + 2*16)
+		return nil
 	case "gpio":
 		pin, err := parseNum(s.args[0])
 		if err != nil || pin >= uint32(a.v.GPIOPins) {
