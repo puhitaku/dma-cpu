@@ -14,6 +14,13 @@
 // "writes" are ordered raw register writes applied after "machine" setup
 // (or standalone, for hand-configured channel arrangements). The result —
 // stop reason, cycle count, dumps, and GPIO events — is printed as JSON.
+//
+// Alternatively, a DMX executable (see doc/dmx.md) replaces "machine":
+//
+//	{
+//	  "image": {"file": "prog.dmx", "placement": {"1": "0x20020000"}},
+//	  "run":   {"maxCycles": 1000000}
+//	}
 package main
 
 import (
@@ -25,6 +32,7 @@ import (
 	"strconv"
 
 	"github.com/puhitaku/dma-cpu/emu"
+	"github.com/puhitaku/dma-cpu/img"
 )
 
 // u32 accepts JSON numbers or strings in any Go literal base ("0x...").
@@ -64,6 +72,10 @@ type config struct {
 		Entry   u32 `json:"entry"`
 		Scratch u32 `json:"scratch"`
 	} `json:"machine"`
+	Image *struct {
+		File      string         `json:"file"`
+		Placement map[string]u32 `json:"placement"`
+	} `json:"image"`
 	Writes []struct {
 		Addr  u32 `json:"addr"`
 		Value u32 `json:"value"`
@@ -136,12 +148,40 @@ func run() error {
 	for _, p := range cfg.Poke32 {
 		m.Poke32(uint32(p.Addr), uint32(p.Value))
 	}
+	if cfg.Machine != nil && cfg.Image != nil {
+		return fmt.Errorf(`"machine" and "image" are mutually exclusive`)
+	}
 	if mc := cfg.Machine; mc != nil {
 		err := emu.SetupFetchExec(m, emu.FetchExecConfig{
 			Fetch: mc.Fetch, Exec: mc.Exec, Fix: mc.Fix,
 			Entry: uint32(mc.Entry), Scratch: uint32(mc.Scratch),
 		})
 		if err != nil {
+			return err
+		}
+	}
+	if ic := cfg.Image; ic != nil {
+		path := ic.File
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(cfgDir, path)
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		im, err := img.Decode(raw)
+		if err != nil {
+			return err
+		}
+		pl := img.Placement{}
+		for k, v := range ic.Placement {
+			idx, err := strconv.Atoi(k)
+			if err != nil {
+				return fmt.Errorf("placement key %q: %w", k, err)
+			}
+			pl[idx] = uint32(v)
+		}
+		if err := im.LoadAndStart(m, pl, img.DefaultMachine()); err != nil {
 			return err
 		}
 	}

@@ -16,11 +16,19 @@ development plan, and references.
   `emu/machine_test.go` build the machine's ALU and control-flow idioms
   block by block, and prove out the interrupt-dispatch design from
   `prompts/overview.md` §3.2.
-- `cmd/dmaemu/` — CLI front end; runs a program image under a JSON config
-  and reports results as JSON (see the comment in `main.go` for the format).
-- `doc/` — reference documents. The RP2040 datasheet is committed;
-  third-party reference material is copyrighted and stays untracked (see
-  Coding rules in `prompts/overview.md`).
+- `img/` — the DMX executable format (`doc/dmx.md`): builder, encoder/
+  decoder, and the reference loader with Tier-2 relocation (same image runs
+  at any placement).
+- `cmd/dmaemu/` — CLI front end; runs a raw block image or a DMX executable
+  under a JSON config and reports results as JSON (see the comment in
+  `main.go` for the format).
+- `target/loader/` — bare-metal C loader for the RP2040 side; parses DMX,
+  relocates, and starts the machine. No SDK dependency; not yet validated
+  on hardware.
+- `doc/` — project documents (`dmx.md` is the image format spec) and
+  references. The RP2040 datasheet is committed; third-party reference
+  material is copyrighted and stays untracked (see Coding rules in
+  `prompts/overview.md`).
 
 ## Build and test
 
