@@ -19,14 +19,23 @@
 #define DMA_CH_AL2_TRANS_COUNT 0x24u
 #define DMA_CH_AL2_WRITE_ADDR_TRIG 0x2Cu
 
-/* CTRL fields used by the machine channels. */
+/* CTRL fields used by the machine channels. The bit layout is
+ * SKU-specific from INCR_WRITE up: define DMX_TARGET_RP2350 when building
+ * for RP2350 (RP2350 datasheet §12.6); the default is RP2040. */
 #define CTRL_EN (1u << 0)
 #define CTRL_SIZE32 (2u << 2)
 #define CTRL_INCR_READ (1u << 4)
+#if defined(DMX_TARGET_RP2350)
+#define CTRL_INCR_WRITE (1u << 6)
+#define CTRL_CHAIN_TO(ch) ((uint32_t)(ch) << 13)
+#define CTRL_TREQ_PERMANENT (0x3Fu << 17)
+#define CTRL_IRQ_QUIET (1u << 23)
+#else /* RP2040 */
 #define CTRL_INCR_WRITE (1u << 5)
 #define CTRL_CHAIN_TO(ch) ((uint32_t)(ch) << 11)
 #define CTRL_TREQ_PERMANENT (0x3Fu << 15)
 #define CTRL_IRQ_QUIET (1u << 21)
+#endif
 
 static inline void mmio_write(uint32_t addr, uint32_t val)
 {

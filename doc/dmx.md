@@ -14,6 +14,13 @@ loader-performed register writes alike. Tier 1 (static) images are simply
 images loaded at their link addresses; Tier 2 (relocatable) loading places
 segments anywhere and runs the fixup loop.
 
+DMX is SKU-specific payload in an SKU-neutral container: control words and
+MMIO addresses inside segments and the write table are encoded for one RP2
+SKU (RP2040 and RP2350 differ in CTRL bit layout and register offsets),
+and the format itself does not record which. Producers and loaders must
+agree on the target SKU out of band (the emulator CLI's `"sku"` field; the
+C loader's `-DDMX_TARGET_RP2350`).
+
 ## Layout
 
 All fields are little-endian `u32`. No padding between tables. Multi-byte

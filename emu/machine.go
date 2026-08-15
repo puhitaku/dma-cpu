@@ -7,8 +7,8 @@ import (
 )
 
 // GPIOEvent records an output-level change decoded from a write to an
-// IO_BANK0 GPIOx_CTRL register (OUTOVER = 0x2 drives low, 0x3 drives high —
-// the 0x3200 / 0x3300 idiom DMA-machine programs use).
+// IO_BANK0 GPIOx_CTRL register (OUTOVER = 0x2 drives low, 0x3 drives
+// high; field positions are SKU-specific — see Variant.GPIOOutCtrl).
 type GPIOEvent struct {
 	Cycle uint64
 	Pin   int
@@ -21,6 +21,7 @@ type GPIOEvent struct {
 // real transfers take a few system clocks each, so cycle counts are
 // proportional to, not equal to, hardware time.
 type Machine struct {
+	v    *Variant
 	sram []byte
 	dma  dma
 
@@ -55,17 +56,25 @@ type RunResult struct {
 	WatchAddr uint32 // valid when Reason == StopWatch
 }
 
-func NewMachine() *Machine {
-	return &Machine{
-		sram: make([]byte, SRAMSize),
+// NewMachine creates a machine emulating the given SKU (emu.RP2040 or
+// emu.RP2350).
+func NewMachine(v *Variant) *Machine {
+	m := &Machine{
+		v:    v,
+		sram: make([]byte, v.SRAMSize),
 		mmio: make(map[uint32]uint32),
 	}
+	m.dma.v = v
+	return m
 }
+
+// Variant returns the SKU this machine emulates.
+func (m *Machine) Variant() *Variant { return m.v }
 
 // --- Bus ---
 
-func inSRAM(addr uint32, size int) bool {
-	return addr >= SRAMBase && addr+uint32(size) <= SRAMBase+SRAMSize
+func (m *Machine) inSRAM(addr uint32, size int) bool {
+	return addr >= SRAMBase && addr+uint32(size) <= SRAMBase+uint32(len(m.sram))
 }
 
 // aliasOp splits a peripheral-space address into its normalized register
@@ -94,7 +103,7 @@ func (m *Machine) Read(addr uint32, size int) (uint32, error) {
 		return 0, fmt.Errorf("unaligned %d-byte read at %#08x", size, addr)
 	}
 	switch {
-	case inSRAM(addr, size):
+	case m.inSRAM(addr, size):
 		off := addr - SRAMBase
 		switch size {
 		case 1:
@@ -126,7 +135,7 @@ func (m *Machine) Write(addr uint32, val uint32, size int) error {
 		m.watchHit = &a
 	}
 	switch {
-	case inSRAM(addr, size):
+	case m.inSRAM(addr, size):
 		off := addr - SRAMBase
 		switch size {
 		case 1:
@@ -153,15 +162,15 @@ func (m *Machine) Write(addr uint32, val uint32, size int) error {
 }
 
 func (m *Machine) decodeGPIO(normAddr, val uint32) {
-	const nPins = 30
-	if normAddr < IOBank0Base+4 || normAddr >= IOBank0Base+nPins*8 {
+	base := m.v.IOBank0Base
+	if normAddr < base+4 || normAddr >= base+uint32(m.v.GPIOPins)*8 {
 		return
 	}
-	off := normAddr - IOBank0Base
+	off := normAddr - base
 	if off%8 != 4 { // GPIOx_CTRL registers sit at 8*pin + 4
 		return
 	}
-	switch (val >> 8) & 3 { // OUTOVER field
+	switch (val >> m.v.gpioOutoverLSB) & 3 { // OUTOVER field
 	case 2:
 		m.GPIOEvents = append(m.GPIOEvents, GPIOEvent{m.Cycle, int(off / 8), false})
 	case 3:
@@ -189,7 +198,7 @@ func (m *Machine) Peek32(addr uint32) uint32 {
 
 // LoadBytes copies a raw image into memory at addr (SRAM only).
 func (m *Machine) LoadBytes(addr uint32, data []byte) error {
-	if !inSRAM(addr, len(data)) {
+	if !m.inSRAM(addr, len(data)) {
 		return fmt.Errorf("image [%#08x, +%#x) outside SRAM", addr, len(data))
 	}
 	copy(m.sram[addr-SRAMBase:], data)
@@ -225,7 +234,7 @@ func (m *Machine) step() (bool, error) {
 
 	chIdx := -1
 	for pass := 0; pass < 2 && chIdx < 0; pass++ {
-		for i := 0; i < nChannels; i++ {
+		for i := 0; i < m.v.NChannels; i++ {
 			c := &m.dma.ch[i]
 			hp := c.ctrl&CtrlHighPriority != 0
 			if (pass == 0) == hp && m.dma.runnable(i) {
@@ -244,7 +253,7 @@ func (m *Machine) step() (bool, error) {
 // completion, chaining, and the sniffer.
 func (m *Machine) transfer(chIdx int) error {
 	c := &m.dma.ch[chIdx]
-	if ctrlTreqSel(c.ctrl) != TreqPermanent && c.credit > 0 {
+	if m.v.ctrlTreqSel(c.ctrl) != TreqPermanent && c.credit > 0 {
 		c.credit--
 	}
 	size := 1 << ctrlDataSize(c.ctrl)
@@ -256,14 +265,14 @@ func (m *Machine) transfer(chIdx int) error {
 	if err != nil {
 		return fmt.Errorf("ch%d: %w", chIdx, err)
 	}
-	if c.ctrl&CtrlBswap != 0 {
+	if c.ctrl&m.v.CtrlBswap != 0 {
 		datum = bswap(datum, size)
 	}
 	writeAddr := c.writeAddr
 	if err := m.Write(writeAddr, datum, size); err != nil {
 		return fmt.Errorf("ch%d: %w", chIdx, err)
 	}
-	if c.ctrl&CtrlSniffEn != 0 {
+	if c.ctrl&m.v.CtrlSniffEn != 0 {
 		m.dma.sniff(chIdx, datum, size)
 	}
 	if m.TraceW != nil {
@@ -272,15 +281,18 @@ func (m *Machine) transfer(chIdx int) error {
 	}
 
 	if c.ctrl&CtrlIncrRead != 0 {
-		c.readAddr = incrRing(c.readAddr, uint32(size), c.ctrl, false)
+		c.readAddr = m.v.incrRing(c.readAddr, uint32(size), c.ctrl, false)
 	}
-	if c.ctrl&CtrlIncrWrite != 0 {
-		c.writeAddr = incrRing(c.writeAddr, uint32(size), c.ctrl, true)
+	if c.ctrl&m.v.CtrlIncrWrite != 0 {
+		c.writeAddr = m.v.incrRing(c.writeAddr, uint32(size), c.ctrl, true)
 	}
 
 	// NOTE: the transfer above may have re-written this channel's own
 	// registers (self-modification is legal on this machine); re-fetch the
 	// channel pointer state via c, which aliases the live struct.
+	if c.mode == transModeEndless {
+		return nil // ENDLESS (RP2350): never decrements, never completes
+	}
 	if c.remaining > 0 {
 		c.remaining--
 	}
@@ -290,15 +302,23 @@ func (m *Machine) transfer(chIdx int) error {
 	return nil
 }
 
-// incrRing advances an address by size with optional ring wrapping
-// (RING_SIZE bits, applied to read or write side per RING_SEL).
-func incrRing(addr, size, ctrl uint32, isWrite bool) uint32 {
+// incrRing advances an address by size (reverse-decrement on SKUs that
+// have INCR_*_REV) with optional ring wrapping (RING_SIZE bits, applied to
+// read or write side per RING_SEL).
+func (v *Variant) incrRing(addr, size, ctrl uint32, isWrite bool) uint32 {
+	rev := v.CtrlIncrReadRev
+	if isWrite {
+		rev = v.CtrlIncrWriteRev
+	}
 	next := addr + size
-	ring := ctrlRingSize(ctrl)
+	if rev != 0 && ctrl&rev != 0 {
+		next = addr - size
+	}
+	ring := v.ctrlRingSize(ctrl)
 	if ring == 0 {
 		return next
 	}
-	ringApplies := (ctrl&CtrlRingSel != 0) == isWrite
+	ringApplies := (ctrl&v.CtrlRingSel != 0) == isWrite
 	if !ringApplies {
 		return next
 	}
@@ -341,7 +361,7 @@ func (m *Machine) Run(cfg RunConfig) (RunResult, error) {
 		// Nothing ran this cycle. Decide between halt, stall, and merely
 		// waiting for a pacing timer to accrue credit.
 		anyBusy, anyTimerWait := false, false
-		for i := 0; i < nChannels; i++ {
+		for i := 0; i < m.v.NChannels; i++ {
 			if m.dma.ch[i].busy && m.dma.ch[i].ctrl&CtrlEN != 0 {
 				anyBusy = true
 				if m.dma.waitsOnLiveTimer(i) {

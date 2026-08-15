@@ -5,33 +5,28 @@
 // atomic register aliases — deterministically and at bus-transfer
 // granularity. It is deliberately not a full-chip emulator.
 //
-// Register offsets and bit positions follow the RP2040 datasheet §2.5
-// (doc/rp2040-datasheet.pdf); the layout is shared across the RP2 family.
-// SKU-specific parameters (SRAM size, channel count) currently use RP2040
-// values and are marked at their definitions.
+// This file holds the definitions shared across the RP2 family; every
+// SKU-specific encoding (CTRL bit layout, global register offsets, sizes)
+// lives in Variant (variant.go). Sources: RP2040 datasheet §2.5 and
+// RP2350 datasheet §12.6 (doc/).
 package emu
 
-// Address map.
+// Address map (common to RP2040 and RP2350).
 const (
 	SRAMBase uint32 = 0x20000000
-	// SKU-specific: RP2040 value (256 KiB striped + 2 × 4 KiB scratch).
-	// RP2350 has 520 KiB; parametrize when RP2350 support lands.
-	SRAMSize uint32 = 0x42000
 
 	DMABase uint32 = 0x50000000
 
-	IOBank0Base uint32 = 0x40014000
-
-	// Atomic register access aliases (datasheet §2.1.2), applied within
-	// each peripheral's 16 KiB window.
+	// Atomic register access aliases (RP2040 §2.1.2, RP2350 §2.1.3),
+	// applied within each peripheral's 16 KiB window.
 	AliasXOR uint32 = 0x1000
 	AliasSet uint32 = 0x2000
 	AliasClr uint32 = 0x3000
 )
 
-// Per-channel register offsets (stride 0x40). Each 32-bit control/status
-// register (CSR) appears in four aliases with different orderings; the last
-// register of each alias row is a trigger (datasheet §2.5.2.1).
+// Per-channel register offsets (stride 0x40; identical on both SKUs).
+// Each 32-bit control/status register (CSR) appears in four aliases with
+// different orderings; the last register of each alias row is a trigger.
 const (
 	ChanStride uint32 = 0x40
 
@@ -53,36 +48,19 @@ const (
 	OffAl3ReadAddrTrig   uint32 = 0x3C
 )
 
-// Global DMA register offsets.
+// The interrupt block start is common (INTR at 0x400, then per-IRQ
+// {INTE, INTF, INTS} groups every 0x10); everything after it moved on
+// RP2350 and lives in Variant.
 const (
-	OffIntr             uint32 = 0x400
-	OffInte0            uint32 = 0x404
-	OffIntf0            uint32 = 0x408
-	OffInts0            uint32 = 0x40C
-	OffInte1            uint32 = 0x414
-	OffIntf1            uint32 = 0x418
-	OffInts1            uint32 = 0x41C
-	OffTimer0           uint32 = 0x420
-	OffMultiChanTrigger uint32 = 0x430
-	OffSniffCtrl        uint32 = 0x434
-	OffSniffData        uint32 = 0x438
-	OffFifoLevels       uint32 = 0x440
-	OffChanAbort        uint32 = 0x444
-	OffNChannels        uint32 = 0x448
+	offIntr     uint32 = 0x400
+	offIrqBlock uint32 = 0x404
 )
 
-// Convenience absolute addresses.
+// ChanRegAddr returns the absolute address of a channel register.
 func ChanRegAddr(ch int, off uint32) uint32 { return DMABase + uint32(ch)*ChanStride + off }
 
-var (
-	SniffCtrlAddr    = DMABase + OffSniffCtrl
-	SniffDataAddr    = DMABase + OffSniffData
-	SniffDataXORAddr = DMABase + AliasXOR + OffSniffData
-	SniffDataSetAddr = DMABase + AliasSet + OffSniffData
-	SniffDataClrAddr = DMABase + AliasClr + OffSniffData
-)
-
-// CTRL register bit fields (CHx_CTRL_TRIG).
+// CTRL register bits common to both SKUs (the low bits; everything from
+// INCR_WRITE up is SKU-specific — see Variant).
 const (
 	CtrlEN           uint32 = 1 << 0
 	CtrlHighPriority uint32 = 1 << 1
@@ -91,27 +69,11 @@ const (
 	CtrlSize16       uint32 = 1 << ctrlDataSizeLSB
 	CtrlSize32       uint32 = 2 << ctrlDataSizeLSB
 	CtrlIncrRead     uint32 = 1 << 4
-	CtrlIncrWrite    uint32 = 1 << 5
-	ctrlRingSizeLSB         = 6 // 9:6
-	CtrlRingSel      uint32 = 1 << 10
-	ctrlChainToLSB          = 11 // 14:11
-	ctrlTreqSelLSB          = 15 // 20:15
-	CtrlIRQQuiet     uint32 = 1 << 21
-	CtrlBswap        uint32 = 1 << 22
-	CtrlSniffEn      uint32 = 1 << 23
-	CtrlBusy         uint32 = 1 << 24 // read-only
 )
 
-func CtrlRingSize(n uint32) uint32 { return (n & 0xF) << ctrlRingSizeLSB }
-func CtrlChainTo(ch int) uint32    { return (uint32(ch) & 0xF) << ctrlChainToLSB }
-func CtrlTreq(sel uint32) uint32   { return (sel & 0x3F) << ctrlTreqSelLSB }
-
 func ctrlDataSize(ctrl uint32) uint32 { return (ctrl >> ctrlDataSizeLSB) & 0x3 }
-func ctrlRingSize(ctrl uint32) uint32 { return (ctrl >> ctrlRingSizeLSB) & 0xF }
-func ctrlChainTo(ctrl uint32) int     { return int((ctrl >> ctrlChainToLSB) & 0xF) }
-func ctrlTreqSel(ctrl uint32) uint32  { return (ctrl >> ctrlTreqSelLSB) & 0x3F }
 
-// TREQ_SEL special values.
+// TREQ_SEL special values (identical on both SKUs).
 const (
 	TreqTimer0    uint32 = 0x3B
 	TreqTimer1    uint32 = 0x3C
@@ -120,16 +82,8 @@ const (
 	TreqPermanent uint32 = 0x3F
 )
 
-// System DREQ numbers (datasheet Table 119). Only the ones the project uses
-// are named; any value 0–0x3A is accepted by PulseDREQ.
-const (
-	DreqPIO0RX0  uint32 = 4
-	DreqPIO0RX1  uint32 = 5
-	DreqPWMWrap0 uint32 = 24
-	DreqADC      uint32 = 36
-)
-
-// SNIFF_CTRL bit fields.
+// SNIFF_CTRL bit fields (identical on both SKUs; only the register's
+// offset moved — see Variant.SniffCtrlAddr).
 const (
 	SniffCtrlEN     uint32 = 1 << 0
 	sniffDmachLSB          = 1 // 4:1
@@ -146,14 +100,15 @@ const (
 	SniffCalcSum    uint32 = 0xF
 )
 
-func SniffCtrlDmach(ch int) uint32   { return (uint32(ch) & 0xF) << sniffDmachLSB }
-func SniffCtrlCalc(c uint32) uint32  { return (c & 0xF) << sniffCalcLSB }
-func sniffDmach(ctrl uint32) int     { return int((ctrl >> sniffDmachLSB) & 0xF) }
-func sniffCalc(ctrl uint32) uint32   { return (ctrl >> sniffCalcLSB) & 0xF }
+func SniffCtrlDmach(ch int) uint32  { return (uint32(ch) & 0xF) << sniffDmachLSB }
+func SniffCtrlCalc(c uint32) uint32 { return (c & 0xF) << sniffCalcLSB }
+func sniffDmach(ctrl uint32) int    { return int((ctrl >> sniffDmachLSB) & 0xF) }
+func sniffCalc(ctrl uint32) uint32  { return (ctrl >> sniffCalcLSB) & 0xF }
 
 // Block is one 16-byte DMA control block as fetched by the fetch channel:
 // the alias-0 register order (READ_ADDR, WRITE_ADDR, TRANS_COUNT,
-// CTRL_TRIG). An all-zero Block is a null trigger, i.e. HALT.
+// CTRL_TRIG). An all-zero Block is a null trigger, i.e. HALT. The CTRL
+// word encoding is SKU-specific: blocks are assembled for one Variant.
 type Block [4]uint32
 
 func BuildBlock(readAddr, writeAddr, count, ctrl uint32) Block {

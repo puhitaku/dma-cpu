@@ -57,6 +57,8 @@ func (u *u32) UnmarshalJSON(b []byte) error {
 }
 
 type config struct {
+	// SKU selects the emulated chip: "rp2040" (default) or "rp2350".
+	SKU  string `json:"sku"`
 	Load []struct {
 		File string `json:"file"`
 		Addr u32    `json:"addr"`
@@ -120,7 +122,14 @@ func run() error {
 		return fmt.Errorf("%s: %w", *cfgPath, err)
 	}
 
-	m := emu.NewMachine()
+	if cfg.SKU == "" {
+		cfg.SKU = "rp2040"
+	}
+	variant, err := emu.VariantByName(cfg.SKU)
+	if err != nil {
+		return err
+	}
+	m := emu.NewMachine(variant)
 	if cfg.Trace != "" {
 		f, err := os.Create(cfg.Trace)
 		if err != nil {

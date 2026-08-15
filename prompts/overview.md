@@ -26,6 +26,10 @@ build/test loop that a coding agent can drive.
 - `doc/rp2040-datasheet.pdf` — RP2040 datasheet: authoritative reference for
   the DMA controller (§2.5, incl. register aliases §2.5.2.1 and DREQs §2.5.3)
   and atomic register access (§2.1.2).
+- `doc/rp2350-datasheet.pdf` — RP2350 datasheet: DMA controller §12.6.
+  Note the RP2350 changes the CTRL bit layout, global DMA register
+  offsets, channel/IRQ counts, SRAM size, IO_BANK0 base, and GPIO
+  override bit positions — encodings are SKU-specific (see emu.Variant).
 
 ---
 

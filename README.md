@@ -13,10 +13,13 @@ development plan, and references.
 
 - `emu/` — `dmaemu` core: a deterministic, DMA-machine-level emulator of
   the RP2 DMA subsystem (channels, triggers, chaining, DREQ credits,
-  pacing timers, sniffer, atomic register aliases). The golden tests in
+  pacing timers, sniffer, atomic register aliases). Both SKUs are
+  supported via `emu.Variant` (`emu.RP2040`, `emu.RP2350`) — the CTRL bit
+  layout, register offsets, sizes, and DREQ numbers differ between them,
+  so programs are assembled per SKU. The golden tests in
   `emu/machine_test.go` build the machine's ALU and control-flow idioms
-  block by block, and prove out the interrupt-dispatch design from
-  `prompts/overview.md` §3.2.
+  block by block, run the whole suite on both SKUs, and prove out the
+  interrupt-dispatch design from `prompts/overview.md` §3.2.
 - `img/` — the DMX executable format (`doc/dmx.md`): builder, encoder/
   decoder, and the reference loader with Tier-2 relocation (same image runs
   at any placement).
@@ -24,12 +27,13 @@ development plan, and references.
   under a JSON config and reports results as JSON (see the comment in
   `main.go` for the format).
 - `target/loader/` — bare-metal C loader for the RP2 side; parses DMX,
-  relocates, and starts the machine. No SDK dependency; not yet validated
-  on hardware.
+  relocates, and starts the machine. No SDK dependency; build with
+  `-DDMX_TARGET_RP2350` for RP2350 (RP2040 is the default). Not yet
+  validated on hardware.
 - `doc/` — project documents (`dmx.md` is the image format spec) and
-  references. The RP2040 datasheet is committed; third-party reference
-  material is copyrighted and stays untracked (see Coding rules in
-  `prompts/overview.md`).
+  references. The RP2040 and RP2350 datasheets are committed; third-party
+  reference material is copyrighted and stays untracked (see Coding rules
+  in `prompts/overview.md`).
 
 ## Build and test
 

@@ -23,18 +23,23 @@ type FetchExecConfig struct {
 }
 
 // ExecCtrl returns the standard CTRL word for program blocks executed on
-// the Exec channel: run immediately, 32-bit, no increments, chain to Fix,
-// no IRQ. OR in CtrlSize16/8, CtrlIncr*, CtrlSniffEn, CtrlBswap, or a
-// CtrlTreq() as needed.
-func (c FetchExecConfig) ExecCtrl() uint32 {
-	return CtrlEN | CtrlSize32 | CtrlTreq(TreqPermanent) | CtrlChainTo(c.Fix) | CtrlIRQQuiet
+// the Exec channel of the given SKU: run immediately, 32-bit, no
+// increments, chain to Fix, no IRQ. OR in CtrlSize16/8, CtrlIncrRead,
+// v.CtrlSniffEn, v.CtrlBswap, or rebuild with v.CtrlTreq as needed —
+// remember that CHAIN_TO and TREQ_SEL are fields, not flags.
+func (c FetchExecConfig) ExecCtrl(v *Variant) uint32 {
+	return CtrlEN | CtrlSize32 | v.CtrlTreq(TreqPermanent) | v.CtrlChainTo(c.Fix) | v.CtrlIRQQuiet
 }
 
 // SetupFetchExec configures the three channels and starts the machine at
 // cfg.Entry. The program must already be in memory.
 func SetupFetchExec(m *Machine, cfg FetchExecConfig) error {
+	v := m.Variant()
 	if cfg.Fetch == cfg.Exec || cfg.Exec == cfg.Fix || cfg.Fetch == cfg.Fix {
 		return fmt.Errorf("channels must be distinct: %+v", cfg)
+	}
+	if max := v.NChannels; cfg.Fetch >= max || cfg.Exec >= max || cfg.Fix >= max {
+		return fmt.Errorf("channel out of range for %s (%d channels): %+v", v.Name, max, cfg)
 	}
 	if cfg.Entry%16 != 0 {
 		return fmt.Errorf("entry %#08x is not 16-byte aligned", cfg.Entry)
@@ -50,11 +55,11 @@ func SetupFetchExec(m *Machine, cfg FetchExecConfig) error {
 	m.Poke32(ChanRegAddr(cfg.Fix, OffAl1WriteAddr), ChanRegAddr(cfg.Fetch, OffAl2WriteAddrTrig))
 	m.Poke32(ChanRegAddr(cfg.Fix, OffAl2TransCount), 1)
 	m.Poke32(ChanRegAddr(cfg.Fix, OffAl1Ctrl),
-		CtrlEN|CtrlSize32|CtrlTreq(TreqPermanent)|CtrlChainTo(cfg.Fix)|CtrlIRQQuiet)
+		CtrlEN|CtrlSize32|v.CtrlTreq(TreqPermanent)|v.CtrlChainTo(cfg.Fix)|v.CtrlIRQQuiet)
 
 	// Fetch: four 32-bit transfers per block, incrementing both pointers.
-	fetchCtrl := CtrlEN | CtrlSize32 | CtrlIncrRead | CtrlIncrWrite |
-		CtrlTreq(TreqPermanent) | CtrlChainTo(cfg.Fetch) | CtrlIRQQuiet
+	fetchCtrl := CtrlEN | CtrlSize32 | CtrlIncrRead | v.CtrlIncrWrite |
+		v.CtrlTreq(TreqPermanent) | v.CtrlChainTo(cfg.Fetch) | v.CtrlIRQQuiet
 	m.Poke32(ChanRegAddr(cfg.Fetch, OffReadAddr), cfg.Entry)
 	m.Poke32(ChanRegAddr(cfg.Fetch, OffWriteAddr), execRegs)
 	m.Poke32(ChanRegAddr(cfg.Fetch, OffTransCount), 4)

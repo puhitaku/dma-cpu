@@ -7,21 +7,21 @@ type channel struct {
 	readAddr  uint32
 	writeAddr uint32
 	ctrl      uint32
-	reload    uint32 // TRANS_COUNT as last written; loaded into remaining on trigger
+	reload    uint32 // TRANS_COUNT as last written; loaded on trigger
 	remaining uint32 // transfers left in the current sequence
+	mode      uint32 // TRANS_COUNT mode latched at trigger (RP2350)
 	busy      bool
-	credit    uint8 // DREQ credit counter (saturating; datasheet §2.5.3.2)
+	credit    uint8 // DREQ credit counter (saturating; credit-based scheme)
 }
 
-// SKU-specific: RP2040 has 12 DMA channels; RP2350 has 16. Parametrize
-// when RP2350 support lands.
-const nChannels = 12
-
+const maxChannels = 16 // RP2350; RP2040 uses the first 12
+const maxIRQs = 4
 const maxCredit = 63
 
-// dma models the DMA register block at 0x50000000.
+// dma models the DMA register block at 0x50000000 for one Variant.
 type dma struct {
-	ch     [nChannels]channel
+	v      *Variant
+	ch     [maxChannels]channel
 	timers [4]struct {
 		reg uint32 // X (dividend) in 31:16, Y (divisor) in 15:0
 		acc uint32 // fractional accumulator
@@ -29,16 +29,15 @@ type dma struct {
 	sniffCtrl uint32
 	sniffData uint32
 	intr      uint32 // raw interrupt status
-	inte0     uint32
-	intf0     uint32
-	inte1     uint32
-	intf1     uint32
+	inte      [maxIRQs]uint32
+	intf      [maxIRQs]uint32
 }
 
 // regRead returns the value of the register at offset (alias-op already
-// stripped by the bus).
+// stripped by the bus). Unmodelled registers (e.g. RP2350 SECCFG/MPU)
+// read as zero.
 func (d *dma) regRead(off uint32) uint32 {
-	if off < uint32(nChannels)*ChanStride {
+	if off < uint32(d.v.NChannels)*ChanStride {
 		c := &d.ch[off/ChanStride]
 		switch off % ChanStride {
 		case OffReadAddr, OffAl1ReadAddr, OffAl2ReadAddr, OffAl3ReadAddrTrig:
@@ -50,33 +49,34 @@ func (d *dma) regRead(off uint32) uint32 {
 		case OffCtrlTrig, OffAl1Ctrl, OffAl2Ctrl, OffAl3Ctrl:
 			v := c.ctrl
 			if c.busy {
-				v |= CtrlBusy
+				v |= d.v.CtrlBusy
 			}
 			return v
 		}
 	}
+	// Per-IRQ {INTE, INTF, INTS} blocks at 0x404 + 0x10*i. The fourth slot
+	// of each stride is not an IRQ register (0x420/0x440 are TIMER0), so
+	// only offsets 0x0/0x4/0x8 within a stride match here.
+	if off >= offIrqBlock && off < offIrqBlock+uint32(d.v.NIRQs)*0x10 &&
+		(off-offIrqBlock)%0x10 <= 0x8 {
+		i := (off - offIrqBlock) / 0x10
+		switch (off - offIrqBlock) % 0x10 {
+		case 0x0:
+			return d.inte[i]
+		case 0x4:
+			return d.intf[i]
+		default:
+			return (d.intr | d.intf[i]) & d.inte[i]
+		}
+	}
 	switch off {
-	case OffIntr:
+	case offIntr:
 		return d.intr
-	case OffInte0:
-		return d.inte0
-	case OffIntf0:
-		return d.intf0
-	case OffInts0:
-		return (d.intr | d.intf0) & d.inte0
-	case OffInte1:
-		return d.inte1
-	case OffIntf1:
-		return d.intf1
-	case OffInts1:
-		return (d.intr | d.intf1) & d.inte1
-	case OffTimer0, OffTimer0 + 4, OffTimer0 + 8, OffTimer0 + 12:
-		return d.timers[(off-OffTimer0)/4].reg
-	case OffMultiChanTrigger:
-		return 0
-	case OffSniffCtrl:
+	case d.v.offTimer0, d.v.offTimer0 + 4, d.v.offTimer0 + 8, d.v.offTimer0 + 12:
+		return d.timers[(off-d.v.offTimer0)/4].reg
+	case d.v.offSniffCtrl:
 		return d.sniffCtrl
-	case OffSniffData:
+	case d.v.offSniffData:
 		// OUT_REV/OUT_INV transform the value between the accumulator and
 		// the bus; the accumulator itself is unaffected.
 		v := d.sniffData
@@ -87,23 +87,19 @@ func (d *dma) regRead(off uint32) uint32 {
 			v = ^v
 		}
 		return v
-	case OffFifoLevels:
-		return 0
-	case OffChanAbort:
-		return 0
-	case OffNChannels:
-		return nChannels
+	case d.v.offNChannels:
+		return uint32(d.v.NChannels)
 	}
 	return 0
 }
 
 // regWrite stores val into the register at offset and applies trigger
-// semantics. The bus has already applied any atomic-alias operation, so val
-// is the final register value; rawNonZero reports whether the value actually
-// written on the bus was non-zero (null-trigger detection uses the written
-// value, not the resulting register content).
+// semantics. The bus has already applied any atomic-alias operation, so
+// val is the final register value; rawNonZero reports whether the value
+// actually written on the bus was non-zero (null-trigger detection uses
+// the written value, not the resulting register content).
 func (d *dma) regWrite(off, val uint32, rawNonZero bool) {
-	if off < uint32(nChannels)*ChanStride {
+	if off < uint32(d.v.NChannels)*ChanStride {
 		chIdx := int(off / ChanStride)
 		c := &d.ch[chIdx]
 		reg := off % ChanStride
@@ -115,7 +111,7 @@ func (d *dma) regWrite(off, val uint32, rawNonZero bool) {
 		case OffTransCount, OffAl1TransCountTrig, OffAl2TransCount, OffAl3TransCount:
 			c.reload = val
 		case OffCtrlTrig, OffAl1Ctrl, OffAl2Ctrl, OffAl3Ctrl:
-			c.ctrl = val &^ CtrlBusy
+			c.ctrl = val &^ d.v.CtrlBusy
 		}
 		switch reg {
 		case OffCtrlTrig, OffAl1TransCountTrig, OffAl2WriteAddrTrig, OffAl3ReadAddrTrig:
@@ -123,33 +119,36 @@ func (d *dma) regWrite(off, val uint32, rawNonZero bool) {
 		}
 		return
 	}
+	if off >= offIrqBlock && off < offIrqBlock+uint32(d.v.NIRQs)*0x10 &&
+		(off-offIrqBlock)%0x10 <= 0x8 {
+		i := (off - offIrqBlock) / 0x10
+		switch (off - offIrqBlock) % 0x10 {
+		case 0x0:
+			d.inte[i] = val
+		case 0x4:
+			d.intf[i] = val
+		default:
+			d.intr &^= val // writing INTS clears raw bits, like INTR
+		}
+		return
+	}
 	switch off {
-	case OffIntr:
+	case offIntr:
 		d.intr &^= val // write-1-to-clear
-	case OffInte0:
-		d.inte0 = val
-	case OffIntf0:
-		d.intf0 = val
-	case OffInts0:
-		d.intr &^= val // writing INTS0 clears raw bits, like INTR
-	case OffInte1:
-		d.inte1 = val
-	case OffIntf1:
-		d.intf1 = val
-	case OffTimer0, OffTimer0 + 4, OffTimer0 + 8, OffTimer0 + 12:
-		d.timers[(off-OffTimer0)/4].reg = val
-	case OffMultiChanTrigger:
-		for i := 0; i < nChannels; i++ {
+	case d.v.offTimer0, d.v.offTimer0 + 4, d.v.offTimer0 + 8, d.v.offTimer0 + 12:
+		d.timers[(off-d.v.offTimer0)/4].reg = val
+	case d.v.offMultiChanTrigger:
+		for i := 0; i < d.v.NChannels; i++ {
 			if val&(1<<i) != 0 {
 				d.trigger(i, true)
 			}
 		}
-	case OffSniffCtrl:
+	case d.v.offSniffCtrl:
 		d.sniffCtrl = val
-	case OffSniffData:
+	case d.v.offSniffData:
 		d.sniffData = val
-	case OffChanAbort:
-		for i := 0; i < nChannels; i++ {
+	case d.v.offChanAbort:
+		for i := 0; i < d.v.NChannels; i++ {
 			if val&(1<<i) != 0 {
 				d.ch[i].busy = false
 				d.ch[i].remaining = 0
@@ -158,14 +157,14 @@ func (d *dma) regWrite(off, val uint32, rawNonZero bool) {
 	}
 }
 
-// trigger starts a channel's transfer sequence. Per datasheet §2.5.2.1 a
-// trigger is ignored if the channel is disabled, already running, or the
-// written value was zero (null trigger). A quiet channel raises its IRQ flag
-// on receiving a null trigger.
+// trigger starts a channel's transfer sequence. A trigger is ignored if
+// the channel is disabled, already running, or the written value was zero
+// (null trigger). A quiet channel raises its IRQ flag on receiving a null
+// trigger.
 func (d *dma) trigger(chIdx int, rawNonZero bool) {
 	c := &d.ch[chIdx]
 	if !rawNonZero {
-		if c.ctrl&CtrlIRQQuiet != 0 {
+		if c.ctrl&d.v.CtrlIRQQuiet != 0 {
 			d.intr |= 1 << chIdx
 		}
 		return
@@ -173,26 +172,31 @@ func (d *dma) trigger(chIdx int, rawNonZero bool) {
 	if c.ctrl&CtrlEN == 0 || c.busy {
 		return
 	}
-	if c.reload == 0 {
+	c.mode = d.v.transMode(c.reload)
+	count := d.v.transCount(c.reload)
+	if count == 0 && c.mode != transModeEndless {
 		// Zero-length sequence: nothing to transfer. Treated as a no-op to
 		// avoid unbounded zero-cycle chain loops.
 		// TODO(hw-calibration): check what real silicon does here.
 		return
 	}
 	c.busy = true
-	c.remaining = c.reload
+	c.remaining = count
 }
 
-// complete finishes a channel's sequence: raise IRQ (unless quiet) and fire
-// the chain trigger.
+// complete finishes a channel's sequence: raise IRQ (unless quiet), fire
+// the chain trigger, and (RP2350 TRIGGER_SELF mode) re-trigger itself.
 func (d *dma) complete(chIdx int) {
 	c := &d.ch[chIdx]
 	c.busy = false
-	if c.ctrl&CtrlIRQQuiet == 0 {
+	if c.ctrl&d.v.CtrlIRQQuiet == 0 {
 		d.intr |= 1 << chIdx
 	}
-	if to := ctrlChainTo(c.ctrl); to != chIdx {
+	if to := d.v.ctrlChainTo(c.ctrl); to != chIdx && to < d.v.NChannels {
 		d.trigger(to, true)
+	}
+	if c.mode == transModeTriggerSelf {
+		d.trigger(chIdx, true)
 	}
 }
 
@@ -202,26 +206,26 @@ func (d *dma) runnable(chIdx int) bool {
 	if !c.busy || c.ctrl&CtrlEN == 0 {
 		return false
 	}
-	if ctrlTreqSel(c.ctrl) == TreqPermanent {
+	if d.v.ctrlTreqSel(c.ctrl) == TreqPermanent {
 		return true
 	}
 	return c.credit > 0
 }
 
 // pulseDreq delivers one DREQ pulse from source dreq to every channel
-// listening on it. Pulses are counted (credit-based scheme, §2.5.3.2) and
-// accumulate even while a channel is idle or paused.
+// listening on it. Pulses are counted (credit-based scheme) and accumulate
+// even while a channel is idle or paused.
 func (d *dma) pulseDreq(dreq uint32) {
-	for i := range d.ch {
-		if ctrlTreqSel(d.ch[i].ctrl) == dreq && d.ch[i].credit < maxCredit {
+	for i := 0; i < d.v.NChannels; i++ {
+		if d.v.ctrlTreqSel(d.ch[i].ctrl) == dreq && d.ch[i].credit < maxCredit {
 			d.ch[i].credit++
 		}
 	}
 }
 
-// tickTimers advances the four fractional pacing timers by one system-clock
-// cycle. A timer with dividend X and divisor Y emits X DREQ pulses every Y
-// cycles.
+// tickTimers advances the four fractional pacing timers by one
+// system-clock cycle. A timer with dividend X and divisor Y emits X DREQ
+// pulses every Y cycles.
 func (d *dma) tickTimers() {
 	for i := range d.timers {
 		t := &d.timers[i]
@@ -238,14 +242,14 @@ func (d *dma) tickTimers() {
 	}
 }
 
-// waitsOnLiveTimer reports whether the channel is blocked on a pacing timer
-// that will eventually produce credit (used for halt detection).
+// waitsOnLiveTimer reports whether the channel is blocked on a pacing
+// timer that will eventually produce credit (used for halt detection).
 func (d *dma) waitsOnLiveTimer(chIdx int) bool {
 	c := &d.ch[chIdx]
 	if !c.busy || c.ctrl&CtrlEN == 0 {
 		return false
 	}
-	sel := ctrlTreqSel(c.ctrl)
+	sel := d.v.ctrlTreqSel(c.ctrl)
 	if sel < TreqTimer0 || sel > TreqTimer3 {
 		return false
 	}
@@ -253,9 +257,10 @@ func (d *dma) waitsOnLiveTimer(chIdx int) bool {
 	return t.reg>>16 != 0 && t.reg&0xFFFF != 0
 }
 
-// sniff feeds one transferred datum into the sniffer if the given channel is
-// being observed. datum is the value after the channel's BSWAP (the sniffer
-// sits downstream of the read master, so channel and sniffer BSWAP cancel).
+// sniff feeds one transferred datum into the sniffer if the given channel
+// is being observed. datum is the value after the channel's BSWAP (the
+// sniffer sits downstream of the read master, so channel and sniffer
+// BSWAP cancel).
 func (d *dma) sniff(chIdx int, datum uint32, sizeBytes int) {
 	if d.sniffCtrl&SniffCtrlEN == 0 || sniffDmach(d.sniffCtrl) != chIdx {
 		return
