@@ -3,8 +3,7 @@
 /doc/ece4760.pdf
 
 # Build artifacts
-/dmaemu
-/dmaasm
+/bin/
 *.bin
 *.uf2
 /target/firmware/build/

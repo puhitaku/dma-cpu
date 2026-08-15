@@ -20,6 +20,12 @@ development plan, and references.
   `emu/machine_test.go` build the machine's ALU and control-flow idioms
   block by block, run the whole suite on both SKUs, and prove out the
   interrupt-dispatch design from `prompts/overview.md` §3.2.
+- `dmaasm/` + `cmd/dmaasm` — the assembler: SKU-portable `.dasm` sources
+  (labels, literal pools, instruction-field addressing, the ABI v0
+  register file and macro instruction set — see `doc/abi.md`) assembled
+  into SKU-specific DMX executables with a symbol table. Validated on
+  silicon: the HIL firmware runs assembler-produced binaries.
+- `prog/hil/` — the HIL test programs as `.dasm` assets (embedded).
 - `img/` — the DMX executable format (`doc/dmx.md`): builder, encoder/
   decoder, and the reference loader with Tier-2 relocation (same image runs
   at any placement).
@@ -44,7 +50,7 @@ development plan, and references.
 ## Build and test
 
 ```console
-$ make build   # builds ./dmaemu
+$ make build   # builds bin/dmaemu and bin/dmaasm
 $ make test    # go vet + golden tests
 ```
 

@@ -1,0 +1,12 @@
+; HIL perf test: endless counter loop (4 blocks per iteration).
+; The firmware runs it for a fixed time, aborts, and reads counter.
+.data
+.regs
+counter: .word 0
+one:     .word 1
+
+.text
+.entry start
+start:
+    add counter, one, counter
+    jump start

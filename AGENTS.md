@@ -43,9 +43,14 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   Semantic changes to `emu/dma.go`/`emu/machine.go` need re-validation on
   hardware, and new behaviour must be tested on both SKUs (use the
   `forEachVariant` test helper).
-- ABI v0 draft (until Phase 2 freezes it): machine on channels 0/1/2,
-  interrupt injector on 3 with HIGH_PRIORITY, scratch word per
-  `img.DefaultMachine()` / the dmxgen HIL layout.
+- ABI v0 is frozen in `doc/abi.md` (channels, register file, calling
+  convention, safepoint rule, HALT/NOP encodings). Changing it means a
+  version bump and updating dmaasm, img, target/loader, dmxgen, and the
+  doc together.
+- DMA-machine programs are written in `.dasm` (assembled by `dmaasm`,
+  SKU chosen at assembly); the HIL images in `prog/hil/` are the
+  reference programs — `cmd/dmxgen` assembles them into the firmware
+  header, so hardware runs validate the assembler.
 
 ## Build, test, hardware
 

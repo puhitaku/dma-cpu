@@ -1,0 +1,14 @@
+; HIL golden test: r = a + b
+.data
+.regs
+a:    .word 0x1111
+b:    .word 0x2222
+r:    .word 0
+done: .word 0
+
+.text
+.entry start
+start:
+    add a, b, r
+    move $1, done
+    halt

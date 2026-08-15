@@ -1,0 +1,13 @@
+; HIL golden test: drive GPIO2 hi/lo/hi via IO_BANK0 overrides.
+.data
+.regs
+done: .word 0
+
+.text
+.entry start
+start:
+    gpio 2, hi
+    gpio 2, lo
+    gpio 2, hi
+    move $1, done
+    halt

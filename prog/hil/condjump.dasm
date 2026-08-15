@@ -1,0 +1,19 @@
+; HIL golden test: jump-on-negative. vin is patched per test case.
+.data
+.regs
+vin:  .word 5
+r:    .word 0
+done: .word 0
+
+.text
+.entry start
+start:
+    jneg vin, isneg, ispos
+ispos:
+    move $0x505, r
+    jump fin
+isneg:
+    move $0x909, r
+fin:
+    move $1, done
+    halt

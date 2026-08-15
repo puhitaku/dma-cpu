@@ -5,7 +5,8 @@
 all: build
 
 build:
-	go build -o dmaemu ./cmd/dmaemu
+	go build -o bin/dmaemu ./cmd/dmaemu
+	go build -o bin/dmaasm ./cmd/dmaasm
 
 test: vet
 	go test ./...
@@ -14,7 +15,7 @@ vet:
 	go vet ./...
 
 clean:
-	rm -f dmaemu
+	rm -rf bin
 
 # --- Hardware-in-the-loop (see prompts/004-hw-calibration.md) ---
 # Environment (adjust to your install):

@@ -1,0 +1,22 @@
+; HIL golden test: OR / AND / XOR via the sniffer atomic aliases.
+; AND is expressed with explicit moves (CLR with a precomputed ~a mask).
+.data
+.regs
+a:    .word 0x0F0F3355
+b:    .word 0x00FF0FF0
+notA: .word 0xF0F0CCAA      ; ~a
+rOr:  .word 0
+rAnd: .word 0
+rXor: .word 0
+done: .word 0
+
+.text
+.entry start
+start:
+    or a, b, rOr
+    move b, %sniff
+    move notA, %sniffclr    ; b &^ ~a == b & a
+    move %sniff, rAnd
+    xor a, b, rXor
+    move $1, done
+    halt

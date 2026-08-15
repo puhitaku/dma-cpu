@@ -1,10 +1,11 @@
 // Command dmxgen generates the HIL (hardware-in-the-loop) test images and
 // the C header the target firmware embeds (target/firmware/generated/).
 //
-// Every image is built for one SKU, executed in the emulator, and the
-// emulator's results become the expected values baked into the header —
-// the firmware then reports expected-vs-observed per check, so any
-// emulator/silicon divergence surfaces as a FAIL on the UART log.
+// The images are assembled from the .dasm sources in prog/hil/ — the
+// firmware therefore runs assembler-produced binaries, so a hardware pass
+// validates dmaasm end to end. Every image is executed in the emulator
+// and the emulator's results become the expected values baked into the
+// header: a FAIL on the UART log means silicon and emulator disagree.
 //
 // Usage:
 //
@@ -13,14 +14,17 @@
 package main
 
 import (
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/puhitaku/dma-cpu/dmaasm"
 	"github.com/puhitaku/dma-cpu/emu"
 	"github.com/puhitaku/dma-cpu/img"
+	"github.com/puhitaku/dma-cpu/prog"
 )
 
 // layout is the SRAM region reserved for the DMA machine on the HIL
@@ -51,199 +55,113 @@ type check struct {
 }
 
 type test struct {
-	Name  string
+	Name string
 	Image *img.Image
 	Done  uint32 // absolute done-flag address; 0 = perf test (no done)
-	// Perf tests: counter address and blocks executed per counter tick.
-	PerfCounter  uint32
-	BlocksPerIt  uint32
-	Checks       []check
-	EmuCycles    uint64 // filled by the emulator verification run
+	PerfCounter uint32
+	BlocksPerIt uint32
+	Checks      []check
+	EmuCycles   uint64
 }
 
-// gp assembles one machine program into text/data segments.
-type gp struct {
-	v          *emu.Variant
-	cfg        emu.FetchExecConfig
-	bld        *img.Builder
-	text, data *img.Seg
-	lay        layout
-	bucket     uint32
-	done       uint32
-}
-
-func newGP(v *emu.Variant, lay layout) *gp {
-	bld := img.NewBuilder()
-	g := &gp{
-		v:    v,
-		cfg:  emu.FetchExecConfig{Fetch: 0, Exec: 1, Fix: 2, Scratch: lay.scratch},
-		bld:  bld,
-		text: bld.Seg(lay.text),
-		data: bld.Seg(lay.data),
-		lay:  lay,
+// hilSpec declares one HIL test in terms of assembly symbols.
+type hilSpec struct {
+	name  string
+	file  string            // prog/hil/<file>.dasm
+	patch map[string]uint32 // data words poked before encoding
+	mem   map[string]uint32 // symbol -> intended value (done=1 implied)
+	gpio  *check            // optional pin-level check
+	perf  *struct {
+		counterSym  string
+		blocksPerIt uint32
 	}
-	g.bucket = g.data.Word(0)
-	g.done = g.data.Word(0)
-	return g
 }
 
-func (g *gp) dp(off uint32) img.Ptr  { return img.In(g.data, off) }
-func (g *gp) dataAddr(off uint32) uint32 { return g.lay.data + off }
-func (g *gp) pc() img.Ptr            { return img.Abs(emu.ChanRegAddr(g.cfg.Fetch, emu.OffReadAddr)) }
-func (g *gp) sniff() img.Ptr         { return img.Abs(g.v.SniffDataAddr()) }
-
-func (g *gp) move(src, dst img.Ptr, extra ...uint32) uint32 {
-	ctrl := g.cfg.ExecCtrl(g.v)
-	for _, e := range extra {
-		ctrl |= e
-	}
-	return g.text.BlockP(src, dst, 1, ctrl)
+var hilSpecs = []hilSpec{
+	{name: "add", file: "add", mem: map[string]uint32{"r": 0x3333}},
+	{name: "logic", file: "logic",
+		mem: map[string]uint32{"rOr": 0x0FFF3FF5, "rAnd": 0x000F0350, "rXor": 0x0FF03CA5}},
+	{name: "condjump_pos", file: "condjump", mem: map[string]uint32{"r": 0x505}},
+	{name: "condjump_neg", file: "condjump",
+		patch: map[string]uint32{"vin": ^uint32(5) + 1},
+		mem:   map[string]uint32{"r": 0x909}},
+	{name: "gpio", file: "gpio", gpio: &check{checkGPIO, 2, 1, "gpio2 level"}},
+	{name: "perf", file: "perf",
+		perf: &struct {
+			counterSym  string
+			blocksPerIt uint32
+		}{"counter", 4}},
 }
 
-// textRefWord allocates a data word that will hold the address of a text
-// offset (with reloc); patch later with setTextRef.
-func (g *gp) textRefWord() uint32 {
-	off := g.data.Word(0)
-	g.data.RelocAt(off, g.text)
-	return off
-}
-
-func (g *gp) setTextRef(dataOff, textOff uint32) {
-	g.data.SetWord(dataOff, g.text.LinkAddrOf(textOff))
-}
-
-func (g *gp) sniffSumInit() {
-	g.bld.AddWrite(g.v.SniffCtrlAddr(),
-		emu.SniffCtrlEN|emu.SniffCtrlDmach(g.cfg.Exec)|emu.SniffCtrlCalc(emu.SniffCalcSum))
-	g.bld.AddWrite(g.v.SniffDataAddr(), 0)
-}
-
-// epilogue: set done flag, halt.
-func (g *gp) epilogue() {
-	one := g.data.Word(1)
-	g.move(g.dp(one), g.dp(g.done))
-	g.text.Halt()
-}
-
-func (g *gp) finish(name string, checks []check) (*test, error) {
-	im, err := g.bld.Image()
+// build assembles a spec's program for the SKU and applies patches.
+func build(spec hilSpec, v *emu.Variant, lay layout) (*test, error) {
+	src, err := prog.HIL(spec.file)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, err)
+		return nil, err
 	}
-	checks = append(checks, check{checkMem, g.dataAddr(g.done), 1, "done"})
-	return &test{Name: name, Image: im, Done: g.dataAddr(g.done), Checks: checks}, nil
-}
-
-// --- The test programs ---
-
-func progAdd(v *emu.Variant, lay layout) (*test, error) {
-	g := newGP(v, lay)
-	g.sniffSumInit()
-	a, b, r := g.data.Word(0x1111), g.data.Word(0x2222), g.data.Word(0)
-	g.move(g.dp(a), g.sniff())
-	g.move(g.dp(b), g.dp(g.bucket), v.CtrlSniffEn)
-	g.move(g.sniff(), g.dp(r))
-	g.epilogue()
-	return g.finish("add", []check{{checkMem, g.dataAddr(r), 0x3333, "a+b"}})
-}
-
-func progLogic(v *emu.Variant, lay layout) (*test, error) {
-	g := newGP(v, lay)
-	const A, B = 0x0F0F_3355, 0x00FF_0FF0
-	va, vb, notA := g.data.Word(A), g.data.Word(B), g.data.Word(^uint32(A))
-	rOr, rAnd, rXor := g.data.Word(0), g.data.Word(0), g.data.Word(0)
-	g.move(g.dp(vb), g.sniff())
-	g.move(g.dp(va), img.Abs(v.SniffDataSetAddr()))
-	g.move(g.sniff(), g.dp(rOr))
-	g.move(g.dp(vb), g.sniff())
-	g.move(g.dp(notA), img.Abs(v.SniffDataClrAddr()))
-	g.move(g.sniff(), g.dp(rAnd))
-	g.move(g.dp(vb), g.sniff())
-	g.move(g.dp(va), img.Abs(v.SniffDataXORAddr()))
-	g.move(g.sniff(), g.dp(rXor))
-	g.epilogue()
-	return g.finish("logic", []check{
-		{checkMem, g.dataAddr(rOr), A | B, "or"},
-		{checkMem, g.dataAddr(rAnd), A & B, "and"},
-		{checkMem, g.dataAddr(rXor), A ^ B, "xor"},
+	res, err := dmaasm.Assemble(src, dmaasm.Options{
+		Variant: v, TextBase: lay.text, DataBase: lay.data,
 	})
-}
-
-func progCondJump(name string, input, want uint32) func(*emu.Variant, layout) (*test, error) {
-	return func(v *emu.Variant, lay layout) (*test, error) {
-		g := newGP(v, lay)
-		g.sniffSumInit()
-		vin, r := g.data.Word(input), g.data.Word(0)
-		mask := g.data.Word(0xFFFF_FFEF)
-		posMark, negMark := g.data.Word(0x505), g.data.Word(0x909)
-		trampBase := g.textRefWord()
-		posBody, negBody := g.textRefWord(), g.textRefWord()
-
-		g.move(g.dp(vin), g.sniff(), v.CtrlBswap)
-		g.move(g.dp(mask), img.Abs(v.SniffDataClrAddr()))
-		g.move(g.dp(trampBase), g.dp(g.bucket), v.CtrlSniffEn)
-		g.move(g.sniff(), g.pc())
-
-		g.setTextRef(trampBase, g.text.Len())
-		g.move(g.dp(posBody), g.pc()) // trampoline slot 0: non-negative
-		g.move(g.dp(negBody), g.pc()) // trampoline slot 1: negative
-
-		one := g.data.Word(1)
-		g.setTextRef(posBody, g.text.Len())
-		g.move(g.dp(posMark), g.dp(r))
-		g.move(g.dp(one), g.dp(g.done))
-		g.text.Halt()
-
-		g.setTextRef(negBody, g.text.Len())
-		g.move(g.dp(negMark), g.dp(r))
-		g.move(g.dp(one), g.dp(g.done))
-		g.text.Halt()
-
-		im, err := g.bld.Image()
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", name, err)
-		}
-		return &test{Name: name, Image: im, Done: g.dataAddr(g.done), Checks: []check{
-			{checkMem, g.dataAddr(r), want, "branch marker"},
-			{checkMem, g.dataAddr(g.done), 1, "done"},
-		}}, nil
-	}
-}
-
-func progGPIO(v *emu.Variant, lay layout) (*test, error) {
-	g := newGP(v, lay)
-	const pin = 2
-	hi, lo := g.data.Word(v.GPIOOutCtrl(true)), g.data.Word(v.GPIOOutCtrl(false))
-	ctrl := img.Abs(v.GPIOCtrlAddr(pin))
-	g.move(g.dp(hi), ctrl)
-	g.move(g.dp(lo), ctrl)
-	g.move(g.dp(hi), ctrl) // final state: driven high
-	g.epilogue()
-	return g.finish("gpio", []check{{checkGPIO, pin, 1, "gpio2 level"}})
-}
-
-// progPerf: an endless counter loop; the firmware runs it for a fixed
-// time, aborts, and reports blocks/second. 4 blocks per iteration.
-func progPerf(v *emu.Variant, lay layout) (*test, error) {
-	g := newGP(v, lay)
-	g.sniffSumInit()
-	counter := g.data.Word(0)
-	one := g.data.Word(1)
-	loop := g.textRefWord()
-	g.setTextRef(loop, 0)
-	g.move(g.dp(counter), g.sniff())
-	g.move(g.dp(one), g.dp(g.bucket), v.CtrlSniffEn)
-	g.move(g.sniff(), g.dp(counter))
-	g.move(g.dp(loop), g.pc())
-	im, err := g.bld.Image()
 	if err != nil {
-		return nil, fmt.Errorf("perf: %w", err)
+		return nil, fmt.Errorf("%s: %w", spec.file, err)
 	}
-	return &test{Name: "perf", Image: im, PerfCounter: g.dataAddr(counter), BlocksPerIt: 4}, nil
+	for sym, val := range spec.patch {
+		addr, err := res.Symbol(sym)
+		if err != nil {
+			return nil, fmt.Errorf("%s: patch: %w", spec.name, err)
+		}
+		if err := patchData(res.Image, lay.data, addr, val); err != nil {
+			return nil, fmt.Errorf("%s: %w", spec.name, err)
+		}
+	}
+	t := &test{Name: spec.name, Image: res.Image}
+	if spec.perf != nil {
+		addr, err := res.Symbol(spec.perf.counterSym)
+		if err != nil {
+			return nil, err
+		}
+		t.PerfCounter = addr
+		t.BlocksPerIt = spec.perf.blocksPerIt
+		return t, nil
+	}
+	done, err := res.Symbol("done")
+	if err != nil {
+		return nil, fmt.Errorf("%s: HIL programs need a done symbol: %w", spec.name, err)
+	}
+	t.Done = done
+	for sym, want := range spec.mem {
+		addr, err := res.Symbol(sym)
+		if err != nil {
+			return nil, err
+		}
+		t.Checks = append(t.Checks, check{checkMem, addr, want, sym})
+	}
+	if spec.gpio != nil {
+		t.Checks = append(t.Checks, *spec.gpio)
+	}
+	t.Checks = append(t.Checks, check{checkMem, done, 1, "done"})
+	return t, nil
 }
 
-// --- Emulator verification: run each image; intended values must match ---
+// patchData rewrites one word of the image's data segment (identified by
+// its link address) prior to encoding.
+func patchData(im *img.Image, dataBase, addr, val uint32) error {
+	for i := range im.Segments {
+		s := &im.Segments[i]
+		if s.LinkAddr != dataBase {
+			continue
+		}
+		off := addr - s.LinkAddr
+		if off+4 > uint32(len(s.Data)) {
+			return fmt.Errorf("patch address %#x outside data segment", addr)
+		}
+		binary.LittleEndian.PutUint32(s.Data[off:], val)
+		return nil
+	}
+	return fmt.Errorf("no data segment at %#x", dataBase)
+}
 
+// verify runs the image in the emulator; the intended values must match.
 func verify(v *emu.Variant, lay layout, t *test) error {
 	m := emu.NewMachine(v)
 	cfg := emu.FetchExecConfig{Fetch: 0, Exec: 1, Fix: 2, Scratch: lay.scratch}
@@ -322,8 +240,9 @@ func emitHeader(v *emu.Variant, lay layout, tests []*test) string {
 
 	p("/* Generated by cmd/dmxgen — DO NOT EDIT. Regenerate with:")
 	p(" *   go run ./cmd/dmxgen -sku %s -o target/firmware/generated/images.h", v.Name)
-	p(" * Expected values are the emulator's results: a FAIL on hardware")
-	p(" * means silicon and emulator disagree — that is the finding. */")
+	p(" * Images are assembled from prog/hil/*.dasm; expected values are")
+	p(" * the emulator's results — a FAIL on hardware means silicon and")
+	p(" * emulator disagree, which is the finding. */")
 	p("#ifndef DMX_HIL_IMAGES_H")
 	p("#define DMX_HIL_IMAGES_H")
 	p("")
@@ -356,7 +275,7 @@ func emitHeader(v *emu.Variant, lay layout, tests []*test) string {
 	sumCtrl := emu.SniffCtrlEN | emu.SniffCtrlDmach(calCh) | emu.SniffCtrlCalc(emu.SniffCalcSum)
 	p("#define HIL_CAL_SNIFF_CRC32 0x%08Xu", crcCtrl)
 	p("#define HIL_CAL_SNIFF_SUM 0x%08Xu", sumCtrl)
-	p("#define HIL_CAL_EXPECT_CRC32 0x%08Xu /* emulator; calibrating */", calExpect(v, crcCtrl, 0xFFFFFFFF, 0x12345678))
+	p("#define HIL_CAL_EXPECT_CRC32 0x%08Xu /* silicon-verified */", calExpect(v, crcCtrl, 0xFFFFFFFF, 0x12345678))
 	p("#define HIL_CAL_EXPECT_SUM 0x%08Xu", calExpect(v, sumCtrl, 0x1000, 0x234))
 	p("")
 	p("typedef struct { int kind; uint32_t addr; uint32_t want; const char *what; } hil_check;")
@@ -416,17 +335,9 @@ func run() error {
 		return fmt.Errorf("no HIL layout for %s", v.Name)
 	}
 
-	builders := []func(*emu.Variant, layout) (*test, error){
-		progAdd,
-		progLogic,
-		progCondJump("condjump_pos", 5, 0x505),
-		progCondJump("condjump_neg", ^uint32(5)+1, 0x909),
-		progGPIO,
-		progPerf,
-	}
 	var tests []*test
-	for _, build := range builders {
-		t, err := build(v, lay)
+	for _, spec := range hilSpecs {
+		t, err := build(spec, v, lay)
 		if err != nil {
 			return err
 		}
@@ -445,8 +356,7 @@ func run() error {
 			if err != nil {
 				return err
 			}
-			path := filepath.Join(*dmxDir, t.Name+".dmx")
-			if err := os.WriteFile(path, raw, 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(*dmxDir, t.Name+".dmx"), raw, 0o644); err != nil {
 				return err
 			}
 		}
@@ -458,18 +368,11 @@ func run() error {
 		return err
 	}
 	for _, t := range tests {
-		fmt.Printf("%-14s %5d bytes  emu cycles: %d\n", t.Name, mustLen(t), t.EmuCycles)
+		raw, _ := t.Image.Encode()
+		fmt.Printf("%-14s %5d bytes  emu cycles: %d\n", t.Name, len(raw), t.EmuCycles)
 	}
 	fmt.Printf("wrote %s (sku %s)\n", *out, v.Name)
 	return nil
-}
-
-func mustLen(t *test) int {
-	raw, err := t.Image.Encode()
-	if err != nil {
-		panic(err)
-	}
-	return len(raw)
 }
 
 func main() {
