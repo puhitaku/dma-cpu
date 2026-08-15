@@ -184,6 +184,12 @@ func (v *Variant) SniffDataClrAddr() uint32 { return DMABase + AliasClr + v.offS
 // TimerAddr returns the address of pacing timer i (0–3).
 func (v *Variant) TimerAddr(i int) uint32 { return DMABase + v.offTimer0 + uint32(i)*4 }
 
+// IntrAddr returns the address of the raw interrupt status register.
+func (v *Variant) IntrAddr() uint32 { return DMABase + offIntr }
+
+// ChanAbortAddr returns the address of the CHAN_ABORT register.
+func (v *Variant) ChanAbortAddr() uint32 { return DMABase + v.offChanAbort }
+
 // GPIOCtrlAddr returns the IO_BANK0 GPIOx_CTRL address for a pin.
 func (v *Variant) GPIOCtrlAddr(pin int) uint32 {
 	return v.IOBank0Base + uint32(pin)*8 + 4

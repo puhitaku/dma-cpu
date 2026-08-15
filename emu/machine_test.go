@@ -677,3 +677,91 @@ func TestVariantEncodings(t *testing.T) {
 		t.Errorf("rp2350 GPIO2_CTRL = %#x", a)
 	}
 }
+
+// --- Silicon-calibrated behaviours (verified on RP2350 hardware; see
+// prompts/004-hw-calibration.md) ---
+
+// A null CTRL_TRIG write zeroes CTRL but still raises the quiet-mode
+// null-trigger IRQ based on the pre-write CTRL.
+func TestNullCtrlTrigQuietIRQ(t *testing.T) {
+	forEachVariant(t, func(t *testing.T, v *emu.Variant) {
+		m := emu.NewMachine(v)
+		const ch = 8
+		quiet := emu.CtrlEN | emu.CtrlSize32 | v.CtrlTreq(emu.TreqPermanent) | v.CtrlChainTo(ch) | v.CtrlIRQQuiet
+		m.Poke32(emu.ChanRegAddr(ch, emu.OffAl1Ctrl), quiet)
+		m.Poke32(emu.ChanRegAddr(ch, emu.OffCtrlTrig), 0) // null trigger
+		if m.INTR()&(1<<ch) == 0 {
+			t.Error("null CTRL_TRIG on quiet channel must raise IRQ")
+		}
+
+		// Non-quiet channel: no IRQ on null trigger.
+		m2 := emu.NewMachine(v)
+		m2.Poke32(emu.ChanRegAddr(ch, emu.OffAl1Ctrl), quiet&^v.CtrlIRQQuiet)
+		m2.Poke32(emu.ChanRegAddr(ch, emu.OffCtrlTrig), 0)
+		if m2.INTR()&(1<<ch) != 0 {
+			t.Error("null trigger on non-quiet channel must not raise IRQ")
+		}
+	})
+}
+
+// A zero-length sequence completes immediately: completion IRQ (unless
+// quiet) and the chain fires.
+func TestZeroCountCompletes(t *testing.T) {
+	forEachVariant(t, func(t *testing.T, v *emu.Variant) {
+		m := emu.NewMachine(v)
+		src, dst := uint32(0x20001000), uint32(0x20002000)
+		m.Poke32(src, 0x77)
+		// Channel 9: copies one word when triggered (armed via chain).
+		m.Poke32(emu.ChanRegAddr(9, emu.OffReadAddr), src)
+		m.Poke32(emu.ChanRegAddr(9, emu.OffWriteAddr), dst)
+		m.Poke32(emu.ChanRegAddr(9, emu.OffTransCount), 1)
+		m.Poke32(emu.ChanRegAddr(9, emu.OffAl1Ctrl),
+			emu.CtrlEN|emu.CtrlSize32|v.CtrlTreq(emu.TreqPermanent)|v.CtrlChainTo(9)|v.CtrlIRQQuiet)
+		// Channel 8: zero-length, loud, chains to 9.
+		m.Poke32(emu.ChanRegAddr(8, emu.OffTransCount), 0)
+		m.Poke32(emu.ChanRegAddr(8, emu.OffCtrlTrig),
+			emu.CtrlEN|emu.CtrlSize32|v.CtrlTreq(emu.TreqPermanent)|v.CtrlChainTo(9))
+		if m.INTR()&(1<<8) == 0 {
+			t.Error("zero-count completion must raise IRQ on loud channel")
+		}
+		res, err := m.Run(emu.RunConfig{MaxCycles: 100})
+		if err != nil || res.Reason != emu.StopIdle {
+			t.Fatalf("run: %+v %v", res, err)
+		}
+		if got := m.Peek32(dst); got != 0x77 {
+			t.Errorf("zero-count chain did not fire: dst=%#x", got)
+		}
+	})
+}
+
+// Banked DREQ credit does not survive into a new trigger: a channel
+// triggered after idling next to a running pacing timer still paces from
+// the next tick.
+func TestCreditClearedOnTrigger(t *testing.T) {
+	forEachVariant(t, func(t *testing.T, v *emu.Variant) {
+		m := emu.NewMachine(v)
+		src, dst := uint32(0x20001000), uint32(0x20002000)
+		m.Poke32(src, 1)
+		m.Poke32(v.TimerAddr(0), 1<<16|50) // one pulse per 50 cycles
+		m.Poke32(emu.ChanRegAddr(8, emu.OffReadAddr), src)
+		m.Poke32(emu.ChanRegAddr(8, emu.OffWriteAddr), dst)
+		m.Poke32(emu.ChanRegAddr(8, emu.OffAl1Ctrl),
+			emu.CtrlEN|emu.CtrlSize32|v.CtrlTreq(emu.TreqTimer0)|v.CtrlChainTo(8)|v.CtrlIRQQuiet)
+		// Idle for 10 pulses' worth of cycles, then trigger 4 transfers.
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 500}); err != nil {
+			t.Fatal(err)
+		}
+		m.Poke32(emu.ChanRegAddr(8, emu.OffAl1TransCountTrig), 4)
+		res, err := m.Run(emu.RunConfig{MaxCycles: 5000})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Reason != emu.StopIdle {
+			t.Fatalf("expected completion, got %+v", res)
+		}
+		// Paced: 4 transfers need ~4 timer periods (~200 cycles), not ~0.
+		if res.Cycles < 150 {
+			t.Errorf("completed in %d cycles — credits were banked across the trigger", res.Cycles)
+		}
+	})
+}

@@ -31,6 +31,7 @@ type dma struct {
 	intr      uint32 // raw interrupt status
 	inte      [maxIRQs]uint32
 	intf      [maxIRQs]uint32
+	zeroDepth int // guards zero-length-sequence chain cascades
 }
 
 // regRead returns the value of the register at offset (alias-op already
@@ -103,6 +104,11 @@ func (d *dma) regWrite(off, val uint32, rawNonZero bool) {
 		chIdx := int(off / ChanStride)
 		c := &d.ch[chIdx]
 		reg := off % ChanStride
+		// The quiet-mode null-trigger IRQ is judged on the CTRL value in
+		// effect *before* the write: a null CTRL_TRIG write zeroes CTRL
+		// yet still raises the IRQ if the channel was quiet (verified on
+		// RP2350, prompts/004-hw-calibration.md).
+		prevCtrl := c.ctrl
 		switch reg {
 		case OffReadAddr, OffAl1ReadAddr, OffAl2ReadAddr, OffAl3ReadAddrTrig:
 			c.readAddr = val
@@ -115,7 +121,7 @@ func (d *dma) regWrite(off, val uint32, rawNonZero bool) {
 		}
 		switch reg {
 		case OffCtrlTrig, OffAl1TransCountTrig, OffAl2WriteAddrTrig, OffAl3ReadAddrTrig:
-			d.trigger(chIdx, rawNonZero)
+			d.trigger(chIdx, rawNonZero, prevCtrl)
 		}
 		return
 	}
@@ -140,7 +146,7 @@ func (d *dma) regWrite(off, val uint32, rawNonZero bool) {
 	case d.v.offMultiChanTrigger:
 		for i := 0; i < d.v.NChannels; i++ {
 			if val&(1<<i) != 0 {
-				d.trigger(i, true)
+				d.trigger(i, true, d.ch[i].ctrl)
 			}
 		}
 	case d.v.offSniffCtrl:
@@ -158,13 +164,19 @@ func (d *dma) regWrite(off, val uint32, rawNonZero bool) {
 }
 
 // trigger starts a channel's transfer sequence. A trigger is ignored if
-// the channel is disabled, already running, or the written value was zero
-// (null trigger). A quiet channel raises its IRQ flag on receiving a null
-// trigger.
-func (d *dma) trigger(chIdx int, rawNonZero bool) {
+// the channel is disabled or already running; a null (zero-value) trigger
+// does not start the channel but raises the IRQ if the channel was in
+// quiet mode (quietCtrl is the CTRL in effect when the trigger arrived —
+// for CTRL_TRIG writes, the pre-write value).
+//
+// Semantics below verified on RP2350 silicon (prompts/004):
+//   - a zero-length (TRANS_COUNT == 0) sequence completes immediately,
+//     raising the completion IRQ and firing the chain;
+//   - banked DREQ credit does not survive into a new trigger.
+func (d *dma) trigger(chIdx int, rawNonZero bool, quietCtrl uint32) {
 	c := &d.ch[chIdx]
 	if !rawNonZero {
-		if c.ctrl&d.v.CtrlIRQQuiet != 0 {
+		if quietCtrl&d.v.CtrlIRQQuiet != 0 {
 			d.intr |= 1 << chIdx
 		}
 		return
@@ -173,11 +185,16 @@ func (d *dma) trigger(chIdx int, rawNonZero bool) {
 		return
 	}
 	c.mode = d.v.transMode(c.reload)
+	c.credit = 0
 	count := d.v.transCount(c.reload)
 	if count == 0 && c.mode != transModeEndless {
-		// Zero-length sequence: nothing to transfer. Treated as a no-op to
-		// avoid unbounded zero-cycle chain loops.
-		// TODO(hw-calibration): check what real silicon does here.
+		// Immediate completion. A cycle of zero-length chains would
+		// livelock real hardware; the emulator truncates the cascade.
+		d.zeroDepth++
+		if d.zeroDepth <= 2*maxChannels {
+			d.complete(chIdx)
+		}
+		d.zeroDepth--
 		return
 	}
 	c.busy = true
@@ -193,10 +210,10 @@ func (d *dma) complete(chIdx int) {
 		d.intr |= 1 << chIdx
 	}
 	if to := d.v.ctrlChainTo(c.ctrl); to != chIdx && to < d.v.NChannels {
-		d.trigger(to, true)
+		d.trigger(to, true, d.ch[to].ctrl)
 	}
 	if c.mode == transModeTriggerSelf {
-		d.trigger(chIdx, true)
+		d.trigger(chIdx, true, c.ctrl)
 	}
 }
 

@@ -28,8 +28,14 @@ development plan, and references.
   `main.go` for the format).
 - `target/loader/` — bare-metal C loader for the RP2 side; parses DMX,
   relocates, and starts the machine. No SDK dependency; build with
-  `-DDMX_TARGET_RP2350` for RP2350 (RP2040 is the default). Not yet
-  validated on hardware.
+  `-DDMX_TARGET_RP2350` for RP2350 (RP2040 is the default). Validated on
+  RP2350 silicon.
+- `target/firmware/` + `cmd/dmxgen` — the HIL (hardware-in-the-loop)
+  runner: dmxgen bakes emulator-computed expectations into the firmware,
+  which runs the images on the real DMA machine and reports
+  expected-vs-observed over UART. The emulator is silicon-calibrated
+  against a Pico 2; see `prompts/004-hw-calibration.md` for the results
+  (all golden tests pass on hardware at ~10 M blocks/s).
 - `doc/` — project documents (`dmx.md` is the image format spec) and
   references. The RP2040 and RP2350 datasheets are committed; third-party
   reference material is copyrighted and stays untracked (see Coding rules
