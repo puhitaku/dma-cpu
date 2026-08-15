@@ -1,0 +1,13 @@
+# Copyrighted third-party reference material — never commit (see prompts/overview.md, Coding rules)
+/third_party/
+/doc/ece4760.pdf
+
+# Build artifacts
+/dmaemu
+/dmaasm
+*.bin
+*.uf2
+
+# IDE / editor
+.idea/
+.vscode/

@@ -3,8 +3,7 @@
 ## 1. Project Goals
 
 Building on the fact that the RP2040/RP2350 DMA controller is Turing-complete
-(see `doc/ece4760.pdf`, Cornell ECE4760 "Direct Memory Access computing
-machine"), this project pursues:
+(see `doc/ece4760.pdf`), this project pursues:
 
 1. **Enhance LLVM to support DMA programming** — make Clang emit programs that
    run on the RP2040 DMA machine.
@@ -21,8 +20,9 @@ build/test loop that a coding agent can drive.
 
 **Reference documents:**
 
-- `doc/ece4760.pdf` — Cornell ECE4760 "Direct Memory Access computing
-  machine": the DMA-machine architecture this project builds on.
+- `doc/ece4760.pdf` — the reference article describing the DMA computing
+  machine architecture this project builds on (third-party copyrighted
+  material, not committed; see Coding rules).
 - `doc/rp2040-datasheet.pdf` — RP2040 datasheet: authoritative reference for
   the DMA controller (§2.5, incl. register aliases §2.5.2.1 and DREQs §2.5.3)
   and atomic register access (§2.1.2).
@@ -31,8 +31,8 @@ build/test loop that a coding agent can drive.
 
 ## 2. Background: the DMA machine in one page
 
-The Cornell design (`doc/ece4760.pdf`) is a fetch/execute machine built from
-three DMA channels:
+The reference design (`doc/ece4760.pdf`) is a fetch/execute machine built
+from three DMA channels:
 
 - **Fetch channel (DMA0)** — its `READ_ADDR` *is the program counter*. It
   copies the next 16-byte control block (4 × 32-bit words: `READ_ADDR`,
@@ -58,7 +58,7 @@ Architectural state and where it physically lives:
 | State | Location | Address class |
 |---|---|---|
 | PC | fetch channel `READ_ADDR` | MMIO, `0x50000000 + 0x40*ch + 0x00` |
-| Accumulator | `SNIFF_DATA` | MMIO, `0x50000000 + 0x434` |
+| Accumulator | `SNIFF_DATA` | MMIO, `0x50000000 + 0x438` |
 | General registers, LR, "flags" | ordinary SRAM words | SRAM |
 | Zero register / bit bucket | SRAM words by convention | SRAM |
 | Program text | array of 16-byte blocks | SRAM (must be writable — see §4.6) |
@@ -238,7 +238,7 @@ assignment:
 ```
 __dma_fetch_ch   = 0;                     /* ABI: channels 0,1,2 = machine */
 __dma_pc         = 0x50000000 + __dma_fetch_ch * 0x40;
-__dma_sniff_data = 0x50000434;
+__dma_sniff_data = 0x50000438;
 ```
 
 Fixing the channel numbers in the ABI (with the injector on ch 3, ISR
@@ -333,7 +333,7 @@ themselves).
 
 ### Phase 0 — Ground truth (foundation for the agent loop)
 
-1. Fetch the Cornell test programs (code ZIPs referenced in
+1. Fetch the reference test programs (code ZIPs referenced in
    `doc/ece4760.pdf`) into a git-ignored local directory — they are
    copyrighted and must not be committed (see Coding rules) — and get them
    running on a real Pico with the C-macro "assembler"; capture GPIO/UART
@@ -361,7 +361,7 @@ themselves).
 6. `dmaasm`: standalone assembler (Go) implementing the DMAasm
    instruction set, labels, instruction-field addressing (§4.6), literal
    pools, and the ELF/relocation model of §4.3, plus a minimal linker.
-   Re-express the Cornell tests in it; byte-identical block output is the
+   Re-express the reference tests in it; byte-identical block output is the
    acceptance test.
 7. Freeze ABI v0: register file, channel assignment, calling convention
    (args in `r0..r3`, SRAM stack via `__dma_sp`, LR word), safepoint rules.
@@ -427,12 +427,13 @@ themselves).
 
 ### Coding rules
 
-1. Cornell docs and codes are copyrighted by the author and not an OSS.
+1. The reference docs and code (`doc/ece4760.pdf` and the code ZIPs it
+   links) are copyrighted by their author and not OSS.
    Do not commit the files in the Git repo.
 2. Write the code, comments, and docs in English.
 
 ### Immediate next steps
 
-1. Fetch the Cornell code ZIPs referenced in `doc/ece4760.pdf` (local,
+1. Fetch the reference code ZIPs linked from `doc/ece4760.pdf` (local,
    git-ignored — see Coding rules).
 2. Start Phase 0: golden tests on hardware + `dmaemu` (Go) core loop.

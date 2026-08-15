@@ -1,2 +1,32 @@
 # dma-cpu
-CPU made of DMA on Raspberry Pi Pico
+
+CPU made of DMA on Raspberry Pi Pico.
+
+The RP2040/RP2350 DMA controller is Turing-complete. This project builds a
+full toolchain for it: an emulator, an assembler/linker, a program loader,
+LLVM/Clang support, and eventually an xv6-derived kernel running entirely on
+DMA channels. See `prompts/overview.md` for the design analysis, the phased
+development plan, and references.
+
+## Layout
+
+- `emu/` — `dmaemu` core: a deterministic, DMA-machine-level emulator of
+  the RP2040 DMA subsystem (channels, triggers, chaining, DREQ credits,
+  pacing timers, sniffer, atomic register aliases). The golden tests in
+  `emu/machine_test.go` build the machine's ALU and control-flow idioms
+  block by block, and prove out the interrupt-dispatch design from
+  `prompts/overview.md` §3.2.
+- `cmd/dmaemu/` — CLI front end; runs a program image under a JSON config
+  and reports results as JSON (see the comment in `main.go` for the format).
+- `doc/` — reference documents. The RP2040 datasheet is committed;
+  third-party reference material is copyrighted and stays untracked (see
+  Coding rules in `prompts/overview.md`).
+
+## Build and test
+
+```console
+$ make build   # builds ./dmaemu
+$ make test    # go vet + golden tests
+```
+
+Requires Go ≥ 1.26. No dependencies outside the standard library.
