@@ -1,4 +1,4 @@
-/* DMX executable loader for the DMA machine (RP2040 target side).
+/* DMX executable loader for the DMA machine (RP2 target side).
  *
  * Parses the DMX image format (doc/dmx.md), places segments into SRAM,
  * applies relocations and init writes, and starts the 3-channel
@@ -29,7 +29,7 @@ enum {
 #define DMX_MAX_SEGMENTS 16
 
 /* Placement: load address per segment, or 0 to use the link address.
- * (0 is never a valid SRAM load address on RP2040.) Pass NULL to load
+ * (0 is never a valid SRAM load address on RP2 chips.) Pass NULL to load
  * everything at link addresses (Tier 1). */
 typedef struct {
     uint32_t addr[DMX_MAX_SEGMENTS];

@@ -13,7 +13,10 @@ type channel struct {
 	credit    uint8 // DREQ credit counter (saturating; datasheet §2.5.3.2)
 }
 
+// SKU-specific: RP2040 has 12 DMA channels; RP2350 has 16. Parametrize
+// when RP2350 support lands.
 const nChannels = 12
+
 const maxCredit = 63
 
 // dma models the DMA register block at 0x50000000.
@@ -283,8 +286,8 @@ func (d *dma) sniff(chIdx int, datum uint32, sizeBytes int) {
 // byte first, matching bus order). Non-reflected variants shift MSB-first.
 //
 // TODO(hw-calibration): the exact bit/byte ordering of the hardware sniffer
-// CRC must be validated against a real RP2040 in the Phase 0 HIL tests; only
-// SUM is load-bearing for the machine ABI.
+// CRC must be validated against real RP2 silicon in the Phase 0 HIL tests;
+// only SUM is load-bearing for the machine ABI.
 func crcUpdate(crc, datum uint32, sizeBytes, width int, poly uint32, reflected bool) uint32 {
 	mask := uint32(0xFFFFFFFF)
 	if width < 32 {

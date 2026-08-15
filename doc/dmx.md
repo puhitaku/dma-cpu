@@ -5,7 +5,7 @@ DMX is the loadable image format for DMA-machine programs (Phase 1 of
 segments, a table of ABS32 relocations, a table of MMIO init writes, and an
 entry point. Producers: the `img` Go package (and, later, the `dmaasm`
 linker). Consumers: `img/load.go` (emulator/host, the behavioural
-reference) and `target/loader/dmx.c` (RP2040 bare-metal).
+reference) and `target/loader/dmx.c` (RP2 bare-metal).
 
 Design rationale (`prompts/overview.md` §4.3–§4.4): every operand on this
 machine is a 32-bit absolute address, so a single "add the segment's
@@ -17,7 +17,7 @@ segments anywhere and runs the fixup loop.
 ## Layout
 
 All fields are little-endian `u32`. No padding between tables. Multi-byte
-alignment of the file itself is not required (the RP2040 loader assembles
+alignment of the file itself is not required (the target loader assembles
 words bytewise).
 
 | Offset | Field | Notes |
@@ -45,7 +45,7 @@ Constraints (validated by both loaders):
 ## Semantics
 
 Loading with placement `place[i]` (default: `linkAddr[i]`; the C loader
-uses 0 as "no override" since 0 is never a valid RP2040 SRAM address):
+uses 0 as "no override" since 0 is never a valid RP2 SRAM address):
 
 1. `delta[i] = place[i] - linkAddr[i]` (mod 2³²).
 2. Copy each segment's bytes to `place[i]`.
@@ -67,4 +67,4 @@ begins execution. Reference implementations: `emu.SetupFetchExec` (Go) and
 DMX is a *loadable* format, not a *linkable* one: symbols and section
 merging live in the Phase 2 ELF-based toolchain, whose linker emits DMX as
 its final output. Keeping the loadable format this small is what makes the
-RP2040-side loader a ~150-line fixup loop.
+target-side loader a ~150-line fixup loop.

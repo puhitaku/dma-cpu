@@ -1,18 +1,22 @@
 // Package emu implements dmaemu, a DMA-machine-level emulator for the
-// RP2040 DMA subsystem (see prompts/overview.md, Phase 0). It models
+// RP2 DMA subsystem (see prompts/overview.md, Phase 0). It models
 // exactly the semantics the DMA computing machine relies on — channels,
 // triggers, chaining, DREQ credits, pacing timers, the sniffer, and the
 // atomic register aliases — deterministically and at bus-transfer
 // granularity. It is deliberately not a full-chip emulator.
 //
 // Register offsets and bit positions follow the RP2040 datasheet §2.5
-// (doc/rp2040-datasheet.pdf).
+// (doc/rp2040-datasheet.pdf); the layout is shared across the RP2 family.
+// SKU-specific parameters (SRAM size, channel count) currently use RP2040
+// values and are marked at their definitions.
 package emu
 
 // Address map.
 const (
 	SRAMBase uint32 = 0x20000000
-	SRAMSize uint32 = 0x42000 // 256 KiB striped + 2 × 4 KiB scratch
+	// SKU-specific: RP2040 value (256 KiB striped + 2 × 4 KiB scratch).
+	// RP2350 has 520 KiB; parametrize when RP2350 support lands.
+	SRAMSize uint32 = 0x42000
 
 	DMABase uint32 = 0x50000000
 

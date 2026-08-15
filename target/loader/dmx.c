@@ -5,7 +5,8 @@
 #define DMX_MAGIC 0x31584D44u /* "DMX1" */
 #define DMX_REF_ABS 0xFFFFFFFFu
 
-/* DMA register block (RP2040 datasheet §2.5). */
+/* DMA register block: layout shared across the RP2 family (RP2040
+ * datasheet §2.5). */
 #define DMA_BASE 0x50000000u
 #define DMA_CH_STRIDE 0x40u
 #define DMA_CH_READ_ADDR 0x00u
