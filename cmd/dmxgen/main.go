@@ -376,6 +376,196 @@ func verifySched(v *emu.Variant, lay layout, kern, procA, procB *dmaasm.Result, 
 	return nil
 }
 
+// --- Phase 5b: the interactive-shell bundle (prompts/013) ---
+// kernel + dma-sh (with libc, as process A) + the counter program (as
+// process B). Needs the wide rp2350 layout; pointers pre-patched,
+// scripted session verified in the emulator before shipping.
+type shellBundle struct {
+	kernel, shell, procB []byte
+	entryShell           uint32
+	vecA, vecB           uint32
+	dispShell, dispB     uint32
+	inj1Ctrl, inj2Ctrl   uint32
+	ticks, counterB      uint32
+}
+
+func buildShell(v *emu.Variant, lay layout) (*shellBundle, error) {
+	kText, kData := lay.text, lay.text+0x2000
+	sText, sData := lay.text+0x4000, lay.text+0x1C000
+	pText, pData := lay.text+0x20000, lay.text+0x22000
+
+	ksrc, err := prog.HIL("kernel")
+	if err != nil {
+		return nil, err
+	}
+	kern, err := dmaasm.Assemble(ksrc, dmaasm.Options{Variant: v, TextBase: kText, DataBase: kData})
+	if err != nil {
+		return nil, err
+	}
+	// Shell: testdata/shell.ll linked against the libc goldens.
+	paths := []string{"dmacc/testdata/shell.ll"}
+	entries, err := os.ReadDir("libc/ll")
+	if err != nil {
+		return nil, fmt.Errorf("libc goldens missing (make libc): %w", err)
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".ll") {
+			paths = append(paths, "libc/ll/"+e.Name())
+		}
+	}
+	var mods []*llir.Module
+	for _, path := range paths {
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		mod, err := llir.Parse(string(src))
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		mods = append(mods, mod)
+	}
+	smod, err := llir.Merge(mods...)
+	if err != nil {
+		return nil, err
+	}
+	sdasm, err := dmacc.Compile(smod, dmacc.Options{})
+	if err != nil {
+		return nil, err
+	}
+	shell, err := dmaasm.Assemble(sdasm, dmaasm.Options{Variant: v, TextBase: sText, DataBase: sData})
+	if err != nil {
+		return nil, fmt.Errorf("shell: %w", err)
+	}
+	psrc, err := os.ReadFile("dmacc/testdata/proc.ll")
+	if err != nil {
+		return nil, err
+	}
+	pmod, err := llir.Parse(string(psrc))
+	if err != nil {
+		return nil, err
+	}
+	pdasm, err := dmacc.Compile(pmod, dmacc.Options{})
+	if err != nil {
+		return nil, err
+	}
+	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: pText, DataBase: pData})
+	if err != nil {
+		return nil, err
+	}
+
+	b := &shellBundle{entryShell: sText + shell.Image.EntryOff}
+	get := func(dst *uint32, r *dmaasm.Result, n string) {
+		if err == nil {
+			*dst, err = r.Symbol(n)
+		}
+	}
+	get(&b.vecA, kern, "vecA")
+	get(&b.vecB, kern, "vecB")
+	get(&b.dispShell, shell, "dispatch")
+	get(&b.dispB, procB, "dispatch")
+	get(&b.ticks, kern, "ticks")
+	get(&b.counterB, procB, "g_counter")
+	if err != nil {
+		return nil, err
+	}
+	// Kernel cross-image pointers (shell plays the A role) + the
+	// shell's stat pointers.
+	type patch struct {
+		img     *img.Image
+		imgData uint32
+		res     *dmaasm.Result
+		sym     string
+		valRes  *dmaasm.Result
+		valSym  string
+	}
+	for _, p := range []patch{
+		{kern.Image, kData, kern, "pAdisp", shell, "dispatch"},
+		{kern.Image, kData, kern, "pBdisp", procB, "dispatch"},
+		{kern.Image, kData, kern, "pAresume", shell, "irqresume"},
+		{kern.Image, kData, kern, "pBresume", procB, "irqresume"},
+		{kern.Image, kData, kern, "thunkA", shell, "crtthunk"},
+		{kern.Image, kData, kern, "thunkB", procB, "crtthunk"},
+		{shell.Image, sData, shell, "g_stat_ticks", kern, "ticks"},
+		{shell.Image, sData, shell, "g_stat_counter", procB, "g_counter"},
+	} {
+		addr, err := p.res.Symbol(p.sym)
+		if err != nil {
+			return nil, err
+		}
+		val, err := p.valRes.Symbol(p.valSym)
+		if err != nil {
+			return nil, err
+		}
+		if err := patchData(p.img, p.imgData, addr, val); err != nil {
+			return nil, fmt.Errorf("%s: %w", p.sym, err)
+		}
+	}
+	kaddr, err := kern.Symbol("savedB")
+	if err != nil {
+		return nil, err
+	}
+	if err := patchData(kern.Image, kData, kaddr, pText+procB.Image.EntryOff); err != nil {
+		return nil, err
+	}
+
+	const inj2 = 4
+	b.inj1Ctrl = emu.CtrlEN | emu.CtrlHighPriority | emu.CtrlSize32 |
+		v.CtrlTreq(emu.TreqTimer1) | v.CtrlChainTo(inj2) | v.CtrlIRQQuiet
+	b.inj2Ctrl = emu.CtrlEN | emu.CtrlHighPriority | emu.CtrlSize32 |
+		v.CtrlTreq(emu.TreqPermanent) | v.CtrlChainTo(inj2) | v.CtrlIRQQuiet
+
+	if err := verifyShell(v, lay, kern, shell, procB, b); err != nil {
+		return nil, err
+	}
+	for _, im := range []*img.Image{kern.Image, shell.Image, procB.Image} {
+		im.Relocs = nil // fixed placement: bake
+	}
+	if b.kernel, err = kern.Image.Encode(); err != nil {
+		return nil, err
+	}
+	if b.shell, err = shell.Image.Encode(); err != nil {
+		return nil, err
+	}
+	if b.procB, err = procB.Image.Encode(); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func verifyShell(v *emu.Variant, lay layout, kern, shell, procB *dmaasm.Result, b *shellBundle) error {
+	m := emu.NewMachine(v)
+	for _, r := range []*dmaasm.Result{kern, shell, procB} {
+		if _, err := r.Image.Load(m, nil); err != nil {
+			return err
+		}
+	}
+	const inj1, inj2 = 3, 4
+	m.Poke32(v.TimerAddr(1), 1<<16|15000)
+	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1ReadAddr), b.vecB)
+	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1WriteAddr), b.dispB)
+	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl2TransCount), 1)
+	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1Ctrl), b.inj2Ctrl)
+	m.Poke32(emu.ChanRegAddr(inj1, emu.OffAl1ReadAddr), b.vecA)
+	m.Poke32(emu.ChanRegAddr(inj1, emu.OffAl1WriteAddr), b.dispShell)
+	m.Poke32(emu.ChanRegAddr(inj1, emu.OffTransCount), 1)
+	m.Poke32(emu.ChanRegAddr(inj1, emu.OffCtrlTrig), b.inj1Ctrl)
+	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
+		Fetch: 0, Exec: 1, Fix: 2, Entry: b.entryShell, Scratch: lay.scratch,
+	}); err != nil {
+		return err
+	}
+	m.FeedConsole("stat\rstat\r")
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 60_000_000}); err != nil {
+		return err
+	}
+	out := string(m.ConsoleOut)
+	if !strings.Contains(out, "dma-sh") || strings.Count(out, "ticks=") != 2 {
+		return fmt.Errorf("shell bundle: emulator session unexpected:\n%s", out)
+	}
+	return nil
+}
+
 // build assembles a spec's program for the SKU and applies patches.
 func build(spec hilSpec, v *emu.Variant, lay layout) (*test, error) {
 	var res *dmaasm.Result
@@ -540,7 +730,7 @@ func calExpect(v *emu.Variant, sniffCtrl, seed, word uint32) uint32 {
 
 // --- C header emission ---
 
-func emitHeader(v *emu.Variant, lay layout, tests []*test, sched *schedBundle) string {
+func emitHeader(v *emu.Variant, lay layout, tests []*test, sched *schedBundle, shl *shellBundle) string {
 	var b strings.Builder
 	p := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 
@@ -695,6 +885,24 @@ func emitHeader(v *emu.Variant, lay layout, tests []*test, sched *schedBundle) s
 	p("#define HIL_SCHED_DISP_B 0x%08Xu", sched.dispB)
 	p("#define HIL_SCHED_INJ1_CTRL 0x%08Xu", sched.inj1Ctrl)
 	p("#define HIL_SCHED_INJ2_CTRL 0x%08Xu", sched.inj2Ctrl)
+	if shl != nil {
+		p("")
+		p("/* Phase 5b shell bundle (prompts/013): kernel + dma-sh (+libc) +")
+		p(" * counter process, pre-wired, emulator session verified. */")
+		p("#define HIL_HAS_SHELL 1")
+		dump("hil_shell_kernel_dmx", shl.kernel)
+		dump("hil_shell_sh_dmx", shl.shell)
+		dump("hil_shell_procb_dmx", shl.procB)
+		p("#define HIL_SHELL_ENTRY 0x%08Xu", shl.entryShell)
+		p("#define HIL_SHELL_VEC_A 0x%08Xu", shl.vecA)
+		p("#define HIL_SHELL_VEC_B 0x%08Xu", shl.vecB)
+		p("#define HIL_SHELL_DISP_A 0x%08Xu", shl.dispShell)
+		p("#define HIL_SHELL_DISP_B 0x%08Xu", shl.dispB)
+		p("#define HIL_SHELL_INJ1_CTRL 0x%08Xu", shl.inj1Ctrl)
+		p("#define HIL_SHELL_INJ2_CTRL 0x%08Xu", shl.inj2Ctrl)
+		p("#define HIL_SHELL_TICKS 0x%08Xu", shl.ticks)
+		p("#define HIL_SHELL_COUNTER_B 0x%08Xu", shl.counterB)
+	}
 	p("")
 	p("#endif /* DMX_HIL_IMAGES_H */")
 	return b.String()
@@ -776,10 +984,16 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("sched bundle: %w", err)
 	}
+	var shl *shellBundle
+	if v.Name == "rp2350" { // needs the wide layout
+		if shl, err = buildShell(v, lay); err != nil {
+			return fmt.Errorf("shell bundle: %w", err)
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(*out), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(*out, []byte(emitHeader(v, lay, tests, sched)), 0o644); err != nil {
+	if err := os.WriteFile(*out, []byte(emitHeader(v, lay, tests, sched, shl)), 0o644); err != nil {
 		return err
 	}
 	for _, t := range tests {
