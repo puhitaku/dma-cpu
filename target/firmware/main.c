@@ -630,6 +630,60 @@ static void exp_abort(void)
 
 extern char __bss_end__;
 
+#ifdef HIL_HAS_SYSCALL
+/* Phase 5c (xv6/PORT.md): xv6 syscalls on silicon. Two instances of
+ * the syscall exerciser run under the tick scheduler; pid 1's
+ * SYS_write lines appear directly on the UART between the markers.
+ * Same start-then-arm ordering as shell_start (the tick-arming race
+ * was diagnosed on silicon in prompts/013). */
+static void exp_syscall(void)
+{
+    machine_reset();
+    uint32_t e;
+    if (dmx_load(hil_sys_kernel_dmx, sizeof hil_sys_kernel_dmx, NULL, &e) != DMX_OK ||
+        dmx_load(hil_sys_kernc_dmx, sizeof hil_sys_kernc_dmx, NULL, &e) != DMX_OK ||
+        dmx_load(hil_sys_proca_dmx, sizeof hil_sys_proca_dmx, NULL, &e) != DMX_OK ||
+        dmx_load(hil_sys_procb_dmx, sizeof hil_sys_procb_dmx, NULL, &e) != DMX_OK) {
+        printf("EXP syscall: FAIL load\n");
+        return;
+    }
+    printf("EXP syscall: start (pid 1 speaks via SYS_write)\n");
+    dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 0};
+    if (dmx_start(&cfg, HIL_SYS_ENTRY_A) != DMX_OK) {
+        printf("EXP syscall: FAIL start\n");
+        return;
+    }
+    reg_wr(HIL_TIMER0_ADDR + 4, (1u << 16) | 15000u); /* TIMER1 tick */
+    reg_wr(chreg(4, CH_AL1_READ_ADDR), HIL_SYS_VEC_B);
+    reg_wr(chreg(4, CH_AL1_WRITE_ADDR), HIL_SYS_DISP_B);
+    reg_wr(chreg(4, CH_AL2_TRANS_COUNT), 1);
+    reg_wr(chreg(4, CH_AL1_CTRL), HIL_SYS_INJ2_CTRL);
+    reg_wr(chreg(3, CH_AL1_READ_ADDR), HIL_SYS_VEC_A);
+    reg_wr(chreg(3, CH_AL1_WRITE_ADDR), HIL_SYS_DISP_A);
+    reg_wr(chreg(3, CH_TRANS_COUNT), 1);
+    reg_wr(chreg(3, CH_CTRL_TRIG), HIL_SYS_INJ1_CTRL);
+
+    /* Wait for pid 1's exit (donetick goes nonzero right before it). */
+    uint32_t waited = 0;
+    while (reg_rd(HIL_SYS_DONETICK_A) == 0 && waited < 2000) {
+        sleep_ms(1);
+        waited++;
+    }
+    sleep_ms(20);
+    uint32_t bg1 = reg_rd(HIL_SYS_BGCOUNT_B);
+    sleep_ms(100);
+    uint32_t bg2 = reg_rd(HIL_SYS_BGCOUNT_B);
+    uint32_t ticks = reg_rd(HIL_SYS_TICKS);
+    uint32_t done = reg_rd(HIL_SYS_DONETICK_A);
+    uint32_t est = reg_rd(HIL_SYS_EXITSTATUS_A);
+    machine_reset();
+    int ok = done > 0 && est == 0 && bg2 > bg1 && ticks > 0;
+    printf("\nEXP syscall: %s ticks=%lu donetick=%lu exit=%lu bgcount=%lu->%lu\n",
+           ok ? "PASS" : "FAIL", (unsigned long)ticks, (unsigned long)done,
+           (unsigned long)est, (unsigned long)bg1, (unsigned long)bg2);
+}
+#endif
+
 #ifdef HIL_HAS_SHELL
 /* Phase 5b (prompts/013): hand the console to dma-sh. Loads the
  * pre-wired bundle (kernel + shell as process A + counter as process
@@ -713,6 +767,9 @@ int main(void)
         exp_poll_latency();
         exp_freeze();
         exp_abort();
+#ifdef HIL_HAS_SYSCALL
+        exp_syscall();
+#endif
         printf("=== END iter=%u\n", iter);
 #ifdef HIL_HAS_SHELL
         shell_start(); /* one validation pass, then the console is the shell's */

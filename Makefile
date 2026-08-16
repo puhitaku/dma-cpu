@@ -45,7 +45,7 @@ libc:
 # --- xv6 port (xv6/PORT.md): compile vendored sources to IR goldens ---
 # The curated list grows as the port proceeds; goldens in xv6/ll are
 # committed and linked by dmacc like the libc ones.
-XV6_SRCS = kernel/string.c user/umalloc.c dma/sbrk.c
+XV6_SRCS = kernel/string.c user/umalloc.c dma/sbrk.c dma/usys.c dma/ksyscall.c
 XV6_CLANG = clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding \
             -I$(CURDIR)/xv6 -S -emit-llvm
 
@@ -97,6 +97,10 @@ llgen:
 	clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding -S -emit-llvm \
 	  dmacc/testdata/proc.c -o dmacc/testdata/proc.ll
 	(cd dmacc/testdata && $(LIBC_CLANG) shell.c -o shell.ll)
+	clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding -I$(CURDIR)/xv6 \
+	  -S -emit-llvm dmacc/testdata/xv6sys.c -o dmacc/testdata/xv6sys.ll
+	clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding -I$(CURDIR)/xv6 \
+	  -S -emit-llvm dmacc/testdata/xv6malloc.c -o dmacc/testdata/xv6malloc.ll
 
 # --- Hardware-in-the-loop (see prompts/004-hw-calibration.md) ---
 # Environment (adjust to your install):

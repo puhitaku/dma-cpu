@@ -32,6 +32,24 @@ thunkB:   .word 0
 ; Injector source words (the values the injectors write over dispatch):
 vecA:     .word sched_from_a
 vecB:     .word sched_from_b
+; --- Syscalls (Phase 5c, xv6/PORT.md) ---
+; A syscall is a voluntary kernel entry, so it is a CALL, not a trap:
+; the process writes its mailbox (xv6/dma/usys.c) and indirect-calls
+; its per-process vector sys_from_<self>, which leaves the caller's
+; return address in the caller's lr. The stub forwards to the C kernel
+; core (xv6/dma/ksyscall.c) with the caller id, then returns through
+; the caller's lr — or, when the core sets wsw (yield/exit), saves
+; that lr as the resume point and switches away without counting a
+; tick or re-arming the timer. The dispatch words are never touched:
+; pending tick patches deliver at the caller's next safepoint.
+kentry:   .word 0           ; loader-patched: &f_dma_ksyscall (kernel-C image)
+pKr0:     .word 0           ; loader-patched: &kernel-C r0
+pKlr:     .word 0           ; loader-patched: &kernel-C lr
+pAlr:     .word 0           ; loader-patched: &A.lr (syscall return address)
+pBlr:     .word 0
+wsw:      .word 0           ; kernel-C writes 0 (resume) or 1 (switch) here
+retA:     .word sys_ret_a   ; return-trampoline values for kernel-C's lr
+retB:     .word sys_ret_b
 
 .text
 .entry sched_from_a
@@ -68,3 +86,48 @@ ldB:
     move $0, curr
     move $1, @0x500000DC
     jumpr savedA           ; resume A
+
+sys_from_a:                ; A called its syscall vector
+    ; call the C kernel core: r0 = caller id, lr = our trampoline
+    move pKr0, sr0A.write
+sr0A:
+    move $0, @0
+    move pKlr, slrA.write
+slrA:
+    move retA, @0
+    jumpr kentry
+sys_ret_a:
+    jbool wsw, sres_a, syld_a
+sres_a:                    ; return to the caller through its lr
+    move pAlr, srsA.read
+srsA:
+    move @0, at
+    jumpr at
+syld_a:                    ; switch away (yield/exit); no tick, no re-arm
+    move pAlr, sryA.read
+sryA:
+    move @0, savedA
+    move $1, curr
+    jumpr savedB
+
+sys_from_b:                ; B called its syscall vector
+    move pKr0, sr0B.write
+sr0B:
+    move $1, @0
+    move pKlr, slrB.write
+slrB:
+    move retB, @0
+    jumpr kentry
+sys_ret_b:
+    jbool wsw, sres_b, syld_b
+sres_b:
+    move pBlr, srsB.read
+srsB:
+    move @0, at
+    jumpr at
+syld_b:
+    move pBlr, sryB.read
+sryB:
+    move @0, savedB
+    move $0, curr
+    jumpr savedA

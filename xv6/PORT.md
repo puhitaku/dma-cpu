@@ -45,7 +45,11 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
 - [x] `user/umalloc.c` + `kernel/string.c` compile unmodified and run
   on the machine (self-checking allocator exercise,
   `TestXv6Malloc`); `xv6/dma/sbrk.c` provides the heap.
-- [ ] Syscall mechanism (self-patched dispatch): yield/write/exit.
+- [x] Syscall mechanism: call-shaped kernel entry (`xv6/dma/usys.c`
+  stubs → per-process vectors in kernel.dasm → C kernel core
+  `xv6/dma/ksyscall.c`). write/getpid/uptime/pause/exit live under
+  preemption (`TestXv6Syscalls`, prompts/014). Upstream
+  `kernel/syscall.h` numbering.
 - [ ] proc.c adaptation onto the Phase 5a scheduler.
 - [ ] Console (console.c) on `__dma_uart_*`; sh.c as the shell.
 - [ ] Block device + fs.c stack; mkfs image in flash.
