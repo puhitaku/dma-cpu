@@ -27,7 +27,12 @@
 #define CH_TRANS_COUNT 0x08u
 #define CH_CTRL_TRIG 0x0Cu
 #define CH_AL1_CTRL 0x10u
+#define CH_AL1_READ_ADDR 0x14u
+#define CH_AL1_WRITE_ADDR 0x18u
 #define CH_AL1_TRANS_COUNT_TRIG 0x1Cu
+#define CH_AL2_TRANS_COUNT 0x24u
+#define CH_AL2_READ_ADDR 0x28u
+#define CH_AL2_WRITE_ADDR_TRIG 0x2Cu
 
 static inline void reg_wr(uint32_t addr, uint32_t val)
 {
@@ -227,6 +232,93 @@ static void cal_sniff(const char *name, uint32_t sniff_ctrl, uint32_t seed,
 static inline uint32_t chreg(int ch, uint32_t off)
 {
     return 0x50000000u + (uint32_t)ch * 0x40u + off;
+}
+
+/* Tier-C compact machine (prompts/010): 8-byte records fetched into a
+ * channel bank with static CTRLs; mode switch = one record rewriting
+ * the fix channel's scratch word; the all-zero record is HALT (null
+ * WRITE_ADDR trigger). Mirrors the emulator's TestCompactMachineRaw —
+ * the load-bearing semantics are TRANS_COUNT reload on WRITE_ADDR
+ * triggers, CTRL persistence, and exact data delivery on a sniffed read
+ * of SNIFF_DATA. */
+static void cal_compact(void)
+{
+    machine_reset();
+    const int eP = HIL_CMP_EPLAIN, eS = HIL_CMP_ESNIFF, eB = HIL_CMP_EBSWAP;
+    const int cf = HIL_CMP_FETCH, cx = HIL_CMP_FIX;
+    const uint32_t text = HIL_MACHINE_RAM_START + 0x8000u;
+    const uint32_t data = HIL_MACHINE_RAM_START + 0x9000u;
+    const uint32_t scr = HIL_MACHINE_RAM_START + 0x9F00u;
+    const uint32_t win_p = chreg(eP, CH_AL2_READ_ADDR);
+    const uint32_t win_s = chreg(eS, CH_AL2_READ_ADDR);
+    const uint32_t win_b = chreg(eB, CH_AL2_READ_ADDR);
+
+    uint32_t d = data;
+#define CMPW(val) (reg_wr(d, (val)), d += 4, d - 4)
+    uint32_t aA = CMPW(0x11223344u);
+    uint32_t aB = CMPW(0xAABBCCDDu);
+    uint32_t aSeed = CMPW(0x1000u);
+    uint32_t aAdd = CMPW(0xF00Du);
+    uint32_t aWs = CMPW(win_s);
+    uint32_t aWb = CMPW(win_b);
+    uint32_t aWp = CMPW(win_p);
+    uint32_t aWpSw = CMPW(__builtin_bswap32(win_p));
+    uint32_t dst0 = CMPW(0), dst1 = CMPW(0), dst2 = CMPW(0);
+    uint32_t nul = CMPW(0), sum = CMPW(0);
+#undef CMPW
+
+    const uint32_t recs[][2] = {
+        {aA, dst0},                  /* E-plain: dst0 = A */
+        {aWb, scr},                  /* switch -> bswap bank */
+        {aB, dst1},                  /* E-bswap: dst1 = bswap(B) */
+        {aWpSw, scr},                /* switch -> plain (pre-swapped literal) */
+        {dst0, dst2},                /* dst2 = dst0 */
+        {aSeed, HIL_SNIFF_DATA_ADDR},/* accumulator = 0x1000 (unsniffed) */
+        {aWs, scr},                  /* switch -> sniff bank */
+        {aAdd, nul},                 /* accumulator += 0xF00D */
+        {HIL_SNIFF_DATA_ADDR, sum},  /* sum read on the sniff channel */
+        {aWp, scr},                  /* switch -> plain (dead pollution) */
+        {0, 0},                      /* HALT: null trigger */
+    };
+    uint32_t pp = text;
+    for (unsigned i = 0; i < sizeof recs / sizeof recs[0]; i++) {
+        reg_wr(pp, recs[i][0]);
+        reg_wr(pp + 4, recs[i][1]);
+        pp += 8;
+    }
+
+    reg_wr(HIL_SNIFF_CTRL_ADDR, HIL_CMP_SNIFF_CTRL);
+    reg_wr(HIL_SNIFF_DATA_ADDR, 0);
+
+    reg_wr(chreg(eP, CH_AL1_CTRL), HIL_CMP_CTRL_PLAIN);
+    reg_wr(chreg(eP, CH_AL2_TRANS_COUNT), 1);
+    reg_wr(chreg(eS, CH_AL1_CTRL), HIL_CMP_CTRL_SNIFF);
+    reg_wr(chreg(eS, CH_AL2_TRANS_COUNT), 1);
+    reg_wr(chreg(eB, CH_AL1_CTRL), HIL_CMP_CTRL_BSWAP);
+    reg_wr(chreg(eB, CH_AL2_TRANS_COUNT), 1);
+
+    reg_wr(scr, win_p);
+    reg_wr(chreg(cx, CH_AL1_READ_ADDR), scr);
+    reg_wr(chreg(cx, CH_AL1_WRITE_ADDR), chreg(cf, CH_AL2_WRITE_ADDR_TRIG));
+    reg_wr(chreg(cx, CH_AL2_TRANS_COUNT), 1);
+    reg_wr(chreg(cx, CH_AL1_CTRL), HIL_CMP_CTRL_FIX);
+
+    reg_wr(chreg(cf, CH_READ_ADDR), text);
+    reg_wr(chreg(cf, CH_WRITE_ADDR), win_p);
+    reg_wr(chreg(cf, CH_TRANS_COUNT), 2);
+    reg_wr(chreg(cf, CH_CTRL_TRIG), HIL_CMP_FETCH_CTRL);
+    busy_wait_us(100);
+
+    uint32_t g0 = reg_rd(dst0), g1 = reg_rd(dst1), g2 = reg_rd(dst2);
+    uint32_t gs = reg_rd(sum);
+    uint32_t irq = (reg_rd(HIL_INTR_ADDR) >> eP) & 1u;
+    int ok = g0 == 0x11223344u && g1 == 0xDDCCBBAAu && g2 == 0x11223344u &&
+             gs == 0x1000u + 0xF00Du && irq == 1u;
+    printf("CAL compact: %s dst0=%08lx dst1=%08lx dst2=%08lx sum=%08lx irq=%lu"
+           " (emu: 11223344 ddccbbaa 11223344 0001000d 1)\n",
+           ok ? "MATCH" : "DIFF", (unsigned long)g0, (unsigned long)g1,
+           (unsigned long)g2, (unsigned long)gs, (unsigned long)irq);
+    machine_reset();
 }
 
 static const hil_test *find_test(const char *name)
@@ -522,6 +614,7 @@ int main(void)
         cal_sniff("sniff_sum", HIL_CAL_SNIFF_SUM, 0x1000, 0x234, HIL_CAL_EXPECT_SUM);
         cal_sniff("sniff_crc32", HIL_CAL_SNIFF_CRC32, 0xFFFFFFFFu, 0x12345678u,
                   HIL_CAL_EXPECT_CRC32);
+        cal_compact();
         exp_throughput();
         exp_irq_timer();
         exp_irq_gpio();

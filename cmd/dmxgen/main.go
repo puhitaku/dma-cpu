@@ -423,6 +423,26 @@ func emitHeader(v *emu.Variant, lay layout, tests []*test) string {
 	p("#define HIL_INJ_CTRL_TIMER1 0x%08Xu", injBase|v.CtrlTreq(emu.TreqTimer1))
 	p("#define HIL_INJ_CTRL_PIO0RX0 0x%08Xu", injBase|v.CtrlTreq(v.DreqPIO0RX0))
 	p("")
+	p("/* Tier-C compact-machine calibration: 8-byte records into a")
+	p(" * channel bank with static CTRLs (prompts/010). */")
+	const cmpP, cmpS, cmpB, cmpF, cmpX = 6, 7, 8, 9, 10
+	p("#define HIL_CMP_EPLAIN %d", cmpP)
+	p("#define HIL_CMP_ESNIFF %d", cmpS)
+	p("#define HIL_CMP_EBSWAP %d", cmpB)
+	p("#define HIL_CMP_FETCH %d", cmpF)
+	p("#define HIL_CMP_FIX %d", cmpX)
+	cmpExec := emu.CtrlEN | emu.CtrlSize32 | v.CtrlTreq(emu.TreqPermanent) | v.CtrlChainTo(cmpX) | v.CtrlIRQQuiet
+	p("#define HIL_CMP_CTRL_PLAIN 0x%08Xu", cmpExec)
+	p("#define HIL_CMP_CTRL_SNIFF 0x%08Xu", cmpExec|v.CtrlSniffEn)
+	p("#define HIL_CMP_CTRL_BSWAP 0x%08Xu", cmpExec|v.CtrlBswap)
+	p("#define HIL_CMP_CTRL_FIX 0x%08Xu",
+		emu.CtrlEN|emu.CtrlSize32|v.CtrlTreq(emu.TreqPermanent)|v.CtrlChainTo(cmpX)|v.CtrlIRQQuiet)
+	p("#define HIL_CMP_FETCH_CTRL 0x%08Xu",
+		emu.CtrlEN|emu.CtrlSize32|emu.CtrlIncrRead|v.CtrlIncrWrite|
+			v.CtrlTreq(emu.TreqPermanent)|v.CtrlChainTo(cmpF)|v.CtrlIRQQuiet)
+	p("#define HIL_CMP_SNIFF_CTRL 0x%08Xu",
+		emu.SniffCtrlEN|emu.SniffCtrlDmach(cmpS)|emu.SniffCtrlCalc(emu.SniffCalcSum))
+	p("")
 	p("/* Machine restart constants (approach-D experiment). */")
 	p("#define HIL_FETCH_CTRL 0x%08Xu",
 		emu.CtrlEN|emu.CtrlSize32|emu.CtrlIncrRead|v.CtrlIncrWrite|

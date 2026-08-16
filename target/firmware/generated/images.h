@@ -39,6 +39,20 @@
 #define HIL_INJ_CTRL_TIMER1 0x00F8600Bu
 #define HIL_INJ_CTRL_PIO0RX0 0x0088600Bu
 
+/* Tier-C compact-machine calibration: 8-byte records into a
+ * channel bank with static CTRLs (prompts/010). */
+#define HIL_CMP_EPLAIN 6
+#define HIL_CMP_ESNIFF 7
+#define HIL_CMP_EBSWAP 8
+#define HIL_CMP_FETCH 9
+#define HIL_CMP_FIX 10
+#define HIL_CMP_CTRL_PLAIN 0x00FF4009u
+#define HIL_CMP_CTRL_SNIFF 0x02FF4009u
+#define HIL_CMP_CTRL_BSWAP 0x01FF4009u
+#define HIL_CMP_CTRL_FIX 0x00FF4009u
+#define HIL_CMP_FETCH_CTRL 0x00FF2059u
+#define HIL_CMP_SNIFF_CTRL 0x000001EFu
+
 /* Machine restart constants (approach-D experiment). */
 #define HIL_FETCH_CTRL 0x00FE0059u
 #define HIL_EXEC_REGS 0x50000040u
@@ -5519,9 +5533,9 @@ static const hil_test hil_tests[] = {
         {0, 0x2006008Cu, 0x00000001u, "done"},
     }},
     {"logic", hil_logic_dmx, sizeof hil_logic_dmx, 0x20060098u, 0x00000000u, 0, 4, {
+        {0, 0x20060094u, 0x0FF03CA5u, "rXor"},
         {0, 0x2006008Cu, 0x0FFF3FF5u, "rOr"},
         {0, 0x20060090u, 0x000F0350u, "rAnd"},
-        {0, 0x20060094u, 0x0FF03CA5u, "rXor"},
         {0, 0x20060098u, 0x00000001u, "done"},
     }},
     {"condjump_pos", hil_condjump_pos_dmx, sizeof hil_condjump_pos_dmx, 0x20060088u, 0x00000000u, 0, 2, {
