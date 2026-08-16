@@ -1,0 +1,7 @@
+Vendored from https://github.com/mit-pdos/xv6-riscv
+commit 7d01506ee03394b6b1a161ccee69cd150ab471fc (shallow, 2026-08-17)
+MIT license: see LICENSE in this directory.
+
+This tree is vendored pristine and then modified in place for the DMA
+machine (see PORT.md, added after the vendor commit). To see every
+DMA-specific change: git log/diff against the vendor commit for xv6/.
