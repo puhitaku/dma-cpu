@@ -43,10 +43,14 @@ typedef struct {
 typedef struct {
     int fetch, exec, fix;   /* DMA channel numbers; ABI v0: 0, 1, 2 */
     uint32_t scratch;       /* reserved SRAM word; ABI v0: 0x2003FF00 */
+    int compact;            /* Tier-C 8-byte-record machine: fixed channel
+                             * map (fetch=7), bank/fix config carried by the
+                             * image's init writes; fetch-only setup here. */
 } dmx_machine_cfg;
 
 /* ABI v0 defaults; mirrors img.DefaultMachine() on the host side. */
-#define DMX_DEFAULT_MACHINE_CFG {0, 1, 2, 0x2003FF00u}
+#define DMX_DEFAULT_MACHINE_CFG {0, 1, 2, 0x2003FF00u, 0}
+#define DMX_COMPACT_MACHINE_CFG {0, 0, 0, 0, 1}
 
 /* Parse and place the image, apply relocations and init writes, and return
  * the resolved entry address in *entry_out. Does not start the machine. */

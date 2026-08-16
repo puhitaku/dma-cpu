@@ -61,6 +61,7 @@ type check struct {
 type test struct {
 	Name string
 	Image *img.Image
+	Compact bool   // Tier-C encoding: loader uses the compact machine
 	Console []byte // expected console bytes (emulator verification)
 	Done  uint32 // absolute done-flag address; 0 = perf test (no done)
 	PerfCounter uint32
@@ -80,6 +81,7 @@ type hilSpec struct {
 	name    string
 	file    string            // prog/hil/<file>.dasm
 	ll      string            // OR: compile this IR golden with dmacc (Phase 4)
+	compactEnc bool           // assemble with the Tier-C 8-byte encoding
 	libc    bool              // link the picolibc goldens (libc/ll) into the ll build
 	console string            // expected console file (emulator check; prints on the UART on hardware)
 	skus    []string          // restrict to these SKUs (nil: all)
@@ -134,6 +136,12 @@ var hilSpecs = []hilSpec{
 	// during the hardware run; the exit checksum makes the silicon pass
 	// machine-checked. Needs the wide rp2350 layout.
 	{name: "cc_stdio", ll: "stdio", libc: true,
+		console: "dmacc/testdata/stdio.console", skus: []string{"rp2350"}},
+	// Tier-C compact-encoding twins (prompts/010/011): same programs,
+	// 8-byte records, silicon-checked against the same host truth.
+	{name: "ccc_memory", ll: "memory", compactEnc: true},
+	{name: "ccc_collatz", ll: "collatz", compactEnc: true},
+	{name: "ccc_stdio", ll: "stdio", libc: true, compactEnc: true,
 		console: "dmacc/testdata/stdio.console", skus: []string{"rp2350"}},
 }
 
@@ -204,7 +212,7 @@ func buildCC(spec hilSpec, v *emu.Variant, lay layout) (*dmaasm.Result, error) {
 		return nil, fmt.Errorf("%s: %w", spec.ll, err)
 	}
 	res, err := dmaasm.Assemble(dasm, dmaasm.Options{
-		Variant: v, TextBase: lay.text, DataBase: lay.data,
+		Variant: v, TextBase: lay.text, DataBase: lay.data, Compact: spec.compactEnc,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%s: assembling dmacc output: %w", spec.ll, err)
@@ -242,7 +250,7 @@ func build(spec hilSpec, v *emu.Variant, lay layout) (*test, error) {
 			return nil, fmt.Errorf("%s: %w", spec.name, err)
 		}
 	}
-	t := &test{Name: spec.name, Image: res.Image}
+	t := &test{Name: spec.name, Image: res.Image, Compact: spec.compactEnc}
 	for _, sym := range spec.export {
 		addr, err := res.Symbol(sym)
 		if err != nil {
@@ -300,6 +308,9 @@ func patchData(im *img.Image, dataBase, addr, val uint32) error {
 func verify(v *emu.Variant, lay layout, t *test) error {
 	m := emu.NewMachine(v)
 	cfg := emu.FetchExecConfig{Fetch: 0, Exec: 1, Fix: 2, Scratch: lay.scratch}
+	if t.Compact {
+		cfg = emu.FetchExecConfig{Compact: true}
+	}
 	if err := t.Image.LoadAndStart(m, nil, cfg); err != nil {
 		return fmt.Errorf("%s: %w", t.Name, err)
 	}
@@ -460,6 +471,7 @@ func emitHeader(v *emu.Variant, lay layout, tests []*test) string {
 	p("typedef struct {")
 	p("    const char *name;")
 	p("    const uint8_t *dmx; size_t dmx_len;")
+	p("    int compact;                      /* Tier-C 8-byte encoding */")
 	p("    uint32_t done_addr;               /* 0: perf test */")
 	p("    uint32_t perf_counter_addr, blocks_per_iter;")
 	p("    int n_checks; hil_check checks[8];")
@@ -484,8 +496,12 @@ func emitHeader(v *emu.Variant, lay layout, tests []*test) string {
 	p("")
 	p("static const hil_test hil_tests[] = {")
 	for _, t := range tests {
-		p("    {\"%s\", hil_%s_dmx, sizeof hil_%s_dmx, 0x%08Xu, 0x%08Xu, %d, %d, {",
-			t.Name, t.Name, t.Name, t.Done, t.PerfCounter, t.BlocksPerIt, len(t.Checks))
+		compact := 0
+		if t.Compact {
+			compact = 1
+		}
+		p("    {\"%s\", hil_%s_dmx, sizeof hil_%s_dmx, %d, 0x%08Xu, 0x%08Xu, %d, %d, {",
+			t.Name, t.Name, t.Name, compact, t.Done, t.PerfCounter, t.BlocksPerIt, len(t.Checks))
 		for _, c := range t.Checks {
 			p("        {%d, 0x%08Xu, 0x%08Xu, \"%s\"},", c.Kind, c.Addr, c.Want, c.Name)
 		}

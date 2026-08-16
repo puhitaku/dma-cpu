@@ -126,3 +126,17 @@ func (s *Seg) BlockP(read, write Ptr, count, ctrl uint32) uint32 {
 
 // Halt appends the all-zero null-trigger block.
 func (s *Seg) Halt() uint32 { return s.Block(0, 0, 0, 0) }
+
+// RecordP appends a compact 8-byte record (READ_ADDR, WRITE_ADDR) with
+// relocatable operands and returns its offset (Tier C, prompts/010).
+func (s *Seg) RecordP(read, write Ptr) uint32 {
+	off := s.Len()
+	for _, p := range [2]Ptr{read, write} {
+		if p.seg == nil {
+			s.Word(p.abs)
+		} else {
+			s.WordRef(p.seg, p.off)
+		}
+	}
+	return off
+}

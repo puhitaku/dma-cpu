@@ -20,6 +20,12 @@ type FetchExecConfig struct {
 	Fetch, Exec, Fix int
 	Entry            uint32 // address of the first control block (initial PC)
 	Scratch          uint32 // SRAM word the machine may clobber (holds &Exec regs)
+
+	// Compact selects the Tier-C 8-byte-record machine (emu/compact.go).
+	// The channel map is fixed (Fetch/Exec/Fix/Scratch are ignored); the
+	// bank and fix configuration arrive as image init writes, so setup
+	// here is fetch-only.
+	Compact bool
 }
 
 // ExecCtrl returns the standard CTRL word for program blocks executed on
@@ -35,6 +41,19 @@ func (c FetchExecConfig) ExecCtrl(v *Variant) uint32 {
 // cfg.Entry. The program must already be in memory.
 func SetupFetchExec(m *Machine, cfg FetchExecConfig) error {
 	v := m.Variant()
+	if cfg.Compact {
+		if cfg.Entry%8 != 0 {
+			return fmt.Errorf("compact entry %#08x is not 8-byte aligned", cfg.Entry)
+		}
+		// Banks, fix, and the window-selector word were configured by
+		// the image's init writes; only fetch remains.
+		fetchRegs := ChanRegAddr(CompactFetch, 0)
+		m.Poke32(fetchRegs+OffReadAddr, cfg.Entry)
+		m.Poke32(fetchRegs+OffWriteAddr, CompactWindow(CompactPlain))
+		m.Poke32(fetchRegs+OffTransCount, 2)
+		m.Poke32(fetchRegs+OffCtrlTrig, CompactFetchCtrl(v))
+		return nil
+	}
 	if cfg.Fetch == cfg.Exec || cfg.Exec == cfg.Fix || cfg.Fetch == cfg.Fix {
 		return fmt.Errorf("channels must be distinct: %+v", cfg)
 	}

@@ -36,10 +36,16 @@ func (a *asm) emit() (*Result, error) {
 			if !ok {
 				return img.Ptr{}, fmt.Errorf("line %d: undefined symbol %q", line, op.sym)
 			}
-			if op.field != 0 && !op.plusOff && !sym.text {
+			if op.blockField && !sym.text {
 				return img.Ptr{}, fmt.Errorf("line %d: block field on data symbol %q", line, op.sym)
 			}
-			return img.In(segOf(sym), sym.off+op.field), nil
+			off := sym.off + op.field
+			if op.blockField && a.opts.Compact {
+				// Block fields address the instruction's payload record,
+				// past any planner-inserted switch/count records.
+				off += a.payloadDelta[sym.off]
+			}
+			return img.In(segOf(sym), off), nil
 		}
 	}
 
@@ -72,6 +78,10 @@ func (a *asm) emit() (*Result, error) {
 			}
 		}
 	}
+	// Compact: the window-selector word, initially the plain bank.
+	if a.opts.Compact {
+		data.Word(emu.CompactWindow(emu.CompactPlain))
+	}
 	// Literal pool.
 	for _, k := range a.litOrder {
 		op := a.lits[k]
@@ -86,11 +96,30 @@ func (a *asm) emit() (*Result, error) {
 		data.WordRef(segOf(sym), sym.off+op.field)
 	}
 
-	// --- Init writes: sniffer first (ABI default), then user writes ---
+	// --- Init writes: sniffer first (ABI default), then machine config
+	// (compact banks + fix), then user writes ---
 	if !a.noSniff {
 		bld.AddWrite(a.v.SniffCtrlAddr(),
 			emu.SniffCtrlEN|emu.SniffCtrlDmach(a.cfg.Exec)|emu.SniffCtrlCalc(emu.SniffCalcSum))
 		bld.AddWrite(a.v.SniffDataAddr(), 0)
+	}
+	if a.opts.Compact {
+		for ch := 0; ch < emu.CompactNumBanks; ch++ {
+			bld.AddWrite(emu.ChanRegAddr(ch, emu.OffAl1Ctrl), emu.CompactBankCtrl(a.v, ch))
+			bld.AddWrite(emu.ChanRegAddr(ch, emu.OffAl2TransCount), 1)
+		}
+		bld.AddWriteRef(emu.ChanRegAddr(emu.CompactFix, emu.OffAl1ReadAddr), data, a.syms[cscrName].off)
+		bld.AddWrite(emu.ChanRegAddr(emu.CompactFix, emu.OffAl1WriteAddr),
+			emu.ChanRegAddr(emu.CompactFetch, emu.OffAl2WriteAddrTrig))
+		bld.AddWrite(emu.ChanRegAddr(emu.CompactFix, emu.OffAl2TransCount), 1)
+		bld.AddWrite(emu.ChanRegAddr(emu.CompactFix, emu.OffAl1Ctrl), emu.CompactFixCtrl(a.v))
+		// Cleanup: restores the window selector to the plain bank, then
+		// chains to fix (auto-return for the bswap/size banks).
+		winPOff := a.litOffs[litKey(operand{kind: opLit, num: emu.CompactWindow(emu.CompactPlain), isNum: true})]
+		bld.AddWriteRef(emu.ChanRegAddr(emu.CompactCleanup, emu.OffAl1ReadAddr), data, winPOff)
+		bld.AddWriteRef(emu.ChanRegAddr(emu.CompactCleanup, emu.OffAl1WriteAddr), data, a.syms[cscrName].off)
+		bld.AddWrite(emu.ChanRegAddr(emu.CompactCleanup, emu.OffAl2TransCount), 1)
+		bld.AddWrite(emu.ChanRegAddr(emu.CompactCleanup, emu.OffAl1Ctrl), emu.CompactCleanupCtrl(a.v))
 	}
 	for _, w := range a.writes {
 		if w.valSym == "" {
@@ -123,8 +152,35 @@ func (a *asm) emit() (*Result, error) {
 	litNumP := func(v uint32) img.Ptr {
 		return img.In(data, a.litOffs[litKey(operand{kind: opLit, num: v, isNum: true})])
 	}
-	mv := func(src, dst img.Ptr, count, ctrl uint32) {
+	a.dataSeg = data
+	// Compact: route blocks through the record emitter (compact.go).
+	var ce *cemit
+	var mvErr error
+	if a.opts.Compact {
+		atSym, ok := a.syms["at"]
+		if !ok {
+			return nil, fmt.Errorf("compact mode requires the .regs directive")
+		}
+		ce = &cemit{
+			a: a, text: text, st: newCstate(),
+			scrP: img.In(data, a.syms[cscrName].off),
+			atP:  img.In(data, atSym.off),
+		}
+	}
+	mvFull := func(src, dst img.Ptr, count, ctrl uint32, dyn bool, cntAfter uint32) {
+		if ce != nil {
+			if err := ce.block(src, dst, count, ctrl, dyn, cntAfter); err != nil && mvErr == nil {
+				mvErr = err
+			}
+			return
+		}
 		text.BlockP(src, dst, count, ctrl)
+	}
+	mvd := func(src, dst img.Ptr, count, ctrl uint32, dyn bool) {
+		mvFull(src, dst, count, ctrl, dyn, 0)
+	}
+	mv := func(src, dst img.Ptr, count, ctrl uint32) {
+		mvFull(src, dst, count, ctrl, false, 0)
 	}
 	// signTail: with the tested word already byte-swapped in the
 	// accumulator, isolate the true sign bit (bit 7 after bswap), add the
@@ -151,6 +207,25 @@ func (a *asm) emit() (*Result, error) {
 		mv(litNumP(0xFFFFFFFF), xorP, 1, execCtrl)
 		mv(litNumP(1), nullP, 1, execCtrl|a.v.CtrlSniffEn)
 		mv(aP, nullP, 1, execCtrl|a.v.CtrlSniffEn)
+	}
+	// signTailC: compact-mode dispatch tail — the tested word sits in
+	// `at` (staged there by a bswap-bank read), gets masked to its true
+	// sign bit, offset by the trampoline pair, and pushed to %pc.
+	signTailC := func(atP img.Ptr, line int) error {
+		pairP, err := resolve(operand{kind: opLit, sym: jpairName(a.jpairIdx)}, line)
+		if err != nil {
+			return err
+		}
+		a.jpairIdx++
+		nullP, err := symP("null", line)
+		if err != nil {
+			return err
+		}
+		mv(atP, sniffP, 1, execCtrl)
+		mv(litNumP(0xFFFFFF7F), clrP, 1, execCtrl)
+		mv(pairP, nullP, 1, execCtrl|a.v.CtrlSniffEn)
+		mv(sniffP, pcP, 1, execCtrl)
+		return nil
 	}
 
 	for _, s := range a.stmts {
@@ -187,7 +262,7 @@ func (a *asm) emit() (*Result, error) {
 				return nil, err
 			}
 			ctrl := execCtrl&^emu.CtrlSize32 | f.size | f.ctrlExtra
-			mv(ops[0], ops[1], f.count, ctrl)
+			mvd(ops[0], ops[1], f.count, ctrl, f.dyn)
 		case "add":
 			if err := resolveArgs(0, 1, 2); err != nil {
 				return nil, err
@@ -248,6 +323,16 @@ func (a *asm) emit() (*Result, error) {
 			if err := resolveArgs(0, 2); err != nil {
 				return nil, err
 			}
+			if a.opts.Compact {
+				// Seed -k: the in-bank count-restore record adds k*1
+				// back while resetting the sniff channel's reload to 1.
+				mv(litNumP(-k), sniffP, 1, execCtrl)
+				mv(ops[0], nullP, k, execCtrl|a.v.CtrlSniffEn)
+				mvFull(litNumP(1), img.Abs(emu.ChanRegAddr(emu.CompactSniff, emu.OffAl2TransCount)),
+					k, execCtrl|a.v.CtrlSniffEn, false, 1)
+				mv(sniffP, ops[1], 1, execCtrl)
+				break
+			}
 			mv(zeroP, sniffP, 1, execCtrl)
 			mv(ops[0], nullP, k, execCtrl|a.v.CtrlSniffEn)
 			mv(sniffP, ops[1], 1, execCtrl)
@@ -279,8 +364,12 @@ func (a *asm) emit() (*Result, error) {
 			if err != nil {
 				return nil, err
 			}
+			jnegMask := uint32(0xFFFFFFEF) // bit 4: 16-byte blocks
+			if a.opts.Compact {
+				jnegMask = 0xFFFFFFF7 // bit 3: 8-byte records
+			}
 			mv(ops[0], sniffP, 1, execCtrl|a.v.CtrlBswap)
-			mv(litNumP(0xFFFFFFEF), img.Abs(a.v.SniffDataClrAddr()), 1, execCtrl)
+			mv(litNumP(jnegMask), img.Abs(a.v.SniffDataClrAddr()), 1, execCtrl)
 			mv(trampP, nullP, 1, execCtrl|a.v.CtrlSniffEn)
 			mv(sniffP, pcP, 1, execCtrl)
 			mv(posP, pcP, 1, execCtrl) // trampoline slot 0: non-negative
@@ -300,6 +389,27 @@ func (a *asm) emit() (*Result, error) {
 			atP, err := symP("at", s.line)
 			if err != nil {
 				return nil, err
+			}
+			if a.opts.Compact {
+				// Restructured so the sniff bank is only left through
+				// reads (mode-domain rules, compact.go).
+				at2P, err := symP("at2", s.line)
+				if err != nil {
+					return nil, err
+				}
+				subIntoSniff(ops[0], ops[1], nullP) // d = a - b
+				mv(sniffP, atP, 1, execCtrl)        // at = d (read on sniff)
+				mv(atP, sniffP, 1, execCtrl)
+				mv(litNumP(0xFFFFFFFF), xorP, 1, execCtrl)         // ~d
+				mv(litNumP(1), nullP, 1, execCtrl|a.v.CtrlSniffEn) // -d
+				mv(sniffP, at2P, 1, execCtrl)                      // at2 = -d
+				mv(at2P, sniffP, 1, execCtrl)
+				mv(atP, setP, 1, execCtrl)                    // -d | d
+				mv(sniffP, atP, 1, execCtrl|a.v.CtrlBswap)    // at = bswap(d | -d)
+				if err := signTailC(atP, s.line); err != nil {
+					return nil, err
+				}
+				break
 			}
 			subIntoSniff(ops[0], ops[1], nullP) // d = a - b
 			mv(sniffP, atP, 1, execCtrl)
@@ -323,6 +433,24 @@ func (a *asm) emit() (*Result, error) {
 			at2P, err := symP("at2", s.line)
 			if err != nil {
 				return nil, err
+			}
+			if a.opts.Compact {
+				mv(ops[0], sniffP, 1, execCtrl)
+				mv(ops[1], xorP, 1, execCtrl) // a ^ b
+				mv(sniffP, atP, 1, execCtrl)
+				subIntoSniff(ops[0], ops[1], nullP) // d = a - b
+				mv(sniffP, at2P, 1, execCtrl)       // at2 = d (read on sniff)
+				mv(at2P, sniffP, 1, execCtrl)       // reseed d unsniffed
+				mv(atP, clrP, 1, execCtrl)          // d & ~(a ^ b)
+				mv(sniffP, at2P, 1, execCtrl)
+				mv(ops[0], sniffP, 1, execCtrl)
+				mv(ops[1], clrP, 1, execCtrl) // a & ~b
+				mv(at2P, setP, 1, execCtrl)
+				mv(sniffP, atP, 1, execCtrl|a.v.CtrlBswap)
+				if err := signTailC(atP, s.line); err != nil {
+					return nil, err
+				}
+				break
 			}
 			mv(ops[0], sniffP, 1, execCtrl)
 			mv(ops[1], xorP, 1, execCtrl) // a ^ b
@@ -350,6 +478,24 @@ func (a *asm) emit() (*Result, error) {
 			at2P, err := symP("at2", s.line)
 			if err != nil {
 				return nil, err
+			}
+			if a.opts.Compact {
+				mv(ops[0], sniffP, 1, execCtrl)
+				mv(ops[1], clrP, 1, execCtrl) // a & ~b
+				mv(sniffP, atP, 1, execCtrl)
+				subIntoSniff(ops[0], ops[1], nullP) // d = a - b
+				mv(sniffP, at2P, 1, execCtrl)       // at2 = d (read on sniff)
+				mv(at2P, sniffP, 1, execCtrl)       // reseed d unsniffed
+				mv(atP, clrP, 1, execCtrl)          // d & ~(a & ~b) = d & (~a | b)
+				mv(sniffP, at2P, 1, execCtrl)
+				mv(ops[1], sniffP, 1, execCtrl)
+				mv(ops[0], clrP, 1, execCtrl) // b & ~a
+				mv(at2P, setP, 1, execCtrl)
+				mv(sniffP, atP, 1, execCtrl|a.v.CtrlBswap)
+				if err := signTailC(atP, s.line); err != nil {
+					return nil, err
+				}
+				break
 			}
 			mv(ops[0], sniffP, 1, execCtrl)
 			mv(ops[1], clrP, 1, execCtrl) // a & ~b
@@ -380,6 +526,19 @@ func (a *asm) emit() (*Result, error) {
 			oneLP, err := resolve(operand{kind: opLit, sym: s.args[2]}, s.line)
 			if err != nil {
 				return nil, err
+			}
+			if a.opts.Compact {
+				// 8-byte slots: seed -8, add 8*v, in-bank count restore
+				// (+8), add the pair base, dispatch.
+				mv(litNumP(^uint32(8)+1), sniffP, 1, execCtrl)
+				mv(ops[0], nullP, 8, execCtrl|a.v.CtrlSniffEn)
+				mvFull(litNumP(1), img.Abs(emu.ChanRegAddr(emu.CompactSniff, emu.OffAl2TransCount)),
+					8, execCtrl|a.v.CtrlSniffEn, false, 1)
+				mv(trampP, nullP, 1, execCtrl|a.v.CtrlSniffEn)
+				mv(sniffP, pcP, 1, execCtrl)
+				mv(zeroLP, pcP, 1, execCtrl) // trampoline slot 0: v == 0
+				mv(oneLP, pcP, 1, execCtrl)  // trampoline slot 1: v == 1
+				break
 			}
 			mv(zeroP, sniffP, 1, execCtrl)
 			mv(ops[0], nullP, 16, execCtrl|a.v.CtrlSniffEn) // sniff = 16*v
@@ -430,7 +589,11 @@ func (a *asm) emit() (*Result, error) {
 			word := a.v.GPIOOutCtrl(s.args[1] == "hi")
 			mv(litNumP(word), img.Abs(a.v.GPIOCtrlAddr(int(pin))), 1, execCtrl)
 		case "halt":
-			text.Halt()
+			if ce != nil {
+				ce.halt()
+			} else {
+				text.Halt()
+			}
 		case "nop":
 			// Zero-length sequence: completes immediately and chains on —
 			// a hardware-verified NOP (prompts/004-hw-calibration.md).
@@ -438,16 +601,36 @@ func (a *asm) emit() (*Result, error) {
 		default:
 			return nil, fmt.Errorf("line %d: unhandled instruction %q", s.line, s.mnem)
 		}
+		if ce != nil {
+			if mvErr != nil {
+				return nil, fmt.Errorf("line %d: %v", s.line, mvErr)
+			}
+			if err := ce.endInstr(s.line, s.crecs); err != nil {
+				return nil, err
+			}
+		}
 	}
 
-	// Sign-dispatch arena: per bank, 8 sign-clear slots then 8 sign-set
-	// slots 128 bytes later (layout fixed in pass 1). Unused slots halt.
-	for b := 0; b*8 < len(a.jpairs); b++ {
+	// Sign-dispatch arena: per 256-byte bank, the sign-clear slot row and
+	// then the sign-set row 128 bytes later (layout fixed in pass 1).
+	// Unused slots halt. Compact slots are single records.
+	pairsPerBank := 8
+	if a.opts.Compact {
+		pairsPerBank = 16
+	}
+	for b := 0; b*pairsPerBank < len(a.jpairs); b++ {
 		for _, negRow := range []bool{false, true} {
-			for slot := 0; slot < 8; slot++ {
-				p := b*8 + slot
+			for slot := 0; slot < pairsPerBank; slot++ {
+				p := b*pairsPerBank + slot
 				if p >= len(a.jpairs) {
-					text.Halt()
+					if ce != nil {
+						ce.halt()
+						if err := ce.endInstr(0, 1); err != nil {
+							return nil, err
+						}
+					} else {
+						text.Halt()
+					}
 					continue
 				}
 				tgt := a.jpairs[p].nonneg
@@ -459,6 +642,14 @@ func (a *asm) emit() (*Result, error) {
 					return nil, err
 				}
 				mv(tp, pcP, 1, execCtrl)
+				if ce != nil {
+					if mvErr != nil {
+						return nil, mvErr
+					}
+					if err := ce.endInstr(a.jpairs[p].line, 1); err != nil {
+						return nil, err
+					}
+				}
 			}
 		}
 	}

@@ -19,6 +19,13 @@ func DefaultMachine() emu.FetchExecConfig {
 	return emu.FetchExecConfig{Fetch: 0, Exec: 1, Fix: 2, Scratch: 0x2003FF00}
 }
 
+// CompactMachine is the Tier-C 8-byte-record machine (emu/compact.go):
+// fixed channel map, bank/fix configuration carried by the image's init
+// writes, fetch-only loader setup.
+func CompactMachine() emu.FetchExecConfig {
+	return emu.FetchExecConfig{Compact: true}
+}
+
 // Load places the image into the machine's memory, applies relocations and
 // init writes, and returns the resolved entry address. It does not start
 // the machine — callers that want the standard fetch/execute arrangement

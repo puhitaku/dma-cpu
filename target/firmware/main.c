@@ -74,7 +74,7 @@ static void run_test(const hil_test *t)
         printf("TEST %s: FAIL dmx_load rc=%d\n", t->name, rc);
         return;
     }
-    dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH};
+    dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, t->compact};
     rc = dmx_start(&cfg, entry);
     if (rc != DMX_OK) {
         printf("TEST %s: FAIL dmx_start rc=%d\n", t->name, rc);

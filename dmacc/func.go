@@ -1304,7 +1304,13 @@ func (fc *funcCtx) emitSwitch(b *llir.Block, ins *llir.Instr) error {
 		in, tbl := fc.stub("Swi"), fc.stub("Swt")
 		fc.emitCmpSite("ltu", idx, fmt.Sprintf("$0x%x", uint32(span)), in, def)
 		fc.label(in)
+		// The slot scale is the encoding's instruction size: 16-byte
+		// blocks classic, 8-byte records compact.
+		fc.ins(".ifcompact")
+		fc.ins("mulc %s, 8, sc1", idx)
+		fc.ins(".else")
 		fc.ins("mulc %s, 16, sc1", idx)
+		fc.ins(".endif")
 		fc.ins("add sc1, $%s, sc1", tbl)
 		fc.ins("jumpr sc1")
 		fc.label(tbl)

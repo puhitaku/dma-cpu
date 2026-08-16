@@ -157,7 +157,9 @@ func (im *Image) validate() error {
 	if im.EntrySeg >= nSeg {
 		return fmt.Errorf("dmx: entry segment out of range")
 	}
-	if im.EntryOff%16 != 0 || im.EntryOff >= uint32(len(im.Segments[im.EntrySeg].Data)) {
+	// 8-byte granularity covers both encodings: classic blocks are 16
+	// bytes, compact records 8 (the loader's machine config decides).
+	if im.EntryOff%8 != 0 || im.EntryOff >= uint32(len(im.Segments[im.EntrySeg].Data)) {
 		return fmt.Errorf("dmx: entry offset %#x invalid", im.EntryOff)
 	}
 	return nil

@@ -294,8 +294,7 @@ func TestErrors(t *testing.T) {
 // operand pairs covering the full 32-bit range — including magnitudes
 // >= 2^28 where jneg's byte-swap trick breaks down — and checks every
 // result against Go's semantics.
-func TestFullRangeComparisons(t *testing.T) {
-	src := `
+var cmpSweepSrc = `
 .data
 .regs
 a:     .word 0
@@ -341,6 +340,9 @@ c6:
     move $1, done
     halt
 `
+
+func TestFullRangeComparisons(t *testing.T) {
+	src := cmpSweepSrc
 	vals := []uint32{
 		0, 1, 2, 5, 0x7F, 0x80, 0x100,
 		0x0FFFFFFF, 0x10000000, 0x7FFFFFFF,

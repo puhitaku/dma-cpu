@@ -31,6 +31,11 @@ type Options struct {
 	// Machine channels (ABI v0 defaults: 0/1/2). The scratch word is the
 	// loader's concern, not the image's.
 	Fetch, Exec, Fix int
+	// Compact emits the Tier-C 8-byte-record encoding (compact.go).
+	// Channels follow the fixed emu.Compact* map; the image carries the
+	// bank/fix configuration as init writes and loaders do fetch-only
+	// setup (emu.FetchExecConfig.Compact).
+	Compact bool
 }
 
 // Result is the assembled program.
@@ -73,10 +78,11 @@ const (
 )
 
 type operand struct {
-	kind    opKind
-	sym     string // opSym/opLit(symbol)
-	field   uint32 // opSym: byte offset for .read/.write/.count/.ctrl or +N
-	plusOff bool   // field came from a +N suffix (allowed on data symbols)
+	kind       opKind
+	sym        string // opSym/opLit(symbol)
+	field      uint32 // opSym: byte offset for .read/.write/.count/.ctrl or +N
+	plusOff    bool   // field came from a +N suffix (allowed on data symbols)
+	blockField bool   // field came from .read/.write/.count/.ctrl syntax
 	num     uint32 // opLit(value)/opAbs
 	isNum   bool   // opLit: literal is a number, not a symbol
 }
@@ -91,6 +97,7 @@ type stmt struct {
 	dir   string   // set for directives (leading '.')
 	mnem  string   // set for instructions
 	args  []string // raw comma-separated arguments
+	crecs uint32   // compact: records this instruction occupies (pass 1)
 }
 
 type asm struct {
@@ -118,6 +125,18 @@ type asm struct {
 	// bank appended after the last instruction, so slots pack with no gaps.
 	jpairs   []jpair
 	jpairIdx int // emit-pass counter (mirrors pass-1 order)
+
+	// payloadDelta maps a compact instruction's start offset to its
+	// first payload record (block-field addressing target).
+	payloadDelta map[uint32]uint32
+
+	dataSeg *img.Seg // emit pass: the data segment (compact literal refs)
+}
+
+// litNumPtr resolves a numeric pool literal to its data-segment pointer
+// (emit pass only).
+func (a *asm) litNumPtr(v uint32) img.Ptr {
+	return img.In(a.dataSeg, a.litOffs[litKey(operand{kind: opLit, num: v, isNum: true})])
 }
 
 // jpair is one trampoline pair: slot 0 (+0) taken when the tested word's
@@ -153,7 +172,10 @@ func Assemble(src string, opts Options) (*Result, error) {
 	if opts.DataBase == 0 {
 		opts.DataBase = 0x20010000
 	}
-	if opts.Fetch == 0 && opts.Exec == 0 && opts.Fix == 0 {
+	if opts.Compact {
+		// %pc and the sniffer DMACH resolve against the compact map.
+		opts.Fetch, opts.Exec, opts.Fix = emu.CompactFetch, emu.CompactSniff, emu.CompactFix
+	} else if opts.Fetch == 0 && opts.Exec == 0 && opts.Fix == 0 {
 		opts.Fetch, opts.Exec, opts.Fix = 0, 1, 2
 	}
 	a := &asm{
@@ -176,6 +198,19 @@ func Assemble(src string, opts Options) (*Result, error) {
 // --- Parsing ---
 
 func (a *asm) parse(src string) error {
+	// Conditional assembly: .ifcompact / .else / .endif select between
+	// the two encodings at parse time (used by mode-specific runtime
+	// code such as memcpy's dynamic-count idiom).
+	type cond struct{ active, taken bool }
+	var conds []cond
+	lineActive := func() bool {
+		for _, c := range conds {
+			if !c.active {
+				return false
+			}
+		}
+		return true
+	}
 	for i, raw := range strings.Split(src, "\n") {
 		line := i + 1
 		text := raw
@@ -187,6 +222,27 @@ func (a *asm) parse(src string) error {
 		}
 		text = strings.TrimSpace(text)
 		if text == "" {
+			continue
+		}
+		switch text {
+		case ".ifcompact":
+			conds = append(conds, cond{active: a.opts.Compact, taken: a.opts.Compact})
+			continue
+		case ".else":
+			if len(conds) == 0 {
+				return fmt.Errorf("line %d: .else without .ifcompact", line)
+			}
+			c := &conds[len(conds)-1]
+			c.active = !c.taken
+			continue
+		case ".endif":
+			if len(conds) == 0 {
+				return fmt.Errorf("line %d: .endif without .ifcompact", line)
+			}
+			conds = conds[:len(conds)-1]
+			continue
+		}
+		if !lineActive() {
 			continue
 		}
 		// Labels: one or more "name:" prefixes.
@@ -273,6 +329,14 @@ func (a *asm) mmioAddr(name string) (uint32, bool) {
 		return a.v.UARTDRAddr(), true
 	case "uartfr":
 		return a.v.UARTFRAddr(), true
+	case "cnt8w":
+		if a.opts.Compact {
+			return emu.ChanRegAddr(emu.CompactSize8W, emu.OffAl2TransCount), true
+		}
+	case "cnt8rw":
+		if a.opts.Compact {
+			return emu.ChanRegAddr(emu.CompactSize8RW, emu.OffAl2TransCount), true
+		}
 	}
 	return 0, false
 }
@@ -305,20 +369,24 @@ func (a *asm) parseOperand(s string, line int) (operand, error) {
 		a.internLit(op)
 		return op, nil
 	default:
-		name, field, plus := s, uint32(0), false
+		name, field, plus, bf := s, uint32(0), false, false
 		if idx := strings.LastIndex(s, "."); idx > 0 {
-			f, ok := blockFields[s[idx+1:]]
+			fname := s[idx+1:]
+			if a.opts.Compact && (fname == "count" || fname == "ctrl") {
+				return operand{}, fmt.Errorf("line %d: %q: compact records have no %s field (use %%cnt8w/%%cnt8rw with the dyncount flag)", line, s, fname)
+			}
+			f, ok := blockFields[fname]
 			if !ok {
 				return operand{}, fmt.Errorf("line %d: unknown block field in %q (want .read/.write/.count/.ctrl)", line, s)
 			}
-			name, field = s[:idx], f
+			name, field, bf = s[:idx], f, true
 		} else if n, off, err := splitPlusOff(s); err == nil && off != 0 {
 			name, field, plus = n, off, true
 		}
 		if !validName(name) {
 			return operand{}, fmt.Errorf("line %d: bad operand %q", line, s)
 		}
-		return operand{kind: opSym, sym: name, field: field, plusOff: plus}, nil
+		return operand{kind: opSym, sym: name, field: field, plusOff: plus, blockField: bf}, nil
 	}
 }
 
@@ -413,6 +481,7 @@ type moveFlags struct {
 	ctrlExtra uint32
 	size      uint32 // CtrlSize*
 	count     uint32
+	dyn       bool // compact: TRANS_COUNT is patched at runtime
 }
 
 func (a *asm) parseMoveFlags(args []string, line int) (moveFlags, error) {
@@ -431,6 +500,11 @@ func (a *asm) parseMoveFlags(args []string, line int) (moveFlags, error) {
 			f.size = emu.CtrlSize8
 		case s == "size16":
 			f.size = emu.CtrlSize16
+		case s == "dyncount":
+			if !a.opts.Compact {
+				return f, fmt.Errorf("line %d: dyncount is compact-only (classic code patches .count)", line)
+			}
+			f.dyn = true
 		case strings.HasPrefix(s, "count="):
 			v, err := parseNum(strings.TrimPrefix(s, "count="))
 			if err != nil || v == 0 {
@@ -554,43 +628,99 @@ func (a *asm) layout() error {
 			// Operand scan interns literals; macros with internal labels
 			// and generated literals handle them here so the pool is
 			// complete before data layout finishes.
-			if err := a.scanInstr(s, n); err != nil {
+			shapes, err := a.scanInstr(s, n)
+			if err != nil {
 				return err
 			}
-			a.textOff += 16 * n
+			if a.opts.Compact {
+				s.crecs = planCount(shapes)
+				a.internPlanLits(shapes)
+				if a.payloadDelta == nil {
+					a.payloadDelta = map[uint32]uint32{}
+				}
+				a.payloadDelta[a.textOff] = planPayloadDelta(shapes)
+				a.textOff += 8 * s.crecs
+			} else {
+				a.textOff += 16 * n
+			}
 		}
 	}
 	if a.entry == "" {
 		return fmt.Errorf("missing .entry directive")
 	}
-	// Sign-dispatch arena: appended after the last instruction. Bank b
-	// holds pairs 8b..8b+7: pair p's slot 0 (sign clear) at
-	// bank*256 + (p%8)*16, slot 1 (sign set) 128 bytes later.
+	// Sign-dispatch arena: appended after the last instruction. A bank is
+	// 256 bytes; pair p's slot 0 (sign clear) sits at bank*256 + slot*
+	// stride, slot 1 (sign set) 128 bytes later. Compact slots are 8-byte
+	// records, doubling a bank's capacity.
+	slotSize, pairsPerBank := uint32(16), 8
+	if a.opts.Compact {
+		slotSize, pairsPerBank = 8, 16
+	}
 	arenaBase := a.textOff
 	for i := range a.jpairs {
-		off := arenaBase + uint32(i/8)*256 + uint32(i%8)*16
+		off := arenaBase + uint32(i/pairsPerBank)*256 + uint32(i%pairsPerBank)*slotSize
 		a.syms[jpairName(i)] = symbol{text: true, off: off}
 	}
 	if n := len(a.jpairs); n > 0 {
-		a.textOff += uint32((n+7)/8) * 256
+		a.textOff += uint32((n+pairsPerBank-1)/pairsPerBank) * 256
+	}
+	if a.opts.Compact {
+		if !a.hasRegs {
+			return fmt.Errorf("compact mode requires the .regs directive")
+		}
+		// The window-selector word the fix channel reads (and switch
+		// records rewrite). Placed before the literal pool. The plain
+		// window literal always exists: the cleanup channel reads it.
+		a.internLit(operand{kind: opLit, num: emu.CompactWindow(emu.CompactPlain), isNum: true})
+		a.syms[cscrName] = symbol{off: a.dataOff}
+		a.dataOff += 4
 	}
 	// Literal pool goes after all explicit data.
 	for _, k := range a.litOrder {
 		a.litOffs[k] = a.dataOff
 		a.dataOff += 4
 	}
+	align := uint32(16)
+	if a.opts.Compact {
+		align = 8
+	}
 	if sym, ok := a.syms[a.entry]; !ok || !sym.text {
 		return fmt.Errorf(".entry %q is not a text label", a.entry)
-	} else if sym.off%16 != 0 {
-		return fmt.Errorf(".entry %q is not block-aligned", a.entry)
+	} else if sym.off%align != 0 {
+		return fmt.Errorf(".entry %q is not aligned", a.entry)
 	}
 	return nil
 }
 
+// opIsSniff / opIsPc classify an operand for compact shape building.
+func (a *asm) opIsSniff(arg string, line int) bool {
+	op, err := a.parseOperand(arg, line)
+	return err == nil && op.kind == opMMIO && op.num == a.v.SniffDataAddr()
+}
+
+func (a *asm) opIsPc(arg string, line int) bool {
+	op, err := a.parseOperand(arg, line)
+	return err == nil && op.kind == opMMIO &&
+		op.num == emu.ChanRegAddr(a.cfg.Fetch, emu.OffReadAddr)
+}
+
+// planPrefix sizes a shape prefix in records (no trailing sync) — used
+// for generated-label offsets inside compact macros.
+func planPrefix(shapes []cshape) uint32 {
+	st := newCstate()
+	n := 0
+	for _, s := range shapes {
+		n += len(st.plan(s))
+	}
+	return uint32(n)
+}
+
 // scanInstr interns operand literals and macro-internal generated labels /
-// literals during layout. Generated labels for an instruction starting at
+// literals during layout, and (compact mode) returns the instruction's
+// abstract block shapes. Generated labels for an instruction starting at
 // a.textOff are deterministic, so pass 2 regenerates the same names.
-func (a *asm) scanInstr(s *stmt, nblocks uint32) error {
+func (a *asm) scanInstr(s *stmt, nblocks uint32) ([]cshape, error) {
+	var err error
 	scan := func(args ...string) error {
 		for _, arg := range args {
 			if _, err := a.parseOperand(arg, s.line); err != nil {
@@ -605,27 +735,77 @@ func (a *asm) scanInstr(s *stmt, nblocks uint32) error {
 		}
 		return nil
 	}
+	const (
+		bP = emu.CompactPlain
+		bS = emu.CompactSniff
+		bB = emu.CompactBswap
+	)
+	sh := func(bank int) cshape { return cshape{bank: bank, count: 1} }
+	// A plain read of SNIFF_DATA into an arbitrary destination.
+	rd := func(dstArg string) cshape {
+		return cshape{bank: bP, count: 1, srcSniff: true, dstPc: a.opIsPc(dstArg, s.line)}
+	}
+	rdPc := cshape{bank: bP, count: 1, srcSniff: true, dstPc: true}
+	jmp := cshape{bank: bP, count: 1, dstPc: true}
+	var shapes []cshape
+	if err = a.scanShapes(s, scan, needRegs, &shapes, sh, rd, rdPc, jmp); err != nil {
+		return nil, err
+	}
+	return shapes, nil
+}
+
+// scanShapes is scanInstr's per-mnemonic body.
+func (a *asm) scanShapes(s *stmt, scan func(...string) error, needRegs func(string) error,
+	shapes *[]cshape, sh func(int) cshape, rd func(string) cshape, rdPc, jmp cshape) error {
+	const (
+		bP = emu.CompactPlain
+		bS = emu.CompactSniff
+		bB = emu.CompactBswap
+	)
+	compact := a.opts.Compact
 	switch s.mnem {
 	case "move":
-		if _, err := a.parseMoveFlags(s.args[2:], s.line); err != nil {
+		f, err := a.parseMoveFlags(s.args[2:], s.line)
+		if err != nil {
 			return err
 		}
+		if compact {
+			ctrl := a.cfg.ExecCtrl(a.v)&^emu.CtrlSize32 | f.size | f.ctrlExtra
+			bank, err := a.classifyCtrl(ctrl)
+			if err != nil {
+				return fmt.Errorf("line %d: %v", s.line, err)
+			}
+			*shapes = append(*shapes, cshape{
+				bank: bank, count: f.count, dyn: f.dyn,
+				srcSniff: a.opIsSniff(s.args[0], s.line),
+				dstPc:    a.opIsPc(s.args[1], s.line),
+			})
+		}
 		return scan(s.args[0], s.args[1])
-	case "add", "or", "xor", "andn":
+	case "add":
 		if err := needRegs(s.mnem); err != nil {
 			return err
 		}
+		*shapes = append(*shapes, sh(bP), sh(bS), rd(s.args[2]))
+		return scan(s.args...)
+	case "or", "xor", "andn":
+		if err := needRegs(s.mnem); err != nil {
+			return err
+		}
+		*shapes = append(*shapes, sh(bP), sh(bP), rd(s.args[2]))
 		return scan(s.args...)
 	case "and":
 		if err := needRegs("and"); err != nil {
 			return err
 		}
 		a.internLit(operand{kind: opLit, num: 0xFFFFFFFF, isNum: true})
+		*shapes = append(*shapes, sh(bP), sh(bP), rd("at"), sh(bP), sh(bP), rd(s.args[2]))
 		return scan(s.args...)
 	case "shl":
 		if err := needRegs(s.mnem); err != nil {
 			return err
 		}
+		*shapes = append(*shapes, sh(bP), sh(bS), rd(s.args[1]))
 		return scan(s.args...)
 	case "sub":
 		if err := needRegs(s.mnem); err != nil {
@@ -633,27 +813,62 @@ func (a *asm) scanInstr(s *stmt, nblocks uint32) error {
 		}
 		a.internLit(operand{kind: opLit, num: 0xFFFFFFFF, isNum: true})
 		a.internLit(operand{kind: opLit, num: 1, isNum: true})
+		*shapes = append(*shapes, sh(bP), sh(bP), sh(bS), sh(bS), rd(s.args[2]))
 		return scan(s.args...)
 	case "mulc":
 		if err := needRegs(s.mnem); err != nil {
 			return err
 		}
-		if _, err := parseNum(s.args[1]); err != nil {
+		k, err := parseNum(s.args[1])
+		if err != nil {
 			return fmt.Errorf("line %d: mulc constant %q must be a number", s.line, s.args[1])
+		}
+		if compact {
+			// Seed -k; the in-bank count-restore adds k back (compact.go).
+			a.internLit(operand{kind: opLit, num: -k, isNum: true})
+			a.internLit(operand{kind: opLit, num: 1, isNum: true})
+			*shapes = append(*shapes, sh(bP),
+				cshape{bank: bS, count: k},
+				cshape{bank: bS, count: k, cntAfter: 1},
+				rd(s.args[2]))
 		}
 		return scan(s.args[0], s.args[2])
 	case "jump":
 		a.internLit(operand{kind: opLit, sym: s.args[0]})
+		*shapes = append(*shapes, jmp)
 		return nil
 	case "jumpr":
+		if compact && a.opIsSniff(s.args[0], s.line) {
+			if err := needRegs("jumpr %sniff"); err != nil {
+				return err
+			}
+			*shapes = append(*shapes, rdPc)
+		} else {
+			*shapes = append(*shapes, cshape{bank: bP, count: 1, dstPc: true,
+				srcSniff: a.opIsSniff(s.args[0], s.line)})
+		}
 		return scan(s.args[0])
 	case "jneg":
 		if err := needRegs("jneg"); err != nil {
 			return err
 		}
-		a.internLit(operand{kind: opLit, num: 0xFFFFFFEF, isNum: true})
-		// Trampoline slots are blocks 4 and 5 of the sequence.
-		a.genTextLabel(a.textOff + 4*16)
+		// Compact records are 8 bytes, so the trampoline stride is bit 3
+		// (mask keeps 0x08) instead of bit 4 — and the sign-copy window
+		// tightens to |v| < 2^27.
+		if compact {
+			a.internLit(operand{kind: opLit, num: 0xFFFFFFF7, isNum: true})
+			body := []cshape{
+				{bank: bB, count: 1, srcSniff: a.opIsSniff(s.args[0], s.line)},
+				sh(bP), sh(bS), rdPc,
+			}
+			a.genTextLabel(a.textOff + planPrefix(body)*8)
+			*shapes = append(*shapes, body...)
+			*shapes = append(*shapes, jmp, jmp)
+		} else {
+			a.internLit(operand{kind: opLit, num: 0xFFFFFFEF, isNum: true})
+			// Trampoline slots are blocks 4 and 5 of the sequence.
+			a.genTextLabel(a.textOff + 4*16)
+		}
 		a.internLit(operand{kind: opLit, sym: s.args[1]})
 		a.internLit(operand{kind: opLit, sym: s.args[2]})
 		return scan(s.args[0])
@@ -667,14 +882,31 @@ func (a *asm) scanInstr(s *stmt, nblocks uint32) error {
 		switch s.mnem {
 		case "jsign": // jsign v, neg, nonneg
 			p, vals = jpair{neg: s.args[1], nonneg: s.args[2]}, s.args[:1]
+			*shapes = append(*shapes,
+				cshape{bank: bB, count: 1, srcSniff: a.opIsSniff(s.args[0], s.line)},
+				sh(bP), sh(bS), rdPc)
 		case "jeq": // jeq a, b, eq, ne — sign set means a-b != 0
 			p, vals = jpair{neg: s.args[3], nonneg: s.args[2]}, s.args[:2]
 			a.internLit(operand{kind: opLit, num: 0xFFFFFFFF, isNum: true})
 			a.internLit(operand{kind: opLit, num: 1, isNum: true})
+			// Compact variant (emit.go): sniff-exit only via reads.
+			*shapes = append(*shapes,
+				sh(bP), sh(bP), sh(bS), sh(bS), rd("at"),
+				sh(bP), sh(bP), sh(bS), rd("at"),
+				sh(bP), sh(bP),
+				cshape{bank: bB, count: 1, srcSniff: true},
+				sh(bP), sh(bP), sh(bS), rdPc)
 		case "jlt", "jltu": // j lt/ltu a, b, taken, not
 			p, vals = jpair{neg: s.args[2], nonneg: s.args[3]}, s.args[:2]
 			a.internLit(operand{kind: opLit, num: 0xFFFFFFFF, isNum: true})
 			a.internLit(operand{kind: opLit, num: 1, isNum: true})
+			*shapes = append(*shapes,
+				sh(bP), sh(bP), rd("at"),
+				sh(bP), sh(bP), sh(bS), sh(bS), rd("at"),
+				sh(bP), sh(bP), rd("at"),
+				sh(bP), sh(bP), sh(bP),
+				cshape{bank: bB, count: 1, srcSniff: true},
+				sh(bP), sh(bP), sh(bS), rdPc)
 		}
 		p.line = s.line
 		a.internLit(operand{kind: opLit, sym: p.neg})
@@ -686,9 +918,23 @@ func (a *asm) scanInstr(s *stmt, nblocks uint32) error {
 		if err := needRegs("jbool"); err != nil {
 			return err
 		}
-		// Trampoline slots are blocks 4 and 5 of the sequence (16 bytes
-		// apart: the dispatch adds 16*v for v in {0,1}).
-		a.genTextLabel(a.textOff + 4*16)
+		if compact {
+			// 8-byte slots: the dispatch adds 8*v for v in {0,1}. Seed
+			// -8; the in-bank count-restore adds 8 back.
+			a.internLit(operand{kind: opLit, num: ^uint32(8) + 1, isNum: true})
+			a.internLit(operand{kind: opLit, num: 1, isNum: true})
+			body := []cshape{sh(bP),
+				{bank: bS, count: 8},
+				{bank: bS, count: 8, cntAfter: 1},
+				sh(bS), rdPc}
+			a.genTextLabel(a.textOff + planPrefix(body)*8)
+			*shapes = append(*shapes, body...)
+			*shapes = append(*shapes, jmp, jmp)
+		} else {
+			// Trampoline slots are blocks 4 and 5 of the sequence (16
+			// bytes apart: the dispatch adds 16*v for v in {0,1}).
+			a.genTextLabel(a.textOff + 4*16)
+		}
 		a.internLit(operand{kind: opLit, sym: s.args[1]})
 		a.internLit(operand{kind: opLit, sym: s.args[2]})
 		return scan(s.args[0])
@@ -696,18 +942,29 @@ func (a *asm) scanInstr(s *stmt, nblocks uint32) error {
 		if err := needRegs("call"); err != nil {
 			return err
 		}
-		// Return address: the block after the 2-block sequence.
-		a.genTextLabel(a.textOff + 2*16)
+		// Return address: the block after the 2-block/record sequence.
+		if compact {
+			a.genTextLabel(a.textOff + 2*8)
+		} else {
+			a.genTextLabel(a.textOff + 2*16)
+		}
+		*shapes = append(*shapes, sh(bP), jmp)
 		a.internLit(operand{kind: opLit, sym: s.args[0]})
 		return nil
 	case "ret":
+		*shapes = append(*shapes, jmp)
 		return needRegs("ret")
 	case "safepoint":
 		if err := needRegs("safepoint"); err != nil {
 			return err
 		}
-		// Resume address: the block after the 2-block sequence.
-		a.genTextLabel(a.textOff + 2*16)
+		// Resume address: the block after the 2-block/record sequence.
+		if compact {
+			a.genTextLabel(a.textOff + 2*8)
+		} else {
+			a.genTextLabel(a.textOff + 2*16)
+		}
+		*shapes = append(*shapes, sh(bP), jmp)
 		return nil
 	case "gpio":
 		pin, err := parseNum(s.args[0])
@@ -722,10 +979,13 @@ func (a *asm) scanInstr(s *stmt, nblocks uint32) error {
 		default:
 			return fmt.Errorf("line %d: gpio wants hi or lo, got %q", s.line, s.args[1])
 		}
+		*shapes = append(*shapes, sh(bP))
 		return nil
 	case "nop":
+		*shapes = append(*shapes, cshape{bank: bP, count: 0})
 		return needRegs("nop")
 	case "halt":
+		*shapes = append(*shapes, cshape{halt: true})
 		return nil
 	}
 	return fmt.Errorf("line %d: unhandled instruction %q", s.line, s.mnem)

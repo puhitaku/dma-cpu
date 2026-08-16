@@ -165,6 +165,23 @@ int dmx_load(const uint8_t *image, size_t len, const dmx_placement *pl,
 
 int dmx_start(const dmx_machine_cfg *cfg, uint32_t entry)
 {
+    if (cfg->compact) {
+        /* Mirrors emu.SetupFetchExec's compact branch: banks and fix
+         * were configured by the image's init writes; fetch only. */
+        if ((entry % 8) != 0) {
+            return DMX_ERR_ALIGN;
+        }
+        const int cfetch = 7, cplain = 0;
+        uint32_t window = ch_reg(cplain, 0x28u /* AL2_READ_ADDR */);
+        mmio_write(ch_reg(cfetch, DMA_CH_READ_ADDR), entry);
+        mmio_write(ch_reg(cfetch, DMA_CH_WRITE_ADDR), window);
+        mmio_write(ch_reg(cfetch, DMA_CH_TRANS_COUNT), 2);
+        mmio_write(ch_reg(cfetch, DMA_CH_CTRL_TRIG),
+                   CTRL_EN | CTRL_SIZE32 | CTRL_INCR_READ | CTRL_INCR_WRITE |
+                       CTRL_TREQ_PERMANENT | CTRL_CHAIN_TO(cfetch) |
+                       CTRL_IRQ_QUIET);
+        return DMX_OK;
+    }
     if (cfg->fetch == cfg->exec || cfg->exec == cfg->fix ||
         cfg->fetch == cfg->fix) {
         return DMX_ERR_CONFIG;

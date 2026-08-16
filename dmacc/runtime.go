@@ -233,12 +233,20 @@ rt_ashr_done:
 	{
 		name: "memcpy",
 		text: `; r0 = dst, r1 = src, r2 = byte count: one patched INCR block.
+; Compact records have no count field: the count goes straight into the
+; bank channel's reload register instead (dyncount).
 __rt_memcpy:
     move r0, rt_mcp_blk.write
     move r1, rt_mcp_blk.read
+.ifcompact
+    move r2, %cnt8rw
+rt_mcp_blk:
+    move @0, @0, size8, incrr, incrw, dyncount
+.else
     move r2, rt_mcp_blk.count
 rt_mcp_blk:
     move @0, @0, size8, incrr, incrw
+.endif
     ret
 `,
 	},
@@ -248,9 +256,15 @@ rt_mcp_blk:
 ; address stays on r1's low byte; only dst increments.
 __rt_memset:
     move r0, rt_mst_blk.write
+.ifcompact
+    move r2, %cnt8w
+rt_mst_blk:
+    move r1, @0, size8, incrw, dyncount
+.else
     move r2, rt_mst_blk.count
 rt_mst_blk:
     move r1, @0, size8, incrw
+.endif
     ret
 `,
 	},

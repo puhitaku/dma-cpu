@@ -82,6 +82,15 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   indirect calls (<= 4 register args), and multi-module linking
   (`llir.Merge`). Still rejected: recursion, i64 values, floats,
   variadic-indirect calls.
+- The compact encoding (Tier C, prompts/010 + 011): 8-byte records on
+  a channel bank, `dmaasm` Options.Compact / `img.CompactMachine()` /
+  loader `DMX_COMPACT_MACHINE_CFG`; classic remains the default. The
+  planner enforces canonical state at instruction boundaries and
+  cross-checks pass-1 sizing against emission. Mind the mode-domain
+  rules in dmaasm/compact.go (notably: every record runs at its bank's
+  CURRENT count; sniff sequences must consume the accumulator within
+  one macro). `.ifcompact` gates encoding-specific dasm; block .count/
+  .ctrl fields do not exist in compact (use %cnt8w/%cnt8rw + dyncount).
 - Size discipline (`prompts/009-size-results.md`): the standard clang
   flag is -Oz; dmacc garbage-collects unreachable functions/globals,
   forwards pure copies, and lowers comparisons through shared millicode

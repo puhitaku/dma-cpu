@@ -49,31 +49,41 @@ func TestDifferential(t *testing.T) {
 				t.Fatalf("compile: %v", err)
 			}
 			for _, v := range emu.Variants {
-				t.Run(v.Name, func(t *testing.T) {
-					res, err := dmaasm.Assemble(dasm, dmaasm.Options{Variant: v})
-					if err != nil {
-						t.Fatalf("assemble: %v", err)
+				for _, compact := range []bool{false, true} {
+					name := v.Name
+					if compact {
+						name += "-compact"
 					}
-					m := emu.NewMachine(v)
-					if err := res.Image.LoadAndStart(m, nil, img.DefaultMachine()); err != nil {
-						t.Fatal(err)
-					}
-					rr, err := m.Run(emu.RunConfig{MaxCycles: 50_000_000})
-					if err != nil {
-						t.Fatal(err)
-					}
-					if rr.Reason != emu.StopIdle {
-						t.Fatalf("did not halt: %+v", rr)
-					}
-					ec, err := res.Symbol("exitcode")
-					if err != nil {
-						t.Fatal(err)
-					}
-					if got := m.Peek32(ec); got != want {
-						t.Errorf("exitcode = %d (%#x), host says %d", int32(got), got, int32(want))
-					}
-					t.Logf("cycles: %d", rr.Cycles)
-				})
+					t.Run(name, func(t *testing.T) {
+						res, err := dmaasm.Assemble(dasm, dmaasm.Options{Variant: v, Compact: compact})
+						if err != nil {
+							t.Fatalf("assemble: %v", err)
+						}
+						cfg := img.DefaultMachine()
+						if compact {
+							cfg = img.CompactMachine()
+						}
+						m := emu.NewMachine(v)
+						if err := res.Image.LoadAndStart(m, nil, cfg); err != nil {
+							t.Fatal(err)
+						}
+						rr, err := m.Run(emu.RunConfig{MaxCycles: 80_000_000})
+						if err != nil {
+							t.Fatal(err)
+						}
+						if rr.Reason != emu.StopIdle {
+							t.Fatalf("did not halt: %+v", rr)
+						}
+						ec, err := res.Symbol("exitcode")
+						if err != nil {
+							t.Fatal(err)
+						}
+						if got := m.Peek32(ec); got != want {
+							t.Errorf("exitcode = %d (%#x), host says %d", int32(got), got, int32(want))
+						}
+						t.Logf("cycles: %d", rr.Cycles)
+					})
+				}
 			}
 		})
 	}
@@ -139,31 +149,41 @@ func TestLibcStdio(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, v := range emu.Variants {
-		t.Run(v.Name, func(t *testing.T) {
-			res, err := dmaasm.Assemble(dasm, dmaasm.Options{Variant: v, DataBase: 0x20030000})
-			if err != nil {
-				t.Fatalf("assemble: %v", err)
+		for _, compact := range []bool{false, true} {
+			name := v.Name
+			if compact {
+				name += "-compact"
 			}
-			m := emu.NewMachine(v)
-			if err := res.Image.LoadAndStart(m, nil, img.DefaultMachine()); err != nil {
-				t.Fatal(err)
-			}
-			rr, err := m.Run(emu.RunConfig{MaxCycles: 100_000_000})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if rr.Reason != emu.StopIdle {
-				t.Fatalf("did not halt: %+v", rr)
-			}
-			ec, _ := res.Symbol("exitcode")
-			if got := m.Peek32(ec); got != wantExit {
-				t.Errorf("exitcode = %d, host says %d", int32(got), int32(wantExit))
-			}
-			if string(m.ConsoleOut) != string(wantConsole) {
-				t.Errorf("console mismatch:\n--- dma ---\n%s\n--- host ---\n%s", m.ConsoleOut, wantConsole)
-			}
-			t.Logf("cycles: %d, console bytes: %d", rr.Cycles, len(m.ConsoleOut))
-		})
+			t.Run(name, func(t *testing.T) {
+				res, err := dmaasm.Assemble(dasm, dmaasm.Options{Variant: v, Compact: compact, DataBase: 0x20030000})
+				if err != nil {
+					t.Fatalf("assemble: %v", err)
+				}
+				cfg := img.DefaultMachine()
+				if compact {
+					cfg = img.CompactMachine()
+				}
+				m := emu.NewMachine(v)
+				if err := res.Image.LoadAndStart(m, nil, cfg); err != nil {
+					t.Fatal(err)
+				}
+				rr, err := m.Run(emu.RunConfig{MaxCycles: 100_000_000})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if rr.Reason != emu.StopIdle {
+					t.Fatalf("did not halt: %+v", rr)
+				}
+				ec, _ := res.Symbol("exitcode")
+				if got := m.Peek32(ec); got != wantExit {
+					t.Errorf("exitcode = %d, host says %d", int32(got), int32(wantExit))
+				}
+				if string(m.ConsoleOut) != string(wantConsole) {
+					t.Errorf("console mismatch:\n--- dma ---\n%s\n--- host ---\n%s", m.ConsoleOut, wantConsole)
+				}
+				t.Logf("cycles: %d, console bytes: %d", rr.Cycles, len(m.ConsoleOut))
+			})
+		}
 	}
 }
 
