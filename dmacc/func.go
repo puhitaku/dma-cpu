@@ -899,6 +899,22 @@ func (fc *funcCtx) emitCall(ins *llir.Instr) error {
 	}
 	callee, ok := fc.g.funcIdx[name]
 	if !ok {
+		// Freestanding clang may emit direct libcalls for the memory
+		// builtins; they lower to the native DMA runtime like their
+		// intrinsic forms.
+		switch name {
+		case "memcpy", "memset":
+			if len(ins.Args) == 3 {
+				if err := fc.emitMemRT(name, ins.Args[0], ins.Args[1], ins.Args[2]); err != nil {
+					return err
+				}
+				// Both return their first argument.
+				if ins.Res != "" && ins.Typ.Kind != llir.TVoid {
+					return fc.forward(ins.Res, ins.Args[0])
+				}
+				return nil
+			}
+		}
 		return fmt.Errorf("call to undefined function %q (no external linkage on this target)", name)
 	}
 	nfix := len(callee.Params)

@@ -77,6 +77,10 @@ llgen:
 	  echo "$$f $$(cat bin/llgen_$$f.exit)" > dmacc/testdata/$$f.expected || exit 1; \
 	done
 	@cat dmacc/testdata/*.expected 2>/dev/null || true
+	@# Target-only programs (no host truth: infinite loops / hardware IO).
+	clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding -S -emit-llvm \
+	  dmacc/testdata/proc.c -o dmacc/testdata/proc.ll
+	(cd dmacc/testdata && $(LIBC_CLANG) shell.c -o shell.ll)
 
 # --- Hardware-in-the-loop (see prompts/004-hw-calibration.md) ---
 # Environment (adjust to your install):

@@ -16,7 +16,7 @@ var castOps = map[string]bool{
 	"ptrtoint": true, "inttoptr": true,
 }
 
-var binFlags = map[string]bool{"nuw": true, "nsw": true, "exact": true, "disjoint": true}
+var binFlags = map[string]bool{"nuw": true, "nsw": true, "exact": true, "disjoint": true, "nneg": true}
 
 func (p *parser) instrLine(lx *lexer) error {
 	ins := &Instr{Line: lx.line}

@@ -8,5 +8,6 @@ extern volatile unsigned int __dma_uart_dr; /* PL011 UART0 DR */
 extern volatile unsigned int __dma_uart_fr; /* PL011 UART0 FR */
 
 #define DMA_UART_FR_TXFF (1u << 5)
+#define DMA_UART_FR_RXFE (1u << 4)
 
 #endif

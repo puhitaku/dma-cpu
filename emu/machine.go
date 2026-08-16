@@ -36,6 +36,9 @@ type Machine struct {
 	// ConsoleOut collects bytes written to UART0's data register — the
 	// DMA machine's stdout (see libc/, Phase 4.5).
 	ConsoleOut []byte
+	// ConsoleIn feeds UART0 reads — the machine's stdin (Phase 5b): a
+	// DR read pops the next byte, and FR's RXFE bit reflects emptiness.
+	ConsoleIn []byte
 
 	// TraceW, when non-nil, receives one line per DMA transfer.
 	TraceW io.Writer
@@ -122,10 +125,28 @@ func (m *Machine) Read(addr uint32, size int) (uint32, error) {
 		return m.dma.regRead(norm), nil
 	case addr >= 0x40000000 && addr < 0x60000000:
 		norm, _ := aliasOp(addr)
+		switch norm {
+		case m.v.UARTDRAddr():
+			if len(m.ConsoleIn) == 0 {
+				return 0, nil
+			}
+			b := m.ConsoleIn[0]
+			m.ConsoleIn = m.ConsoleIn[1:]
+			return uint32(b), nil
+		case m.v.UARTFRAddr():
+			// TXFF always clear; RXFE tracks the input queue.
+			if len(m.ConsoleIn) == 0 {
+				return 1 << 4, nil
+			}
+			return 0, nil
+		}
 		return m.mmio[norm], nil
 	}
 	return 0, fmt.Errorf("bus fault: read at %#08x", addr)
 }
+
+// FeedConsole appends input bytes for the machine's UART to consume.
+func (m *Machine) FeedConsole(s string) { m.ConsoleIn = append(m.ConsoleIn, s...) }
 
 // Write performs a bus write of size bytes, applying atomic-alias semantics
 // in the peripheral space. MMIO writes are performed at register (32-bit)
