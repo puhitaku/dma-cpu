@@ -11,3 +11,4 @@
 # IDE / editor
 .idea/
 .vscode/
+/examples/*/build/
