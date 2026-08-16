@@ -91,6 +91,13 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   CURRENT count; sniff sequences must consume the accumulator within
   one macro). `.ifcompact` gates encoding-specific dasm; block .count/
   .ctrl fields do not exist in compact (use %cnt8w/%cnt8rw + dyncount).
+- Processes (Phase 5a, prompts/012): a process = a relocated image
+  instance; context switch = swapping irqresume at a safepoint (all
+  shared scratch is dead there by construction — keep it that way: no
+  safepoints inside macros, millicode, or the runtime). The scheduler
+  is prog/hil/kernel.dasm; ticks arrive via a two-injector chain (ch3
+  timer -> ch4) patching both dispatch words. dmacc's crt0 thunk is the
+  exported `crtthunk` (kernels use it as the dispatch EOI value).
 - Size discipline (`prompts/009-size-results.md`): the standard clang
   flag is -Oz; dmacc garbage-collects unreachable functions/globals,
   forwards pure copies, and lowers comparisons through shared millicode

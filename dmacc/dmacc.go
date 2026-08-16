@@ -125,12 +125,13 @@ func (g *gen) run() error {
 	fmt.Fprintf(w, "sc0: .word 0\nsc1: .word 0\nsc2: .word 0\n")
 	w.WriteString(g.data.String())
 	fmt.Fprintf(w, "\n.text\n.entry __start\n__start:\n")
-	fmt.Fprintf(w, "    move $__crt_thunk, dispatch\n")
+	fmt.Fprintf(w, "    move $crtthunk, dispatch\n")
 	fmt.Fprintf(w, "    call %s\n", funcSym(g.opts.Entry))
 	fmt.Fprintf(w, "    move r0, exitcode\n")
 	fmt.Fprintf(w, "    move $1, done\n")
 	fmt.Fprintf(w, "    halt\n")
-	fmt.Fprintf(w, "__crt_thunk:\n    jumpr irqresume\n")
+	// crtthunk is exported: kernels use it as the dispatch EOI value.
+	fmt.Fprintf(w, "crtthunk:\n    jumpr irqresume\n")
 	w.WriteString(g.text.String())
 	g.emitCmpHelpers()
 	if err := g.emitRuntime(); err != nil {

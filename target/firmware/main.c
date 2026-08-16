@@ -234,6 +234,53 @@ static inline uint32_t chreg(int ch, uint32_t off)
     return 0x50000000u + (uint32_t)ch * 0x40u + off;
 }
 
+/* Phase 5a (prompts/012): the preemptive round-robin proto-kernel. Two
+ * relocated instances of the same compiled C program are scheduled by
+ * kernel.dasm; a two-injector chain patches both dispatch words on
+ * every pacing-timer tick, and the running process detours into the
+ * scheduler at its next safepoint. The images arrive pre-wired from
+ * dmxgen; this only loads, arms, starts A, and samples the counters. */
+static void exp_sched(void)
+{
+    machine_reset();
+    uint32_t entry_k, entry_a, entry_b;
+    if (dmx_load(hil_sched_kernel_dmx, sizeof hil_sched_kernel_dmx, NULL, &entry_k) != DMX_OK ||
+        dmx_load(hil_sched_proca_dmx, sizeof hil_sched_proca_dmx, NULL, &entry_a) != DMX_OK ||
+        dmx_load(hil_sched_procb_dmx, sizeof hil_sched_procb_dmx, NULL, &entry_b) != DMX_OK) {
+        printf("EXP sched: FAIL load\n");
+        return;
+    }
+    reg_wr(HIL_TIMER0_ADDR + 4, (1u << 16) | 15000u); /* TIMER1 tick */
+    /* inj2 (ch4): armed, waits for inj1's chain. */
+    reg_wr(chreg(4, CH_AL1_READ_ADDR), HIL_SCHED_VEC_B);
+    reg_wr(chreg(4, CH_AL1_WRITE_ADDR), HIL_SCHED_DISP_B);
+    reg_wr(chreg(4, CH_AL2_TRANS_COUNT), 1);
+    reg_wr(chreg(4, CH_AL1_CTRL), HIL_SCHED_INJ2_CTRL);
+    /* inj1 (ch3): timer-paced, chains to inj2. */
+    reg_wr(chreg(3, CH_AL1_READ_ADDR), HIL_SCHED_VEC_A);
+    reg_wr(chreg(3, CH_AL1_WRITE_ADDR), HIL_SCHED_DISP_A);
+    reg_wr(chreg(3, CH_TRANS_COUNT), 1);
+    reg_wr(chreg(3, CH_CTRL_TRIG), HIL_SCHED_INJ1_CTRL);
+
+    dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 0};
+    if (dmx_start(&cfg, HIL_SCHED_ENTRY_A) != DMX_OK) {
+        printf("EXP sched: FAIL start\n");
+        return;
+    }
+    sleep_ms(20);
+    uint32_t a1 = reg_rd(HIL_SCHED_COUNTER_A), b1 = reg_rd(HIL_SCHED_COUNTER_B);
+    uint32_t t1 = reg_rd(HIL_SCHED_TICKS);
+    sleep_ms(80);
+    uint32_t a2 = reg_rd(HIL_SCHED_COUNTER_A), b2 = reg_rd(HIL_SCHED_COUNTER_B);
+    uint32_t t2 = reg_rd(HIL_SCHED_TICKS);
+    machine_reset();
+    int ok = t1 >= 1 && t2 > t1 && a2 > a1 && b2 > b1;
+    printf("EXP sched: %s ticks=%lu->%lu counterA=%lu->%lu counterB=%lu->%lu\n",
+           ok ? "PASS" : "FAIL",
+           (unsigned long)t1, (unsigned long)t2, (unsigned long)a1,
+           (unsigned long)a2, (unsigned long)b1, (unsigned long)b2);
+}
+
 /* Tier-C compact machine (prompts/010): 8-byte records fetched into a
  * channel bank with static CTRLs; mode switch = one record rewriting
  * the fix channel's scratch word; the all-zero record is HALT (null
@@ -615,6 +662,7 @@ int main(void)
         cal_sniff("sniff_crc32", HIL_CAL_SNIFF_CRC32, 0xFFFFFFFFu, 0x12345678u,
                   HIL_CAL_EXPECT_CRC32);
         cal_compact();
+        exp_sched();
         exp_throughput();
         exp_irq_timer();
         exp_irq_gpio();

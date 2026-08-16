@@ -220,6 +220,162 @@ func buildCC(spec hilSpec, v *emu.Variant, lay layout) (*dmaasm.Result, error) {
 	return res, nil
 }
 
+// --- Phase 5a: the preemptive-scheduler bundle (prompts/012) ---
+// Three images at fixed offsets in the machine region: the kernel
+// (prog/hil/kernel.dasm) and two relocated instances of the compiled
+// proc.c. Kernel cross-image pointers are patched at generation time;
+// the firmware only loads, arms the injector chain, and starts A.
+type schedBundle struct {
+	kernel, procA, procB []byte
+	entryA               uint32
+	counterA, counterB   uint32
+	ticks, vecA, vecB    uint32
+	dispA, dispB         uint32
+	inj1Ctrl, inj2Ctrl   uint32
+}
+
+func buildSched(v *emu.Variant, lay layout) (*schedBundle, error) {
+	kText, kData := lay.text, lay.text+0x2000
+	aText, aData := lay.text+0x4000, lay.text+0x6000
+	bText, bData := lay.text+0x8000, lay.text+0xA000
+
+	ksrc, err := prog.HIL("kernel")
+	if err != nil {
+		return nil, err
+	}
+	kern, err := dmaasm.Assemble(ksrc, dmaasm.Options{Variant: v, TextBase: kText, DataBase: kData})
+	if err != nil {
+		return nil, fmt.Errorf("kernel: %w", err)
+	}
+	psrc, err := os.ReadFile("dmacc/testdata/proc.ll")
+	if err != nil {
+		return nil, err
+	}
+	pmod, err := llir.Parse(string(psrc))
+	if err != nil {
+		return nil, err
+	}
+	pdasm, err := dmacc.Compile(pmod, dmacc.Options{})
+	if err != nil {
+		return nil, err
+	}
+	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: aText, DataBase: aData})
+	if err != nil {
+		return nil, err
+	}
+	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: bText, DataBase: bData})
+	if err != nil {
+		return nil, err
+	}
+
+	sym := func(r *dmaasm.Result, n string) (uint32, error) { return r.Symbol(n) }
+	entryA := aText + procA.Image.EntryOff
+
+	// Patch the kernel's cross-image pointers at generation time.
+	type wire struct {
+		kernSym string
+		res     *dmaasm.Result
+		procSym string
+	}
+	for _, w := range []wire{
+		{"pAdisp", procA, "dispatch"}, {"pBdisp", procB, "dispatch"},
+		{"pAresume", procA, "irqresume"}, {"pBresume", procB, "irqresume"},
+		{"thunkA", procA, "crtthunk"}, {"thunkB", procB, "crtthunk"},
+	} {
+		kaddr, err := sym(kern, w.kernSym)
+		if err != nil {
+			return nil, err
+		}
+		val, err := sym(w.res, w.procSym)
+		if err != nil {
+			return nil, err
+		}
+		if err := patchData(kern.Image, kData, kaddr, val); err != nil {
+			return nil, err
+		}
+	}
+	kaddr, err := sym(kern, "savedB")
+	if err != nil {
+		return nil, err
+	}
+	if err := patchData(kern.Image, kData, kaddr, bText+procB.Image.EntryOff); err != nil {
+		return nil, err
+	}
+
+	b := &schedBundle{entryA: entryA}
+	get := func(dst *uint32, r *dmaasm.Result, n string) {
+		if err == nil {
+			*dst, err = sym(r, n)
+		}
+	}
+	get(&b.counterA, procA, "g_counter")
+	get(&b.counterB, procB, "g_counter")
+	get(&b.ticks, kern, "ticks")
+	get(&b.vecA, kern, "vecA")
+	get(&b.vecB, kern, "vecB")
+	get(&b.dispA, procA, "dispatch")
+	get(&b.dispB, procB, "dispatch")
+	if err != nil {
+		return nil, err
+	}
+	const inj1, inj2 = 3, 4
+	b.inj1Ctrl = emu.CtrlEN | emu.CtrlHighPriority | emu.CtrlSize32 |
+		v.CtrlTreq(emu.TreqTimer1) | v.CtrlChainTo(inj2) | v.CtrlIRQQuiet
+	b.inj2Ctrl = emu.CtrlEN | emu.CtrlHighPriority | emu.CtrlSize32 |
+		v.CtrlTreq(emu.TreqPermanent) | v.CtrlChainTo(inj2) | v.CtrlIRQQuiet
+
+	// Emulator verification of the whole scenario before it ships.
+	if err := verifySched(v, lay, kern, procA, procB, b); err != nil {
+		return nil, err
+	}
+
+	for _, im := range []*img.Image{kern.Image, procA.Image, procB.Image} {
+		im.Relocs = nil // fixed placement: bake
+	}
+	if b.kernel, err = kern.Image.Encode(); err != nil {
+		return nil, err
+	}
+	if b.procA, err = procA.Image.Encode(); err != nil {
+		return nil, err
+	}
+	if b.procB, err = procB.Image.Encode(); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func verifySched(v *emu.Variant, lay layout, kern, procA, procB *dmaasm.Result, b *schedBundle) error {
+	m := emu.NewMachine(v)
+	for _, r := range []*dmaasm.Result{kern, procA, procB} {
+		if _, err := r.Image.Load(m, nil); err != nil {
+			return err
+		}
+	}
+	const inj1, inj2 = 3, 4
+	m.Poke32(v.TimerAddr(1), 1<<16|15000)
+	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1ReadAddr), b.vecB)
+	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1WriteAddr), b.dispB)
+	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl2TransCount), 1)
+	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1Ctrl), b.inj2Ctrl)
+	m.Poke32(emu.ChanRegAddr(inj1, emu.OffAl1ReadAddr), b.vecA)
+	m.Poke32(emu.ChanRegAddr(inj1, emu.OffAl1WriteAddr), b.dispA)
+	m.Poke32(emu.ChanRegAddr(inj1, emu.OffTransCount), 1)
+	m.Poke32(emu.ChanRegAddr(inj1, emu.OffCtrlTrig), b.inj1Ctrl)
+	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
+		Fetch: 0, Exec: 1, Fix: 2, Entry: b.entryA, Scratch: lay.scratch,
+	}); err != nil {
+		return err
+	}
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 500_000}); err != nil {
+		return err
+	}
+	a, bb, tk := m.Peek32(b.counterA), m.Peek32(b.counterB), m.Peek32(b.ticks)
+	if tk < 2 || a == 0 || bb == 0 {
+		return fmt.Errorf("sched: emulator verification failed: ticks=%d a=%d b=%d", tk, a, bb)
+	}
+	return nil
+}
+
 // build assembles a spec's program for the SKU and applies patches.
 func build(spec hilSpec, v *emu.Variant, lay layout) (*test, error) {
 	var res *dmaasm.Result
@@ -384,7 +540,7 @@ func calExpect(v *emu.Variant, sniffCtrl, seed, word uint32) uint32 {
 
 // --- C header emission ---
 
-func emitHeader(v *emu.Variant, lay layout, tests []*test) string {
+func emitHeader(v *emu.Variant, lay layout, tests []*test, sched *schedBundle) string {
 	var b strings.Builder
 	p := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 
@@ -510,6 +666,36 @@ func emitHeader(v *emu.Variant, lay layout, tests []*test) string {
 	p("};")
 	p("#define HIL_N_TESTS %d", len(tests))
 	p("")
+	p("/* Phase 5a scheduler bundle (prompts/012): kernel + two relocated")
+	p(" * process instances, cross-image pointers pre-patched, emulator-")
+	p(" * verified. The firmware loads all three, arms the injector chain,")
+	p(" * and starts process A. */")
+	dump := func(name string, raw []byte) {
+		p("static const uint8_t %s[] = {", name)
+		for i := 0; i < len(raw); i += 16 {
+			end := min(i+16, len(raw))
+			var line []string
+			for _, by := range raw[i:end] {
+				line = append(line, fmt.Sprintf("0x%02x", by))
+			}
+			p("    %s,", strings.Join(line, ", "))
+		}
+		p("};")
+	}
+	dump("hil_sched_kernel_dmx", sched.kernel)
+	dump("hil_sched_proca_dmx", sched.procA)
+	dump("hil_sched_procb_dmx", sched.procB)
+	p("#define HIL_SCHED_ENTRY_A 0x%08Xu", sched.entryA)
+	p("#define HIL_SCHED_COUNTER_A 0x%08Xu", sched.counterA)
+	p("#define HIL_SCHED_COUNTER_B 0x%08Xu", sched.counterB)
+	p("#define HIL_SCHED_TICKS 0x%08Xu", sched.ticks)
+	p("#define HIL_SCHED_VEC_A 0x%08Xu", sched.vecA)
+	p("#define HIL_SCHED_VEC_B 0x%08Xu", sched.vecB)
+	p("#define HIL_SCHED_DISP_A 0x%08Xu", sched.dispA)
+	p("#define HIL_SCHED_DISP_B 0x%08Xu", sched.dispB)
+	p("#define HIL_SCHED_INJ1_CTRL 0x%08Xu", sched.inj1Ctrl)
+	p("#define HIL_SCHED_INJ2_CTRL 0x%08Xu", sched.inj2Ctrl)
+	p("")
 	p("#endif /* DMX_HIL_IMAGES_H */")
 	return b.String()
 }
@@ -586,10 +772,14 @@ func run() error {
 			}
 		}
 	}
+	sched, err := buildSched(v, lay)
+	if err != nil {
+		return fmt.Errorf("sched bundle: %w", err)
+	}
 	if err := os.MkdirAll(filepath.Dir(*out), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(*out, []byte(emitHeader(v, lay, tests)), 0o644); err != nil {
+	if err := os.WriteFile(*out, []byte(emitHeader(v, lay, tests, sched)), 0o644); err != nil {
 		return err
 	}
 	for _, t := range tests {

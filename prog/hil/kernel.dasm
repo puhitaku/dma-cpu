@@ -1,0 +1,70 @@
+; kernel.dasm — the Phase 5a proto-kernel: a timer-preemptive
+; round-robin scheduler for two processes (prompts/012).
+;
+; Delivery is approach B (doc/abi.md): a two-injector chain patches BOTH
+; processes' dispatch words with their sched_from_* vector on every
+; pacing-timer tick; whichever process is running detours here at its
+; next safepoint. Context switch is one word: at a safepoint every piece
+; of shared scratch (at/at2, sc*, millicode and runtime words, %sniff)
+; is dead by construction, and each process instance owns a private
+; register bank and frame (same program, relocated twice), so only the
+; resume address needs saving.
+;
+; The loader patches the pointer words below with addresses from the two
+; process images, and arms the injectors:
+;   inj1 (ABI ch3): TREQ = pacing timer, vecA -> *pAdisp, chain -> inj2
+;   inj2 (ch4):     permanent,           vecB -> *pBdisp, no chain
+; The scheduler's EOI restores both dispatches and re-arms inj1.
+
+.data
+.regs
+curr:     .word 0          ; 0: A running, 1: B running
+savedA:   .word 0          ; resume address of the process not running
+savedB:   .word 0          ; (loader seeds savedB with B's entry)
+ticks:    .word 0
+; Loader-patched cross-image pointers:
+pAdisp:   .word 0          ; &A.dispatch
+pBdisp:   .word 0
+pAresume: .word 0          ; &A.irqresume
+pBresume: .word 0
+thunkA:   .word 0          ; A's resume-thunk address (the EOI value)
+thunkB:   .word 0
+; Injector source words (the values the injectors write over dispatch):
+vecA:     .word sched_from_a
+vecB:     .word sched_from_b
+
+.text
+.entry sched_from_a
+
+sched_from_a:              ; tick landed while A was running
+    ; EOI: both dispatches back to their thunks
+    move pAdisp, eoiA1.write
+eoiA1:
+    move thunkA, @0
+    move pBdisp, eoiA2.write
+eoiA2:
+    move thunkB, @0
+    ; save A's resume point
+    move pAresume, ldA.read
+ldA:
+    move @0, savedA
+    add ticks, $1, ticks
+    move $1, curr
+    ; re-arm injector 1 (ch3 AL1_TRANS_COUNT_TRIG)
+    move $1, @0x500000DC
+    jumpr savedB           ; resume B
+
+sched_from_b:              ; tick landed while B was running
+    move pAdisp, eoiB1.write
+eoiB1:
+    move thunkA, @0
+    move pBdisp, eoiB2.write
+eoiB2:
+    move thunkB, @0
+    move pBresume, ldB.read
+ldB:
+    move @0, savedB
+    add ticks, $1, ticks
+    move $0, curr
+    move $1, @0x500000DC
+    jumpr savedA           ; resume A

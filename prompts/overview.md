@@ -427,7 +427,9 @@ the translator as its executable spec. Original plan for reference:
       DMA-hosted bytecode interpreter trading ~10× speed for ~10× density.
       RP2350 relieves pressure (520 KB SRAM, 16 channels) and should be the
       xv6 target; RP2040 remains the toolchain reference target.
-15. Milestone ladder: timer-preemptive round-robin of two DMA "processes" →
+15. Milestone ladder (first rung DONE — prompts/012-sched-results.md:
+    preemptive two-process round-robin on silicon):
+    timer-preemptive round-robin of two DMA "processes" →
     syscall via software-interrupt idiom (a block that patches
     `dispatch_target` itself) → UART console shell → xv6-derived kernel.
 
