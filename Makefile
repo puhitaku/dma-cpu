@@ -42,6 +42,22 @@ libc:
 	  (cd $(PICOLIBC)/libc/string && $(LIBC_CLANG) $$f.c -o $(CURDIR)/libc/ll/$$f.ll) || exit 1; done
 	@echo "libc/ll: $$(ls libc/ll | wc -l | tr -d ' ') modules"
 
+# --- xv6 port (xv6/PORT.md): compile vendored sources to IR goldens ---
+# The curated list grows as the port proceeds; goldens in xv6/ll are
+# committed and linked by dmacc like the libc ones.
+XV6_SRCS = kernel/string.c user/umalloc.c dma/sbrk.c
+XV6_CLANG = clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding \
+            -I$(CURDIR)/xv6 -S -emit-llvm
+
+.PHONY: xv6-ll
+xv6-ll:
+	@mkdir -p xv6/ll
+	@for f in $(XV6_SRCS); do \
+	  out=xv6/ll/$$(basename $$f .c).ll; \
+	  (cd xv6 && $(XV6_CLANG) $$f -o $(CURDIR)/$$out) || exit 1; \
+	  echo "  $$f -> $$out"; \
+	done
+
 # --- Compiler goldens (Phase 4) ---
 # Regenerate the committed IR goldens and host-truth expectations for the
 # dmacc differential tests. Needs a host clang. The target IR and the

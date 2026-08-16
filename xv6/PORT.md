@@ -1,0 +1,51 @@
+# Porting xv6 to the DMA machine
+
+This tree was vendored pristine at the commit recorded in `UPSTREAM`;
+every DMA-specific change lives in commits after that one, so
+`git diff <vendor-commit> -- xv6/` is always the complete port.
+
+## Rules
+
+- Upstream files are modified **in place, minimally** — no
+  reformatting, no gratuitous renames. New DMA-machine code goes in
+  `xv6/dma/` (clearly ours) or replaces a machine-dependent file
+  outright (noted in the table below).
+- Types: the DMA machine is ILP32 with no i64. `uint64` in
+  machine-dependent code becomes `uint`; the on-disk fs format is
+  already 32-bit. `long` is 32-bit under our ABI (ILP32) — upstream
+  uses it only for alignment.
+- Build: selected sources compile through the standard pipeline
+  (clang -Oz → `xv6/ll/*.ll` goldens via `make xv6-ll` → linked by
+  dmacc). No xv6 Makefile, no RISC-V toolchain, no qemu.
+- Concurrency: one hart, interrupts only at safepoints — spinlocks
+  degenerate to no-ops (acquire/release keep their API), and
+  `push_off/pop_off` becomes dispatch-thunk save/restore if ever
+  needed.
+
+## File disposition (kernel/)
+
+| Upstream | Fate |
+|---|---|
+| string.c | KEEP (32-bit clean; first file through the pipeline) |
+| fs.c, log.c, bio.c, file.c, pipe.c | KEEP/ADAPT (portable; needs a block device — planned: flash region or RAM disk via `xv6/dma/`) |
+| proc.c, syscall.c, sysproc.c, sysfile.c | ADAPT (proc table & dispatch survive; context switch becomes the one-word irqresume swap; syscalls via self-patched dispatch) |
+| console.c, printf.c | ADAPT (backed by the `__dma_uart_*` path) |
+| spinlock.c, sleeplock.c | ADAPT (single hart: no-op locks with intact API) |
+| exec.c | ADAPT (loads DMX images via Tier-2 relocation instead of ELF+paging) |
+| kalloc.c | ADAPT (region allocator, no page tables) |
+| vm.c, vm.h | DELETE (no MMU; isolation by relocation) |
+| trap.c, kernelvec.S, trampoline.S, swtch.S, entry.S, start.c | REPLACE (approach-B safepoints, injector chains, crt0/loader — already built in the substrate) |
+| riscv.h, memlayout.h, plic.c, uart.c, virtio_disk.c | REPLACE (DMA-machine equivalents in `xv6/dma/`) |
+
+user/: KEEP where portable (umalloc.c, ulib.c, sh.c, the utilities);
+usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
+
+## Progress
+
+- [x] `user/umalloc.c` + `kernel/string.c` compile unmodified and run
+  on the machine (self-checking allocator exercise,
+  `TestXv6Malloc`); `xv6/dma/sbrk.c` provides the heap.
+- [ ] Syscall mechanism (self-patched dispatch): yield/write/exit.
+- [ ] proc.c adaptation onto the Phase 5a scheduler.
+- [ ] Console (console.c) on `__dma_uart_*`; sh.c as the shell.
+- [ ] Block device + fs.c stack; mkfs image in flash.
