@@ -82,6 +82,14 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   indirect calls (<= 4 register args), and multi-module linking
   (`llir.Merge`). Still rejected: recursion, i64 values, floats,
   variadic-indirect calls.
+- Size discipline (`prompts/009-size-results.md`): the standard clang
+  flag is -Oz; dmacc garbage-collects unreachable functions/globals,
+  forwards pure copies, and lowers comparisons through shared millicode
+  helpers by default (4-5 blocks/site; `-inlinecmp` restores the fast
+  inline form). `dmacc -size` prints block attribution — measure before
+  optimizing. dmxgen bakes relocations out of the HIL images (they load
+  at link addresses only). When touching lowering, keep the
+  differential suite bit-exact — it caught the phase's only miscompile.
 
 ## Build, test, hardware
 

@@ -5,7 +5,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 
 @seed0 = dso_local global i32 12345, align 4
 
-; Function Attrs: mustprogress nofree norecurse nosync nounwind willreturn memory(argmem: readwrite)
+; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(argmem: readwrite)
 define dso_local i32 @lcg(ptr noundef captures(none) %0) local_unnamed_addr #0 {
   %2 = load i32, ptr %0, align 4, !tbaa !3
   %3 = mul i32 %2, 1664525
@@ -14,55 +14,58 @@ define dso_local i32 @lcg(ptr noundef captures(none) %0) local_unnamed_addr #0 {
   ret i32 %4
 }
 
-; Function Attrs: nofree norecurse nounwind memory(readwrite, argmem: none)
+; Function Attrs: minsize nofree norecurse nounwind optsize memory(readwrite, argmem: none)
 define dso_local range(i32 0, -2147483648) i32 @main() local_unnamed_addr #1 {
   %1 = load volatile i32, ptr @seed0, align 4, !tbaa !3
-  br label %4
+  br label %2
 
-2:                                                ; preds = %4
-  %3 = and i32 %36, 2147483647
-  ret i32 %3
+2:                                                ; preds = %9, %0
+  %3 = phi i32 [ %1, %0 ], [ %13, %9 ]
+  %4 = phi i32 [ 0, %0 ], [ %39, %9 ]
+  %5 = phi i32 [ 0, %0 ], [ %38, %9 ]
+  %6 = icmp eq i32 %4, 20
+  br i1 %6, label %7, label %9
 
-4:                                                ; preds = %0, %4
-  %5 = phi i32 [ 0, %0 ], [ %36, %4 ]
-  %6 = phi i32 [ 0, %0 ], [ %37, %4 ]
-  %7 = phi i32 [ %1, %0 ], [ %11, %4 ]
-  %8 = mul i32 %7, 1664525
-  %9 = add i32 %8, 1013904223
-  %10 = mul i32 %9, 1664525
+7:                                                ; preds = %2
+  %8 = and i32 %5, 2147483647
+  ret i32 %8
+
+9:                                                ; preds = %2
+  %10 = mul i32 %3, 1664525
   %11 = add i32 %10, 1013904223
-  %12 = or i32 %11, 1
-  %13 = add i32 %5, %9
-  %14 = add i32 %13, %12
-  %15 = sub i32 %9, %12
-  %16 = xor i32 %14, %15
-  %17 = and i32 %12, %9
-  %18 = add i32 %16, %17
-  %19 = or i32 %12, %9
-  %20 = xor i32 %18, %19
-  %21 = freeze i32 %9
-  %22 = freeze i32 %12
-  %23 = udiv i32 %21, %22
-  %24 = mul i32 %23, %22
-  %25 = sub i32 %21, %24
-  %26 = add i32 %25, %20
-  %27 = xor i32 %26, %23
-  %28 = ashr i32 %9, 3
-  %29 = and i32 %12, 31
-  %30 = lshr i32 %9, %29
-  %31 = shl i32 %9, %29
-  %32 = mul i32 %12, %9
-  %33 = add i32 %32, %28
-  %34 = add i32 %33, %30
-  %35 = add i32 %34, %31
-  %36 = add i32 %35, %27
-  %37 = add nuw nsw i32 %6, 1
-  %38 = icmp eq i32 %37, 20
-  br i1 %38, label %2, label %4, !llvm.loop !7
+  %12 = mul i32 %11, 1664525
+  %13 = add i32 %12, 1013904223
+  %14 = or i32 %13, 1
+  %15 = add i32 %5, %11
+  %16 = add i32 %15, %14
+  %17 = sub i32 %11, %14
+  %18 = xor i32 %16, %17
+  %19 = and i32 %14, %11
+  %20 = add i32 %18, %19
+  %21 = or i32 %14, %11
+  %22 = xor i32 %20, %21
+  %23 = freeze i32 %11
+  %24 = freeze i32 %14
+  %25 = udiv i32 %23, %24
+  %26 = mul i32 %25, %24
+  %27 = sub i32 %23, %26
+  %28 = add i32 %27, %22
+  %29 = xor i32 %28, %25
+  %30 = ashr i32 %11, 3
+  %31 = and i32 %14, 31
+  %32 = lshr i32 %11, %31
+  %33 = shl i32 %11, %31
+  %34 = mul i32 %14, %11
+  %35 = add i32 %34, %30
+  %36 = add i32 %35, %32
+  %37 = add i32 %36, %33
+  %38 = add i32 %37, %29
+  %39 = add nuw nsw i32 %4, 1
+  br label %2, !llvm.loop !7
 }
 
-attributes #0 = { mustprogress nofree norecurse nosync nounwind willreturn memory(argmem: readwrite) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #1 = { nofree norecurse nounwind memory(readwrite, argmem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #0 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(argmem: readwrite) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #1 = { minsize nofree norecurse nounwind optsize memory(readwrite, argmem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 
 !llvm.module.flags = !{!0, !1}
 !llvm.ident = !{!2}

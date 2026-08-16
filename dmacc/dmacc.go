@@ -23,8 +23,10 @@ import (
 
 // Options configures one compilation.
 type Options struct {
-	Entry        string // entry function, default "main"
-	NoSafepoints bool   // omit safepoints at backward branches
+	Entry           string // entry function, default "main"
+	NoSafepoints    bool   // omit safepoints at backward branches
+	InlineCompares  bool   // inline comparison sequences (faster, much larger)
+	Stats           *Stats // when non-nil, collect size attribution
 }
 
 // Compile translates a parsed module into dmaasm source. The generated
@@ -35,7 +37,7 @@ func Compile(m *llir.Module, opts Options) (string, error) {
 		opts.Entry = "main"
 	}
 	m.ResolveAliases()
-	g := &gen{m: m, opts: opts, rt: map[string]bool{}}
+	g := &gen{m: m, opts: opts, rt: map[string]bool{}, cmpUsed: map[string]bool{}}
 	if err := g.run(); err != nil {
 		return "", err
 	}
@@ -51,6 +53,7 @@ type gen struct {
 	text strings.Builder // .text lines (after crt0)
 
 	rt      map[string]bool // runtime routines needed
+	cmpUsed map[string]bool // comparison millicode helpers needed
 	stubN   int             // generated label counter
 	funcIdx map[string]*llir.Func
 	maxVar  map[string]int // variadic callee -> max variadic arg count seen
@@ -80,6 +83,7 @@ func (g *gen) run() error {
 	if entry.Ret.Kind != llir.TInt {
 		return fmt.Errorf("dmacc: entry function %q must return an integer", g.opts.Entry)
 	}
+	g.collectGarbage(entry)
 	if err := g.checkNoRecursion(); err != nil {
 		return err
 	}
@@ -128,10 +132,91 @@ func (g *gen) run() error {
 	fmt.Fprintf(w, "    halt\n")
 	fmt.Fprintf(w, "__crt_thunk:\n    jumpr irqresume\n")
 	w.WriteString(g.text.String())
+	g.emitCmpHelpers()
 	if err := g.emitRuntime(); err != nil {
 		return err
 	}
 	return nil
+}
+
+// collectGarbage drops functions and globals not reachable from the
+// entry point — linking libc/ll/*.ll must only cost what the program
+// uses. Address-taken functions are reached through value references
+// and global initializers, so indirect call targets survive.
+func (g *gen) collectGarbage(entry *llir.Func) {
+	globIdx := map[string]*llir.Global{}
+	for _, gl := range g.m.Globals {
+		globIdx[gl.Name] = gl
+	}
+	reached := map[string]bool{}
+	var visitFunc func(*llir.Func)
+	var visitSym func(string)
+	visitSym = func(name string) {
+		if reached["s:"+name] {
+			return
+		}
+		reached["s:"+name] = true
+		if f, ok := g.funcIdx[name]; ok {
+			visitFunc(f)
+		}
+		if gl, ok := globIdx[name]; ok && gl.Init != nil {
+			var walk func(*llir.Init)
+			walk = func(in *llir.Init) {
+				if in == nil {
+					return
+				}
+				if in.Sym != "" {
+					visitSym(in.Sym)
+				}
+				for _, e := range in.Elems {
+					walk(e)
+				}
+			}
+			walk(gl.Init)
+		}
+	}
+	visitFunc = func(f *llir.Func) {
+		if reached["f:"+f.Name] {
+			return
+		}
+		reached["f:"+f.Name] = true
+		val := func(v *llir.Value) {
+			if v != nil && (v.Kind == llir.VGlobal || v.Kind == llir.VFunc) {
+				visitSym(v.Name)
+			}
+		}
+		for _, b := range f.Blocks {
+			for _, ins := range b.Instrs {
+				for _, a := range ins.Args {
+					val(a)
+				}
+				val(ins.CalleeVal)
+				for _, e := range ins.Phi {
+					val(e.Val)
+				}
+				if ins.Op == "call" && ins.Callee != "" && !strings.HasPrefix(ins.Callee, "llvm.") {
+					visitSym(ins.Callee)
+				}
+			}
+		}
+	}
+	visitFunc(entry)
+	var funcs []*llir.Func
+	for _, f := range g.m.Funcs {
+		if reached["f:"+f.Name] {
+			funcs = append(funcs, f)
+		} else {
+			delete(g.funcIdx, f.Name)
+		}
+	}
+	g.m.Funcs = funcs
+	var globals []*llir.Global
+	for _, gl := range g.m.Globals {
+		if reached["s:"+gl.Name] {
+			globals = append(globals, gl)
+		}
+	}
+	g.m.Globals = globals
 }
 
 // checkNoRecursion rejects call-graph cycles: v0 frames are static.

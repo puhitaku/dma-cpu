@@ -9,10 +9,11 @@ DUMPS   ?= -dump nprimes -dump primes:46
 # root regenerates them. Drop this for a libc-free program.
 LIBC_LL := $(wildcard $(REPO)/libc/ll/*.ll)
 
-# The front half is stock clang. Keep these flags: -O1 puts the IR in the
-# form dmacc expects, -fsigned-char keeps char semantics identical to the
-# differential-test hosts. The -I paths provide picolibc's headers.
-CLANG_FLAGS := --target=armv6m-none-eabi -O1 -fno-unroll-loops \
+# The front half is stock clang. Keep these flags: -Oz gives the
+# smallest IR in the form dmacc expects, -fsigned-char keeps char
+# semantics identical to the differential-test hosts. The -I paths
+# provide picolibc's headers.
+CLANG_FLAGS := --target=armv6m-none-eabi -Oz -fno-unroll-loops \
                -fsigned-char -ffreestanding -nostdinc \
                -I$(REPO)/libc -I$(REPO)/libc/include \
                -I$(REPO)/lib/picolibc/libc/include \

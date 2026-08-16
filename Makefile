@@ -49,7 +49,7 @@ libc:
 # char is unsigned on arm-none-eabi but signed on the host).
 CC_TESTS = arith control memory func bits collatz recurse
 CC_STDIO_TESTS = stdio
-LLGEN_FLAGS = -O1 -fno-unroll-loops -fsigned-char
+LLGEN_FLAGS = -Oz -fno-unroll-loops -fsigned-char
 
 .PHONY: llgen
 llgen:

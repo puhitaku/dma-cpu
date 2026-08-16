@@ -22,10 +22,13 @@ type funcCtx struct {
 	uses      map[string]int
 	defs      map[string]*llir.Instr
 	defBlock  map[string]int
-	fused     map[string]bool // icmp results emitted at their branch
+	fused     map[string]bool   // icmp results emitted at their branch
+	fwd       map[string]string // pure-copy results forwarded to their source operand
 	blockIdx  map[string]int
+	directPhi map[string]bool // blocks whose phis are written directly on edges
 	hasCalls  bool
 	curBlock  int
+	cat       string // size-report attribution for emitted code
 }
 
 func (g *gen) emitFunc(f *llir.Func) error {
@@ -38,7 +41,9 @@ func (g *gen) emitFunc(f *llir.Func) error {
 		defs:      map[string]*llir.Instr{},
 		defBlock:  map[string]int{},
 		fused:     map[string]bool{},
+		fwd:       map[string]string{},
 		blockIdx:  map[string]int{},
+		directPhi: map[string]bool{},
 	}
 	if err := fc.prepass(); err != nil {
 		return err
@@ -65,6 +70,13 @@ func (fc *funcCtx) declWord(sym string) {
 }
 
 func (fc *funcCtx) ins(format string, args ...any) {
+	if s := fc.g.opts.Stats; s != nil {
+		mnem := format
+		if i := strings.IndexByte(mnem, ' '); i >= 0 {
+			mnem = mnem[:i]
+		}
+		s.record(fc.f.Name, fc.cat, mnem)
+	}
 	fmt.Fprintf(&fc.g.text, "    "+format+"\n", args...)
 }
 func (fc *funcCtx) label(l string) {
@@ -147,6 +159,7 @@ func (fc *funcCtx) prepass() error {
 			}
 		}
 	}
+	fc.computeDirectPhis()
 	// Frame: params, results, phi shadows, allocas, lr slot.
 	for _, p := range f.Params {
 		fc.declWord(fc.word(p.Name))
@@ -166,7 +179,7 @@ func (fc *funcCtx) prepass() error {
 			if ins.Res != "" {
 				fc.declWord(fc.word(ins.Res))
 			}
-			if ins.Op == "phi" {
+			if ins.Op == "phi" && !fc.directPhi[b.Name] {
 				fc.declWord(fc.shadow(ins.Res))
 			}
 		}
@@ -185,6 +198,38 @@ func (fc *funcCtx) prepass() error {
 }
 
 func (fc *funcCtx) vaArea() string { return "va_" + sanitize(fc.f.Name) }
+
+// computeDirectPhis decides, per block, whether its phis are written
+// directly on incoming edges (no shadow words, no head latch). Edge
+// copies run on the taken edge only — multi-successor predecessors
+// route through per-edge stubs — so the only remaining parallel-copy
+// hazard is a block whose own phi results feed its own phis (swap/
+// rotation): those keep the shadow-and-latch scheme.
+func (fc *funcCtx) computeDirectPhis() {
+	for _, b := range fc.f.Blocks {
+		phis := map[string]bool{}
+		for _, ins := range b.Instrs {
+			if ins.Op == "phi" {
+				phis[ins.Res] = true
+			}
+		}
+		if len(phis) == 0 {
+			continue
+		}
+		direct := true
+		for _, ins := range b.Instrs {
+			if ins.Op != "phi" {
+				continue
+			}
+			for _, e := range ins.Phi {
+				if e.Val.Kind == llir.VLocal && phis[e.Val.Name] {
+					direct = false
+				}
+			}
+		}
+		fc.directPhi[b.Name] = direct
+	}
+}
 
 // --- Operand resolution ---
 
@@ -210,6 +255,9 @@ func (fc *funcCtx) op(v *llir.Value) (string, error) {
 		}
 		return "$" + fc.globalOperand(v), nil
 	case llir.VLocal:
+		if s, ok := fc.fwd[v.Name]; ok {
+			return s, nil
+		}
 		if a, ok := fc.allocas[v.Name]; ok {
 			return "$" + a, nil
 		}
@@ -222,6 +270,23 @@ func (fc *funcCtx) op(v *llir.Value) (string, error) {
 		return fc.word(v.Name), nil
 	}
 	return "", fmt.Errorf("unresolvable value")
+}
+
+// forward makes res an alias of src instead of emitting a copy. Phi
+// results mutate at block heads and edges, so copies of them stay real.
+func (fc *funcCtx) forward(res string, src *llir.Value) error {
+	s, err := fc.op(src)
+	if err != nil {
+		return err
+	}
+	if src.Kind == llir.VLocal {
+		if d := fc.defs[src.Name]; d != nil && d.Op == "phi" {
+			fc.ins("move %s, %s", s, fc.word(res))
+			return nil
+		}
+	}
+	fc.fwd[res] = s
+	return nil
 }
 
 // directAddr renders a pointer value as a static address operand if its
@@ -243,6 +308,13 @@ func (fc *funcCtx) directAddr(v *llir.Value) (string, bool) {
 			}
 			return c.sym, true
 		}
+		// A value forwarded to an address literal is a static address.
+		if s, ok := fc.fwd[v.Name]; ok && strings.HasPrefix(s, "$") {
+			rest := s[1:]
+			if rest != "" && rest[0] != '-' && (rest[0] < '0' || rest[0] > '9') {
+				return rest, true
+			}
+		}
 	}
 	return "", false
 }
@@ -253,6 +325,7 @@ func (fc *funcCtx) emit() error {
 	f := fc.f
 	fmt.Fprintf(&fc.g.text, "\n; --- %s ---\n", f.Name)
 	fc.label(funcSym(f.Name))
+	fc.cat = "prologue"
 	if fc.hasCalls {
 		fc.ins("move lr, %s", fc.lrsWord())
 	}
@@ -264,13 +337,21 @@ func (fc *funcCtx) emit() error {
 	for bi, b := range f.Blocks {
 		fc.curBlock = bi
 		fc.label(fc.blockLabel(b.Name))
-		// Phi heads: latch shadows into value words.
-		for _, ins := range b.Instrs {
-			if ins.Op == "phi" {
-				fc.ins("move %s, %s", fc.shadow(ins.Res), fc.word(ins.Res))
+		// Phi heads: latch shadows into value words (shadow-mode blocks
+		// only — direct-mode blocks were written on the edges).
+		fc.cat = "phi"
+		if !fc.directPhi[b.Name] {
+			for _, ins := range b.Instrs {
+				if ins.Op == "phi" {
+					fc.ins("move %s, %s", fc.shadow(ins.Res), fc.word(ins.Res))
+				}
 			}
 		}
 		for _, ins := range b.Instrs {
+			fc.cat = ins.Op
+			if ins.Op == "call" && strings.HasPrefix(ins.Callee, "llvm.") {
+				fc.cat = "intrinsic"
+			}
 			if err := fc.emitInstr(b, ins); err != nil {
 				return fmt.Errorf("%s (IR line %d): %v", f.Name, ins.Line, err)
 			}
@@ -280,6 +361,17 @@ func (fc *funcCtx) emit() error {
 }
 
 func maskComplement(bits int) uint32 { return ^uint32(1<<bits - 1) }
+
+// constOf returns the constant among two operands, if either is one.
+func constOf(a, b *llir.Value) (uint32, bool) {
+	if a.Kind == llir.VConst {
+		return uint32(a.Int), true
+	}
+	if b.Kind == llir.VConst {
+		return uint32(b.Int), true
+	}
+	return 0, false
+}
 
 // maskTo truncates a value word to the given width in place.
 func (fc *funcCtx) maskTo(sym string, bits int) {
@@ -315,15 +407,37 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 		if err != nil {
 			return err
 		}
-		a, err := fc.op(ins.Args[0])
+		x, y := ins.Args[0], ins.Args[1]
+		// Identities: x op 0 (and 0 op x for the commutative ones) is x.
+		if y.Kind == llir.VConst && uint32(y.Int) == 0 && ins.Op != "and" {
+			return fc.forward(ins.Res, x)
+		}
+		if x.Kind == llir.VConst && uint32(x.Int) == 0 && (ins.Op == "add" || ins.Op == "or" || ins.Op == "xor") {
+			return fc.forward(ins.Res, y)
+		}
+		a, err := fc.op(x)
 		if err != nil {
 			return err
 		}
-		bb, err := fc.op(ins.Args[1])
+		bb, err := fc.op(y)
 		if err != nil {
 			return err
 		}
 		res := fc.word(ins.Res)
+		if ins.Op == "and" {
+			// AND with a constant is the 3-block andn with the mask's
+			// complement; the general and macro costs 6.
+			if x.Kind == llir.VConst {
+				x, a, bb = y, bb, a
+			}
+			if k, isC := constOf(ins.Args[0], ins.Args[1]); isC {
+				if k == 0xFFFFFFFF {
+					return fc.forward(ins.Res, x)
+				}
+				fc.ins("andn %s, $0x%x, %s", a, ^k, res)
+				return nil
+			}
+		}
 		fc.ins("%s %s, %s, %s", ins.Op, a, bb, res)
 		if ins.Op == "add" || ins.Op == "sub" {
 			fc.maskTo(res, w)
@@ -380,7 +494,7 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 			return err
 		}
 		t, f, j := fc.stub("St"), fc.stub("Sf"), fc.stub("Sj")
-		fc.ins("jbool %s, %s, %s", c, f, t)
+		fc.emitBoolBranch(c, t, f)
 		fc.label(t)
 		fc.ins("move %s, %s", av, res)
 		fc.ins("jump %s", j)
@@ -454,20 +568,10 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 		if ins.Op == "insertvalue" {
 			src = ins.Args[1]
 		}
-		v, err := fc.op(src)
-		if err != nil {
-			return err
-		}
-		fc.ins("move %s, %s", v, fc.word(ins.Res))
-		return nil
+		return fc.forward(ins.Res, src)
 
 	case "zext", "bitcast", "ptrtoint", "inttoptr", "freeze":
-		src, err := fc.op(ins.Args[0])
-		if err != nil {
-			return err
-		}
-		fc.ins("move %s, %s", src, fc.word(ins.Res))
-		return nil
+		return fc.forward(ins.Res, ins.Args[0])
 
 	case "sext":
 		srcW, err := width(ins.Args[0].Typ)
@@ -478,15 +582,14 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 		if err != nil {
 			return err
 		}
+		if srcW == 32 {
+			return fc.forward(ins.Res, ins.Args[0])
+		}
 		src, err := fc.op(ins.Args[0])
 		if err != nil {
 			return err
 		}
 		res := fc.word(ins.Res)
-		if srcW == 32 {
-			fc.ins("move %s, %s", src, res)
-			return nil
-		}
 		fc.sextInto(src, srcW, res)
 		fc.maskTo(res, dstW)
 		return nil
@@ -498,13 +601,19 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 		if err != nil {
 			return err
 		}
+		srcW := 32
+		if ins.Args[0].Typ != nil && ins.Args[0].Typ.Kind == llir.TInt && ins.Args[0].Typ.Bits <= 32 {
+			srcW = ins.Args[0].Typ.Bits
+		}
+		if dstW >= 32 || srcW <= dstW {
+			return fc.forward(ins.Res, ins.Args[0])
+		}
 		src, err := fc.op(ins.Args[0])
 		if err != nil {
 			return err
 		}
 		res := fc.word(ins.Res)
-		fc.ins("move %s, %s", src, res)
-		fc.maskTo(res, dstW)
+		fc.ins("andn %s, $0x%x, %s", src, maskComplement(dstW), res)
 		return nil
 
 	case "call":
@@ -625,7 +734,7 @@ func (fc *funcCtx) emitShl(ins *llir.Instr) error {
 	if sh.Kind == llir.VConst {
 		n := int(uint32(sh.Int)) & 31
 		if n == 0 {
-			fc.ins("move %s, %s", av, res)
+			return fc.forward(ins.Res, a)
 		} else if n <= 10 {
 			fc.ins("shl %s, %s", av, res)
 			for i := 1; i < n; i++ {
@@ -687,55 +796,6 @@ func (fc *funcCtx) emitRuntimeOp(ins *llir.Instr) error {
 	fc.ins("move r0, %s", res)
 	if signed || ins.Op == "lshr" && w < 32 {
 		fc.maskTo(res, w)
-	}
-	return nil
-}
-
-// --- Comparisons ---
-
-// emitCompareBranch emits an icmp as a two-way branch to t / f labels.
-func (fc *funcCtx) emitCompareBranch(ins *llir.Instr, t, f string) error {
-	w, err := width(ins.Typ)
-	if err != nil {
-		return err
-	}
-	a, err := fc.op(ins.Args[0])
-	if err != nil {
-		return err
-	}
-	b, err := fc.op(ins.Args[1])
-	if err != nil {
-		return err
-	}
-	signed := strings.HasPrefix(ins.Pred, "s")
-	if signed && w < 32 {
-		fc.sextInto(a, w, "sc0")
-		fc.sextInto(b, w, "sc1")
-		a, b = "sc0", "sc1"
-	}
-	switch ins.Pred {
-	case "eq":
-		fc.ins("jeq %s, %s, %s, %s", a, b, t, f)
-	case "ne":
-		fc.ins("jeq %s, %s, %s, %s", a, b, f, t)
-	case "slt":
-		fc.ins("jlt %s, %s, %s, %s", a, b, t, f)
-	case "sge":
-		fc.ins("jlt %s, %s, %s, %s", a, b, f, t)
-	case "sgt":
-		fc.ins("jlt %s, %s, %s, %s", b, a, t, f)
-	case "sle":
-		fc.ins("jlt %s, %s, %s, %s", b, a, f, t)
-	case "ult":
-		fc.ins("jltu %s, %s, %s, %s", a, b, t, f)
-	case "uge":
-		fc.ins("jltu %s, %s, %s, %s", a, b, f, t)
-	case "ugt":
-		fc.ins("jltu %s, %s, %s, %s", b, a, t, f)
-	case "ule":
-		fc.ins("jltu %s, %s, %s, %s", b, a, f, t)
-	default:
-		return fmt.Errorf("unsupported icmp predicate %q", ins.Pred)
 	}
 	return nil
 }
@@ -976,12 +1036,7 @@ func (fc *funcCtx) emitIntrinsic(ins *llir.Instr) error {
 		fc.ins("and %s, %s, %s", a, b, fc.word(ins.Res))
 		return nil
 	case "llvm.expect":
-		v, err := fc.op(ins.Args[0])
-		if err != nil {
-			return err
-		}
-		fc.ins("move %s, %s", v, fc.word(ins.Res))
-		return nil
+		return fc.forward(ins.Res, ins.Args[0])
 	case "llvm.abs":
 		v, err := fc.op(ins.Args[0])
 		if err != nil {
@@ -1055,34 +1110,91 @@ func (fc *funcCtx) emitMemRT(rt string, dst, src, n *llir.Value) error {
 
 // --- Branches ---
 
-// emitPhiCopies writes this block's outgoing phi shadow values for every
-// successor. Writing shadows for the untaken edge is harmless: every
-// entry into a block rewrites all of its phi shadows first.
-func (fc *funcCtx) emitPhiCopies(from *llir.Block, succs []string) error {
-	seen := map[string]bool{}
-	for _, s := range succs {
-		if seen[s] {
+// phiCopiesFor emits the parallel copies for one edge from -> succ:
+// into phi words for direct-mode successors, into shadows otherwise.
+// Reports whether the successor has any phis.
+func (fc *funcCtx) phiCopiesFor(from *llir.Block, succ string) (bool, error) {
+	savedCat := fc.cat
+	fc.cat = "phi"
+	defer func() { fc.cat = savedCat }()
+	idx, ok := fc.blockIdx[succ]
+	if !ok {
+		return false, fmt.Errorf("branch to unknown block %q", succ)
+	}
+	dst := fc.shadow
+	if fc.directPhi[succ] {
+		dst = fc.word
+	}
+	any := false
+	for _, ins := range fc.f.Blocks[idx].Instrs {
+		if ins.Op != "phi" {
 			continue
 		}
-		seen[s] = true
-		idx, ok := fc.blockIdx[s]
-		if !ok {
-			return fmt.Errorf("branch to unknown block %q", s)
-		}
-		for _, ins := range fc.f.Blocks[idx].Instrs {
-			if ins.Op != "phi" {
-				continue
-			}
-			for _, e := range ins.Phi {
-				if e.Pred == from.Name {
-					v, err := fc.op(e.Val)
-					if err != nil {
-						return err
-					}
-					fc.ins("move %s, %s", v, fc.shadow(ins.Res))
+		any = true
+		for _, e := range ins.Phi {
+			if e.Pred == from.Name {
+				v, err := fc.op(e.Val)
+				if err != nil {
+					return false, err
 				}
+				fc.ins("move %s, %s", v, dst(ins.Res))
 			}
 		}
+	}
+	return any, nil
+}
+
+// edgePlan routes phi-carrying edges of a multi-way branch. Shadow-mode
+// successors take their copies inline before the branch (stray shadow
+// writes on the untaken edge are harmless — the head latch only runs on
+// entry). Direct-mode successors get a per-edge stub so their phi words
+// are written on the taken edge only.
+type edgePlan struct {
+	from   *llir.Block
+	labels map[string]string // succ -> branch target label
+	stubs  []string          // direct-mode succs needing a stub, in order
+}
+
+func (fc *funcCtx) planEdge(p *edgePlan, succ string) (string, error) {
+	if l, ok := p.labels[succ]; ok {
+		return l, nil
+	}
+	idx, ok := fc.blockIdx[succ]
+	if !ok {
+		return "", fmt.Errorf("branch to unknown block %q", succ)
+	}
+	hasPhi := false
+	for _, ins := range fc.f.Blocks[idx].Instrs {
+		if ins.Op == "phi" {
+			hasPhi = true
+			break
+		}
+	}
+	lbl := fc.blockLabel(succ)
+	switch {
+	case !hasPhi:
+	case !fc.directPhi[succ]:
+		if _, err := fc.phiCopiesFor(p.from, succ); err != nil {
+			return "", err
+		}
+	default:
+		lbl = fc.stub("Pe")
+		p.stubs = append(p.stubs, succ)
+		p.labels[succ] = lbl
+		return lbl, nil
+	}
+	p.labels[succ] = lbl
+	return lbl, nil
+}
+
+func (fc *funcCtx) flushEdgeStubs(p *edgePlan) error {
+	for _, succ := range p.stubs {
+		fc.label(p.labels[succ])
+		if _, err := fc.phiCopiesFor(p.from, succ); err != nil {
+			return err
+		}
+		fc.cat = "phi"
+		fc.ins("jump %s", fc.blockLabel(succ))
 	}
 	return nil
 }
@@ -1104,7 +1216,8 @@ func (fc *funcCtx) maybeSafepoint(targets ...string) {
 
 func (fc *funcCtx) emitBr(b *llir.Block, ins *llir.Instr) error {
 	if len(ins.Labels) == 1 {
-		if err := fc.emitPhiCopies(b, ins.Labels); err != nil {
+		// Single successor: copies go inline regardless of mode.
+		if _, err := fc.phiCopiesFor(b, ins.Labels[0]); err != nil {
 			return err
 		}
 		fc.maybeSafepoint(ins.Labels[0])
@@ -1112,9 +1225,6 @@ func (fc *funcCtx) emitBr(b *llir.Block, ins *llir.Instr) error {
 		return nil
 	}
 	tl, fl := ins.Labels[0], ins.Labels[1]
-	if err := fc.emitPhiCopies(b, ins.Labels); err != nil {
-		return err
-	}
 	fc.maybeSafepoint(tl, fl)
 	cond := ins.Args[0]
 	if cond.Kind == llir.VConst {
@@ -1122,18 +1232,33 @@ func (fc *funcCtx) emitBr(b *llir.Block, ins *llir.Instr) error {
 		if cond.Int != 0 {
 			tgt = tl
 		}
+		if _, err := fc.phiCopiesFor(b, tgt); err != nil {
+			return err
+		}
 		fc.ins("jump %s", fc.blockLabel(tgt))
 		return nil
 	}
+	p := &edgePlan{from: b, labels: map[string]string{}}
+	tLbl, err := fc.planEdge(p, tl)
+	if err != nil {
+		return err
+	}
+	fLbl, err := fc.planEdge(p, fl)
+	if err != nil {
+		return err
+	}
 	if d := fc.defs[cond.Name]; d != nil && fc.fused[cond.Name] {
-		return fc.emitCompareBranch(d, fc.blockLabel(tl), fc.blockLabel(fl))
+		if err := fc.emitCompareBranch(d, tLbl, fLbl); err != nil {
+			return err
+		}
+		return fc.flushEdgeStubs(p)
 	}
 	c, err := fc.op(cond)
 	if err != nil {
 		return err
 	}
-	fc.ins("jbool %s, %s, %s", c, fc.blockLabel(fl), fc.blockLabel(tl))
-	return nil
+	fc.emitBoolBranch(c, tLbl, fLbl)
+	return fc.flushEdgeStubs(p)
 }
 
 func (fc *funcCtx) emitSwitch(b *llir.Block, ins *llir.Instr) error {
@@ -1141,19 +1266,70 @@ func (fc *funcCtx) emitSwitch(b *llir.Block, ins *llir.Instr) error {
 	for _, c := range ins.Cases {
 		succs = append(succs, c.Label)
 	}
-	if err := fc.emitPhiCopies(b, succs); err != nil {
-		return err
-	}
 	fc.maybeSafepoint(succs...)
 	v, err := fc.op(ins.Args[0])
 	if err != nil {
 		return err
 	}
+	p := &edgePlan{from: b, labels: map[string]string{}}
+	def, err := fc.planEdge(p, ins.Labels[0])
+	if err != nil {
+		return err
+	}
+	caseLbl := make([]string, len(ins.Cases))
+	for i, c := range ins.Cases {
+		if caseLbl[i], err = fc.planEdge(p, c.Label); err != nil {
+			return err
+		}
+	}
+
+	// Dense value sets dispatch through a jump table: bounds-check,
+	// scale by 16 (one block per slot), add the table base, jump.
+	minV, maxV := uint32(ins.Cases[0].Val), uint32(ins.Cases[0].Val)
 	for _, c := range ins.Cases {
+		if uint32(c.Val) < minV {
+			minV = uint32(c.Val)
+		}
+		if uint32(c.Val) > maxV {
+			maxV = uint32(c.Val)
+		}
+	}
+	span := int(maxV-minV) + 1
+	if len(ins.Cases) >= 4 && span <= 2*len(ins.Cases)+8 && !fc.g.opts.InlineCompares {
+		idx := v
+		if minV != 0 {
+			fc.ins("sub %s, $0x%x, sc0", v, minV)
+			idx = "sc0"
+		}
+		in, tbl := fc.stub("Swi"), fc.stub("Swt")
+		fc.emitCmpSite("ltu", idx, fmt.Sprintf("$0x%x", uint32(span)), in, def)
+		fc.label(in)
+		fc.ins("mulc %s, 16, sc1", idx)
+		fc.ins("add sc1, $%s, sc1", tbl)
+		fc.ins("jumpr sc1")
+		fc.label(tbl)
+		slots := make([]string, span)
+		for i := range slots {
+			slots[i] = def
+		}
+		for i, c := range ins.Cases {
+			slots[uint32(c.Val)-minV] = caseLbl[i]
+		}
+		for _, s := range slots {
+			fc.ins("jump %s", s)
+		}
+		return fc.flushEdgeStubs(p)
+	}
+
+	for i, c := range ins.Cases {
 		next := fc.stub("Sw")
-		fc.ins("jeq %s, $0x%x, %s, %s", v, uint32(c.Val), fc.blockLabel(c.Label), next)
+		if fc.g.opts.InlineCompares {
+			fc.ins("jeq %s, $0x%x, %s, %s", v, uint32(c.Val), caseLbl[i], next)
+		} else {
+			fc.emitCmpSite("eq", v, fmt.Sprintf("$0x%x", uint32(c.Val)), caseLbl[i], next)
+		}
 		fc.label(next)
 	}
-	fc.ins("jump %s", fc.blockLabel(ins.Labels[0]))
-	return nil
+	fc.ins("jump %s", def)
+	return fc.flushEdgeStubs(p)
 }

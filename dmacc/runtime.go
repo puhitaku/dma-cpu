@@ -295,6 +295,9 @@ func (g *gen) emitRuntime() error {
 		if !need[r.name] {
 			continue
 		}
+		if g.opts.Stats != nil {
+			g.opts.Stats.Runtime = append(g.opts.Stats.Runtime, r.name)
+		}
 		if first {
 			if !any {
 				fmt.Fprintf(&g.out, "\n; --- runtime ---\n")

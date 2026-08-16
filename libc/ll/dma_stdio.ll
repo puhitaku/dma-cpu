@@ -9,7 +9,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @__dma_uart_fr = external dso_local global i32, align 4
 @__dma_uart_dr = external dso_local global i32, align 4
 
-; Function Attrs: nofree norecurse nounwind memory(readwrite, argmem: none)
+; Function Attrs: minsize nofree norecurse nounwind optsize memory(readwrite, argmem: none)
 define internal range(i32 0, 256) i32 @dma_uart_putc(i8 noundef signext %0, ptr readnone captures(none) %1) #0 {
   br label %3
 
@@ -25,7 +25,7 @@ define internal range(i32 0, 256) i32 @dma_uart_putc(i8 noundef signext %0, ptr 
   ret i32 %8
 }
 
-attributes #0 = { nofree norecurse nounwind memory(readwrite, argmem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #0 = { minsize nofree norecurse nounwind optsize memory(readwrite, argmem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 
 !llvm.module.flags = !{!0, !1}
 !llvm.ident = !{!2}

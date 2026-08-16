@@ -46,6 +46,7 @@ func run() error {
 	textBase := flag.Uint64("text", 0x20000000, "text link address")
 	dataBase := flag.Uint64("data", 0x20030000, "data link address (192 KiB of text headroom fits either SKU)")
 	doRun := flag.Bool("run", false, "run the program in the emulator")
+	size := flag.Bool("size", false, "print a code-size report (blocks by IR construct and function)")
 	maxCycles := flag.Uint64("maxcycles", 200_000_000, "emulator cycle budget for -run")
 	var dumps dumpFlag
 	flag.Var(&dumps, "dump", "after -run, print memory at C symbol `name[:count]` (repeatable)")
@@ -75,9 +76,16 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	dasm, err := dmacc.Compile(mod, dmacc.Options{Entry: *entry, NoSafepoints: *noSafepoints})
+	copts := dmacc.Options{Entry: *entry, NoSafepoints: *noSafepoints}
+	if *size {
+		copts.Stats = &dmacc.Stats{}
+	}
+	dasm, err := dmacc.Compile(mod, copts)
 	if err != nil {
 		return err
+	}
+	if *size {
+		fmt.Print(copts.Stats.Report())
 	}
 	if *out != "" {
 		if err := os.WriteFile(*out, []byte(dasm), 0o644); err != nil {

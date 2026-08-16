@@ -528,6 +528,11 @@ func run() error {
 		if err := verify(v, lay, t); err != nil {
 			return fmt.Errorf("emulator verification failed: %w", err)
 		}
+		// The firmware always loads at the link addresses, where every
+		// placement delta is zero — the relocation table is dead weight
+		// in flash. Bake: drop it after verification. (Such an image
+		// must not be loaded anywhere else.)
+		t.Image.Relocs = nil
 		tests = append(tests, t)
 	}
 
@@ -553,7 +558,12 @@ func run() error {
 	}
 	for _, t := range tests {
 		raw, _ := t.Image.Encode()
-		fmt.Printf("%-14s %5d bytes  emu cycles: %d\n", t.Name, len(raw), t.EmuCycles)
+		resident := 0
+		for _, s := range t.Image.Segments {
+			resident += len(s.Data)
+		}
+		fmt.Printf("%-14s %6d B flash  %6d B resident  emu cycles: %d\n",
+			t.Name, len(raw), resident, t.EmuCycles)
 	}
 	fmt.Printf("wrote %s (sku %s)\n", *out, v.Name)
 	return nil

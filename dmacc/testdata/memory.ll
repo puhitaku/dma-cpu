@@ -7,28 +7,28 @@ target triple = "thumbv6m-unknown-none-eabi"
 
 @__const.main.a = private unnamed_addr constant [8 x i32] [i32 5, i32 -3, i32 9, i32 0, i32 -7, i32 2, i32 8, i32 1], align 4
 @items = dso_local local_unnamed_addr global [5 x %struct.Item] zeroinitializer, align 4
+@.str = private unnamed_addr constant [8 x i8] c"dma-cpu\00", align 1
 
-; Function Attrs: nofree norecurse nosync nounwind memory(argmem: read)
+; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: read)
 define dso_local i32 @strsum(ptr noundef readonly captures(none) %0) local_unnamed_addr #0 {
-  %2 = load i8, ptr %0, align 1, !tbaa !3
-  %3 = icmp eq i8 %2, 0
-  br i1 %3, label %14, label %4
+  br label %2
 
-4:                                                ; preds = %1, %4
-  %5 = phi i8 [ %12, %4 ], [ %2, %1 ]
-  %6 = phi i32 [ %11, %4 ], [ 0, %1 ]
-  %7 = phi ptr [ %9, %4 ], [ %0, %1 ]
-  %8 = mul nsw i32 %6, 31
-  %9 = getelementptr inbounds nuw i8, ptr %7, i32 1
+2:                                                ; preds = %7, %1
+  %3 = phi ptr [ %0, %1 ], [ %9, %7 ]
+  %4 = phi i32 [ 0, %1 ], [ %11, %7 ]
+  %5 = load i8, ptr %3, align 1, !tbaa !3
+  %6 = icmp eq i8 %5, 0
+  br i1 %6, label %12, label %7
+
+7:                                                ; preds = %2
+  %8 = mul nsw i32 %4, 31
+  %9 = getelementptr inbounds nuw i8, ptr %3, i32 1
   %10 = sext i8 %5 to i32
   %11 = add nsw i32 %8, %10
-  %12 = load i8, ptr %9, align 1, !tbaa !3
-  %13 = icmp eq i8 %12, 0
-  br i1 %13, label %14, label %4, !llvm.loop !6
+  br label %2, !llvm.loop !6
 
-14:                                               ; preds = %4, %1
-  %15 = phi i32 [ 0, %1 ], [ %11, %4 ]
-  ret i32 %15
+12:                                               ; preds = %2
+  ret i32 %4
 }
 
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
@@ -37,151 +37,132 @@ declare void @llvm.lifetime.start.p0(i64 immarg, ptr captures(none)) #1
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
 declare void @llvm.lifetime.end.p0(i64 immarg, ptr captures(none)) #1
 
-; Function Attrs: nofree norecurse nosync nounwind memory(argmem: readwrite)
+; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: readwrite)
 define dso_local void @bubble(ptr noundef captures(none) %0, i32 noundef %1) local_unnamed_addr #2 {
-  %3 = icmp sgt i32 %1, 0
-  br i1 %3, label %4, label %9
+  br label %3
 
-4:                                                ; preds = %2, %10
-  %5 = phi i32 [ %12, %10 ], [ %1, %2 ]
-  %6 = phi i32 [ %11, %10 ], [ 0, %2 ]
-  %7 = sub nsw i32 %1, %6
-  %8 = icmp sgt i32 %7, 1
-  br i1 %8, label %14, label %10
+3:                                                ; preds = %13, %2
+  %4 = phi i32 [ 0, %2 ], [ %14, %13 ]
+  %5 = icmp slt i32 %4, %1
+  br i1 %5, label %6, label %8
 
-9:                                                ; preds = %10, %2
+6:                                                ; preds = %3
+  %7 = sub nsw i32 %1, %4
+  br label %9
+
+8:                                                ; preds = %3
   ret void
 
-10:                                               ; preds = %23, %4
-  %11 = add nuw nsw i32 %6, 1
-  %12 = add i32 %5, -1
-  %13 = icmp eq i32 %11, %1
-  br i1 %13, label %9, label %4, !llvm.loop !9
+9:                                                ; preds = %21, %6
+  %10 = phi i32 [ 0, %6 ], [ %11, %21 ]
+  %11 = add nuw nsw i32 %10, 1
+  %12 = icmp slt i32 %11, %7
+  br i1 %12, label %15, label %13
 
-14:                                               ; preds = %4, %23
-  %15 = phi i32 [ %24, %23 ], [ 1, %4 ]
-  %16 = phi i32 [ %15, %23 ], [ 0, %4 ]
-  %17 = getelementptr inbounds nuw i32, ptr %0, i32 %16
-  %18 = load i32, ptr %17, align 4, !tbaa !10
-  %19 = getelementptr inbounds nuw i32, ptr %0, i32 %15
-  %20 = load i32, ptr %19, align 4, !tbaa !10
-  %21 = icmp sgt i32 %18, %20
-  br i1 %21, label %22, label %23
+13:                                               ; preds = %9
+  %14 = add nuw nsw i32 %4, 1
+  br label %3, !llvm.loop !9
 
-22:                                               ; preds = %14
-  store i32 %20, ptr %17, align 4, !tbaa !10
-  store i32 %18, ptr %19, align 4, !tbaa !10
-  br label %23
+15:                                               ; preds = %9
+  %16 = getelementptr inbounds nuw i32, ptr %0, i32 %10
+  %17 = load i32, ptr %16, align 4, !tbaa !10
+  %18 = getelementptr inbounds nuw i32, ptr %0, i32 %11
+  %19 = load i32, ptr %18, align 4, !tbaa !10
+  %20 = icmp sgt i32 %17, %19
+  br i1 %20, label %22, label %21
 
-23:                                               ; preds = %14, %22
-  %24 = add nuw nsw i32 %15, 1
-  %25 = icmp eq i32 %24, %5
-  br i1 %25, label %10, label %14, !llvm.loop !12
+21:                                               ; preds = %15, %22
+  br label %9, !llvm.loop !12
+
+22:                                               ; preds = %15
+  store i32 %19, ptr %16, align 4, !tbaa !10
+  store i32 %17, ptr %18, align 4, !tbaa !10
+  br label %21
 }
 
-; Function Attrs: nofree norecurse nosync nounwind memory(readwrite, argmem: none, inaccessiblemem: none)
+; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(readwrite, argmem: none, inaccessiblemem: none)
 define dso_local range(i32 0, -2147483648) i32 @main() local_unnamed_addr #3 {
   %1 = alloca [8 x i32], align 4
   call void @llvm.lifetime.start.p0(i64 32, ptr nonnull %1) #5
   call void @llvm.memcpy.p0.p0.i32(ptr noundef nonnull align 4 dereferenceable(32) %1, ptr noundef nonnull align 4 dereferenceable(32) @__const.main.a, i32 32, i1 false)
+  call void @bubble(ptr noundef nonnull %1, i32 noundef 8) #6
   br label %2
 
 2:                                                ; preds = %6, %0
-  %3 = phi i32 [ %8, %6 ], [ 8, %0 ]
-  %4 = phi i32 [ %7, %6 ], [ 0, %0 ]
-  %5 = icmp samesign ult i32 %4, 7
-  br i1 %5, label %10, label %6
+  %3 = phi i32 [ 0, %0 ], [ %11, %6 ]
+  %4 = phi i32 [ 0, %0 ], [ %12, %6 ]
+  %5 = icmp eq i32 %4, 8
+  br i1 %5, label %13, label %6
 
-6:                                                ; preds = %19, %2
-  %7 = add nuw nsw i32 %4, 1
-  %8 = add nsw i32 %3, -1
-  %9 = icmp eq i32 %7, 8
-  br i1 %9, label %22, label %2, !llvm.loop !9
+6:                                                ; preds = %2
+  %7 = mul nsw i32 %3, 10
+  %8 = getelementptr inbounds nuw [8 x i32], ptr %1, i32 0, i32 %4
+  %9 = load i32, ptr %8, align 4, !tbaa !10
+  %10 = add i32 %7, 7
+  %11 = add i32 %10, %9
+  %12 = add nuw nsw i32 %4, 1
+  br label %2, !llvm.loop !13
 
-10:                                               ; preds = %2, %19
-  %11 = phi i32 [ %20, %19 ], [ 1, %2 ]
-  %12 = phi i32 [ %11, %19 ], [ 0, %2 ]
-  %13 = getelementptr inbounds nuw i32, ptr %1, i32 %12
-  %14 = load i32, ptr %13, align 4, !tbaa !10
-  %15 = getelementptr inbounds nuw i32, ptr %1, i32 %11
-  %16 = load i32, ptr %15, align 4, !tbaa !10
-  %17 = icmp sgt i32 %14, %16
-  br i1 %17, label %18, label %19
+13:                                               ; preds = %2, %16
+  %14 = phi i32 [ %26, %16 ], [ 0, %2 ]
+  %15 = icmp eq i32 %14, 5
+  br i1 %15, label %27, label %16
 
-18:                                               ; preds = %10
-  store i32 %16, ptr %13, align 4, !tbaa !10
-  store i32 %14, ptr %15, align 4, !tbaa !10
-  br label %19
+16:                                               ; preds = %13
+  %17 = trunc nuw nsw i32 %14 to i8
+  %18 = mul nuw i8 %17, 50
+  %19 = getelementptr inbounds nuw [5 x %struct.Item], ptr @items, i32 0, i32 %14
+  store i8 %18, ptr %19, align 4, !tbaa !14
+  %20 = trunc nuw nsw i32 %14 to i16
+  %21 = mul nuw nsw i16 %20, 1000
+  %22 = add nsw i16 %21, -1500
+  %23 = getelementptr inbounds nuw i8, ptr %19, i32 2
+  store i16 %22, ptr %23, align 2, !tbaa !17
+  %24 = mul nuw nsw i32 %14, 123456
+  %25 = getelementptr inbounds nuw i8, ptr %19, i32 4
+  store i32 %24, ptr %25, align 4, !tbaa !18
+  %26 = add nuw nsw i32 %14, 1
+  br label %13, !llvm.loop !19
 
-19:                                               ; preds = %18, %10
-  %20 = add nuw nsw i32 %11, 1
-  %21 = icmp eq i32 %20, %3
-  br i1 %21, label %6, label %10, !llvm.loop !12
+27:                                               ; preds = %13, %35
+  %28 = phi i32 [ %46, %35 ], [ %3, %13 ]
+  %29 = phi i32 [ %47, %35 ], [ 0, %13 ]
+  %30 = icmp eq i32 %29, 5
+  br i1 %30, label %31, label %35
 
-22:                                               ; preds = %6, %22
-  %23 = phi i32 [ %30, %22 ], [ 0, %6 ]
-  %24 = phi i32 [ %29, %22 ], [ 0, %6 ]
-  %25 = mul nsw i32 %24, 10
-  %26 = getelementptr inbounds nuw [8 x i32], ptr %1, i32 0, i32 %23
-  %27 = load i32, ptr %26, align 4, !tbaa !10
-  %28 = add i32 %25, 7
-  %29 = add i32 %28, %27
-  %30 = add nuw nsw i32 %23, 1
-  %31 = icmp eq i32 %30, 8
-  br i1 %31, label %32, label %22, !llvm.loop !13
-
-32:                                               ; preds = %22, %32
-  %33 = phi i32 [ %43, %32 ], [ 0, %22 ]
-  %34 = trunc nuw nsw i32 %33 to i8
-  %35 = mul i8 %34, 50
-  %36 = getelementptr inbounds nuw [5 x %struct.Item], ptr @items, i32 0, i32 %33
-  store i8 %35, ptr %36, align 4, !tbaa !14
-  %37 = trunc nuw nsw i32 %33 to i16
-  %38 = mul nuw nsw i16 %37, 1000
-  %39 = add nsw i16 %38, -1500
-  %40 = getelementptr inbounds nuw i8, ptr %36, i32 2
-  store i16 %39, ptr %40, align 2, !tbaa !17
-  %41 = mul nuw nsw i32 %33, 123456
-  %42 = getelementptr inbounds nuw i8, ptr %36, i32 4
-  store i32 %41, ptr %42, align 4, !tbaa !18
-  %43 = add nuw nsw i32 %33, 1
-  %44 = icmp eq i32 %43, 5
-  br i1 %44, label %48, label %32, !llvm.loop !19
-
-45:                                               ; preds = %48
-  %46 = add nsw i32 %61, 1767653203
-  %47 = and i32 %46, 2147483647
+31:                                               ; preds = %27
+  %32 = tail call i32 @strsum(ptr noundef nonnull @.str) #6
+  %33 = add nsw i32 %32, %28
+  %34 = and i32 %33, 2147483647
   call void @llvm.lifetime.end.p0(i64 32, ptr nonnull %1) #5
-  ret i32 %47
+  ret i32 %34
 
-48:                                               ; preds = %32, %48
-  %49 = phi i32 [ %62, %48 ], [ 0, %32 ]
-  %50 = phi i32 [ %61, %48 ], [ %29, %32 ]
-  %51 = getelementptr inbounds nuw [5 x %struct.Item], ptr @items, i32 0, i32 %49
-  %52 = load i8, ptr %51, align 4, !tbaa !14
-  %53 = sext i8 %52 to i32
-  %54 = getelementptr inbounds nuw i8, ptr %51, i32 2
-  %55 = load i16, ptr %54, align 2, !tbaa !17
-  %56 = sext i16 %55 to i32
-  %57 = getelementptr inbounds nuw i8, ptr %51, i32 4
-  %58 = load i32, ptr %57, align 4, !tbaa !18
-  %59 = add i32 %50, %53
-  %60 = add i32 %59, %56
-  %61 = add i32 %60, %58
-  %62 = add nuw nsw i32 %49, 1
-  %63 = icmp eq i32 %62, 5
-  br i1 %63, label %45, label %48, !llvm.loop !20
+35:                                               ; preds = %27
+  %36 = getelementptr inbounds nuw [5 x %struct.Item], ptr @items, i32 0, i32 %29
+  %37 = load i8, ptr %36, align 4, !tbaa !14
+  %38 = sext i8 %37 to i32
+  %39 = getelementptr inbounds nuw i8, ptr %36, i32 2
+  %40 = load i16, ptr %39, align 2, !tbaa !17
+  %41 = sext i16 %40 to i32
+  %42 = getelementptr inbounds nuw i8, ptr %36, i32 4
+  %43 = load i32, ptr %42, align 4, !tbaa !18
+  %44 = add i32 %28, %38
+  %45 = add i32 %44, %41
+  %46 = add i32 %45, %43
+  %47 = add nuw nsw i32 %29, 1
+  br label %27, !llvm.loop !20
 }
 
 ; Function Attrs: mustprogress nocallback nofree nounwind willreturn memory(argmem: readwrite)
 declare void @llvm.memcpy.p0.p0.i32(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i32, i1 immarg) #4
 
-attributes #0 = { nofree norecurse nosync nounwind memory(argmem: read) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #0 = { minsize nofree norecurse nosync nounwind optsize memory(argmem: read) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
-attributes #2 = { nofree norecurse nosync nounwind memory(argmem: readwrite) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #3 = { nofree norecurse nosync nounwind memory(readwrite, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #2 = { minsize nofree norecurse nosync nounwind optsize memory(argmem: readwrite) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #3 = { minsize nofree norecurse nosync nounwind optsize memory(readwrite, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #4 = { mustprogress nocallback nofree nounwind willreturn memory(argmem: readwrite) }
 attributes #5 = { nounwind }
+attributes #6 = { minsize nobuiltin optsize "no-builtins" }
 
 !llvm.module.flags = !{!0, !1}
 !llvm.ident = !{!2}
