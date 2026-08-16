@@ -390,6 +390,14 @@ themselves).
 
 ### Phase 4 — LLVM
 
+**Done via the sanctioned translator path — see
+`prompts/007-phase4-results.md`.** Stock clang emits the IR; the Go
+`llir`+`dmacc` packages lower it to dmaasm (the §4.5 de-risking option,
+chosen deliberately). Differential tests pin dmacc against host clang
+execution, and the compiled programs pass on silicon. An in-tree
+SelectionDAG backend remains optional follow-up work (Phase 4b), with
+the translator as its executable spec. Original plan for reference:
+
 11. LLVM backend per §4.5 (pseudo-ISA, late block expansion, MC + ELF
     emission), lld support (trivial: ABS32 + alignment), clang driver bits
     (`--target=dmacpu-unknown-none`, linker scripts, crt0 that sets up

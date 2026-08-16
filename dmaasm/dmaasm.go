@@ -54,7 +54,7 @@ var abiRegs = func() []string {
 	for i := 0; i < 16; i++ {
 		regs = append(regs, fmt.Sprintf("r%d", i))
 	}
-	regs = append(regs, "lr", "sp", "zero", "null", "at", "dispatch", "irqresume")
+	regs = append(regs, "lr", "sp", "zero", "null", "at", "dispatch", "irqresume", "at2")
 	for len(regs) < 32 {
 		regs = append(regs, fmt.Sprintf("__abi_rsvd%d", len(regs)))
 	}
@@ -73,11 +73,12 @@ const (
 )
 
 type operand struct {
-	kind  opKind
-	sym   string // opSym/opLit(symbol)
-	field uint32 // opSym: byte offset for .read/.write/.count/.ctrl
-	num   uint32 // opLit(value)/opAbs
-	isNum bool   // opLit: literal is a number, not a symbol
+	kind    opKind
+	sym     string // opSym/opLit(symbol)
+	field   uint32 // opSym: byte offset for .read/.write/.count/.ctrl or +N
+	plusOff bool   // field came from a +N suffix (allowed on data symbols)
+	num     uint32 // opLit(value)/opAbs
+	isNum   bool   // opLit: literal is a number, not a symbol
 }
 
 var blockFields = map[string]uint32{"read": 0, "write": 4, "count": 8, "ctrl": 12}
@@ -111,7 +112,22 @@ type asm struct {
 	noSniff  bool
 	writes   []writeStmt
 	genLabel int
+
+	// Sign-dispatch trampoline arena (jsign/jeq/jlt/jltu): each use gets a
+	// pair of jump slots 128 bytes apart; pairs are pooled 8 to a 256-byte
+	// bank appended after the last instruction, so slots pack with no gaps.
+	jpairs   []jpair
+	jpairIdx int // emit-pass counter (mirrors pass-1 order)
 }
+
+// jpair is one trampoline pair: slot 0 (+0) taken when the tested word's
+// sign bit is clear, slot 1 (+128) when it is set.
+type jpair struct {
+	neg, nonneg string // target labels
+	line        int
+}
+
+func jpairName(i int) string { return fmt.Sprintf("__JP%d", i) }
 
 type symbol struct {
 	text bool // text segment (else data)
@@ -277,31 +293,51 @@ func (a *asm) parseOperand(s string, line int) (operand, error) {
 			a.internLit(operand{kind: opLit, num: v, isNum: true})
 			return operand{kind: opLit, num: v, isNum: true}, nil
 		}
-		if !validName(body) {
+		name, off, err := splitPlusOff(body)
+		if err != nil || !validName(name) {
 			return operand{}, fmt.Errorf("line %d: bad literal %q", line, s)
 		}
-		op := operand{kind: opLit, sym: body}
+		op := operand{kind: opLit, sym: name, field: off, plusOff: off != 0}
 		a.internLit(op)
 		return op, nil
 	default:
-		name, field := s, uint32(0)
+		name, field, plus := s, uint32(0), false
 		if idx := strings.LastIndex(s, "."); idx > 0 {
 			f, ok := blockFields[s[idx+1:]]
 			if !ok {
 				return operand{}, fmt.Errorf("line %d: unknown block field in %q (want .read/.write/.count/.ctrl)", line, s)
 			}
 			name, field = s[:idx], f
+		} else if n, off, err := splitPlusOff(s); err == nil && off != 0 {
+			name, field, plus = n, off, true
 		}
 		if !validName(name) {
 			return operand{}, fmt.Errorf("line %d: bad operand %q", line, s)
 		}
-		return operand{kind: opSym, sym: name, field: field}, nil
+		return operand{kind: opSym, sym: name, field: field, plusOff: plus}, nil
 	}
+}
+
+// splitPlusOff splits "name+off" (off decimal or 0x-hex) into its parts;
+// a bare name returns off 0.
+func splitPlusOff(s string) (string, uint32, error) {
+	idx := strings.IndexByte(s, '+')
+	if idx < 0 {
+		return s, 0, nil
+	}
+	off, err := parseNum(s[idx+1:])
+	if err != nil {
+		return "", 0, err
+	}
+	return s[:idx], off, nil
 }
 
 func litKey(op operand) string {
 	if op.isNum {
 		return fmt.Sprintf("#%08x", op.num)
+	}
+	if op.field != 0 {
+		return fmt.Sprintf("&%s+%d", op.sym, op.field)
 	}
 	return "&" + op.sym
 }
@@ -339,11 +375,21 @@ var instrs = map[string]instrSpec{
 	"sub":   {3, 3, fixed(5)},
 	"or":    {3, 3, fixed(3)},
 	"xor":   {3, 3, fixed(3)},
+	"and":   {3, 3, fixed(6)}, // d = a & b (clobbers at)
+	"andn":  {3, 3, fixed(3)}, // d = a & ~b
 	"shl":   {2, 2, fixed(3)},
 	"mulc":  {3, 3, fixed(3)},
 	"jump":  {1, 1, fixed(1)},
 	"jumpr": {1, 1, fixed(1)},
 	"jneg":  {3, 3, fixed(6)},
+	// Full-range comparisons (any 32-bit operands; jneg's |v| < 2^28
+	// restriction does not apply). Each consumes one trampoline pair in
+	// the sign-dispatch arena (2 pooled blocks, not counted here).
+	"jsign": {3, 3, fixed(4)},  // jsign v, neg, nonneg
+	"jeq":   {4, 4, fixed(12)}, // jeq a, b, eq, ne (clobbers at)
+	"jlt":   {4, 4, fixed(16)}, // signed a<b: jlt a, b, lt, ge (at, at2)
+	"jltu":  {4, 4, fixed(16)}, // unsigned a<b: jltu a, b, lo, hs (at, at2)
+	"jbool": {3, 3, fixed(6)},  // jbool v, ifzero, ifone (v must be 0 or 1)
 	"call":  {1, 1, fixed(2)},
 	"ret":   {0, 0, fixed(1)},
 	"gpio":  {2, 2, fixed(1)},
@@ -373,6 +419,10 @@ func (a *asm) parseMoveFlags(args []string, line int) (moveFlags, error) {
 			f.ctrlExtra |= a.v.CtrlSniffEn
 		case s == "bswap":
 			f.ctrlExtra |= a.v.CtrlBswap
+		case s == "incrr":
+			f.ctrlExtra |= emu.CtrlIncrRead
+		case s == "incrw":
+			f.ctrlExtra |= a.v.CtrlIncrWrite
 		case s == "size8":
 			f.size = emu.CtrlSize8
 		case s == "size16":
@@ -509,6 +559,17 @@ func (a *asm) layout() error {
 	if a.entry == "" {
 		return fmt.Errorf("missing .entry directive")
 	}
+	// Sign-dispatch arena: appended after the last instruction. Bank b
+	// holds pairs 8b..8b+7: pair p's slot 0 (sign clear) at
+	// bank*256 + (p%8)*16, slot 1 (sign set) 128 bytes later.
+	arenaBase := a.textOff
+	for i := range a.jpairs {
+		off := arenaBase + uint32(i/8)*256 + uint32(i%8)*16
+		a.syms[jpairName(i)] = symbol{text: true, off: off}
+	}
+	if n := len(a.jpairs); n > 0 {
+		a.textOff += uint32((n+7)/8) * 256
+	}
 	// Literal pool goes after all explicit data.
 	for _, k := range a.litOrder {
 		a.litOffs[k] = a.dataOff
@@ -546,10 +607,16 @@ func (a *asm) scanInstr(s *stmt, nblocks uint32) error {
 			return err
 		}
 		return scan(s.args[0], s.args[1])
-	case "add", "or", "xor":
+	case "add", "or", "xor", "andn":
 		if err := needRegs(s.mnem); err != nil {
 			return err
 		}
+		return scan(s.args...)
+	case "and":
+		if err := needRegs("and"); err != nil {
+			return err
+		}
+		a.internLit(operand{kind: opLit, num: 0xFFFFFFFF, isNum: true})
 		return scan(s.args...)
 	case "shl":
 		if err := needRegs(s.mnem); err != nil {
@@ -582,6 +649,41 @@ func (a *asm) scanInstr(s *stmt, nblocks uint32) error {
 		}
 		a.internLit(operand{kind: opLit, num: 0xFFFFFFEF, isNum: true})
 		// Trampoline slots are blocks 4 and 5 of the sequence.
+		a.genTextLabel(a.textOff + 4*16)
+		a.internLit(operand{kind: opLit, sym: s.args[1]})
+		a.internLit(operand{kind: opLit, sym: s.args[2]})
+		return scan(s.args[0])
+	case "jsign", "jeq", "jlt", "jltu":
+		if err := needRegs(s.mnem); err != nil {
+			return err
+		}
+		a.internLit(operand{kind: opLit, num: 0xFFFFFF7F, isNum: true})
+		var p jpair
+		var vals []string
+		switch s.mnem {
+		case "jsign": // jsign v, neg, nonneg
+			p, vals = jpair{neg: s.args[1], nonneg: s.args[2]}, s.args[:1]
+		case "jeq": // jeq a, b, eq, ne — sign set means a-b != 0
+			p, vals = jpair{neg: s.args[3], nonneg: s.args[2]}, s.args[:2]
+			a.internLit(operand{kind: opLit, num: 0xFFFFFFFF, isNum: true})
+			a.internLit(operand{kind: opLit, num: 1, isNum: true})
+		case "jlt", "jltu": // j lt/ltu a, b, taken, not
+			p, vals = jpair{neg: s.args[2], nonneg: s.args[3]}, s.args[:2]
+			a.internLit(operand{kind: opLit, num: 0xFFFFFFFF, isNum: true})
+			a.internLit(operand{kind: opLit, num: 1, isNum: true})
+		}
+		p.line = s.line
+		a.internLit(operand{kind: opLit, sym: p.neg})
+		a.internLit(operand{kind: opLit, sym: p.nonneg})
+		a.internLit(operand{kind: opLit, sym: jpairName(len(a.jpairs))})
+		a.jpairs = append(a.jpairs, p)
+		return scan(vals...)
+	case "jbool":
+		if err := needRegs("jbool"); err != nil {
+			return err
+		}
+		// Trampoline slots are blocks 4 and 5 of the sequence (16 bytes
+		// apart: the dispatch adds 16*v for v in {0,1}).
 		a.genTextLabel(a.textOff + 4*16)
 		a.internLit(operand{kind: opLit, sym: s.args[1]})
 		a.internLit(operand{kind: opLit, sym: s.args[2]})

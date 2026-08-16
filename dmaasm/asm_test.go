@@ -1,6 +1,7 @@
 package dmaasm_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -287,6 +288,129 @@ func TestErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestFullRangeComparisons sweeps jlt/jltu/jeq/jsign/jbool/and/andn over
+// operand pairs covering the full 32-bit range — including magnitudes
+// >= 2^28 where jneg's byte-swap trick breaks down — and checks every
+// result against Go's semantics.
+func TestFullRangeComparisons(t *testing.T) {
+	src := `
+.data
+.regs
+a:     .word 0
+b:     .word 0
+rlt:   .word 7
+rltu:  .word 7
+req:   .word 7
+rsign: .word 7
+rbool: .word 7
+rand:  .word 7
+randn: .word 7
+done:  .word 0
+.text
+.entry start
+start:
+    jlt a, b, lt_t, lt_f
+lt_t: move $1, rlt
+      jump c2
+lt_f: move $0, rlt
+c2:
+    jltu a, b, ltu_t, ltu_f
+ltu_t: move $1, rltu
+       jump c3
+ltu_f: move $0, rltu
+c3:
+    jeq a, b, eq_t, eq_f
+eq_t: move $1, req
+      jump c4
+eq_f: move $0, req
+c4:
+    jsign a, sg_t, sg_f
+sg_t: move $1, rsign
+      jump c5
+sg_f: move $0, rsign
+c5:
+    jbool req, jb_z, jb_o
+jb_z: move $100, rbool
+      jump c6
+jb_o: move $200, rbool
+c6:
+    and a, b, rand
+    andn a, b, randn
+    move $1, done
+    halt
+`
+	vals := []uint32{
+		0, 1, 2, 5, 0x7F, 0x80, 0x100,
+		0x0FFFFFFF, 0x10000000, 0x7FFFFFFF,
+		0x80000000, 0x80000001, 0xF0000000,
+		0xFFFFFFFE, 0xFFFFFFFF,
+	}
+	forEachVariant(t, func(t *testing.T, v *emu.Variant) {
+		res, err := dmaasm.Assemble(src, dmaasm.Options{Variant: v})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, av := range vals {
+			for _, bv := range vals {
+				m := emu.NewMachine(v)
+				if err := res.Image.LoadAndStart(m, nil, img.DefaultMachine()); err != nil {
+					t.Fatal(err)
+				}
+				aAddr, _ := res.Symbol("a")
+				bAddr, _ := res.Symbol("b")
+				done, _ := res.Symbol("done")
+				m.Poke32(aAddr, av)
+				m.Poke32(bAddr, bv)
+				rr, err := m.Run(emu.RunConfig{MaxCycles: 100_000, WatchWrites: []uint32{done}})
+				if err != nil || rr.Reason != emu.StopWatch {
+					t.Fatalf("a=%#x b=%#x: did not finish: %+v %v", av, bv, rr, err)
+				}
+				b2u := func(x bool) uint32 {
+					if x {
+						return 1
+					}
+					return 0
+				}
+				eq := b2u(av == bv)
+				want := map[string]uint32{
+					"rlt":   b2u(int32(av) < int32(bv)),
+					"rltu":  b2u(av < bv),
+					"req":   eq,
+					"rsign": b2u(int32(av) < 0),
+					"rbool": 100 + 100*eq,
+					"rand":  av & bv,
+					"randn": av &^ bv,
+				}
+				for sym, w := range want {
+					if got := peekSym(t, m, res, sym); got != w {
+						t.Errorf("a=%#x b=%#x: %s = %#x, want %#x", av, bv, sym, got, w)
+					}
+				}
+			}
+		}
+	})
+}
+
+// TestArenaPacking: more than 8 comparisons forces a second trampoline
+// bank; all must still dispatch correctly.
+func TestArenaPacking(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString(".data\n.regs\nx: .word 5\nr: .word 0\ndone: .word 0\n.text\n.entry start\nstart:\n")
+	for i := 0; i < 10; i++ {
+		fmt.Fprintf(&sb, "  jeq x, $%d, hit%d, miss%d\nhit%d: add r, $1, r\nmiss%d:\n", i, i, i, i, i)
+	}
+	sb.WriteString("  move $1, done\n  halt\n")
+	forEachVariant(t, func(t *testing.T, v *emu.Variant) {
+		m, res, rr := assembleRun(t, v, sb.String(), 100_000)
+		if rr.Reason != emu.StopWatch {
+			t.Fatalf("did not finish: %+v", rr)
+		}
+		if got := peekSym(t, m, res, "r"); got != 1 {
+			t.Errorf("r = %d, want 1 (exactly the x==5 case)", got)
+		}
+	})
 }
 
 // TestIRQProgram runs the approach-B interrupt program end to end in the

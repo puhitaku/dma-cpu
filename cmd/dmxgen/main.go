@@ -22,8 +22,10 @@ import (
 	"strings"
 
 	"github.com/puhitaku/dma-cpu/dmaasm"
+	"github.com/puhitaku/dma-cpu/dmacc"
 	"github.com/puhitaku/dma-cpu/emu"
 	"github.com/puhitaku/dma-cpu/img"
+	"github.com/puhitaku/dma-cpu/llir"
 	"github.com/puhitaku/dma-cpu/prog"
 )
 
@@ -74,6 +76,7 @@ type export struct {
 type hilSpec struct {
 	name   string
 	file   string            // prog/hil/<file>.dasm
+	ll     string            // OR: compile this IR golden with dmacc (Phase 4)
 	patch  map[string]uint32 // data words poked before encoding
 	mem    map[string]uint32 // symbol -> intended value (done=1 implied)
 	gpio   *check            // optional pin-level check
@@ -110,19 +113,82 @@ var hilSpecs = []hilSpec{
 		export: []string{"isrvec", "dispatch", "irqresume", "isrcount", "counter"}},
 	{name: "poll", file: "poll", perf: perfInfo("counter", 9),
 		export: []string{"pending", "isrcount", "counter"}},
+	// Phase 4 compiled-C programs (clang IR goldens -> dmacc -> dmaasm).
+	// The exitcode check value is the host execution recorded in
+	// dmacc/testdata/expected.txt, so a silicon PASS closes the loop
+	// host C == emulator == hardware.
+	{name: "cc_arith", ll: "arith"},
+	{name: "cc_control", ll: "control"},
+	{name: "cc_memory", ll: "memory"},
+	{name: "cc_func", ll: "func"},
+	{name: "cc_bits", ll: "bits"},
+	{name: "cc_collatz", ll: "collatz"},
+}
+
+// ccExpected reads the host-truth exit codes for the compiled programs.
+func ccExpected() (map[string]uint32, error) {
+	raw, err := os.ReadFile("dmacc/testdata/expected.txt")
+	if err != nil {
+		return nil, fmt.Errorf("compiled HIL specs need dmacc/testdata/expected.txt (make llgen): %w", err)
+	}
+	out := map[string]uint32{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		f := strings.Fields(line)
+		if len(f) != 2 {
+			continue
+		}
+		var v int64
+		if _, err := fmt.Sscan(f[1], &v); err != nil {
+			return nil, fmt.Errorf("expected.txt: bad line %q", line)
+		}
+		out[f[0]] = uint32(int32(v))
+	}
+	return out, nil
+}
+
+// buildCC compiles an IR golden with dmacc and assembles it.
+func buildCC(spec hilSpec, v *emu.Variant, lay layout) (*dmaasm.Result, error) {
+	src, err := os.ReadFile("dmacc/testdata/" + spec.ll + ".ll")
+	if err != nil {
+		return nil, err
+	}
+	mod, err := llir.Parse(string(src))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", spec.ll, err)
+	}
+	dasm, err := dmacc.Compile(mod, dmacc.Options{})
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", spec.ll, err)
+	}
+	res, err := dmaasm.Assemble(dasm, dmaasm.Options{
+		Variant: v, TextBase: lay.text, DataBase: lay.data,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%s: assembling dmacc output: %w", spec.ll, err)
+	}
+	return res, nil
 }
 
 // build assembles a spec's program for the SKU and applies patches.
 func build(spec hilSpec, v *emu.Variant, lay layout) (*test, error) {
-	src, err := prog.HIL(spec.file)
-	if err != nil {
-		return nil, err
-	}
-	res, err := dmaasm.Assemble(src, dmaasm.Options{
-		Variant: v, TextBase: lay.text, DataBase: lay.data,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", spec.file, err)
+	var res *dmaasm.Result
+	var err error
+	if spec.ll != "" {
+		res, err = buildCC(spec, v, lay)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		src, err := prog.HIL(spec.file)
+		if err != nil {
+			return nil, err
+		}
+		res, err = dmaasm.Assemble(src, dmaasm.Options{
+			Variant: v, TextBase: lay.text, DataBase: lay.data,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", spec.file, err)
+		}
 	}
 	for sym, val := range spec.patch {
 		addr, err := res.Symbol(sym)
@@ -207,7 +273,7 @@ func verify(v *emu.Variant, lay layout, t *test) error {
 		}
 		return nil
 	}
-	res, err := m.Run(emu.RunConfig{MaxCycles: 1_000_000, WatchWrites: []uint32{t.Done}})
+	res, err := m.Run(emu.RunConfig{MaxCycles: 50_000_000, WatchWrites: []uint32{t.Done}})
 	if err != nil {
 		return fmt.Errorf("%s: %w", t.Name, err)
 	}
@@ -380,8 +446,19 @@ func run() error {
 		return fmt.Errorf("no HIL layout for %s", v.Name)
 	}
 
+	ccExp, err := ccExpected()
+	if err != nil {
+		return err
+	}
 	var tests []*test
 	for _, spec := range hilSpecs {
+		if spec.ll != "" {
+			want, ok := ccExp[spec.ll]
+			if !ok {
+				return fmt.Errorf("%s: no host expectation in dmacc/testdata/expected.txt", spec.ll)
+			}
+			spec.mem = map[string]uint32{"exitcode": want}
+		}
 		t, err := build(spec, v, lay)
 		if err != nil {
 			return err

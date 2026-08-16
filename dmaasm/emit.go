@@ -36,7 +36,7 @@ func (a *asm) emit() (*Result, error) {
 			if !ok {
 				return img.Ptr{}, fmt.Errorf("line %d: undefined symbol %q", line, op.sym)
 			}
-			if op.field != 0 && !sym.text {
+			if op.field != 0 && !op.plusOff && !sym.text {
 				return img.Ptr{}, fmt.Errorf("line %d: block field on data symbol %q", line, op.sym)
 			}
 			return img.In(segOf(sym), sym.off+op.field), nil
@@ -83,7 +83,7 @@ func (a *asm) emit() (*Result, error) {
 		if !ok {
 			return nil, fmt.Errorf("undefined symbol %q (used as $%s)", op.sym, op.sym)
 		}
-		data.WordRef(segOf(sym), sym.off)
+		data.WordRef(segOf(sym), sym.off+op.field)
 	}
 
 	// --- Init writes: sniffer first (ABI default), then user writes ---
@@ -106,12 +106,16 @@ func (a *asm) emit() (*Result, error) {
 
 	// --- Text segment ---
 	a.genLabel = 0 // regenerate the same internal label names as pass 1
+	a.jpairIdx = 0 // arena pairs are consumed in pass-1 order
 	nextGen := func() operand {
 		a.genLabel++
 		return operand{kind: opLit, sym: fmt.Sprintf("__L%d", a.genLabel)}
 	}
 	execCtrl := a.cfg.ExecCtrl(a.v)
 	sniffP := img.Abs(a.v.SniffDataAddr())
+	xorP := img.Abs(a.v.SniffDataXORAddr())
+	setP := img.Abs(a.v.SniffDataSetAddr())
+	clrP := img.Abs(a.v.SniffDataClrAddr())
 	pcP := img.Abs(emu.ChanRegAddr(a.cfg.Fetch, emu.OffReadAddr))
 	symP := func(name string, line int) (img.Ptr, error) {
 		return resolve(operand{kind: opSym, sym: name}, line)
@@ -121,6 +125,32 @@ func (a *asm) emit() (*Result, error) {
 	}
 	mv := func(src, dst img.Ptr, count, ctrl uint32) {
 		text.BlockP(src, dst, count, ctrl)
+	}
+	// signTail: with the tested word already byte-swapped in the
+	// accumulator, isolate the true sign bit (bit 7 after bswap), add the
+	// trampoline-pair base, and dispatch (+0 sign clear, +128 sign set).
+	signTail := func(line int) error {
+		pairP, err := resolve(operand{kind: opLit, sym: jpairName(a.jpairIdx)}, line)
+		if err != nil {
+			return err
+		}
+		a.jpairIdx++
+		nullP, err := symP("null", line)
+		if err != nil {
+			return err
+		}
+		mv(litNumP(0xFFFFFF7F), clrP, 1, execCtrl)
+		mv(pairP, nullP, 1, execCtrl|a.v.CtrlSniffEn)
+		mv(sniffP, pcP, 1, execCtrl)
+		return nil
+	}
+	// subIntoSniff: accumulator = *aP - *bP (4 blocks; two's complement,
+	// exact mod 2^32 — unlike the sign trick this has no range caveat).
+	subIntoSniff := func(aP, bP, nullP img.Ptr) {
+		mv(bP, sniffP, 1, execCtrl)
+		mv(litNumP(0xFFFFFFFF), xorP, 1, execCtrl)
+		mv(litNumP(1), nullP, 1, execCtrl|a.v.CtrlSniffEn)
+		mv(aP, nullP, 1, execCtrl|a.v.CtrlSniffEn)
 	}
 
 	for _, s := range a.stmts {
@@ -185,6 +215,27 @@ func (a *asm) emit() (*Result, error) {
 			mv(ops[1], sniffP, 1, execCtrl)
 			mv(ops[0], img.Abs(alias), 1, execCtrl)
 			mv(sniffP, ops[2], 1, execCtrl)
+		case "and":
+			if err := resolveArgs(0, 1, 2); err != nil {
+				return nil, err
+			}
+			atP, err := symP("at", s.line)
+			if err != nil {
+				return nil, err
+			}
+			mv(ops[0], sniffP, 1, execCtrl)
+			mv(litNumP(0xFFFFFFFF), xorP, 1, execCtrl) // sniff = ~a
+			mv(sniffP, atP, 1, execCtrl)
+			mv(ops[1], sniffP, 1, execCtrl)
+			mv(atP, clrP, 1, execCtrl) // sniff = b & ~(~a) = a & b
+			mv(sniffP, ops[2], 1, execCtrl)
+		case "andn":
+			if err := resolveArgs(0, 1, 2); err != nil {
+				return nil, err
+			}
+			mv(ops[0], sniffP, 1, execCtrl)
+			mv(ops[1], clrP, 1, execCtrl) // sniff = a & ~b
+			mv(sniffP, ops[2], 1, execCtrl)
 		case "shl":
 			if err := resolveArgs(0, 1); err != nil {
 				return nil, err
@@ -234,6 +285,108 @@ func (a *asm) emit() (*Result, error) {
 			mv(sniffP, pcP, 1, execCtrl)
 			mv(posP, pcP, 1, execCtrl) // trampoline slot 0: non-negative
 			mv(negP, pcP, 1, execCtrl) // trampoline slot 1: negative
+		case "jsign":
+			if err := resolveArgs(0); err != nil {
+				return nil, err
+			}
+			mv(ops[0], sniffP, 1, execCtrl|a.v.CtrlBswap)
+			if err := signTail(s.line); err != nil {
+				return nil, err
+			}
+		case "jeq":
+			if err := resolveArgs(0, 1); err != nil {
+				return nil, err
+			}
+			atP, err := symP("at", s.line)
+			if err != nil {
+				return nil, err
+			}
+			subIntoSniff(ops[0], ops[1], nullP) // d = a - b
+			mv(sniffP, atP, 1, execCtrl)
+			mv(litNumP(0xFFFFFFFF), xorP, 1, execCtrl)         // ~d
+			mv(litNumP(1), nullP, 1, execCtrl|a.v.CtrlSniffEn) // -d
+			mv(atP, setP, 1, execCtrl)                         // -d | d: sign set iff d != 0
+			mv(sniffP, sniffP, 1, execCtrl|a.v.CtrlBswap)
+			if err := signTail(s.line); err != nil {
+				return nil, err
+			}
+		case "jlt":
+			// Signed a < b for full-range operands:
+			// sign((a & ~b) | (~(a ^ b) & (a - b))).
+			if err := resolveArgs(0, 1); err != nil {
+				return nil, err
+			}
+			atP, err := symP("at", s.line)
+			if err != nil {
+				return nil, err
+			}
+			at2P, err := symP("at2", s.line)
+			if err != nil {
+				return nil, err
+			}
+			mv(ops[0], sniffP, 1, execCtrl)
+			mv(ops[1], xorP, 1, execCtrl) // a ^ b
+			mv(sniffP, atP, 1, execCtrl)
+			subIntoSniff(ops[0], ops[1], nullP) // d = a - b
+			mv(atP, clrP, 1, execCtrl)          // d & ~(a ^ b)
+			mv(sniffP, at2P, 1, execCtrl)
+			mv(ops[0], sniffP, 1, execCtrl)
+			mv(ops[1], clrP, 1, execCtrl) // a & ~b
+			mv(at2P, setP, 1, execCtrl)
+			mv(sniffP, sniffP, 1, execCtrl|a.v.CtrlBswap)
+			if err := signTail(s.line); err != nil {
+				return nil, err
+			}
+		case "jltu":
+			// Unsigned a < b (borrow of a - b):
+			// sign((~a & b) | ((~a | b) & (a - b))).
+			if err := resolveArgs(0, 1); err != nil {
+				return nil, err
+			}
+			atP, err := symP("at", s.line)
+			if err != nil {
+				return nil, err
+			}
+			at2P, err := symP("at2", s.line)
+			if err != nil {
+				return nil, err
+			}
+			mv(ops[0], sniffP, 1, execCtrl)
+			mv(ops[1], clrP, 1, execCtrl) // a & ~b
+			mv(sniffP, atP, 1, execCtrl)
+			subIntoSniff(ops[0], ops[1], nullP) // d = a - b
+			mv(atP, clrP, 1, execCtrl)          // d & ~(a & ~b) = d & (~a | b)
+			mv(sniffP, at2P, 1, execCtrl)
+			mv(ops[1], sniffP, 1, execCtrl)
+			mv(ops[0], clrP, 1, execCtrl) // b & ~a
+			mv(at2P, setP, 1, execCtrl)
+			mv(sniffP, sniffP, 1, execCtrl|a.v.CtrlBswap)
+			if err := signTail(s.line); err != nil {
+				return nil, err
+			}
+		case "jbool":
+			if err := resolveArgs(0); err != nil {
+				return nil, err
+			}
+			tramp := nextGen()
+			trampP, err := resolve(tramp, s.line)
+			if err != nil {
+				return nil, err
+			}
+			zeroLP, err := resolve(operand{kind: opLit, sym: s.args[1]}, s.line)
+			if err != nil {
+				return nil, err
+			}
+			oneLP, err := resolve(operand{kind: opLit, sym: s.args[2]}, s.line)
+			if err != nil {
+				return nil, err
+			}
+			mv(zeroP, sniffP, 1, execCtrl)
+			mv(ops[0], nullP, 16, execCtrl|a.v.CtrlSniffEn) // sniff = 16*v
+			mv(trampP, nullP, 1, execCtrl|a.v.CtrlSniffEn)
+			mv(sniffP, pcP, 1, execCtrl)
+			mv(zeroLP, pcP, 1, execCtrl) // trampoline slot 0: v == 0
+			mv(oneLP, pcP, 1, execCtrl)  // trampoline slot 1: v == 1
 		case "call":
 			ret := nextGen()
 			retP, err := resolve(ret, s.line)
@@ -284,6 +437,29 @@ func (a *asm) emit() (*Result, error) {
 			mv(zeroP, nullP, 0, execCtrl)
 		default:
 			return nil, fmt.Errorf("line %d: unhandled instruction %q", s.line, s.mnem)
+		}
+	}
+
+	// Sign-dispatch arena: per bank, 8 sign-clear slots then 8 sign-set
+	// slots 128 bytes later (layout fixed in pass 1). Unused slots halt.
+	for b := 0; b*8 < len(a.jpairs); b++ {
+		for _, negRow := range []bool{false, true} {
+			for slot := 0; slot < 8; slot++ {
+				p := b*8 + slot
+				if p >= len(a.jpairs) {
+					text.Halt()
+					continue
+				}
+				tgt := a.jpairs[p].nonneg
+				if negRow {
+					tgt = a.jpairs[p].neg
+				}
+				tp, err := resolve(operand{kind: opLit, sym: tgt}, a.jpairs[p].line)
+				if err != nil {
+					return nil, err
+				}
+				mv(tp, pcP, 1, execCtrl)
+			}
 		}
 	}
 

@@ -55,11 +55,27 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   SKU chosen at assembly); the HIL images in `prog/hil/` are the
   reference programs — `cmd/dmxgen` assembles them into the firmware
   header, so hardware runs validate the assembler.
+- C compiles via stock clang IR + the `dmacc` translator (Phase 4,
+  `prompts/007-phase4-results.md`): `clang --target=armv6m-none-eabi
+  -O1 -fno-unroll-loops -fsigned-char -ffreestanding -S -emit-llvm`,
+  then `llir` (parser) + `dmacc` (codegen) emit SKU-portable .dasm. No
+  register allocator by design: every SSA value is an SRAM word. v0
+  limits: no recursion (static frames), no i64/float/varargs/indirect
+  calls. Differential tests (`dmacc/testdata/`) pin dmacc against host
+  clang execution; regenerate goldens with `make llgen` (host clang
+  required; keep -fsigned-char on both sides or `char` semantics
+  diverge).
+- The full-range comparison macros (`jsign`/`jeq`/`jlt`/`jltu`) exist
+  because `jneg` is only correct for |v| < 2^28; compiled code must use
+  them for arbitrary values. They dispatch through a pooled trampoline
+  arena appended to .text (ABI v0.1, doc/abi.md).
 
 ## Build, test, hardware
 
 - `make test` = `go vet` + all golden tests. Run it before committing.
-- `make build` builds the `dmaemu` CLI; `make images` regenerates
+- `make llgen` regenerates the compiler IR goldens + host expectations
+  (needs host clang; only when dmacc/testdata/*.c change).
+- `make build` builds the `dmaemu`/`dmaasm`/`dmacc` CLIs; `make images` regenerates
   `target/firmware/generated/images.h` via `cmd/dmxgen` (required whenever
   test programs or emulator semantics change); `make firmware` builds the
   HIL firmware; `make test-hw` flashes it.

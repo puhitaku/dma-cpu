@@ -7,6 +7,7 @@ all: build
 build:
 	go build -o bin/dmaemu ./cmd/dmaemu
 	go build -o bin/dmaasm ./cmd/dmaasm
+	go build -o bin/dmacc ./cmd/dmacc
 
 test: vet
 	go test ./...
@@ -16,6 +17,30 @@ vet:
 
 clean:
 	rm -rf bin
+
+# --- Compiler goldens (Phase 4) ---
+# Regenerate the committed IR goldens and host-truth expectations for the
+# dmacc differential tests. Needs a host clang. The target IR and the
+# host build both use -fsigned-char so `char` semantics agree (plain
+# char is unsigned on arm-none-eabi but signed on the host).
+CC_TESTS = arith control memory func bits collatz recurse
+LLGEN_FLAGS = -O1 -fno-unroll-loops -fsigned-char
+
+.PHONY: llgen
+llgen:
+	@mkdir -p bin
+	@printf '#include <stdio.h>\nint testmain(void);\nint main(void){printf("%%d\\n", testmain());return 0;}\n' > bin/llgen_driver.c
+	@: > dmacc/testdata/expected.txt
+	@for f in $(CC_TESTS); do \
+	  clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding -S -emit-llvm \
+	    dmacc/testdata/$$f.c -o dmacc/testdata/$$f.ll || exit 1; \
+	  if [ $$f != recurse ]; then \
+	    clang $(LLGEN_FLAGS) -Dmain=testmain -c dmacc/testdata/$$f.c -o bin/llgen_$$f.o && \
+	    clang bin/llgen_$$f.o bin/llgen_driver.c -o bin/llgen_$$f && \
+	    echo "$$f $$(./bin/llgen_$$f)" >> dmacc/testdata/expected.txt || exit 1; \
+	  fi; \
+	done
+	@cat dmacc/testdata/expected.txt
 
 # --- Hardware-in-the-loop (see prompts/004-hw-calibration.md) ---
 # Environment (adjust to your install):
