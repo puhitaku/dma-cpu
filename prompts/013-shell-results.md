@@ -1,9 +1,21 @@
-# Phase 5b Results: dma-sh — an Interactive Shell (silicon pending)
+# Phase 5b Results: dma-sh — an Interactive Shell on Silicon
 
-Status as of 2026-08-17. The shell rung of the xv6 ladder is complete
-and verified in the emulator on both SKUs; the interactive silicon
-session is **blocked on a bench issue** (below), with the firmware
-flashed and waiting.
+Status as of 2026-08-17. The shell rung of the xv6 ladder is complete:
+verified in the emulator on both SKUs, and **interactive on the
+Pico 2**. A live session with the DMA controller, ARM parked:
+
+    dma> stat
+    ticks=297534 bgcounter=25580040
+    dma> primes 50
+       2    3    5    7   11   13 ...
+    (15 primes <= 50)
+    dma> stat
+    ticks=300176 bgcounter=25802000
+
+The background process advanced 221,960 counts while the shell was
+computing primes for the user — preemptive multitasking observable
+from the prompt. `peek 0x50000458` reads the machine's own live
+accumulator; `echo hello from silicon` does what it says.
 
 ## What was built
 

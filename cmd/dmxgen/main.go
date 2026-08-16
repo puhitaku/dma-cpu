@@ -681,7 +681,7 @@ func verify(v *emu.Variant, lay layout, t *test) error {
 		return fmt.Errorf("%s: did not reach done: %+v", t.Name, res)
 	}
 	t.EmuCycles = res.Cycles
-	if len(t.Console) > 0 && string(m.ConsoleOut) != string(t.Console) {
+	if len(t.Console) > 0 && strings.ReplaceAll(string(m.ConsoleOut), "\r", "") != string(t.Console) {
 		return fmt.Errorf("%s: emulator console mismatch:\n--- got ---\n%s\n--- want ---\n%s",
 			t.Name, m.ConsoleOut, t.Console)
 	}

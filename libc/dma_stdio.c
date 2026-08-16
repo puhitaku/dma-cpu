@@ -7,6 +7,14 @@
 
 static int dma_uart_putc(char c, FILE *file) {
     (void)file;
+    /* CRLF translation, like the host-side stdio does for the ARM:
+     * terminals need the carriage return. Console comparisons in the
+     * test suites strip '\r' before diffing against host output. */
+    if (c == '\n') {
+        while (__dma_uart_fr & DMA_UART_FR_TXFF)
+            ;
+        __dma_uart_dr = '\r';
+    }
     while (__dma_uart_fr & DMA_UART_FR_TXFF)
         ;
     __dma_uart_dr = (unsigned char)c;

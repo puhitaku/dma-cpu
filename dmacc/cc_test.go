@@ -178,8 +178,9 @@ func TestLibcStdio(t *testing.T) {
 				if got := m.Peek32(ec); got != wantExit {
 					t.Errorf("exitcode = %d, host says %d", int32(got), int32(wantExit))
 				}
-				if string(m.ConsoleOut) != string(wantConsole) {
-					t.Errorf("console mismatch:\n--- dma ---\n%s\n--- host ---\n%s", m.ConsoleOut, wantConsole)
+				got := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
+				if got != string(wantConsole) {
+					t.Errorf("console mismatch:\n--- dma ---\n%s\n--- host ---\n%s", got, wantConsole)
 				}
 				t.Logf("cycles: %d, console bytes: %d", rr.Cycles, len(m.ConsoleOut))
 			})

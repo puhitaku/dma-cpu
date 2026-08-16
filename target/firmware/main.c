@@ -646,6 +646,19 @@ static void shell_start(void)
         printf("SHELL: FAIL load\n");
         return;
     }
+    /* Banner BEFORE starting anything: printf takes ~10 ms of UART
+     * time, and a tick arriving between arming and dmx_start patches
+     * the shell's dispatch before crt0 exists to keep it — the
+     * injector then never gets re-armed (diagnosed on silicon with the
+     * shell's own peek command). Order: banner, start the shell, then
+     * arm the tick chain onto the already-running process. */
+    printf("=== handing console to dma-sh (ARM parked; the prompt below is "
+           "served entirely by the DMA controller) ===\n");
+    dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 0};
+    if (dmx_start(&cfg, HIL_SHELL_ENTRY) != DMX_OK) {
+        printf("SHELL: FAIL start\n");
+        return;
+    }
     reg_wr(HIL_TIMER0_ADDR + 4, (1u << 16) | 15000u); /* TIMER1 tick */
     reg_wr(chreg(4, CH_AL1_READ_ADDR), HIL_SHELL_VEC_B);
     reg_wr(chreg(4, CH_AL1_WRITE_ADDR), HIL_SHELL_DISP_B);
@@ -655,14 +668,6 @@ static void shell_start(void)
     reg_wr(chreg(3, CH_AL1_WRITE_ADDR), HIL_SHELL_DISP_A);
     reg_wr(chreg(3, CH_TRANS_COUNT), 1);
     reg_wr(chreg(3, CH_CTRL_TRIG), HIL_SHELL_INJ1_CTRL);
-
-    printf("=== handing console to dma-sh (ARM parked; the prompt below is "
-           "served entirely by the DMA controller) ===\n");
-    dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 0};
-    if (dmx_start(&cfg, HIL_SHELL_ENTRY) != DMX_OK) {
-        printf("SHELL: FAIL start\n");
-        return;
-    }
     for (;;) {
         tight_loop_contents();
     }
