@@ -55,3 +55,8 @@ $ make test    # go vet + golden tests
 ```
 
 Requires Go ≥ 1.26. No dependencies outside the standard library.
+
+## Special Thanks
+
+This project is heavily inspired by [the original idea](https://people.ece.cornell.edu/land/courses/ece4760/RP2040/C_SDK_DMA_machine/DMA_machine_rp2040.html)
+published by the authors in Cornell University.
