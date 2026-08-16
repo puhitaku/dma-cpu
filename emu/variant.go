@@ -16,6 +16,7 @@ type Variant struct {
 	NIRQs       int
 	SRAMSize    uint32
 	IOBank0Base uint32
+	UART0Base   uint32
 	GPIOPins    int
 
 	gpioOutoverLSB uint
@@ -62,6 +63,7 @@ var RP2040 = &Variant{
 	NIRQs:       2,
 	SRAMSize:    0x42000, // 256 KiB striped + 2 × 4 KiB scratch
 	IOBank0Base: 0x40014000,
+	UART0Base:   0x40034000, // RP2040 datasheet §4.2
 	GPIOPins:    30,
 
 	gpioOutoverLSB: 8,
@@ -98,6 +100,7 @@ var RP2350 = &Variant{
 	NIRQs:       4,
 	SRAMSize:    0x82000, // 520 KiB
 	IOBank0Base: 0x40028000,
+	UART0Base:   0x40070000, // RP2350 datasheet §12.1
 	GPIOPins:    48,
 
 	gpioOutoverLSB: 12,
@@ -176,6 +179,12 @@ func (v *Variant) transMode(reload uint32) uint32 {
 // --- SKU-specific addresses ---
 
 func (v *Variant) SniffCtrlAddr() uint32    { return DMABase + v.offSniffCtrl }
+// UART0 data and flag registers (PL011: DR at +0x00, FR at +0x18). The
+// emulator models DR writes as console output; FR reads back 0, so the
+// TX-full poll a real-hardware putc needs falls straight through.
+func (v *Variant) UARTDRAddr() uint32 { return v.UART0Base + 0x00 }
+func (v *Variant) UARTFRAddr() uint32 { return v.UART0Base + 0x18 }
+
 func (v *Variant) SniffDataAddr() uint32    { return DMABase + v.offSniffData }
 func (v *Variant) SniffDataXORAddr() uint32 { return DMABase + AliasXOR + v.offSniffData }
 func (v *Variant) SniffDataSetAddr() uint32 { return DMABase + AliasSet + v.offSniffData }

@@ -44,32 +44,40 @@ func run() error {
 	dmx := flag.String("dmx", "", "also assemble to this .dmx path")
 	sku := flag.String("sku", "rp2350", "target SKU (rp2040 or rp2350)")
 	textBase := flag.Uint64("text", 0x20000000, "text link address")
-	dataBase := flag.Uint64("data", 0x20010000, "data link address")
+	dataBase := flag.Uint64("data", 0x20030000, "data link address (192 KiB of text headroom fits either SKU)")
 	doRun := flag.Bool("run", false, "run the program in the emulator")
 	maxCycles := flag.Uint64("maxcycles", 200_000_000, "emulator cycle budget for -run")
 	var dumps dumpFlag
 	flag.Var(&dumps, "dump", "after -run, print memory at C symbol `name[:count]` (repeatable)")
 	flag.Parse()
 
-	if flag.NArg() != 1 {
+	if flag.NArg() < 1 {
 		flag.Usage()
-		return fmt.Errorf("need exactly one input .ll file")
+		return fmt.Errorf("need at least one input .ll file")
 	}
 	if *out == "" && *dmx == "" && !*doRun {
 		flag.Usage()
 		return fmt.Errorf("nothing to do: need -o, -dmx, or -run")
 	}
-	src, err := os.ReadFile(flag.Arg(0))
+	var mods []*llir.Module
+	for _, path := range flag.Args() {
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		mod, err := llir.Parse(string(src))
+		if err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		mods = append(mods, mod)
+	}
+	mod, err := llir.Merge(mods...)
 	if err != nil {
 		return err
 	}
-	mod, err := llir.Parse(string(src))
-	if err != nil {
-		return fmt.Errorf("%s: %w", flag.Arg(0), err)
-	}
 	dasm, err := dmacc.Compile(mod, dmacc.Options{Entry: *entry, NoSafepoints: *noSafepoints})
 	if err != nil {
-		return fmt.Errorf("%s: %w", flag.Arg(0), err)
+		return err
 	}
 	if *out != "" {
 		if err := os.WriteFile(*out, []byte(dasm), 0o644); err != nil {
@@ -121,6 +129,12 @@ func runEmu(res *dmaasm.Result, v *emu.Variant, maxCycles uint64, dumps dumpFlag
 	}
 	if rr.Reason != emu.StopIdle {
 		return fmt.Errorf("program did not halt: stopped with %q after %d cycles (raise -maxcycles?)", rr.Reason, rr.Cycles)
+	}
+	if len(m.ConsoleOut) > 0 {
+		os.Stdout.Write(m.ConsoleOut)
+		if m.ConsoleOut[len(m.ConsoleOut)-1] != '\n' {
+			fmt.Println()
+		}
 	}
 	ec, err := res.Symbol("exitcode")
 	if err != nil {

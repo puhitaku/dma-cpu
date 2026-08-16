@@ -220,6 +220,38 @@ func (p *parser) instrLine(lx *lexer) error {
 		}
 		ins.Typ, ins.To = to, to
 
+	case op == "insertvalue" || op == "extractvalue":
+		ty, err := p.parseType(lx)
+		if err != nil {
+			return err
+		}
+		ins.Typ = ty // aggregate type
+		if err := addArg(ty); err != nil {
+			return err
+		}
+		if op == "insertvalue" {
+			if err := lx.expect(","); err != nil {
+				return err
+			}
+			ety, err := p.parseType(lx)
+			if err != nil {
+				return err
+			}
+			if err := addArg(ety); err != nil {
+				return err
+			}
+		}
+		for lx.accept(",") {
+			if strings.HasPrefix(lx.peek(), "!") {
+				break
+			}
+			iv, err := p.parseValue(lx, &Type{Kind: TInt, Bits: 32})
+			if err != nil {
+				return err
+			}
+			ins.Args = append(ins.Args, iv)
+		}
+
 	case op == "freeze":
 		ty, err := p.parseType(lx)
 		if err != nil {
@@ -258,39 +290,39 @@ func (p *parser) instrLine(lx *lexer) error {
 		}
 
 	case op == "call":
-		for lx.peek() == "fast" || isParamAttr(lx.peek()) {
+		ins.FixedArgs = -1
+		for lx.peek() == "fast" || ccTokens[lx.peek()] {
 			lx.next()
-			lx.skipParens()
 		}
+		skipParamAttrs(lx)
 		ty, err := p.parseType(lx)
 		if err != nil {
 			return err
 		}
 		ins.Typ = ty
-		if lx.peek() == "(" { // full function type: reject varargs inside
-			depth, hasDots := 0, false
-			for lx.pos < len(lx.toks) {
-				t := lx.next()
-				if t == "(" {
-					depth++
-				} else if t == ")" {
-					depth--
-					if depth == 0 {
-						break
-					}
-				} else if t == "." {
-					hasDots = true
+		if lx.peek() == "(" { // full function type (printed for varargs)
+			lx.next()
+			nfixed := 0
+			for !lx.accept(")") {
+				if lx.accept("...") {
+					ins.FixedArgs = nfixed
+					continue
 				}
-			}
-			if hasDots {
-				return lx.errf("varargs calls are not supported")
+				if _, err := p.parseType(lx); err != nil {
+					return err
+				}
+				nfixed++
+				lx.accept(",")
 			}
 		}
 		callee := lx.next()
-		if !strings.HasPrefix(callee, "@") {
-			return lx.errf("indirect calls are not supported (callee %q)", callee)
+		if strings.HasPrefix(callee, "@") {
+			ins.Callee = strings.TrimPrefix(unquote(callee), "@")
+		} else if strings.HasPrefix(callee, "%") {
+			ins.CalleeVal = &Value{Kind: VLocal, Name: strings.TrimPrefix(unquote(callee), "%"), Typ: &Type{Kind: TPtr}}
+		} else {
+			return lx.errf("bad call target %q", callee)
 		}
-		ins.Callee = strings.TrimPrefix(unquote(callee), "@")
 		if err := lx.expect("("); err != nil {
 			return err
 		}

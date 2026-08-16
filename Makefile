@@ -18,12 +18,37 @@ vet:
 clean:
 	rm -rf bin
 
+# --- libc (Phase 4.5): picolibc through the dmacc pipeline ---
+# Compiles the curated picolibc sources (integer-only stdio + string) to
+# IR goldens in libc/ll/, which are committed and linked into programs by
+# passing them to dmacc alongside the program's own .ll. Regenerate after
+# changing libc/picolibc.h, libc/dma_stdio.c, or the submodule pin.
+PICOLIBC := lib/picolibc
+LIBC_STDIO := printf vfiprintf puts putchar fputs fputc \
+              sprintf snprintf vsnprintf filestrput
+LIBC_STRING := strlen strnlen strcmp strncmp strcpy strncpy strchr memchr memcmp
+LIBC_CLANG = clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding \
+             -nostdinc -I$(CURDIR)/libc -I$(CURDIR)/libc/include \
+             -I$(CURDIR)/$(PICOLIBC)/libc/include -I$(CURDIR)/$(PICOLIBC)/libc/locale \
+             -I$(shell clang -print-resource-dir)/include -S -emit-llvm
+
+.PHONY: libc
+libc:
+	@mkdir -p libc/ll
+	$(LIBC_CLANG) libc/dma_stdio.c -o libc/ll/dma_stdio.ll
+	@for f in $(LIBC_STDIO); do \
+	  (cd $(PICOLIBC)/libc/stdio && $(LIBC_CLANG) $$f.c -o $(CURDIR)/libc/ll/$$f.ll) || exit 1; done
+	@for f in $(LIBC_STRING); do \
+	  (cd $(PICOLIBC)/libc/string && $(LIBC_CLANG) $$f.c -o $(CURDIR)/libc/ll/$$f.ll) || exit 1; done
+	@echo "libc/ll: $$(ls libc/ll | wc -l | tr -d ' ') modules"
+
 # --- Compiler goldens (Phase 4) ---
 # Regenerate the committed IR goldens and host-truth expectations for the
 # dmacc differential tests. Needs a host clang. The target IR and the
 # host build both use -fsigned-char so `char` semantics agree (plain
 # char is unsigned on arm-none-eabi but signed on the host).
 CC_TESTS = arith control memory func bits collatz recurse
+CC_STDIO_TESTS = stdio
 LLGEN_FLAGS = -O1 -fno-unroll-loops -fsigned-char
 
 .PHONY: llgen
@@ -41,6 +66,17 @@ llgen:
 	  fi; \
 	done
 	@cat dmacc/testdata/expected.txt
+	@# stdio differential goldens: host stdout is the expected console,
+	@# the exit value arrives via stderr so the streams don't mix.
+	@printf '#include <stdio.h>\nint testmain(void);\nint main(void){int r=testmain();fflush(stdout);fprintf(stderr,"%%d\\n",r);return 0;}\n' > bin/llgen_sdriver.c
+	@for f in $(CC_STDIO_TESTS); do \
+	  (cd dmacc/testdata && $(LIBC_CLANG) $$f.c -o $$f.ll) && \
+	  clang $(LLGEN_FLAGS) -Dmain=testmain -c dmacc/testdata/$$f.c -o bin/llgen_$$f.o && \
+	  clang bin/llgen_$$f.o bin/llgen_sdriver.c -o bin/llgen_$$f && \
+	  ./bin/llgen_$$f > dmacc/testdata/$$f.console 2> bin/llgen_$$f.exit && \
+	  echo "$$f $$(cat bin/llgen_$$f.exit)" > dmacc/testdata/$$f.expected || exit 1; \
+	done
+	@cat dmacc/testdata/*.expected 2>/dev/null || true
 
 # --- Hardware-in-the-loop (see prompts/004-hw-calibration.md) ---
 # Environment (adjust to your install):

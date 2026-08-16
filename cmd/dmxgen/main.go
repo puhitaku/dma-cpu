@@ -37,7 +37,9 @@ type layout struct {
 }
 
 var layouts = map[string]layout{
-	"rp2350": {text: 0x20040000, data: 0x20050000, scratch: 0x2005FF00},
+	// rp2350: 128 KiB text + ~64 KiB data — the libc-linked programs
+	// need the room; stacks live above 0x20070000.
+	"rp2350": {text: 0x20040000, data: 0x20060000, scratch: 0x2006FF00},
 	"rp2040": {text: 0x20010000, data: 0x20018000, scratch: 0x2001FF00},
 }
 
@@ -59,6 +61,7 @@ type check struct {
 type test struct {
 	Name string
 	Image *img.Image
+	Console []byte // expected console bytes (emulator verification)
 	Done  uint32 // absolute done-flag address; 0 = perf test (no done)
 	PerfCounter uint32
 	BlocksPerIt uint32
@@ -74,14 +77,17 @@ type export struct {
 
 // hilSpec declares one HIL test in terms of assembly symbols.
 type hilSpec struct {
-	name   string
-	file   string            // prog/hil/<file>.dasm
-	ll     string            // OR: compile this IR golden with dmacc (Phase 4)
-	patch  map[string]uint32 // data words poked before encoding
-	mem    map[string]uint32 // symbol -> intended value (done=1 implied)
-	gpio   *check            // optional pin-level check
-	export []string          // symbols emitted as HIL_SYM_<name>_<sym> macros
-	perf   *struct {
+	name    string
+	file    string            // prog/hil/<file>.dasm
+	ll      string            // OR: compile this IR golden with dmacc (Phase 4)
+	libc    bool              // link the picolibc goldens (libc/ll) into the ll build
+	console string            // expected console file (emulator check; prints on the UART on hardware)
+	skus    []string          // restrict to these SKUs (nil: all)
+	patch   map[string]uint32 // data words poked before encoding
+	mem     map[string]uint32 // symbol -> intended value (done=1 implied)
+	gpio    *check            // optional pin-level check
+	export  []string          // symbols emitted as HIL_SYM_<name>_<sym> macros
+	perf    *struct {
 		counterSym  string
 		blocksPerIt uint32
 	}
@@ -123,6 +129,12 @@ var hilSpecs = []hilSpec{
 	{name: "cc_func", ll: "func"},
 	{name: "cc_bits", ll: "bits"},
 	{name: "cc_collatz", ll: "collatz"},
+	// Phase 4.5: picolibc printf on silicon. The program's console bytes
+	// are verified in the emulator and appear live on the shared UART
+	// during the hardware run; the exit checksum makes the silicon pass
+	// machine-checked. Needs the wide rp2350 layout.
+	{name: "cc_stdio", ll: "stdio", libc: true,
+		console: "dmacc/testdata/stdio.console", skus: []string{"rp2350"}},
 }
 
 // ccExpected reads the host-truth exit codes for the compiled programs.
@@ -132,6 +144,17 @@ func ccExpected() (map[string]uint32, error) {
 		return nil, fmt.Errorf("compiled HIL specs need dmacc/testdata/expected.txt (make llgen): %w", err)
 	}
 	out := map[string]uint32{}
+	// The stdio tests keep their expectation in per-test .expected files.
+	if extra, err := filepath.Glob("dmacc/testdata/*.expected"); err == nil {
+		for _, p := range extra {
+			b, err := os.ReadFile(p)
+			if err != nil {
+				return nil, err
+			}
+			raw = append(raw, '\n')
+			raw = append(raw, b...)
+		}
+	}
 	for _, line := range strings.Split(string(raw), "\n") {
 		f := strings.Fields(line)
 		if len(f) != 2 {
@@ -148,13 +171,33 @@ func ccExpected() (map[string]uint32, error) {
 
 // buildCC compiles an IR golden with dmacc and assembles it.
 func buildCC(spec hilSpec, v *emu.Variant, lay layout) (*dmaasm.Result, error) {
-	src, err := os.ReadFile("dmacc/testdata/" + spec.ll + ".ll")
+	paths := []string{"dmacc/testdata/" + spec.ll + ".ll"}
+	if spec.libc {
+		entries, err := os.ReadDir("libc/ll")
+		if err != nil {
+			return nil, fmt.Errorf("libc goldens missing (make libc): %w", err)
+		}
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".ll") {
+				paths = append(paths, "libc/ll/"+e.Name())
+			}
+		}
+	}
+	var mods []*llir.Module
+	for _, path := range paths {
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		mod, err := llir.Parse(string(src))
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		mods = append(mods, mod)
+	}
+	mod, err := llir.Merge(mods...)
 	if err != nil {
 		return nil, err
-	}
-	mod, err := llir.Parse(string(src))
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", spec.ll, err)
 	}
 	dasm, err := dmacc.Compile(mod, dmacc.Options{})
 	if err != nil {
@@ -281,6 +324,10 @@ func verify(v *emu.Variant, lay layout, t *test) error {
 		return fmt.Errorf("%s: did not reach done: %+v", t.Name, res)
 	}
 	t.EmuCycles = res.Cycles
+	if len(t.Console) > 0 && string(m.ConsoleOut) != string(t.Console) {
+		return fmt.Errorf("%s: emulator console mismatch:\n--- got ---\n%s\n--- want ---\n%s",
+			t.Name, m.ConsoleOut, t.Console)
+	}
 	for _, c := range t.Checks {
 		switch c.Kind {
 		case checkMem:
@@ -452,6 +499,15 @@ func run() error {
 	}
 	var tests []*test
 	for _, spec := range hilSpecs {
+		if len(spec.skus) > 0 {
+			match := false
+			for _, s := range spec.skus {
+				match = match || s == v.Name
+			}
+			if !match {
+				continue
+			}
+		}
 		if spec.ll != "" {
 			want, ok := ccExp[spec.ll]
 			if !ok {
@@ -462,6 +518,12 @@ func run() error {
 		t, err := build(spec, v, lay)
 		if err != nil {
 			return err
+		}
+		if spec.console != "" {
+			t.Console, err = os.ReadFile(spec.console)
+			if err != nil {
+				return err
+			}
 		}
 		if err := verify(v, lay, t); err != nil {
 			return fmt.Errorf("emulator verification failed: %w", err)

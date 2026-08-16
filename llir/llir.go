@@ -183,7 +183,9 @@ type Instr struct {
 	Labels []string     // br: [dest] or [true, false]; switch: [default]
 	Cases  []SwitchCase // switch
 	Phi    []PhiEdge    // phi
-	Callee string       // call
+	Callee string       // call: named callee ("" for indirect)
+	CalleeVal *Value    // call: function-pointer value for indirect calls
+	FixedArgs int       // call: fixed params of a variadic callee (-1: not variadic)
 	AllocN int          // alloca: constant element count
 }
 
@@ -201,18 +203,22 @@ type Param struct {
 
 // Func is a function definition.
 type Func struct {
-	Name   string
-	Ret    *Type
-	Params []Param
-	Blocks []*Block
+	Name     string
+	Ret      *Type
+	Params   []Param
+	Variadic bool
+	Internal bool // internal/private linkage (file-local)
+	Blocks   []*Block
 }
 
 // Global is a module-level variable.
 type Global struct {
-	Name  string
-	Typ   *Type
-	Init  *Init
-	Const bool
+	Name     string
+	Typ      *Type
+	Init     *Init
+	Const    bool
+	External bool // declared, not defined (tentative/common semantics)
+	Internal bool // internal/private linkage (file-local)
 }
 
 // Module is a parsed .ll file.
@@ -221,4 +227,28 @@ type Module struct {
 	Funcs    []*Func
 	Declares []string // declared-only function names (incl. intrinsics)
 	Types    map[string]*Type
+	Aliases  map[string]string // symbol aliases (name -> target)
+}
+
+// ResolveAliases rewrites every reference to an alias into a reference
+// to its (transitively flattened) target. Call after Merge, before
+// code generation.
+func (m *Module) ResolveAliases() {
+	if len(m.Aliases) == 0 {
+		return
+	}
+	ren := map[string]string{}
+	for a := range m.Aliases {
+		t := m.Aliases[a]
+		for hops := 0; hops < 8; hops++ {
+			next, ok := m.Aliases[t]
+			if !ok {
+				break
+			}
+			t = next
+		}
+		ren[a] = t
+	}
+	renameModule(m, ren)
+	m.Aliases = nil
 }

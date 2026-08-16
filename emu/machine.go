@@ -33,6 +33,10 @@ type Machine struct {
 	Cycle      uint64
 	GPIOEvents []GPIOEvent
 
+	// ConsoleOut collects bytes written to UART0's data register — the
+	// DMA machine's stdout (see libc/, Phase 4.5).
+	ConsoleOut []byte
+
 	// TraceW, when non-nil, receives one line per DMA transfer.
 	TraceW io.Writer
 
@@ -156,6 +160,9 @@ func (m *Machine) Write(addr uint32, val uint32, size int) error {
 		final := applyAlias(m.mmio[norm], val, op)
 		m.mmio[norm] = final
 		m.decodeGPIO(norm, final)
+		if norm == m.v.UARTDRAddr() {
+			m.ConsoleOut = append(m.ConsoleOut, byte(final))
+		}
 		return nil
 	}
 	return fmt.Errorf("bus fault: write at %#08x", addr)

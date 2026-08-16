@@ -69,6 +69,19 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   because `jneg` is only correct for |v| < 2^28; compiled code must use
   them for arbitrary values. They dispatch through a pooled trampoline
   arena appended to .text (ABI v0.1, doc/abi.md).
+- libc = picolibc (submodule `lib/picolibc`, BSD-licensed — the ONLY
+  third-party code that may be committed/referenced; the Cornell rule
+  above still stands). It is compiled through the normal pipeline, not
+  ported: curated sources -> IR goldens in `libc/ll/` (`make libc`),
+  linked by passing them to dmacc. Config lives in `libc/picolibc.h`
+  (hand-written; integer-only stdio). stdout is UART0: dmacc maps the
+  `__dma_uart_dr`/`__dma_uart_fr` globals to `%uartdr`/`%uartfr`; the
+  emulator captures DR writes in `Machine.ConsoleOut`. See
+  `prompts/008-libc-results.md` and `libc/README.md`.
+- dmacc supports varargs (static va areas, whole-program sized),
+  indirect calls (<= 4 register args), and multi-module linking
+  (`llir.Merge`). Still rejected: recursion, i64 values, floats,
+  variadic-indirect calls.
 
 ## Build, test, hardware
 

@@ -86,6 +86,17 @@ func width(t *llir.Type) (int, error) {
 		return t.Bits, nil
 	case llir.TPtr:
 		return 32, nil
+	case llir.TArray, llir.TStruct:
+		// Small aggregates (ABI-coerced values like va_list) live in one
+		// word, addressed at their byte size.
+		switch s := t.Size(); {
+		case s <= 1:
+			return 8, nil
+		case s <= 2:
+			return 16, nil
+		case s <= 4:
+			return 32, nil
+		}
 	}
 	return 0, fmt.Errorf("value of type %s is not supported", t)
 }
@@ -144,10 +155,9 @@ func (fc *funcCtx) prepass() error {
 		for _, ins := range b.Instrs {
 			if ins.Op == "alloca" {
 				size := ins.Typ.Size() * ins.AllocN
-				size = (size + 3) &^ 3
-				if size == 0 {
-					size = 4
-				}
+				// One word of slack: .data is 4-aligned, and clang may
+				// round an 8-aligned alloca's pointer up by 4 (ptrmask).
+				size = (size+3)&^3 + 4
 				sym := "a_" + sanitize(f.Name) + "_" + sanitize(ins.Res)
 				fc.allocas[ins.Res] = sym
 				fmt.Fprintf(&fc.g.data, "%s: .space %d\n", sym, size)
@@ -164,8 +174,17 @@ func (fc *funcCtx) prepass() error {
 	if fc.hasCalls {
 		fc.declWord(fc.lrsWord())
 	}
+	if f.Variadic {
+		n := fc.g.maxVar[f.Name]
+		if n < 1 {
+			n = 1
+		}
+		fmt.Fprintf(&fc.g.data, "%s: .space %d\n", fc.vaArea(), 4*n)
+	}
 	return nil
 }
+
+func (fc *funcCtx) vaArea() string { return "va_" + sanitize(fc.f.Name) }
 
 // --- Operand resolution ---
 
@@ -186,6 +205,9 @@ func (fc *funcCtx) op(v *llir.Value) (string, error) {
 	case llir.VConst:
 		return fmt.Sprintf("$0x%x", uint32(v.Int)), nil
 	case llir.VGlobal, llir.VFunc:
+		if uartMMIO(v.Name) != "" {
+			return "", fmt.Errorf("the address of %s cannot be taken (hardware register)", v.Name)
+		}
 		return "$" + fc.globalOperand(v), nil
 	case llir.VLocal:
 		if a, ok := fc.allocas[v.Name]; ok {
@@ -207,6 +229,9 @@ func (fc *funcCtx) op(v *llir.Value) (string, error) {
 func (fc *funcCtx) directAddr(v *llir.Value) (string, bool) {
 	switch v.Kind {
 	case llir.VGlobal:
+		if m := uartMMIO(v.Name); m != "" {
+			return m, true
+		}
 		return fc.globalOperand(v), true
 	case llir.VLocal:
 		if a, ok := fc.allocas[v.Name]; ok {
@@ -365,6 +390,12 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 		return nil
 
 	case "load":
+		// i64 loads exist only to consume 8-byte varargs (%lld skip):
+		// keep the low word — correct for every trunc-to-32 use, and any
+		// other use of the value fails width() with a clear error.
+		if ins.Typ.Kind == llir.TInt && ins.Typ.Bits == 64 {
+			ins = &llir.Instr{Op: "load", Res: ins.Res, Typ: &llir.Type{Kind: llir.TInt, Bits: 32}, Args: ins.Args}
+		}
 		w, err := width(ins.Typ)
 		if err != nil {
 			return err
@@ -413,6 +444,23 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 	case "getelementptr":
 		return fc.emitGEP(ins)
 
+	case "insertvalue", "extractvalue":
+		// Only the single-word aggregate case (ABI-coerced values like
+		// [1 x i32] va_list): the element IS the word, so both are copies.
+		if s := ins.Typ.Size(); s > 4 {
+			return fmt.Errorf("%s on %d-byte aggregate is not supported", ins.Op, s)
+		}
+		src := ins.Args[0]
+		if ins.Op == "insertvalue" {
+			src = ins.Args[1]
+		}
+		v, err := fc.op(src)
+		if err != nil {
+			return err
+		}
+		fc.ins("move %s, %s", v, fc.word(ins.Res))
+		return nil
+
 	case "zext", "bitcast", "ptrtoint", "inttoptr", "freeze":
 		src, err := fc.op(ins.Args[0])
 		if err != nil {
@@ -444,6 +492,8 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 		return nil
 
 	case "trunc":
+		// trunc from i64 needs only the low word, which is what an i64
+		// load leaves in the value word.
 		dstW, err := width(ins.To)
 		if err != nil {
 			return err
@@ -784,12 +834,16 @@ func (fc *funcCtx) emitCall(ins *llir.Instr) error {
 	if strings.HasPrefix(name, "llvm.") {
 		return fc.emitIntrinsic(ins)
 	}
+	if ins.CalleeVal != nil {
+		return fc.emitIndirectCall(ins)
+	}
 	callee, ok := fc.g.funcIdx[name]
 	if !ok {
 		return fmt.Errorf("call to undefined function %q (no external linkage on this target)", name)
 	}
-	if len(ins.Args) != len(callee.Params) {
-		return fmt.Errorf("call to %q: %d args, %d params", name, len(ins.Args), len(callee.Params))
+	nfix := len(callee.Params)
+	if callee.Variadic && len(ins.Args) < nfix || !callee.Variadic && len(ins.Args) != nfix {
+		return fmt.Errorf("call to %q: %d args, %d params", name, len(ins.Args), nfix)
 	}
 	ccName := sanitize(callee.Name)
 	for i, av := range ins.Args {
@@ -797,9 +851,19 @@ func (fc *funcCtx) emitCall(ins *llir.Instr) error {
 		if err != nil {
 			return err
 		}
-		if i < 4 {
+		switch {
+		case i >= nfix: // variadic tail: contiguous words in the va area
+			if av.Typ != nil && av.Typ.Kind == llir.TInt && av.Typ.Bits > 32 {
+				return fmt.Errorf("call to %q: long long variadic arguments are not supported", name)
+			}
+			if off := 4 * (i - nfix); off != 0 {
+				fc.ins("move %s, va_%s+%d", v, ccName, off)
+			} else {
+				fc.ins("move %s, va_%s", v, ccName)
+			}
+		case i < 4:
 			fc.ins("move %s, r%d", v, i)
-		} else {
+		default:
 			// Beyond r3, args go directly into the callee's frame.
 			fc.ins("move %s, v_%s_%s", v, ccName, sanitize(callee.Params[i].Name))
 		}
@@ -811,6 +875,72 @@ func (fc *funcCtx) emitCall(ins *llir.Instr) error {
 	return nil
 }
 
+// emitIndirectCall calls through a function-pointer value: store the
+// return address into lr, jump through the pointer word. The callee's
+// prologue saves lr like any other call. Only register args fit — the
+// callee's frame is unknown at compile time.
+func (fc *funcCtx) emitIndirectCall(ins *llir.Instr) error {
+	if len(ins.Args) > 4 {
+		return fmt.Errorf("indirect call with %d args: only 4 register args are supported", len(ins.Args))
+	}
+	if ins.FixedArgs >= 0 && len(ins.Args) > ins.FixedArgs {
+		return fmt.Errorf("indirect variadic calls are not supported")
+	}
+	for i, av := range ins.Args {
+		v, err := fc.op(av)
+		if err != nil {
+			return err
+		}
+		fc.ins("move %s, r%d", v, i)
+	}
+	ptr, err := fc.op(ins.CalleeVal)
+	if err != nil {
+		return err
+	}
+	ret := fc.stub("Ri")
+	fc.ins("move $%s, lr", ret)
+	fc.ins("jumpr %s", ptr)
+	fc.label(ret)
+	if ins.Res != "" && ins.Typ.Kind != llir.TVoid {
+		fc.ins("move r0, %s", fc.word(ins.Res))
+	}
+	return nil
+}
+
+// storeWordTo writes the value operand `src` through pointer value p.
+func (fc *funcCtx) storeWordTo(p *llir.Value, src string) error {
+	if addr, ok := fc.directAddr(p); ok {
+		fc.ins("move %s, %s", src, addr)
+		return nil
+	}
+	pv, err := fc.op(p)
+	if err != nil {
+		return err
+	}
+	st := fc.stub("Sv")
+	fc.ins("move %s, %s.write", pv, st)
+	fc.label(st)
+	fc.ins("move %s, @0", src)
+	return nil
+}
+
+// loadWordFrom reads a word through pointer value p into dst.
+func (fc *funcCtx) loadWordFrom(p *llir.Value, dst string) error {
+	if addr, ok := fc.directAddr(p); ok {
+		fc.ins("move %s, %s", addr, dst)
+		return nil
+	}
+	pv, err := fc.op(p)
+	if err != nil {
+		return err
+	}
+	ld := fc.stub("Lv")
+	fc.ins("move %s, %s.read", pv, ld)
+	fc.label(ld)
+	fc.ins("move @0, %s", dst)
+	return nil
+}
+
 func (fc *funcCtx) emitIntrinsic(ins *llir.Instr) error {
 	name := ins.Callee
 	base := name
@@ -818,10 +948,33 @@ func (fc *funcCtx) emitIntrinsic(ins *llir.Instr) error {
 		base = name[:5+i]
 	}
 	switch base {
+	case "llvm.va_start":
+		if !fc.f.Variadic {
+			return fmt.Errorf("va_start outside a variadic function")
+		}
+		return fc.storeWordTo(ins.Args[0], "$"+fc.vaArea())
+	case "llvm.va_end":
+		return nil
+	case "llvm.va_copy": // *dst = *src, one pointer word
+		if err := fc.loadWordFrom(ins.Args[1], "sc2"); err != nil {
+			return err
+		}
+		return fc.storeWordTo(ins.Args[0], "sc2")
 	case "llvm.memcpy":
 		return fc.emitMemRT("memcpy", ins.Args[0], ins.Args[1], ins.Args[2])
 	case "llvm.memset":
 		return fc.emitMemRT("memset", ins.Args[0], ins.Args[1], ins.Args[2])
+	case "llvm.ptrmask": // pointer & mask
+		a, err := fc.op(ins.Args[0])
+		if err != nil {
+			return err
+		}
+		b, err := fc.op(ins.Args[1])
+		if err != nil {
+			return err
+		}
+		fc.ins("and %s, %s, %s", a, b, fc.word(ins.Res))
+		return nil
 	case "llvm.expect":
 		v, err := fc.op(ins.Args[0])
 		if err != nil {

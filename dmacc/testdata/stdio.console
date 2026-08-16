@@ -1,0 +1,8 @@
+stdio on the DMA machine
+i=0 v=-200 u=4294967096 x=f38 c=a
+i=1 v=-101 u=4294967195 x=f9b c=b
+i=2 v=0 u=0 x=0 c=c
+i=3 v=103 u=103 x=67 c=d
+i=4 v=208 u=208 x=d0 c=e
+[-01234|left    |c0de]
+acc=-187709646

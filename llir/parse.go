@@ -8,7 +8,7 @@ import (
 
 // Parse parses a textual LLVM IR module (the clang -O1 subset).
 func Parse(src string) (*Module, error) {
-	p := &parser{m: &Module{Types: map[string]*Type{}}}
+	p := &parser{m: &Module{Types: map[string]*Type{}}, aliases: map[string]string{}}
 	lines := strings.Split(src, "\n")
 	for i := 0; i < len(lines); i++ {
 		text := stripComment(lines[i])
@@ -28,6 +28,9 @@ func Parse(src string) (*Module, error) {
 	}
 	if p.cur != nil {
 		return nil, fmt.Errorf("unterminated function %q", p.cur.Name)
+	}
+	if len(p.aliases) > 0 {
+		p.m.Aliases = p.aliases
 	}
 	return p.m, nil
 }
@@ -173,10 +176,11 @@ func (lx *lexer) skipParens() {
 // --- Parser ---
 
 type parser struct {
-	m     *Module
-	cur   *Func
-	blk   *Block
-	nvals int // unnamed-value counter within cur (params consumed first)
+	m       *Module
+	cur     *Func
+	blk     *Block
+	nvals   int // unnamed-value counter within cur (params consumed first)
+	aliases map[string]string
 }
 
 var skipTopPrefixes = []string{"target ", "source_filename", "attributes ", "!", "declare "}
@@ -246,16 +250,30 @@ func (p *parser) typeLine(lx *lexer) error {
 		return err
 	}
 	if lx.accept("opaque") {
-		p.m.Types[name] = &Type{Kind: TStruct, Name: name}
+		p.namedType(name)
 		return nil
 	}
 	t, err := p.parseType(lx)
 	if err != nil {
 		return err
 	}
-	t.Name = name
-	p.m.Types[name] = t
+	// Fill the (possibly forward-referenced) named type in place so
+	// earlier references resolve to the completed definition.
+	dst := p.namedType(name)
+	*dst = *t
+	dst.Name = name
 	return nil
+}
+
+// namedType returns the named type, creating an empty placeholder for
+// forward references.
+func (p *parser) namedType(name string) *Type {
+	if t, ok := p.m.Types[name]; ok {
+		return t
+	}
+	t := &Type{Kind: TStruct, Name: name}
+	p.m.Types[name] = t
+	return t
 }
 
 func (p *parser) parseType(lx *lexer) (*Type, error) {
@@ -322,11 +340,7 @@ func (p *parser) parseType(lx *lexer) (*Type, error) {
 		}
 		return st, nil
 	case strings.HasPrefix(t, "%"):
-		td, ok := p.m.Types[t]
-		if !ok {
-			return nil, lx.errf("unknown named type %q", t)
-		}
-		return td, nil
+		return p.namedType(t), nil
 	case t == "float" || t == "double" || t == "half" || t == "fp128":
 		return nil, lx.errf("floating point is not supported by the DMA target")
 	}
@@ -348,16 +362,43 @@ func (p *parser) globalLine(lx *lexer) error {
 	if err := lx.expect("="); err != nil {
 		return err
 	}
-	isConst := false
+	isConst, isExt, isInternal := false, false, false
 	for {
 		t := lx.peek()
+		if t == "external" {
+			isExt = true
+		}
+		if t == "internal" || t == "private" {
+			isInternal = true
+		}
 		if t == "global" || t == "constant" {
 			isConst = t == "constant"
 			lx.next()
 			break
 		}
-		if t == "alias" || t == "ifunc" {
-			return lx.errf("aliases are not supported")
+		if t == "alias" {
+			// @name = alias <ty>, ptr @target — resolved by renaming
+			// every reference to the target when parsing finishes.
+			lx.next()
+			if _, err := p.parseType(lx); err != nil {
+				return err
+			}
+			lx.skipParens() // function-type parameter list
+			if err := lx.expect(","); err != nil {
+				return err
+			}
+			if _, err := p.parseType(lx); err != nil { // ptr
+				return err
+			}
+			tgt := lx.next()
+			if !strings.HasPrefix(tgt, "@") {
+				return lx.errf("alias target must be a symbol")
+			}
+			p.aliases[name] = strings.TrimPrefix(unquote(tgt), "@")
+			return nil
+		}
+		if t == "ifunc" {
+			return lx.errf("ifuncs are not supported")
 		}
 		if !globalQualifiers[t] {
 			return lx.errf("unexpected global qualifier %q", t)
@@ -368,15 +409,16 @@ func (p *parser) globalLine(lx *lexer) error {
 	if err != nil {
 		return err
 	}
-	g := &Global{Name: name, Typ: ty, Const: isConst}
-	if lx.peek() != "" && lx.peek() != "," {
+	g := &Global{Name: name, Typ: ty, Const: isConst, Internal: isInternal}
+	if lx.peek() != "" && lx.peek() != "," && !isExt {
 		init, err := p.parseInit(lx, ty)
 		if err != nil {
 			return err
 		}
 		g.Init = init
 	} else {
-		g.Init = &Init{Typ: ty, Zero: true} // external: treat as BSS
+		g.Init = &Init{Typ: ty, Zero: true} // external: tentative/common
+		g.External = true
 	}
 	p.m.Globals = append(p.m.Globals, g)
 	return nil
@@ -449,7 +491,12 @@ func (p *parser) parseInit(lx *lexer, ty *Type) (*Init, error) {
 
 // --- Functions ---
 
+// ccTokens are calling-convention keywords; the DMA ABI is uniform, so
+// they carry no information for us.
+var ccTokens = map[string]bool{"fastcc": true, "coldcc": true, "tailcc": true, "ccc": true}
+
 var defineQualifiers = map[string]bool{
+	"fastcc": true, "coldcc": true, "tailcc": true, "ccc": true,
 	"dso_local": true, "dso_preemptable": true, "internal": true,
 	"private": true, "external": true, "linkonce": true, "linkonce_odr": true,
 	"weak": true, "weak_odr": true, "hidden": true, "protected": true,
@@ -459,11 +506,24 @@ var defineQualifiers = map[string]bool{
 
 func (p *parser) defineLine(lx *lexer) error {
 	lx.next() // "define"
+	internal := false
 	// Skip qualifiers and return attributes up to the return type.
-	for defineQualifiers[lx.peek()] || strings.HasPrefix(lx.peek(), "range") {
-		lx.next()
-		lx.skipParens()
+	for {
+		t := lx.peek()
+		switch {
+		case t == "internal" || t == "private":
+			internal = true
+			lx.next()
+		case defineQualifiers[t]:
+			lx.next()
+			lx.skipParens()
+		case isParamAttr(t):
+			skipParamAttrs(lx)
+		default:
+			goto qualsDone
+		}
 	}
+qualsDone:
 	ret, err := p.parseType(lx)
 	if err != nil {
 		return err
@@ -472,12 +532,13 @@ func (p *parser) defineLine(lx *lexer) error {
 	if err := lx.expect("("); err != nil {
 		return err
 	}
-	f := &Func{Name: name, Ret: ret}
+	f := &Func{Name: name, Ret: ret, Internal: internal}
 	p.nvals = 0
 	if !lx.accept(")") {
 		for {
-			if lx.peek() == "." { // "..." varargs
-				return lx.errf("varargs functions are not supported")
+			if lx.accept("...") {
+				f.Variadic = true
+				break
 			}
 			pt, err := p.parseType(lx)
 			if err != nil {

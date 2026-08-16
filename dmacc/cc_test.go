@@ -79,6 +79,94 @@ func TestDifferential(t *testing.T) {
 	}
 }
 
+// loadLibc parses the committed picolibc IR goldens (libc/ll, built by
+// `make libc`).
+func loadLibc(t *testing.T) []*llir.Module {
+	t.Helper()
+	names, err := os.ReadDir("../libc/ll")
+	if err != nil {
+		t.Fatalf("libc goldens missing (run `make libc`): %v", err)
+	}
+	var mods []*llir.Module
+	for _, e := range names {
+		if !strings.HasSuffix(e.Name(), ".ll") {
+			continue
+		}
+		src, err := os.ReadFile("../libc/ll/" + e.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := llir.Parse(string(src))
+		if err != nil {
+			t.Fatalf("%s: %v", e.Name(), err)
+		}
+		mods = append(mods, m)
+	}
+	return mods
+}
+
+// TestLibcStdio links testdata/stdio.ll against the picolibc goldens and
+// compares both the exit code and every console byte with the host libc
+// execution (testdata/stdio.console, stdio.expected — `make llgen`).
+func TestLibcStdio(t *testing.T) {
+	src, err := os.ReadFile("testdata/stdio.ll")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prog, err := llir.Parse(string(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod, err := llir.Merge(append([]*llir.Module{prog}, loadLibc(t)...)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dasm, err := dmacc.Compile(mod, dmacc.Options{})
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	expRaw, err := os.ReadFile("testdata/stdio.expected")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want64, err := strconv.ParseInt(strings.Fields(string(expRaw))[1], 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantExit := uint32(int32(want64))
+	wantConsole, err := os.ReadFile("testdata/stdio.console")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range emu.Variants {
+		t.Run(v.Name, func(t *testing.T) {
+			res, err := dmaasm.Assemble(dasm, dmaasm.Options{Variant: v, DataBase: 0x20030000})
+			if err != nil {
+				t.Fatalf("assemble: %v", err)
+			}
+			m := emu.NewMachine(v)
+			if err := res.Image.LoadAndStart(m, nil, img.DefaultMachine()); err != nil {
+				t.Fatal(err)
+			}
+			rr, err := m.Run(emu.RunConfig{MaxCycles: 100_000_000})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rr.Reason != emu.StopIdle {
+				t.Fatalf("did not halt: %+v", rr)
+			}
+			ec, _ := res.Symbol("exitcode")
+			if got := m.Peek32(ec); got != wantExit {
+				t.Errorf("exitcode = %d, host says %d", int32(got), int32(wantExit))
+			}
+			if string(m.ConsoleOut) != string(wantConsole) {
+				t.Errorf("console mismatch:\n--- dma ---\n%s\n--- host ---\n%s", m.ConsoleOut, wantConsole)
+			}
+			t.Logf("cycles: %d, console bytes: %d", rr.Cycles, len(m.ConsoleOut))
+		})
+	}
+}
+
 // TestRecursionRejected: v0 static frames make recursion a compile-time
 // error, not a silent miscompile.
 func TestRecursionRejected(t *testing.T) {

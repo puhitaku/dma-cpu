@@ -269,6 +269,10 @@ func (a *asm) mmioAddr(name string) (uint32, bool) {
 		return emu.ChanRegAddr(a.cfg.Fetch, emu.OffReadAddr), true
 	case "intr":
 		return a.v.IntrAddr(), true
+	case "uartdr":
+		return a.v.UARTDRAddr(), true
+	case "uartfr":
+		return a.v.UARTFRAddr(), true
 	}
 	return 0, false
 }

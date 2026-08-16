@@ -34,6 +34,7 @@ func Compile(m *llir.Module, opts Options) (string, error) {
 	if opts.Entry == "" {
 		opts.Entry = "main"
 	}
+	m.ResolveAliases()
 	g := &gen{m: m, opts: opts, rt: map[string]bool{}}
 	if err := g.run(); err != nil {
 		return "", err
@@ -52,6 +53,19 @@ type gen struct {
 	rt      map[string]bool // runtime routines needed
 	stubN   int             // generated label counter
 	funcIdx map[string]*llir.Func
+	maxVar  map[string]int // variadic callee -> max variadic arg count seen
+}
+
+// uartMMIO maps the compiler-known UART globals to dmaasm MMIO operands
+// (SKU-resolved at assembly time). C declares them in <dma/mmio.h>.
+func uartMMIO(name string) string {
+	switch name {
+	case "__dma_uart_dr":
+		return "%uartdr"
+	case "__dma_uart_fr":
+		return "%uartfr"
+	}
+	return ""
 }
 
 func (g *gen) run() error {
@@ -69,7 +83,27 @@ func (g *gen) run() error {
 	if err := g.checkNoRecursion(); err != nil {
 		return err
 	}
+	// Variadic frames are static too: size each callee's vararg area to
+	// the largest call in the whole program.
+	g.maxVar = map[string]int{}
+	for _, f := range g.m.Funcs {
+		for _, b := range f.Blocks {
+			for _, ins := range b.Instrs {
+				if ins.Op != "call" || ins.Callee == "" {
+					continue
+				}
+				if cf, ok := g.funcIdx[ins.Callee]; ok && cf.Variadic {
+					if n := len(ins.Args) - len(cf.Params); n > g.maxVar[ins.Callee] {
+						g.maxVar[ins.Callee] = n
+					}
+				}
+			}
+		}
+	}
 	for _, gl := range g.m.Globals {
+		if uartMMIO(gl.Name) != "" {
+			continue // hardware register, not storage
+		}
 		if err := g.emitGlobal(gl); err != nil {
 			return err
 		}

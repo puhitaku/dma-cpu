@@ -1,0 +1,4 @@
+[submodule "lib/picolibc"]
+	path = lib/picolibc
+	url = https://github.com/picolibc/picolibc
+	shallow = true

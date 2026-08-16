@@ -1,11 +1,14 @@
-/* Hello, DMA machine: sieve of Eratosthenes.
+/* Hello, DMA machine: sieve of Eratosthenes, printed with picolibc.
  *
- * main()'s return value becomes the `exitcode` word; global variables
- * are visible by name after the run (`-dump primes:46`). The `limit`
- * global is volatile so clang -O1 cannot compute the whole program at
- * compile time — without it you would be flashing the answer, not the
- * computation.
+ * printf goes to UART0: the emulator shows it as console output
+ * (`make run`), and on real hardware the same bytes appear on the
+ * board's serial port. main()'s return value becomes the `exitcode`
+ * word. The `limit` global is volatile so clang -O1 cannot compute the
+ * whole program at compile time — without it you would be flashing the
+ * answer, not the computation.
  */
+#include <stdio.h>
+
 volatile int limit = 200;
 
 static unsigned char composite[201];
@@ -25,6 +28,13 @@ int main(void) {
       checksum += n;
     }
   }
+
+  printf("Hello, DMA machine!\n");
+  printf("primes up to %d:\n", lim);
+  for (int i = 0; i < nprimes; i++)
+    printf("%4d%c", primes[i], (i % 10 == 9 || i == nprimes - 1) ? '\n' : ' ');
+  printf("count=%d checksum=%d\n", nprimes, checksum);
+
   /* 46 primes up to 200, summing to 4227 -> expect 4604227. */
   return nprimes * 100000 + checksum;
 }
