@@ -630,6 +630,45 @@ static void exp_abort(void)
 
 extern char __bss_end__;
 
+#ifdef HIL_HAS_SHELL
+/* Phase 5b (prompts/013): hand the console to dma-sh. Loads the
+ * pre-wired bundle (kernel + shell as process A + counter as process
+ * B), arms the tick chain, starts the shell, and parks the ARM — from
+ * here on the UART belongs to the DMA machine, both TX and RX (pico
+ * stdio leaves the RX FIFO untouched unless getchar is called). */
+static void shell_start(void)
+{
+    machine_reset();
+    uint32_t e;
+    if (dmx_load(hil_shell_kernel_dmx, sizeof hil_shell_kernel_dmx, NULL, &e) != DMX_OK ||
+        dmx_load(hil_shell_sh_dmx, sizeof hil_shell_sh_dmx, NULL, &e) != DMX_OK ||
+        dmx_load(hil_shell_procb_dmx, sizeof hil_shell_procb_dmx, NULL, &e) != DMX_OK) {
+        printf("SHELL: FAIL load\n");
+        return;
+    }
+    reg_wr(HIL_TIMER0_ADDR + 4, (1u << 16) | 15000u); /* TIMER1 tick */
+    reg_wr(chreg(4, CH_AL1_READ_ADDR), HIL_SHELL_VEC_B);
+    reg_wr(chreg(4, CH_AL1_WRITE_ADDR), HIL_SHELL_DISP_B);
+    reg_wr(chreg(4, CH_AL2_TRANS_COUNT), 1);
+    reg_wr(chreg(4, CH_AL1_CTRL), HIL_SHELL_INJ2_CTRL);
+    reg_wr(chreg(3, CH_AL1_READ_ADDR), HIL_SHELL_VEC_A);
+    reg_wr(chreg(3, CH_AL1_WRITE_ADDR), HIL_SHELL_DISP_A);
+    reg_wr(chreg(3, CH_TRANS_COUNT), 1);
+    reg_wr(chreg(3, CH_CTRL_TRIG), HIL_SHELL_INJ1_CTRL);
+
+    printf("=== handing console to dma-sh (ARM parked; the prompt below is "
+           "served entirely by the DMA controller) ===\n");
+    dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 0};
+    if (dmx_start(&cfg, HIL_SHELL_ENTRY) != DMX_OK) {
+        printf("SHELL: FAIL start\n");
+        return;
+    }
+    for (;;) {
+        tight_loop_contents();
+    }
+}
+#endif
+
 int main(void)
 {
     stdio_init_all();
@@ -670,6 +709,9 @@ int main(void)
         exp_freeze();
         exp_abort();
         printf("=== END iter=%u\n", iter);
+#ifdef HIL_HAS_SHELL
+        shell_start(); /* one validation pass, then the console is the shell's */
+#endif
         sleep_ms(2000);
     }
 }
