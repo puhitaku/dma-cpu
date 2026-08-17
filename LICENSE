@@ -25,7 +25,7 @@ SOFTWARE.
 
 ** picolibc **
 
-See /lib/picolibc (git submodule) for the list of authors and license agreements.
+See /lib/picolibc/COPYING.picolibc for the authors and license agreements.
 
 The following files contain derived portions from picolibc:
  - libc/ll/*.ll
@@ -86,3 +86,21 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 The following files contain derived portions from xv6:
  - xv6/ (vendored tree, modified in place for the DMA machine)
+
+
+** xv6-ns **
+
+See /references/xv6-ns/LICENSE for the authors and license agreement.
+
+The following files contain derived portions from xv6:
+ - not yet, todo
+
+
+** Pico_USB_Disp **
+
+See /references/pico-usb-disp for the author and the license agreement.
+
+The following files contain derived portions from xv6:
+ - not yet, todo
+
+
