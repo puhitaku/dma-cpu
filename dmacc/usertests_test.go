@@ -67,9 +67,9 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 		return res
 	}
 	kern := casm(ksrc, 0x20008000, 0x2000A000)
-	kernC := casm(kcDasm, 0x2000C000, 0x20022000)
-	ut := casm(utDasm, 0x2002A000, 0x20046000)
-	idle := casm(idleDasm, 0x20060000, 0x20061000)
+	kernC := casm(kcDasm, 0x2000C000, 0x20024000)
+	ut := casm(utDasm, 0x2002C000, 0x20048000)
+	idle := casm(idleDasm, 0x20062000, 0x20063000)
 
 	m := emu.NewMachine(v)
 	m.TXPace = 0 // the exam prints a lot; run the console at full speed
@@ -111,7 +111,7 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 	fb.AddFile("README", []byte("exam disk\n"))
 	fb.AddFile("echo", blob)
 	disk := fb.Bytes()
-	const diskBase = 0x20062000
+	const diskBase = 0x20064000
 	for i := 0; i < len(disk); i += 4 {
 		m.Poke32(uint32(diskBase+i), binary.LittleEndian.Uint32(disk[i:]))
 	}

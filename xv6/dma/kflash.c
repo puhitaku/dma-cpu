@@ -93,18 +93,93 @@ qmi_end(void)
   W32(QMI_DIRECT_CSR) = W32(QMI_DIRECT_CSR) & ~CSR_EN;
 }
 
-/* Take the flash out of XIP continuous-read mode so plain-SPI
- * commands parse (the bootrom's exit-xip essence: clock out FFh with
- * CS asserted, twice for good measure). */
+/* --- The REAL exit-XIP dance (prompts/023): the bootrom's sequence,
+ * bit-banged through the QSPI pad overrides so it works whatever
+ * read mode the flash is in (1-bit or quad continuous):
+ *   1. CS high, SD0..3 PULLED low,  32 clocks   (mode bits = 0)
+ *   2. CS low,  SD0..3 PULLED high, 32 clocks   (mode bits = 1)
+ *   3. CS high
+ *   4. CS low,  SD0 DRIVEN high,    16 clocks   (FFh FFh)
+ *   5. CS high, restore all overrides
+ * The pulls (not drives) avoid contention while the flash may still
+ * be driving SD1 during reads. Afterwards the flash parses plain-SPI
+ * commands; M0_RFMT.PREFIX_LEN is forced to 1 so XIP bursts re-send
+ * their command prefix and work from any flash state. */
+#define IOQ_CTRL_SCLK 0x40030014u
+#define IOQ_CTRL_SS 0x4003001Cu
+#define IOQ_CTRL_SD0 0x40030024u
+#define IOQ_CTRL_SD1 0x4003002Cu
+#define IOQ_CTRL_SD2 0x40030034u
+#define IOQ_CTRL_SD3 0x4003003Cu
+#define OUTOVER_LOW (2u << 12)
+#define OUTOVER_HIGH (3u << 12)
+#define OEOVER_DISABLE (2u << 14)
+#define OEOVER_ENABLE (3u << 14)
+#define PADQ_SD0 0x40040008u
+#define PADQ_SD1 0x4004000Cu
+#define PADQ_SD2 0x40040010u
+#define PADQ_SD3 0x40040014u
+#define PAD_IE (1u << 6)
+#define PAD_PUE (1u << 3)
+#define PAD_PDE (1u << 2)
+#define QMI_M0_RFMT 0x400D0010u
+#define RFMT_PREFIX_LEN (1u << 12)
+
+static void
+qspi_clocks(int n)
+{
+  for (int i = 0; i < n; i++) {
+    W32(IOQ_CTRL_SCLK) = OUTOVER_LOW | OEOVER_ENABLE;
+    W32(IOQ_CTRL_SCLK) = OUTOVER_HIGH | OEOVER_ENABLE;
+  }
+}
+
+static void
+qspi_sd_pulls(uint pull)
+{
+  W32(PADQ_SD0) = PAD_IE | pull;
+  W32(PADQ_SD1) = PAD_IE | pull;
+  W32(PADQ_SD2) = PAD_IE | pull;
+  W32(PADQ_SD3) = PAD_IE | pull;
+}
+
 static void
 flash_exit_xip(void)
 {
-  for (int i = 0; i < 2; i++) {
-    qmi_cs(1);
-    qmi_xfer(0xFF);
-    qmi_xfer(0xFF);
-    qmi_end();
-  }
+  uint sd0pad = W32(PADQ_SD0), sd1pad = W32(PADQ_SD1);
+  uint sd2pad = W32(PADQ_SD2), sd3pad = W32(PADQ_SD3);
+  /* Float the data lines (pulled, not driven). */
+  W32(IOQ_CTRL_SD0) = OEOVER_DISABLE;
+  W32(IOQ_CTRL_SD1) = OEOVER_DISABLE;
+  W32(IOQ_CTRL_SD2) = OEOVER_DISABLE;
+  W32(IOQ_CTRL_SD3) = OEOVER_DISABLE;
+  /* 1: CS high, IOs pulled low, 32 clocks. */
+  W32(IOQ_CTRL_SS) = OUTOVER_HIGH | OEOVER_ENABLE;
+  qspi_sd_pulls(PAD_PDE);
+  qspi_clocks(32);
+  /* 2: CS low, IOs pulled high, 32 clocks. */
+  W32(IOQ_CTRL_SS) = OUTOVER_LOW | OEOVER_ENABLE;
+  qspi_sd_pulls(PAD_PUE);
+  qspi_clocks(32);
+  /* 3: CS high. */
+  W32(IOQ_CTRL_SS) = OUTOVER_HIGH | OEOVER_ENABLE;
+  /* 4: CS low, SD0 driven high, 16 clocks (FFh FFh). */
+  W32(IOQ_CTRL_SS) = OUTOVER_LOW | OEOVER_ENABLE;
+  W32(IOQ_CTRL_SD0) = OUTOVER_HIGH | OEOVER_ENABLE;
+  qspi_clocks(16);
+  /* 5: CS high; hand the pins back to the QMI. */
+  W32(IOQ_CTRL_SS) = 0;
+  W32(IOQ_CTRL_SCLK) = 0;
+  W32(IOQ_CTRL_SD0) = 0;
+  W32(IOQ_CTRL_SD1) = 0;
+  W32(IOQ_CTRL_SD2) = 0;
+  W32(IOQ_CTRL_SD3) = 0;
+  W32(PADQ_SD0) = sd0pad;
+  W32(PADQ_SD1) = sd1pad;
+  W32(PADQ_SD2) = sd2pad;
+  W32(PADQ_SD3) = sd3pad;
+  /* XIP insurance: re-send the command prefix on every burst. */
+  W32(QMI_M0_RFMT) = W32(QMI_M0_RFMT) | RFMT_PREFIX_LEN;
 }
 
 static void
@@ -211,6 +286,71 @@ void
 kflash_init(void)
 {
   fs_gen = kflash_slot_gen();
+}
+
+/* cal_flash2 (prompts/023): the machine-only flash probe sequence,
+ * results into r[0..11] for the firmware/SWD to report:
+ * r0 phase, r1 JEDEC id, r2 SR, r3 SR after WREN, r4 baseline word,
+ * r5 word after erase, r6 word after program, r7 the same word via
+ * XIP, r8 done flag. Scratch sector: flash offset 0x130000. */
+void
+kflash_cal(volatile uint *r)
+{
+  const uint scratch = 0x130000u;
+  r[0] = 1;
+  flash_exit_xip();
+  r[0] = 2;
+  qmi_cs(1);
+  qmi_xfer(0x9F);
+  r[1] = qmi_xfer(0) << 16 | qmi_xfer(0) << 8 | qmi_xfer(0);
+  qmi_end();
+  r[0] = 3;
+  qmi_cs(1);
+  qmi_xfer(0x05);
+  r[2] = qmi_xfer(0);
+  qmi_end();
+  r[0] = 4;
+  flash_wren();
+  qmi_cs(1);
+  qmi_xfer(0x05);
+  r[3] = qmi_xfer(0);
+  qmi_end();
+  r[0] = 5;
+  uint rd;
+  qmi_cs(1);
+  qmi_xfer(0x03);
+  qmi_xfer(scratch >> 16);
+  qmi_xfer(scratch >> 8);
+  qmi_xfer(scratch);
+  rd = qmi_xfer(0) | qmi_xfer(0) << 8 | qmi_xfer(0) << 16 | qmi_xfer(0) << 24;
+  qmi_end();
+  r[4] = rd;
+  r[0] = 6;
+  flash_erase4k(scratch);
+  qmi_cs(1);
+  qmi_xfer(0x03);
+  qmi_xfer(scratch >> 16);
+  qmi_xfer(scratch >> 8);
+  qmi_xfer(scratch);
+  rd = qmi_xfer(0) | qmi_xfer(0) << 8 | qmi_xfer(0) << 16 | qmi_xfer(0) << 24;
+  qmi_end();
+  r[5] = rd;
+  r[0] = 7;
+  uchar page[FLASH_PAGE];
+  for (uint i = 0; i < FLASH_PAGE; i++)
+    page[i] = (uchar)(0xC0 + i);
+  flash_prog_page(scratch, page);
+  qmi_cs(1);
+  qmi_xfer(0x03);
+  qmi_xfer(scratch >> 16);
+  qmi_xfer(scratch >> 8);
+  qmi_xfer(scratch);
+  rd = qmi_xfer(0) | qmi_xfer(0) << 8 | qmi_xfer(0) << 16 | qmi_xfer(0) << 24;
+  qmi_end();
+  r[6] = rd;
+  r[0] = 8;
+  r[7] = W32(0x10000000u + scratch); /* XIP must still work */
+  r[8] = 1;
 }
 
 /* SYS_sync: burn the RAM disk into the slot. Returns 0, or -1 when

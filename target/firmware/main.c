@@ -857,6 +857,61 @@ static void xsh_start(void)
 }
 #endif
 
+#ifdef HIL_SYM_cal_flash_g_calres
+/* cal_flash2 (prompts/023): the MACHINE bit-bangs the QSPI pads and
+ * drives QMI direct mode — the ARM must not fetch from flash while
+ * that happens, so the wait loop lives in SRAM. If the machine fails
+ * to restore XIP, the ARM crashes on return (observable silence) and
+ * the calres words remain readable over SWD. */
+static uint32_t __attribute__((noinline, section(".time_critical.calwait")))
+calwait(volatile uint32_t *done)
+{
+    for (uint32_t i = 0; i < 400000000u; i++) {
+        if (*done)
+            return 1;
+    }
+    return 0;
+}
+
+static void exp_calflash(void)
+{
+    const hil_test *t = 0;
+    for (int i = 0; i < HIL_N_TESTS; i++) {
+        if (hil_tests[i].name[0] == 'c' && hil_tests[i].name[1] == 'a' &&
+            hil_tests[i].name[2] == 'l' && hil_tests[i].name[3] == '_') {
+            t = &hil_tests[i];
+        }
+    }
+    if (!t) {
+        printf("CAL flash2: no image\n");
+        return;
+    }
+    machine_reset();
+    uint32_t entry = 0;
+    if (dmx_load(t->dmx, t->dmx_len, NULL, &entry) != DMX_OK) {
+        printf("CAL flash2: FAIL load\n");
+        return;
+    }
+    printf("CAL flash2: machine takes the flash (ARM -> SRAM wait)\n");
+    dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 0};
+    if (dmx_start(&cfg, entry) != DMX_OK) {
+        printf("CAL flash2: FAIL start\n");
+        return;
+    }
+    uint32_t ok = calwait((volatile uint32_t *)(HIL_SYM_cal_flash_g_calres + 32));
+    machine_reset();
+    uint32_t ca = HIL_SYM_cal_flash_g_calres;
+    printf("CAL flash2: %s phase=%lu jedec=%06lx sr=%02lx wel=%02lx base=%08lx "
+           "erased=%08lx prog=%08lx xip=%08lx "
+           "(want jedec!=ffffff/000000, wel=02, erased=ffffffff, prog=xip=c3c2c1c0)\n",
+           ok ? "done" : "TIMEOUT",
+           (unsigned long)reg_rd(ca), (unsigned long)reg_rd(ca + 4),
+           (unsigned long)reg_rd(ca + 8), (unsigned long)reg_rd(ca + 12),
+           (unsigned long)reg_rd(ca + 16), (unsigned long)reg_rd(ca + 20),
+           (unsigned long)reg_rd(ca + 24), (unsigned long)reg_rd(ca + 28));
+}
+#endif
+
 int main(void)
 {
     stdio_init_all();
@@ -886,8 +941,15 @@ int main(void)
             continue;
         }
         for (int i = 0; i < HIL_N_TESTS; i++) {
+            if (hil_tests[i].name[0] == 'c' && hil_tests[i].name[1] == 'a' &&
+                hil_tests[i].name[2] == 'l' && hil_tests[i].name[3] == '_') {
+                continue; /* cal_flash: needs the SRAM-wait exp below */
+            }
             run_test(&hil_tests[i]);
         }
+#ifdef HIL_SYM_cal_flash_g_calres
+        exp_calflash();
+#endif
         cal_trig_while_disabled();
         cal_null_ctrl_trig();
         cal_null_count_trig();

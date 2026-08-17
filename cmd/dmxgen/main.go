@@ -84,6 +84,7 @@ type hilSpec struct {
 	name    string
 	file    string            // prog/hil/<file>.dasm
 	ll      string            // OR: compile this IR golden with dmacc (Phase 4)
+	extrall []string          // additional IR modules linked into the ll build
 	compactEnc bool           // assemble with the Tier-C 8-byte encoding
 	libc    bool              // link the picolibc goldens (libc/ll) into the ll build
 	console string            // expected console file (emulator check; prints on the UART on hardware)
@@ -146,6 +147,15 @@ var hilSpecs = []hilSpec{
 	{name: "ccc_collatz", ll: "collatz", compactEnc: true},
 	{name: "ccc_stdio", ll: "stdio", libc: true, compactEnc: true,
 		console: "dmacc/testdata/stdio.console", skus: []string{"rp2350"}},
+	// Phase 11 (prompts/023): the machine-only flash probe — the full
+	// bit-banged exit-XIP dance + JEDEC/RDSR/erase/program/XIP checks.
+	// The emulator's NOR model verifies the driver logic; the numbers
+	// that matter come from the silicon printout (firmware dumps the
+	// calres words after the test pass).
+	{name: "cal_flash", ll: "xv6/ll/calflash.ll", extrall: []string{"xv6/ll/kflash.ll"},
+		skus:   []string{"rp2350"},
+		mem:    map[string]uint32{"exitcode": 0},
+		export: []string{"g_calres"}},
 }
 
 // ccExpected reads the host-truth exit codes for the compiled programs.
@@ -182,7 +192,12 @@ func ccExpected() (map[string]uint32, error) {
 
 // buildCC compiles an IR golden with dmacc and assembles it.
 func buildCC(spec hilSpec, v *emu.Variant, lay layout) (*dmaasm.Result, error) {
-	paths := []string{"dmacc/testdata/" + spec.ll + ".ll"}
+	main := "dmacc/testdata/" + spec.ll + ".ll"
+	if strings.HasPrefix(spec.ll, "xv6/") {
+		main = spec.ll // repo-relative module
+	}
+	paths := []string{main}
+	paths = append(paths, spec.extrall...)
 	if spec.libc {
 		entries, err := os.ReadDir("libc/ll")
 		if err != nil {
@@ -1262,6 +1277,10 @@ func patchData(im *img.Image, dataBase, addr, val uint32) error {
 func verify(v *emu.Variant, lay layout, t *test) error {
 	m := emu.NewMachine(v)
 	m.TXPace = 13000 // ~115200 baud vs the 15000-cycle tick, as on silicon
+	m.Flash = make([]byte, 0x180000) // cal_flash probes the NOR model
+	for i := range m.Flash {
+		m.Flash[i] = 0xFF
+	}
 	cfg := emu.FetchExecConfig{Fetch: 0, Exec: 1, Fix: 2, Scratch: lay.scratch}
 	if t.Compact {
 		cfg = emu.FetchExecConfig{Compact: true}
@@ -1574,7 +1593,7 @@ func run() error {
 				continue
 			}
 		}
-		if spec.ll != "" {
+		if spec.ll != "" && spec.mem == nil {
 			want, ok := ccExp[spec.ll]
 			if !ok {
 				return fmt.Errorf("%s: no host expectation in dmacc/testdata/expected.txt", spec.ll)
