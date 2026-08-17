@@ -42,6 +42,13 @@ type Options struct {
 	// channel reads a single selector, so every image's mode-switch
 	// records must target the same word (prompts/020).
 	CompactScratch uint32
+	// RAMTextBase enables the `.ramtext` directive: text after the
+	// directive links at this base as a third image segment. XIP images
+	// place TextBase in flash (immutable) and keep every self-modifying
+	// record — block-field patch targets — in this RAM-resident region.
+	// The sign-dispatch trampoline arena follows the last instruction and
+	// so lands in ramtext when the directive is used.
+	RAMTextBase uint32
 }
 
 // Result is the assembled program.
@@ -116,6 +123,8 @@ type asm struct {
 	// Layout (pass 1).
 	textOff  uint32
 	dataOff  uint32
+	split    bool   // a .ramtext directive was seen
+	splitOff uint32 // text offset where the ramtext region begins
 	syms     map[string]symbol
 	litOrder []string           // pool emission order (first use)
 	lits     map[string]operand // pool key -> value operand
@@ -526,8 +535,18 @@ func (a *asm) parseMoveFlags(args []string, line int) (moveFlags, error) {
 
 // --- Pass 1: layout ---
 
+// terminators are the instructions after which execution cannot fall
+// through to the next record — required right before .ramtext, where the
+// link address jumps from TextBase+splitOff to RAMTextBase.
+var terminators = map[string]bool{
+	"jump": true, "jumpr": true, "jneg": true, "jsign": true,
+	"jeq": true, "jlt": true, "jltu": true, "jbool": true,
+	"ret": true, "halt": true,
+}
+
 func (a *asm) layout() error {
 	seg := "text" // current segment
+	lastMnem := ""
 	defineLabel := func(name string, line int) error {
 		if _, dup := a.syms[name]; dup {
 			return fmt.Errorf("line %d: duplicate label %q", line, name)
@@ -549,6 +568,22 @@ func (a *asm) layout() error {
 		case s.dir != "":
 			switch s.dir {
 			case "text":
+				if a.split {
+					return fmt.Errorf("line %d: .text after .ramtext", s.line)
+				}
+				seg = "text"
+			case "ramtext":
+				if a.opts.RAMTextBase == 0 {
+					return fmt.Errorf("line %d: .ramtext requires Options.RAMTextBase", s.line)
+				}
+				if a.split {
+					return fmt.Errorf("line %d: duplicate .ramtext", s.line)
+				}
+				if lastMnem != "" && !terminators[lastMnem] {
+					return fmt.Errorf("line %d: instruction before .ramtext falls through (%q); the link address is discontinuous here", s.line, lastMnem)
+				}
+				a.split = true
+				a.splitOff = a.textOff
 				seg = "text"
 			case "data":
 				seg = "data"
@@ -649,6 +684,7 @@ func (a *asm) layout() error {
 			} else {
 				a.textOff += 16 * n
 			}
+			lastMnem = s.mnem
 		}
 	}
 	if a.entry == "" {

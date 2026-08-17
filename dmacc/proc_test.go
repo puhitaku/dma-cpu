@@ -28,6 +28,10 @@ func parseLL(t *testing.T, path string) *llir.Module {
 // compileKernel builds the kernel core: lean (kproc + fs stubs) or
 // full (verbatim fs.c/file.c + glue — ~134 KB text, wide layouts only).
 func compileKernel(t *testing.T, fs bool) string {
+	return compileKernelOpts(t, fs, false)
+}
+
+func compileKernelOpts(t *testing.T, fs, xip bool) string {
 	t.Helper()
 	list := []string{"kproc", "kfsstub"}
 	if fs {
@@ -41,7 +45,13 @@ func compileKernel(t *testing.T, fs bool) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dasm, err := dmacc.Compile(merged, dmacc.Options{Entry: "kmain", NoSafepoints: true})
+	opts := dmacc.Options{Entry: "kmain", NoSafepoints: true, XIPText: xip}
+	if xip && fs {
+		// The whole sync path must execute from SRAM: its QMI session
+		// tears down the XIP window the kernel text now lives behind.
+		opts.RAMTextFuncs = []string{"kflash_sync"}
+	}
+	dasm, err := dmacc.Compile(merged, opts)
 	if err != nil {
 		t.Fatal(err)
 	}

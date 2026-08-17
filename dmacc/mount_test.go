@@ -30,7 +30,7 @@ func TestXv6Mount(t *testing.T) {
 	fb.AddFile("BIG.BIN", big)
 	vol := fb.Bytes()
 
-	flash := make([]byte, 0x180000)
+	flash := make([]byte, 0x200000)
 	for i := range flash {
 		flash[i] = 0xFF
 	}

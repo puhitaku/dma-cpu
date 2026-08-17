@@ -13,7 +13,7 @@ import (
 // same flash, stages from the now-valid slot, and reads the file
 // back. A third boot checks the generation advances.
 func TestXv6Persist(t *testing.T) {
-	flash := make([]byte, 0x180000) // 1.5 MiB models enough XIP space
+	flash := make([]byte, 0x200000) // 2 MiB: slot + fat volume + XIP text
 	for i := range flash {
 		flash[i] = 0xFF
 	}

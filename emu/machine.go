@@ -269,7 +269,9 @@ func (m *Machine) Peek32(addr uint32) uint32 {
 // segment growing into a process image) has produced ticks-dead machines
 // with no fault more than once.
 func (m *Machine) LoadBytes(addr uint32, data []byte) error {
-	if !m.inSRAM(addr, len(data)) {
+	inFlash := m.Flash != nil && addr >= XIPBase &&
+		addr+uint32(len(data)) <= XIPBase+uint32(len(m.Flash))
+	if !m.inSRAM(addr, len(data)) && !inFlash {
 		return fmt.Errorf("image [%#08x, +%#x) outside SRAM", addr, len(data))
 	}
 	lo, hi := addr, addr+uint32(len(data))
@@ -280,7 +282,13 @@ func (m *Machine) LoadBytes(addr uint32, data []byte) error {
 		}
 	}
 	m.loaded = append(m.loaded, [2]uint32{lo, hi})
-	copy(m.sram[addr-SRAMBase:], data)
+	if inFlash {
+		// Staging a flash-resident segment: the emulator counterpart of
+		// the firmware writing program text into QSPI flash before boot.
+		copy(m.Flash[addr-XIPBase:], data)
+	} else {
+		copy(m.sram[addr-SRAMBase:], data)
+	}
 	return nil
 }
 

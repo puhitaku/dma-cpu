@@ -15,10 +15,11 @@ import "fmt"
 // silicon-verified NOP, so n=0 needs no guard).
 
 type rtRoutine struct {
-	name string
-	deps []string
-	data string
-	text string
+	name    string
+	deps    []string
+	data    string
+	text    string
+	selfmod bool // patches its own records: must be RAM-resident under XIPText
 }
 
 var rtRoutines = []rtRoutine{
@@ -231,7 +232,8 @@ rt_ashr_done:
 `,
 	},
 	{
-		name: "memcpy",
+		name:    "memcpy",
+		selfmod: true,
 		text: `; r0 = dst, r1 = src, r2 = byte count: one patched INCR block.
 ; Compact records have no count field: the count goes straight into the
 ; bank channel's reload register instead (dyncount).
@@ -251,7 +253,8 @@ rt_mcp_blk:
 `,
 	},
 	{
-		name: "memset",
+		name:    "memset",
+		selfmod: true,
 		text: `; r0 = dst, r1 = byte value (in a word), r2 = count. The read
 ; address stays on r1's low byte; only dst increments.
 __rt_memset:
@@ -311,6 +314,14 @@ func (g *gen) emitRuntime() error {
 		}
 		if g.opts.Stats != nil {
 			g.opts.Stats.Runtime = append(g.opts.Stats.Runtime, r.name)
+		}
+		if g.opts.XIPText {
+			// All of the runtime lives in .ramtext: the self-patching
+			// modules must, and the rest is shared with RAM-resident
+			// flash-session code (RAMTextFuncs) that may call it while
+			// XIP is down.
+			g.ram.WriteString(r.text)
+			continue
 		}
 		if first {
 			if !any {

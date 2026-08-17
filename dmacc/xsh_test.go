@@ -123,11 +123,11 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 12})
+	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 12, XIPText: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	kcDasm := compileKernel(t, true)
+	kcDasm := compileKernelOpts(t, true, true)
 	idleDasm, err := dmacc.Compile(parseLL(t, "testdata/proc.ll"), dmacc.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -137,30 +137,43 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 		t.Fatal(err)
 	}
 
-	casm := func(src string, text, data uint32) (*dmaasm.Result, error) {
+	casm := func(src string, text, data, rtext uint32) (*dmaasm.Result, error) {
 		return dmaasm.Assemble(src, dmaasm.Options{
 			Variant: v, Compact: true, CompactScratch: 0x2007FE00,
-			TextBase: text, DataBase: data})
+			TextBase: text, DataBase: data, RAMTextBase: rtext})
 	}
-	kern, err := casm(ksrc, 0x20002000, 0x20003000)
+	// XIP layout (prompts/030): kernC and sh text executes from the
+	// flash window; only their .ramtext stubs and data live in SRAM.
+	kern, err := casm(ksrc, 0x20002000, 0x20003000, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernC, err := casm(kcDasm, 0x20004000, 0x2002B000)
+	kernC, err := casm(kcDasm, 0x10160000, 0x2000C000, 0x20004000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sh, err := casm(shDasm, 0x20035000, 0x2004E000)
+	sh, err := casm(shDasm, 0x101A0000, 0x2001C000, 0x20018000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idle, err := casm(idleDasm, 0x20053000, 0x20054000)
+	idle, err := casm(idleDasm, 0x20024000, 0x20025000, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	m := emu.NewMachine(v)
 	m.TXPace = 13000
+	// The flash model always exists: XIP text loads into it (the
+	// emulator counterpart of the firmware staging the text blobs).
+	// A caller-provided flash additionally carries slot + fat volume.
+	persist := flash != nil
+	if flash == nil {
+		flash = make([]byte, 0x200000)
+	}
+	if len(flash) < 0x200000 {
+		t.Fatalf("flash model too small for XIP text: %#x", len(flash))
+	}
+	m.Flash = flash
 	entrySh, err := sh.Image.Load(m, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -181,8 +194,7 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	// The RAM disk: staged from a valid flash slot, else golden.
 	disk := buildDisk(t, v)
 	const slotXIP = 0x10100000
-	if flash != nil {
-		m.Flash = flash
+	if persist {
 		off := slotXIP - emu.XIPBase
 		h := func(i int) uint32 { return binary.LittleEndian.Uint32(flash[off+4*i:]) }
 		if h(0) == 0x32464D44 && h(2) == uint32(len(disk)) { /* 'DMF2' */
@@ -205,8 +217,8 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 		 * NOR model itself (prompts/028). serviceFlashMailbox remains
 		 * for the dormant ARM-executor fallback. */
 	}
-	const diskBase = 0x20055000
-	if diskBase+len(disk) > 0x2006D000 {
+	const diskBase = 0x20026000
+	if diskBase+len(disk) > 0x20040000 {
 		t.Fatalf("disk too large: %d", len(disk))
 	}
 	for i := 0; i < len(disk); i += 4 {
@@ -215,7 +227,7 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	m.Poke32(mustSym(t, kernC, "g_dma_disk"), diskBase)
 	m.Poke32(mustSym(t, kernC, "g_dma_disksize"), uint32(len(disk)))
 	// exec arena.
-	m.Poke32(mustSym(t, kernC, "g_arena"), 0x2006D000)
+	m.Poke32(mustSym(t, kernC, "g_arena"), 0x20040000)
 	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007FE00)
 	m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 	m.Poke32(mustSym(t, kernC, "g_initpid"), 2)

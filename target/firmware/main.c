@@ -887,9 +887,42 @@ static void __attribute__((noinline, section(".time_critical.park"))) park_forev
  * full filesystem kernel. The RAM disk (echo, cat, wc, README as an
  * xv6 fs image) is staged first; exec resolves paths on it, and
  * redirection and pipes work from the $ prompt. */
+#ifdef HIL_XSH_KTEXT_HOME
+/* XIP-resident text (prompts/030): the machine executes the fs kernel
+ * and sh straight from the flash window; only their .ramtext stubs and
+ * data are loaded to SRAM by dmx_load. Stage each text blob once,
+ * content-compared so an unchanged build never reflashes. Same RAM
+ * bounce as the fat golden: the blob source is itself in flash rodata
+ * and flash_range_program runs with XIP disabled. */
+static uint8_t stage_sect[4096]; /* shared with the fat-golden staging */
+
+static void stage_xip_text(uint32_t dst, const uint8_t *blob, uint32_t len,
+                           const char *what)
+{
+    if (memcmp((const void *)(uintptr_t)dst, blob, len) == 0)
+        return;
+    uint8_t *sect = stage_sect;
+    uint32_t off = dst - 0x10000000u;
+    for (uint32_t o = 0; o < len; o += 4096) {
+        uint32_t n = len - o > 4096 ? 4096 : len - o;
+        memcpy(sect, blob + o, n);
+        memset(sect + n, 0xFF, 4096 - n);
+        flash_range_erase(off + o, 4096);
+        flash_range_program(off + o, sect, 4096);
+    }
+    printf("XSH: staged %s text (%u bytes)\n", what, (unsigned)len);
+}
+#endif
+
 static void xsh_start(void)
 {
     machine_reset();
+#ifdef HIL_XSH_KTEXT_HOME
+    stage_xip_text(HIL_XSH_KTEXT_HOME, hil_xsh_blob_ktext,
+                   (uint32_t)sizeof hil_xsh_blob_ktext, "kernc");
+    stage_xip_text(HIL_XSH_STEXT_HOME, hil_xsh_blob_stext,
+                   (uint32_t)sizeof hil_xsh_blob_stext, "sh");
+#endif
     uint32_t e;
     if (dmx_load(hil_xsh_kernel_dmx, sizeof hil_xsh_kernel_dmx, NULL, &e) != DMX_OK ||
         dmx_load(hil_xsh_kernc_dmx, sizeof hil_xsh_kernc_dmx, NULL, &e) != DMX_OK ||
@@ -906,7 +939,11 @@ static void xsh_start(void)
      * rodata (flash), and flash_range_program must read its source
      * with XIP disabled — bounce each sector through RAM. */
     if (*(volatile uint16_t *)(HIL_XSH_FATVOL + 510) != 0xAA55u) {
+#ifdef HIL_XSH_KTEXT_HOME
+        uint8_t *sect = stage_sect;
+#else
         static uint8_t sect[4096];
+#endif
         uint32_t off = HIL_XSH_FATVOL - 0x10000000u;
         uint32_t len = (uint32_t)sizeof hil_xsh_blob_fat;
         for (uint32_t o = 0; o < len; o += 4096) {

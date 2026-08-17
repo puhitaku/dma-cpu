@@ -200,10 +200,18 @@ func (g *gen) emitCmpHelpers() {
 	}
 	fmt.Fprintf(&g.out, "\n; --- comparison millicode ---\n.data\n")
 	fmt.Fprintf(&g.out, "cw_a: .word 0\ncw_b: .word 0\ncw_t: .word 0\ncw_f: .word 0\n")
-	fmt.Fprintf(&g.out, ".text\n")
+	// XIPText: the millicode is shared by RAM-resident flash-session
+	// code (RAMTextFuncs), so it lives in .ramtext with everything the
+	// session may fetch.
+	w := &g.out
+	if g.opts.XIPText {
+		w = &g.ram
+	} else {
+		fmt.Fprintf(&g.out, ".text\n")
+	}
 	for _, h := range cmpHelpers {
 		if g.cmpUsed[h.name] {
-			g.out.WriteString(h.text)
+			w.WriteString(h.text)
 		}
 	}
 }

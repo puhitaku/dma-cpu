@@ -31,6 +31,7 @@ type funcCtx struct {
 	pair64     map[*llir.Instr]*llir.Instr // i64 store -> its feeding i64 load (8-byte copy idiom)
 	pair64Ld   map[*llir.Instr]bool        // the loads consumed by pair64
 	hasCalls   bool
+	inRAM      bool // whole function emitted into .ramtext (RAMTextFuncs)
 	rec        bool // uses the recursion frame stack (push/pop)
 	frameBytes int  // data bytes emitted for this function's frame
 	curBlock   int
@@ -39,7 +40,7 @@ type funcCtx struct {
 
 func (g *gen) emitFunc(f *llir.Func) error {
 	fc := &funcCtx{
-		g: g, f: f, rec: g.recSet[f.Name],
+		g: g, f: f, rec: g.recSet[f.Name], inRAM: g.ramSet[f.Name],
 		declared:  map[string]bool{},
 		allocas:   map[string]string{},
 		constAddr: map[string]addrC{},
@@ -99,14 +100,42 @@ func (fc *funcCtx) ins(format string, args ...any) {
 		}
 		s.record(fc.f.Name, fc.cat, mnem)
 	}
-	fmt.Fprintf(&fc.g.text, "    "+format+"\n", args...)
+	fmt.Fprintf(fc.outBuf(), "    "+format+"\n", args...)
 }
 func (fc *funcCtx) label(l string) {
-	fmt.Fprintf(&fc.g.text, "%s:\n", l)
+	fmt.Fprintf(fc.outBuf(), "%s:\n", l)
+}
+
+// outBuf is where this function's records land: .ramtext for the
+// RAMTextFuncs closure, the main text otherwise.
+func (fc *funcCtx) outBuf() *strings.Builder {
+	if fc.inRAM {
+		return &fc.g.ram
+	}
+	return &fc.g.text
 }
 func (fc *funcCtx) stub(prefix string) string {
 	fc.g.stubN++
 	return fmt.Sprintf("%s%d_%s", prefix, fc.g.stubN, sanitize(fc.f.Name))
+}
+
+// stubBody places a stub's single self-modified record. Normally it sits
+// inline and execution falls through it; under XIPText the record must
+// live in RAM (flash text is immutable), so it moves to the .ramtext
+// region with a jump there and a jump back. The patching move that
+// precedes stubBody targets the record by label either way.
+func (fc *funcCtx) stubBody(ld, format string, args ...any) {
+	if !fc.g.opts.XIPText || fc.inRAM {
+		fc.label(ld)
+		fc.ins(format, args...)
+		return
+	}
+	ret := fc.stub("Xr")
+	fc.ins("jump %s", ld)
+	fmt.Fprintf(&fc.g.ram, "%s:\n", ld)
+	fmt.Fprintf(&fc.g.ram, "    "+format+"\n", args...)
+	fmt.Fprintf(&fc.g.ram, "    jump %s\n", ret)
+	fc.label(ret)
 }
 
 // width returns the value width in bits, rejecting what the machine
@@ -621,8 +650,7 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 		}
 		ld := fc.stub("Ld")
 		fc.ins("move %s, %s.read", p, ld)
-		fc.label(ld)
-		fc.ins("move @0, %s%s", res, sizeFlag(w))
+		fc.stubBody(ld, "move @0, %s%s", res, sizeFlag(w))
 		return nil
 
 	case "store":
@@ -656,8 +684,7 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 		}
 		st := fc.stub("Sd")
 		fc.ins("move %s, %s.write", p, st)
-		fc.label(st)
-		fc.ins("move %s, @0%s", val, sizeFlag(w))
+		fc.stubBody(st, "move %s, @0%s", val, sizeFlag(w))
 		return nil
 
 	case "getelementptr":
@@ -1155,8 +1182,7 @@ func (fc *funcCtx) loadWordAt(p *llir.Value, off uint32, dst string) error {
 	} else {
 		fc.ins("move %s, %s.read", pv, ld)
 	}
-	fc.label(ld)
-	fc.ins("move @0, %s", dst)
+	fc.stubBody(ld, "move @0, %s", dst)
 	return nil
 }
 
@@ -1179,8 +1205,7 @@ func (fc *funcCtx) storeWordAt(p *llir.Value, off uint32, src string) error {
 	} else {
 		fc.ins("move %s, %s.write", pv, st)
 	}
-	fc.label(st)
-	fc.ins("move %s, @0", src)
+	fc.stubBody(st, "move %s, @0", src)
 	return nil
 }
 
@@ -1196,8 +1221,7 @@ func (fc *funcCtx) storeWordTo(p *llir.Value, src string) error {
 	}
 	st := fc.stub("Sv")
 	fc.ins("move %s, %s.write", pv, st)
-	fc.label(st)
-	fc.ins("move %s, @0", src)
+	fc.stubBody(st, "move %s, @0", src)
 	return nil
 }
 
@@ -1213,8 +1237,7 @@ func (fc *funcCtx) loadWordFrom(p *llir.Value, dst string) error {
 	}
 	ld := fc.stub("Lv")
 	fc.ins("move %s, %s.read", pv, ld)
-	fc.label(ld)
-	fc.ins("move @0, %s", dst)
+	fc.stubBody(ld, "move @0, %s", dst)
 	return nil
 }
 
@@ -1367,13 +1390,11 @@ func (fc *funcCtx) emitFramePush() {
 	hs := fc.stub("Fha")
 	fc.ins("add g___dmacc_fsp, %s, sc2", sz)
 	fc.ins("move sc2, %s.write", hs)
-	fc.label(hs)
-	fc.ins("move %s, @0", frame)
+	fc.stubBody(hs, "move %s, @0", frame)
 	hs2 := fc.stub("Fhb")
 	fc.ins("add sc2, $4, sc2")
 	fc.ins("move sc2, %s.write", hs2)
-	fc.label(hs2)
-	fc.ins("move %s, @0", sz)
+	fc.stubBody(hs2, "move %s, @0", sz)
 	fc.ins("add sc2, $4, sc2")
 	fc.ins("move sc2, g___dmacc_fsp")
 	// The fresh activation: linkage and parameters.

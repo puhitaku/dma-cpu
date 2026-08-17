@@ -29,6 +29,18 @@ type Options struct {
 	Stats          *Stats // when non-nil, collect size attribution
 	RecursionDepth int    // OBSOLETE: recursion now uses the frame stack
 	FrameStack     int    // frame-stack bytes for recursive calls; default 4096
+	// XIPText emits flash-immutable text: every self-modified record
+	// (block-field patch target) is placed in a trailing .ramtext region
+	// instead of inline, so the main text can execute from the XIP window.
+	// The runtime and comparison millicode move there wholesale. Assemble
+	// the result with Options.RAMTextBase set.
+	XIPText bool
+	// RAMTextFuncs (XIPText only): these functions and every function
+	// they transitively call are emitted into .ramtext. Required for any
+	// code that runs while XIP is unavailable — the flash driver's
+	// direct-mode session would otherwise fetch its own records through
+	// the window it just tore down.
+	RAMTextFuncs []string
 }
 
 // Compile translates a parsed module into dmaasm source. The generated
@@ -53,8 +65,10 @@ type gen struct {
 
 	data strings.Builder // .data lines (after .regs)
 	text strings.Builder // .text lines (after crt0)
+	ram  strings.Builder // .ramtext lines (XIPText: RAM-resident stubs)
 
 	rt      map[string]bool // runtime routines needed
+	ramSet  map[string]bool // functions emitted into .ramtext (XIPText)
 	recSet  map[string]bool // functions using the recursion frame stack
 	frameSz map[string]int  // measured frame bytes per recSet function
 	cmpUsed map[string]bool // comparison millicode helpers needed
@@ -90,6 +104,30 @@ func (g *gen) run() error {
 	g.collectGarbage(entry)
 	if err := g.computeRecursion(); err != nil {
 		return err
+	}
+	g.ramSet = map[string]bool{}
+	if g.opts.XIPText {
+		var mark func(name string)
+		mark = func(name string) {
+			f, ok := g.funcIdx[name]
+			if !ok || g.ramSet[name] {
+				return
+			}
+			g.ramSet[name] = true
+			for _, b := range f.Blocks {
+				for _, ins := range b.Instrs {
+					if ins.Op == "call" && ins.Callee != "" && !strings.HasPrefix(ins.Callee, "llvm.") {
+						mark(ins.Callee)
+					}
+				}
+			}
+		}
+		for _, name := range g.opts.RAMTextFuncs {
+			if _, ok := g.funcIdx[name]; !ok {
+				return fmt.Errorf("dmacc: RAMTextFuncs: %q is not defined", name)
+			}
+			mark(name)
+		}
 	}
 	// Variadic frames are static too: size each callee's vararg area to
 	// the largest call in the whole program.
@@ -127,15 +165,22 @@ func (g *gen) run() error {
 	// Frame sizes are known only after emission: patch the prologue/
 	// epilogue placeholders, then emit the frame stack itself.
 	if len(g.recSet) > 0 {
-		text := g.text.String()
+		text, ram := g.text.String(), g.ram.String()
 		for name, sz := range g.frameSz {
-			text = strings.ReplaceAll(text,
-				"@FR_"+sanitize(name)+"@", fmt.Sprintf("0x%x", sz))
-			text = strings.ReplaceAll(text,
-				"@FRH_"+sanitize(name)+"@", fmt.Sprintf("0x%x", sz+8))
+			for _, ph := range []struct {
+				key, val string
+			}{
+				{"@FR_" + sanitize(name) + "@", fmt.Sprintf("0x%x", sz)},
+				{"@FRH_" + sanitize(name) + "@", fmt.Sprintf("0x%x", sz+8)},
+			} {
+				text = strings.ReplaceAll(text, ph.key, ph.val)
+				ram = strings.ReplaceAll(ram, ph.key, ph.val)
+			}
 		}
 		g.text.Reset()
 		g.text.WriteString(text)
+		g.ram.Reset()
+		g.ram.WriteString(ram)
 		stack := g.frameStackSize()
 		fmt.Fprintf(&g.data, "\n; recursion frame stack (push/pop per recSet function)\n")
 		fmt.Fprintf(&g.data, "g___dmacc_fsp: .word g___dmacc_fstack\n")
@@ -181,6 +226,10 @@ func (g *gen) run() error {
 	g.emitCmpHelpers()
 	if err := g.emitRuntime(); err != nil {
 		return err
+	}
+	if g.ram.Len() > 0 {
+		fmt.Fprintf(w, "\n; --- RAM-resident self-modifying records ---\n.ramtext\n")
+		w.WriteString(g.ram.String())
 	}
 	return nil
 }

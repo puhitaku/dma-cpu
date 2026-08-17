@@ -689,46 +689,50 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 // scratch (dmaasm CompactScratch). The RAM disk carries upstream
 // echo, cat, wc AND ls as DMX-exec files.
 func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
-	const fatVolXIP = 0x10140000 // vfat volume: above the fs slot
+	const fatVolXIP = 0x10140000  // vfat volume: above the fs slot
+	const cTextXIP = 0x10160000   // fs-kernel text, XIP-resident (prompts/030)
+	const sTextXIP = 0x101A0000   // sh text, XIP-resident
 	kText, kData := lay.text, lay.text+0x1000
-	cText, cData := lay.text+0x2000, lay.text+0x29000
-	sText, sData := lay.text+0x33000, lay.text+0x4C000
-	iText, iData := lay.text+0x51000, lay.text+0x52000
-	diskHome := lay.text + 0x53000
+	cRText, cData := lay.text+0x2000, lay.text+0xA000
+	sRText, sData := lay.text+0x16000, lay.text+0x1A000
+	iText, iData := lay.text+0x22000, lay.text+0x23000
+	diskHome := lay.text + 0x24000
 	diskMax := uint32(0x18000) // 96 KiB
-	arena, arenaEnd := lay.text+0x6B000, lay.text+0x7DE00
+	arena, arenaEnd := lay.text+0x3E000, lay.scratch-0x200
 
-	casm := func(src string, text, data uint32) (*dmaasm.Result, error) {
+	casm := func(src string, text, data, rtext uint32) (*dmaasm.Result, error) {
 		return dmaasm.Assemble(src, dmaasm.Options{
 			Variant: v, Compact: true, CompactScratch: lay.scratch,
-			TextBase: text, DataBase: data})
+			TextBase: text, DataBase: data, RAMTextBase: rtext})
 	}
 	ksrc, err := prog.HIL("kernel")
 	if err != nil {
 		return nil, err
 	}
-	kern, err := casm(ksrc, kText, kData)
+	kern, err := casm(ksrc, kText, kData, 0)
 	if err != nil {
 		return nil, err
 	}
 	kcDasm, err := compileLL([]string{"xv6/ll/kproc.ll", "xv6/ll/kfs.ll", "xv6/ll/kfile.ll",
 		"xv6/ll/kbio.ll", "xv6/ll/kfsglue.ll", "xv6/ll/kpipe.ll", "xv6/ll/kflash.ll",
 		"xv6/ll/kfat.ll", "xv6/ll/string.ll"},
-		dmacc.Options{Entry: "kmain", NoSafepoints: true})
+		dmacc.Options{Entry: "kmain", NoSafepoints: true, XIPText: true,
+			/* the QMI sync session tears down XIP: it must run from SRAM */
+			RAMTextFuncs: []string{"kflash_sync"}})
 	if err != nil {
 		return nil, err
 	}
-	kernC, err := casm(kcDasm, cText, cData)
+	kernC, err := casm(kcDasm, cTextXIP, cData, cRText)
 	if err != nil {
 		return nil, fmt.Errorf("fs kernel: %w", err)
 	}
 	shDasm, err := compileLL([]string{"xv6/ll/sh.ll", "xv6/ll/ulib.ll",
 		"xv6/ll/umalloc.ll", "xv6/ll/usys.ll"},
-		dmacc.Options{RecursionDepth: 12})
+		dmacc.Options{RecursionDepth: 12, XIPText: true})
 	if err != nil {
 		return nil, err
 	}
-	sh, err := casm(shDasm, sText, sData)
+	sh, err := casm(shDasm, sTextXIP, sData, sRText)
 	if err != nil {
 		return nil, fmt.Errorf("xv6 sh: %w", err)
 	}
@@ -736,9 +740,26 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	idle, err := casm(idasm, iText, iData)
+	idle, err := casm(idasm, iText, iData, 0)
 	if err != nil {
 		return nil, err
+	}
+	// The SRAM map above is windowed: fail loudly if a region outgrew
+	// its window instead of letting images silently overlap.
+	for _, ck := range []struct {
+		name      string
+		res       *dmaasm.Result
+		seg       int
+		base, end uint32
+	}{
+		{"kernC ramtext", kernC, 2, cRText, cData},
+		{"kernC data", kernC, 1, cData, sRText},
+		{"sh ramtext", sh, 2, sRText, sData},
+		{"sh data", sh, 1, sData, iText},
+	} {
+		if n := ck.base + uint32(len(ck.res.Image.Segments[ck.seg].Data)); n > ck.end {
+			return nil, fmt.Errorf("xsh: %s ends at %#x, past %#x", ck.name, n, ck.end)
+		}
 	}
 
 	// The disk: upstream user programs as compact DMX-exec files.
@@ -754,7 +775,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		if err != nil {
 			return nil, err
 		}
-		ures, err := casm(udasm, 0x10000000, 0x10040000)
+		ures, err := casm(udasm, 0x10000000, 0x10040000, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -777,7 +798,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	}
 
 	b := &kernBundle{names: []string{"kernel", "kernc", "sh", "idle"}, sym: map[string]uint32{}}
-	b.entry0 = sText + sh.Image.EntryOff
+	b.entry0 = sTextXIP + sh.Image.EntryOff
 	entryI := iText + idle.Image.EntryOff
 	if err := wireKernel(kern, kData, kernC, cData, []kprocSpec{
 		{sh, sData, b.entry0, 1, 0, true},
@@ -843,7 +864,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	// Emulator session verification: ls, files, redirection, a pipe.
 	m := emu.NewMachine(v)
 	m.TXPace = 13000 // ~115200 baud vs the 15000-cycle tick, as on silicon
-	m.Flash = make([]byte, 0x180000) // the kernel reads the slot header
+	m.Flash = make([]byte, 0x200000) // slot header + XIP text regions
 	for i := range m.Flash {
 		m.Flash[i] = 0xFF
 	}
@@ -875,6 +896,23 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 			return nil, fmt.Errorf("xsh bundle: session missing %q:\n%s", want, out)
 		}
 	}
+	// XIP text leaves the DMX container: dmx_load only copies SRAM, so
+	// the flash-resident text segment ships as a blob the firmware
+	// stages (content-compared, like the fat golden) before dmx_start.
+	stripXIP := func(r *dmaasm.Result) []byte {
+		segs := r.Image.Segments
+		blob := pad4(segs[0].Data)
+		r.Image.Segments = segs[1:]
+		for i := range r.Image.Writes {
+			r.Image.Writes[i].Ref = img.RefAbs // fixed placement: values are final
+		}
+		r.Image.EntrySeg, r.Image.EntryOff = 0, 0 // real entry: HIL_XSH_ENTRY
+		return blob
+	}
+	b.blobs = append(b.blobs, stripXIP(kernC), stripXIP(sh))
+	b.blobNames = append(b.blobNames, "ktext", "stext")
+	b.sym["KTEXT_HOME"] = cTextXIP
+	b.sym["STEXT_HOME"] = sTextXIP
 	if err := finishBundle(b, results); err != nil {
 		return nil, err
 	}

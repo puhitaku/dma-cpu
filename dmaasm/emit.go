@@ -16,12 +16,23 @@ func (a *asm) emit() (*Result, error) {
 	bld := img.NewBuilder()
 	text := bld.Seg(a.opts.TextBase)
 	data := bld.Seg(a.opts.DataBase)
+	var rtext *img.Seg
+	if a.split {
+		rtext = bld.Seg(a.opts.RAMTextBase)
+	}
 
-	segOf := func(sym symbol) *img.Seg {
-		if sym.text {
-			return text
+	// symLoc maps a symbol plus byte offset to its segment and offset
+	// within it. Text offsets are one continuous pass-1 counter; symbols
+	// at or past the .ramtext split live in the third segment.
+	symLoc := func(sym symbol, extra uint32) (*img.Seg, uint32) {
+		if !sym.text {
+			return data, sym.off + extra
 		}
-		return data
+		off := sym.off + extra
+		if a.split && off >= a.splitOff {
+			return rtext, off - a.splitOff
+		}
+		return text, off
 	}
 
 	// resolve turns an operand into a pointer for a block field.
@@ -39,13 +50,14 @@ func (a *asm) emit() (*Result, error) {
 			if op.blockField && !sym.text {
 				return img.Ptr{}, fmt.Errorf("line %d: block field on data symbol %q", line, op.sym)
 			}
-			off := sym.off + op.field
+			extra := op.field
 			if op.blockField && a.opts.Compact {
 				// Block fields address the instruction's payload record,
 				// past any planner-inserted switch/count records.
-				off += a.payloadDelta[sym.off]
+				extra += a.payloadDelta[sym.off]
 			}
-			return img.In(segOf(sym), off), nil
+			seg, off := symLoc(sym, extra)
+			return img.In(seg, off), nil
 		}
 	}
 
@@ -64,7 +76,7 @@ func (a *asm) emit() (*Result, error) {
 					if !ok {
 						return nil, fmt.Errorf("line %d: .word of undefined symbol %q", s.line, arg)
 					}
-					data.WordRef(segOf(sym), sym.off)
+					data.WordRef(symLoc(sym, 0))
 				}
 			}
 		case "space":
@@ -94,7 +106,7 @@ func (a *asm) emit() (*Result, error) {
 		if !ok {
 			return nil, fmt.Errorf("undefined symbol %q (used as $%s)", op.sym, op.sym)
 		}
-		data.WordRef(segOf(sym), sym.off+op.field)
+		data.WordRef(symLoc(sym, op.field))
 	}
 
 	// --- Init writes: sniffer first (ABI default), then machine config
@@ -140,7 +152,8 @@ func (a *asm) emit() (*Result, error) {
 		if !ok {
 			return nil, fmt.Errorf("line %d: .write of undefined symbol %q", w.line, w.valSym)
 		}
-		bld.AddWriteRef(w.addr, segOf(sym), sym.off)
+		wseg, woff := symLoc(sym, 0)
+		bld.AddWriteRef(w.addr, wseg, woff)
 	}
 
 	// --- Text segment ---
@@ -163,6 +176,9 @@ func (a *asm) emit() (*Result, error) {
 		return img.In(data, a.litOffs[litKey(operand{kind: opLit, num: v, isNum: true})])
 	}
 	a.dataSeg = data
+	// out is the segment instruction records land in: text until the
+	// .ramtext directive, rtext after it.
+	out := text
 	// Compact: route blocks through the record emitter (compact.go).
 	var ce *cemit
 	var mvErr error
@@ -188,7 +204,7 @@ func (a *asm) emit() (*Result, error) {
 			}
 			return
 		}
-		text.BlockP(src, dst, count, ctrl)
+		out.BlockP(src, dst, count, ctrl)
 	}
 	mvd := func(src, dst img.Ptr, count, ctrl uint32, dyn bool) {
 		mvFull(src, dst, count, ctrl, dyn, 0)
@@ -243,6 +259,13 @@ func (a *asm) emit() (*Result, error) {
 	}
 
 	for _, s := range a.stmts {
+		if s.dir == "ramtext" {
+			out = rtext
+			if ce != nil {
+				ce.text = rtext
+			}
+			continue
+		}
 		if s.mnem == "" {
 			continue
 		}
@@ -606,7 +629,7 @@ func (a *asm) emit() (*Result, error) {
 			if ce != nil {
 				ce.halt()
 			} else {
-				text.Halt()
+				out.Halt()
 			}
 		case "nop":
 			// Zero-length sequence: completes immediately and chains on —
@@ -643,7 +666,7 @@ func (a *asm) emit() (*Result, error) {
 							return nil, err
 						}
 					} else {
-						text.Halt()
+						out.Halt()
 					}
 					continue
 				}
@@ -668,8 +691,7 @@ func (a *asm) emit() (*Result, error) {
 		}
 	}
 
-	entrySym := a.syms[a.entry]
-	bld.Entry(text, entrySym.off)
+	bld.Entry(symLoc(a.syms[a.entry], 0))
 
 	im, err := bld.Image()
 	if err != nil {
@@ -680,11 +702,8 @@ func (a *asm) emit() (*Result, error) {
 		if strings.HasPrefix(name, "__") {
 			continue
 		}
-		base := a.opts.DataBase
-		if sym.text {
-			base = a.opts.TextBase
-		}
-		symbols[name] = base + sym.off
+		seg, off := symLoc(sym, 0)
+		symbols[name] = seg.LinkAddrOf(off)
 	}
 	return &Result{Image: im, Symbols: symbols}, nil
 }
