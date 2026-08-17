@@ -238,6 +238,17 @@ __dma_sigentry(void)
                * point with r0/r1 restored */
 }
 
+/* dmacc's bounded-recursion sink (depth-K clones exhausted): die as a
+ * process instead of halting the whole machine — deeply nested sh
+ * subshells overflow in the vfork child and the shell survives. Must
+ * not return. */
+void
+__dmacc_recursion_overflow(void)
+{
+  write(2, "recursion too deep\n", 19);
+  exit(-2);
+}
+
 int
 signal(int sig, void (*fn)(int))
 {

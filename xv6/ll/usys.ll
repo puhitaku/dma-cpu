@@ -6,6 +6,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 %struct.dma_sigctx = type { i32, i32, i32, i32 }
 %struct.dma_sysmail = type { i32, i32, i32, i32, i32, i32 }
 
+@.str = private unnamed_addr constant [20 x i8] c"recursion too deep\0A\00", align 1
 @__dma_sig_fn = internal unnamed_addr global ptr null, align 4
 @__dma_sigctx = internal global %struct.dma_sigctx zeroinitializer, align 4
 @__dma_sysmail = dso_local global %struct.dma_sysmail zeroinitializer, align 4
@@ -297,6 +298,19 @@ define dso_local ptr @sys_sbrk(i32 noundef %0, i32 noundef %1) local_unnamed_add
   ret ptr %6
 }
 
+; Function Attrs: minsize noreturn nounwind optsize
+define dso_local void @__dmacc_recursion_overflow() local_unnamed_addr #1 {
+  store volatile i32 16, ptr @__dma_sysmail, align 4, !tbaa !3
+  store volatile i32 2, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 4), align 4, !tbaa !8
+  store volatile i32 ptrtoint (ptr @.str to i32), ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 8), align 4, !tbaa !9
+  store volatile i32 19, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 12), align 4, !tbaa !10
+  %1 = load i32, ptr @__dma_syscall_entry, align 4, !tbaa !11
+  %2 = inttoptr i32 %1 to ptr
+  %3 = tail call i32 %2() #2
+  tail call void @exit(i32 noundef -2) #3
+  unreachable
+}
+
 ; Function Attrs: minsize nounwind optsize
 define dso_local i32 @signal(i32 noundef %0, ptr noundef %1) local_unnamed_addr #0 {
   store ptr %1, ptr @__dma_sig_fn, align 4, !tbaa !14
@@ -330,6 +344,7 @@ define internal void @__dma_sigentry() #0 {
 attributes #0 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { minsize noreturn nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #2 = { minsize nobuiltin nounwind optsize "no-builtins" }
+attributes #3 = { minsize nobuiltin optsize "no-builtins" }
 
 !llvm.module.flags = !{!0, !1}
 !llvm.ident = !{!2}

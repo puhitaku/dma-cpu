@@ -983,10 +983,14 @@ func (fc *funcCtx) emitCall(ins *llir.Instr) error {
 		return fc.emitIndirectCall(ins)
 	}
 	if name == recOverflowName {
-		// Depth-K intra-cycle call: bounded recursion exhausted. HALT
-		// stops the machine at a well-defined point.
-		fc.ins("halt")
-		return nil
+		// Depth-K intra-cycle call: bounded recursion exhausted. If the
+		// program defines the sink itself (usys.c does: report and
+		// exit, dying as a process), route there — it must not return.
+		// Otherwise HALT stops the machine at a well-defined point.
+		if _, ok := fc.g.funcIdx[name]; !ok {
+			fc.ins("halt")
+			return nil
+		}
 	}
 	callee, ok := fc.g.funcIdx[name]
 	if !ok {

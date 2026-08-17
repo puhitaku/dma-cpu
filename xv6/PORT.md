@@ -154,7 +154,14 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
   Silicon-validated: ^C kills a foreground cat, the `trap` demo
   catches it and exits politely, and a background spin outlives a
   prompt-time ^C.
-- [ ] Parenthesized sh commands (deeper clone budget exists now).
+- [x] Parenthesized sh commands (prompts/027): sh's clone budget goes
+  to K=12 (an xsh RAM rebalance pays the ~26 KB of parse-cycle
+  clones) — `((x))`, `(a; (b))`, `(a) ; (b)`, and redirected subshell
+  pipelines `(ls | wc) > n` all work. Deeper nesting no longer halts
+  the machine: dmacc's recursion-overflow sink is routable to a
+  program-defined `__dmacc_recursion_overflow` (usys reports
+  "recursion too deep" and exits), so the overflowing vfork child
+  dies as a process and the shell survives.
 - [ ] More peripherals for the machine (GPIO/PIO surface).
 
 ## Presentation goals (beyond xv6)

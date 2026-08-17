@@ -678,13 +678,13 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 // scratch (dmaasm CompactScratch). The RAM disk carries upstream
 // echo, cat, wc AND ls as DMX-exec files.
 func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
-	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x20000
-	sText, sData := lay.text+0x28000, lay.text+0x3C000
-	iText, iData := lay.text+0x42000, lay.text+0x43000
-	diskHome := lay.text + 0x44000
+	kText, kData := lay.text, lay.text+0x1000
+	cText, cData := lay.text+0x2000, lay.text+0x1E000
+	sText, sData := lay.text+0x26000, lay.text+0x3F000
+	iText, iData := lay.text+0x44000, lay.text+0x45000
+	diskHome := lay.text + 0x46000
 	diskMax := uint32(0x20000) // 128 KiB
-	arena, arenaEnd := lay.text+0x64000, lay.text+0x77000
+	arena, arenaEnd := lay.text+0x66000, lay.text+0x77E00
 
 	casm := func(src string, text, data uint32) (*dmaasm.Result, error) {
 		return dmaasm.Assemble(src, dmaasm.Options{
@@ -711,7 +711,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	}
 	shDasm, err := compileLL([]string{"xv6/ll/sh.ll", "xv6/ll/ulib.ll", "xv6/ll/printf.ll",
 		"xv6/ll/umalloc.ll", "xv6/ll/usys.ll"},
-		dmacc.Options{RecursionDepth: 8})
+		dmacc.Options{RecursionDepth: 12})
 	if err != nil {
 		return nil, err
 	}

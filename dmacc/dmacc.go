@@ -207,6 +207,11 @@ func (g *gen) collectGarbage(entry *llir.Func) {
 		}
 	}
 	visitFunc(entry)
+	// A program-defined recursion-overflow sink is called only by the
+	// depth-K rewrite, which runs after this pass: keep it as a root.
+	if f, ok := g.funcIdx[recOverflowName]; ok {
+		visitFunc(f)
+	}
 	var funcs []*llir.Func
 	for _, f := range g.m.Funcs {
 		if reached["f:"+f.Name] {
@@ -350,6 +355,7 @@ func (g *gen) expandRecursion() error {
 					ni := *ins // instrs may be shared with nothing, but stay safe
 					if d >= depth {
 						ni.Callee = recOverflowName
+						ni.Args = nil // the sink takes no params (and never returns)
 					} else {
 						ni.Callee = base + recSuffix(d+1)
 					}

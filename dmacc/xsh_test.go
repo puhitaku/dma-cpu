@@ -121,7 +121,7 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 8})
+	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 12})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,19 +140,19 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 			Variant: v, Compact: true, CompactScratch: 0x2007FE00,
 			TextBase: text, DataBase: data})
 	}
-	kern, err := casm(ksrc, 0x20008000, 0x2000A000)
+	kern, err := casm(ksrc, 0x20008000, 0x20009000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernC, err := casm(kcDasm, 0x2000C000, 0x20028000)
+	kernC, err := casm(kcDasm, 0x2000A000, 0x20026000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sh, err := casm(shDasm, 0x20030000, 0x20044000)
+	sh, err := casm(shDasm, 0x2002E000, 0x20047000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idle, err := casm(idleDasm, 0x2004A000, 0x2004B000)
+	idle, err := casm(idleDasm, 0x2004C000, 0x2004D000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,8 +200,8 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 		// playing the parked ARM (kflash.c explains why).
 		m.Poke32(mustSym(t, kernC, "g_kflash_arm"), flashMailbox)
 	}
-	const diskBase = 0x2004C000
-	if diskBase+len(disk) > 0x2006C000 {
+	const diskBase = 0x2004E000
+	if diskBase+len(disk) > 0x2006E000 {
 		t.Fatalf("disk too large: %d", len(disk))
 	}
 	for i := 0; i < len(disk); i += 4 {
@@ -210,8 +210,8 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	m.Poke32(mustSym(t, kernC, "g_dma_disk"), diskBase)
 	m.Poke32(mustSym(t, kernC, "g_dma_disksize"), uint32(len(disk)))
 	// exec arena.
-	m.Poke32(mustSym(t, kernC, "g_arena"), 0x2006C000)
-	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007F000)
+	m.Poke32(mustSym(t, kernC, "g_arena"), 0x2006E000)
+	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007FE00)
 	m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 	m.Poke32(mustSym(t, kernC, "g_initpid"), 2)
 	m.Poke32(mustSym(t, kernC, "g_fgpid"), 1)
