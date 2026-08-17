@@ -147,15 +147,6 @@ var hilSpecs = []hilSpec{
 	{name: "ccc_collatz", ll: "collatz", compactEnc: true},
 	{name: "ccc_stdio", ll: "stdio", libc: true, compactEnc: true,
 		console: "dmacc/testdata/stdio.console", skus: []string{"rp2350"}},
-	// Phase 11 (prompts/023): the machine-only flash probe — the full
-	// bit-banged exit-XIP dance + JEDEC/RDSR/erase/program/XIP checks.
-	// The emulator's NOR model verifies the driver logic; the numbers
-	// that matter come from the silicon printout (firmware dumps the
-	// calres words after the test pass).
-	{name: "cal_flash", ll: "xv6/ll/calflash.ll", extrall: []string{"xv6/ll/kflash.ll"},
-		skus:   []string{"rp2350"},
-		mem:    map[string]uint32{"exitcode": 0},
-		export: []string{"g_calres"}},
 }
 
 // ccExpected reads the host-truth exit codes for the compiled programs.

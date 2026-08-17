@@ -76,6 +76,36 @@ func bootXsh(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	return bootXshFlash(t, nil)
 }
 
+// flashMailbox is where emulator tests place the ARM-executor mailbox
+// (op, off, src, seq, ack — kflash.c's struct flashreq).
+const flashMailbox = 0x2007FE10
+
+// serviceFlashMailbox plays the parked ARM: applies one pending
+// erase/program request to the flash slice and acks it. Returns
+// whether a request was served.
+func serviceFlashMailbox(m *emu.Machine, flash []byte) bool {
+	seq := m.Peek32(flashMailbox + 12)
+	ack := m.Peek32(flashMailbox + 16)
+	if seq == ack {
+		return false
+	}
+	op := m.Peek32(flashMailbox)
+	off := m.Peek32(flashMailbox + 4)
+	src := m.Peek32(flashMailbox + 8)
+	switch op {
+	case 1: // erase 4K
+		for i := uint32(0); i < 0x1000 && off+i < uint32(len(flash)); i++ {
+			flash[off+i] = 0xFF
+		}
+	case 2: // program 256B from machine RAM
+		for i := uint32(0); i < 256 && off+i < uint32(len(flash)); i++ {
+			flash[off+i] &= byte(m.Peek32((src+i)&^3) >> (8 * ((src + i) % 4)))
+		}
+	}
+	m.Poke32(flashMailbox+16, seq)
+	return true
+}
+
 // bootXshFlash boots with a QSPI flash model attached. The disk is
 // staged from the flash slot when its header is valid (as the ARM
 // does at boot), else from the golden image; the kernel gets the slot
@@ -167,6 +197,10 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 			}
 		}
 		m.Poke32(mustSym(t, kernC, "g_fsslot"), slotXIP)
+		// The kernel posts erase/program requests to the ARM-executor
+		// mailbox; emulator tests service it via serviceFlashMailbox,
+		// playing the parked ARM (kflash.c explains why).
+		m.Poke32(mustSym(t, kernC, "g_kflash_arm"), flashMailbox)
 	}
 	const diskBase = 0x20052000
 	if diskBase+len(disk) > 0x20072000 {

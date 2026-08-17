@@ -857,97 +857,6 @@ static void xsh_start(void)
 }
 #endif
 
-#ifdef HIL_SYM_cal_flash_g_calres
-/* cal_flash2 (prompts/023): the MACHINE bit-bangs the QSPI pads and
- * drives QMI direct mode — the ARM must not fetch from flash while
- * that happens, so the wait loop lives in SRAM. If the machine fails
- * to restore XIP, the ARM crashes on return (observable silence) and
- * the calres words remain readable over SWD. */
-/* Samples the machine's fetch/exec channel PCs (DMA MMIO, NOT flash)
- * while it drives the dance, so a wedge is caught in the act without
- * the ARM ever touching flash. */
-struct calsample {
-    uint32_t fetch_first, fetch_last, fetch_min, fetch_max;
-    uint32_t exec_last, phase_last;
-    uint32_t moved; /* fetch PC changed at least once */
-};
-static struct calsample g_cs;
-static uint32_t __attribute__((noinline, section(".time_critical.calwait")))
-calwait(volatile uint32_t *done, volatile uint32_t *phase)
-{
-    volatile uint32_t *fetch = (volatile uint32_t *)0x50000000; /* ch0 READ_ADDR */
-    volatile uint32_t *exec = (volatile uint32_t *)0x50000040;  /* ch1 READ_ADDR */
-    volatile uint32_t *rawl = (volatile uint32_t *)0x400b0028;  /* us timer */
-    g_cs.fetch_first = *fetch;
-    g_cs.fetch_min = 0xFFFFFFFFu;
-    g_cs.fetch_max = 0;
-    g_cs.moved = 0;
-    uint32_t start = *rawl;
-    for (;;) {
-        uint32_t f = *fetch;
-        if (f != g_cs.fetch_first)
-            g_cs.moved = 1;
-        if (f < g_cs.fetch_min)
-            g_cs.fetch_min = f;
-        if (f > g_cs.fetch_max)
-            g_cs.fetch_max = f;
-        g_cs.fetch_last = f;
-        g_cs.exec_last = *exec;
-        g_cs.phase_last = *phase;
-        if (*done)
-            return 1;
-        if (*rawl - start > 8000000u) /* 8 s real-time cap */
-            return 0;
-    }
-}
-
-static void exp_calflash(void)
-{
-    const hil_test *t = 0;
-    for (int i = 0; i < HIL_N_TESTS; i++) {
-        if (hil_tests[i].name[0] == 'c' && hil_tests[i].name[1] == 'a' &&
-            hil_tests[i].name[2] == 'l' && hil_tests[i].name[3] == '_') {
-            t = &hil_tests[i];
-        }
-    }
-    if (!t) {
-        printf("CAL flash2: no image\n");
-        return;
-    }
-    machine_reset();
-    uint32_t entry = 0;
-    if (dmx_load(t->dmx, t->dmx_len, NULL, &entry) != DMX_OK) {
-        printf("CAL flash2: FAIL load\n");
-        return;
-    }
-    printf("CAL flash2: machine takes the flash (ARM -> SRAM wait)\n");
-    dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 0};
-    if (dmx_start(&cfg, entry) != DMX_OK) {
-        printf("CAL flash2: FAIL start\n");
-        return;
-    }
-    uint32_t ok = calwait((volatile uint32_t *)(HIL_SYM_cal_flash_g_calres + 32),
-                          (volatile uint32_t *)(HIL_SYM_cal_flash_g_calres));
-    /* Read the machine state BEFORE reset wipes it. */
-    uint32_t ca = HIL_SYM_cal_flash_g_calres;
-    uint32_t phase = reg_rd(ca);
-    uint32_t micro = g_cs.phase_last;
-    uint32_t jedec = reg_rd(ca + 4);
-    uint32_t t0 = reg_rd(ca + 36), t1 = reg_rd(ca + 40), t2 = reg_rd(ca + 44);
-    machine_reset();
-    (void)ok; (void)phase; (void)micro; (void)jedec;
-    /* The finding: the machine reads the us-timer fine, but sees 0
-     * while QMI direct mode (EN) is set, and it stays 0 after EN is
-     * cleared — so the DMA engine cannot autonomously drive flash
-     * (no status polling, no self-timed delays). The ARM executor
-     * does the writes; see prompts/023. */
-    printf("CAL flash2: peripheral read normal=%08lx under_EN=%08lx after_EN=%08lx "
-           "-> machine-only flash %s (EN freezes the DMA read path)\n",
-           (unsigned long)t0, (unsigned long)t1, (unsigned long)t2,
-           (t1 == 0 && t2 == 0) ? "BLOCKED" : "possible?!");
-}
-#endif
-
 int main(void)
 {
     stdio_init_all();
@@ -977,15 +886,8 @@ int main(void)
             continue;
         }
         for (int i = 0; i < HIL_N_TESTS; i++) {
-            if (hil_tests[i].name[0] == 'c' && hil_tests[i].name[1] == 'a' &&
-                hil_tests[i].name[2] == 'l' && hil_tests[i].name[3] == '_') {
-                continue; /* cal_flash: needs the SRAM-wait exp below */
-            }
             run_test(&hil_tests[i]);
         }
-#ifdef HIL_SYM_cal_flash_g_calres
-        exp_calflash();
-#endif
         cal_trig_while_disabled();
         cal_null_ctrl_trig();
         cal_null_count_trig();

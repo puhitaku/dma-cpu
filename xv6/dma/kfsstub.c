@@ -24,7 +24,6 @@ int kfs_unlink(uint pathaddr) { (void)pathaddr; return -1; }
 int kflash_sync(void) { return -1; }
 void kflash_init(void) {}
 uint kflash_arm;
-uint kflash_phase;
 uint kfs_iopen(const char *path) { (void)path; return 0; }
 int kfs_iread(uint ipu, uint off, uint dst, uint n) { (void)ipu; (void)off; (void)dst; (void)n; return -1; }
 void kfs_iclose(uint ipu) { (void)ipu; }

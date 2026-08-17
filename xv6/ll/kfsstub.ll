@@ -7,7 +7,6 @@ target triple = "thumbv6m-unknown-none-eabi"
 @dma_disksize = dso_local local_unnamed_addr global i32 0, align 4
 @fsready = dso_local local_unnamed_addr global i32 0, align 4
 @kflash_arm = dso_local local_unnamed_addr global i32 0, align 4
-@kflash_phase = dso_local local_unnamed_addr global i32 0, align 4
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none)
 define dso_local void @kfs_start() local_unnamed_addr #0 {

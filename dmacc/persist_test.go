@@ -21,8 +21,16 @@ func TestXv6Persist(t *testing.T) {
 	run := func(feed string, budget uint64) string {
 		m, _ := bootXshFlash(t, flash)
 		m.FeedConsole(feed)
-		if _, err := m.Run(emu.RunConfig{MaxCycles: budget}); err != nil {
-			t.Fatalf("%v\nconsole:\n%s", err, m.ConsoleOut)
+		// Chunked run, servicing the ARM-executor mailbox in between
+		// (the kernel spins on the ack while a request is pending).
+		var used uint64
+		for used < budget {
+			if _, err := m.Run(emu.RunConfig{MaxCycles: 500_000}); err != nil {
+				t.Fatalf("%v\nconsole:\n%s", err, m.ConsoleOut)
+			}
+			used += 500_000
+			for serviceFlashMailbox(m, flash) {
+			}
 		}
 		return strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
 	}
