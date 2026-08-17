@@ -766,7 +766,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		if up.name == "toolbox" {
 			/* the multi-call names: hard links onto the one blob */
 			for _, l := range []string{"kill", "spin", "trap", "free",
-				"sync", "mount", "umount", "wc", "mkdir"} {
+				"sync", "mount", "umount", "wc", "mkdir", "rm"} {
 				fb.AddLink(l)
 			}
 		}

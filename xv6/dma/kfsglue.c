@@ -220,12 +220,18 @@ extern int fat_busy(void);
 extern void fat_unmount(void);
 extern struct inode *fat_root(void);
 extern struct inode *fat_walk(struct inode *from, const char *path);
+extern struct inode *fat_lookup(struct inode *dp, const char *name);
+extern void fat_dup(struct inode *ip);
 extern int fat_readi(struct inode *ip, uint dst, uint off, uint n);
 extern void fat_stati(struct inode *ip, struct stat *st);
 extern void fat_put(struct inode *ip);
 
 uint fatvol; /* loader-patched: XIP address of the vfat volume; 0 = none */
 static char fatmnt[28]; /* mount point path ("" = not mounted) */
+static uint fatmnt_dev = (uint)-1, fatmnt_inum; /* the mountpoint inode:
+             * any path resolution landing on it crosses into the
+             * volume, so relative paths ("ls mnt", "cd ./mnt") mount-
+             * cross exactly like the absolute prefix */
 
 int
 vfs_readi(struct inode *ip, int u, uint64 dst, uint off, uint n)
@@ -286,24 +292,77 @@ fat_prefix(const char *path)
   return 0;
 }
 
-/* Path resolution honoring the mount: FAT nodes for paths under the
- * mount point and for relative paths from a FAT cwd; namei else. */
+/* Path resolution honoring the mount: a component walk (the exported
+ * dirlookup does the xv6 steps) that crosses into the FAT volume
+ * whenever a step lands on the MOUNTPOINT INODE — so "ls mnt",
+ * "cd ./mnt" and absolute paths all behave alike — and hands the
+ * remaining components to the FAT driver once inside. */
+static const char *
+pathelem(const char *path, char *name)
+{
+  while (*path == '/')
+    path++;
+  if (*path == 0)
+    return 0;
+  int n = 0;
+  while (*path && *path != '/') {
+    if (n < 63)
+      name[n++] = *path;
+    path++;
+  }
+  name[n] = 0;
+  return path;
+}
+
 static struct inode *
 vfs_resolve(char *path)
 {
-  const char *rest = fat_prefix(path);
-  if (rest) {
-    struct inode *r = fat_root();
-    if (r == 0)
-      return 0;
-    struct inode *ip = fat_walk(r, rest);
-    fat_put(r);
-    return ip;
-  }
   struct proc *p = myproc();
-  if (path[0] != '/' && p->cwd && fat_is(p->cwd))
-    return fat_walk(p->cwd, path);
-  return namei(path);
+  struct inode *ip;
+  if (fatmnt[0] == 0 && !(p->cwd && fat_is(p->cwd)))
+    return namei(path); /* no mount: exactly the old semantics (namei
+                         * also tolerates corners like a deleted cwd's
+                         * dangling ".." that the walk below trips on) */
+  if (path[0] == '/' || p->cwd == 0) {
+    ip = namei("/");
+  } else if (fat_is(p->cwd)) {
+    ip = p->cwd;
+    fat_dup(ip);
+  } else {
+    ip = idup(p->cwd);
+  }
+  if (ip == 0)
+    return 0;
+  char name[64];
+  const char *rest = path;
+  while ((rest = pathelem(rest, name)) != 0) {
+    struct inode *nxt;
+    if (fat_is(ip)) {
+      nxt = ip->type == T_DIR ? fat_lookup(ip, name) : 0;
+      fat_put(ip);
+      if (nxt == 0)
+        return 0;
+      ip = nxt;
+      continue;
+    }
+    ilock(ip);
+    if (ip->type != T_DIR) {
+      iunlockput(ip);
+      return 0;
+    }
+    nxt = dirlookup(ip, name, 0);
+    iunlockput(ip);
+    if (nxt == 0)
+      return 0;
+    if (nxt->dev == fatmnt_dev && nxt->inum == fatmnt_inum) {
+      iput(nxt); /* cross into the volume */
+      nxt = fat_root();
+      if (nxt == 0)
+        return 0;
+    }
+    ip = nxt;
+  }
+  return ip;
 }
 
 /* Refuse writes anywhere a path would land in the FAT world. */
@@ -349,11 +408,14 @@ kfs_mount(uint srcaddr, uint tgtaddr)
     return -1;
   ilock(mp);
   int isdir = mp->type == T_DIR;
+  uint mdev = mp->dev, minum = mp->inum;
   iunlockput(mp);
   if (!isdir)
     return -1;
   if (fat_mount(fatvol) < 0)
     return -1;
+  fatmnt_dev = mdev;
+  fatmnt_inum = minum;
   int i = 0;
   while (tgt[i] && tgt[i] != ' ' && i < 26) {
     fatmnt[i] = tgt[i];
@@ -380,6 +442,7 @@ kfs_umount(uint tgtaddr)
     return -1; /* open files or cwds still inside */
   fat_unmount();
   fatmnt[0] = 0;
+  fatmnt_dev = (uint)-1;
   return 0;
 }
 
@@ -712,22 +775,24 @@ bad:
 uint
 kfs_iopen(const char *path)
 {
-  /* exec's image lookup. A FAT cwd cannot hold DMX executables and
-   * must not leak into namei (its inodes aren't disk-backed): resolve
-   * relative program names from the xv6 root instead. */
+  /* exec's image lookup. Relative program names fall back to the
+   * xv6 root when the cwd cannot serve them — a FAT cwd holds no DMX
+   * executables (and must not leak into namei), and `cd somedir; ls`
+   * should keep working from any directory (PATH=/ semantics). */
   struct proc *p = myproc();
   char rooted[64];
-  if (path[0] != '/' && p->cwd && fat_is(p->cwd)) {
-    int n = 0;
-    rooted[n++] = '/';
-    while (path[n - 1] && n < 63) {
-      rooted[n] = path[n - 1];
-      n++;
-    }
-    rooted[n] = 0;
-    path = rooted;
+  int n = 0;
+  rooted[n++] = '/';
+  while (path[n - 1] && n < 63) {
+    rooted[n] = path[n - 1];
+    n++;
   }
-  struct inode *ip = namei((char *)path);
+  rooted[n] = 0;
+  struct inode *ip = 0;
+  if (path[0] == '/' || (p->cwd && !fat_is(p->cwd)))
+    ip = namei((char *)path);
+  if (ip == 0 && path[0] != '/')
+    ip = namei(rooted);
   if (ip == 0)
     return 0;
   ilock(ip);

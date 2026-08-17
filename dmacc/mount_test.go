@@ -39,7 +39,9 @@ func TestXv6Mount(t *testing.T) {
 	m, _ := bootXshFlash(t, flash)
 	m.FeedConsole("mkdir /mnt\rmount fat0 /mnt\rmount\rls /mnt\r" +
 		"cat /mnt/HELLO.TXT\rcat /mnt/a-rather-long-file-name.txt\r" +
-		"cd /mnt/SUB\rcat NESTED.TXT\rcd /\r" +
+		"cat /mnt/arathe~2.txt\r" + // the listed 8.3 stub works too
+		"ls mnt\r" + // relative mountpoint crossing
+		"cd mnt\rls .\rcat SUB/NESTED.TXT\rcd /\r" +
 		"echo no > /mnt/nope\r" +
 		"mount -u /mnt\rls /mnt\recho done\r")
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 2_000_000_000}); err != nil {
@@ -49,8 +51,8 @@ func TestXv6Mount(t *testing.T) {
 	t.Logf("console:\n%s", out)
 	for _, want := range []string{
 		"fat0 on /mnt type vfat (ro)",
-		"hello.txt",     // ls lists the 8.3 name, lowercased
-		"a-rather-long", // and the LFN (DIRSIZ-truncated by ls)
+		"hello.txt",    // 8.3 names list lowercased
+		"arathe~2.txt", // LFNs past DIRSIZ list as their 8.3 stub
 		"sub",
 		"hello from vfat",
 		"long names work",
@@ -61,7 +63,13 @@ func TestXv6Mount(t *testing.T) {
 			t.Errorf("missing %q", want)
 		}
 	}
-	if !strings.Contains(out, "big.bin") {
-		t.Errorf("missing big.bin in ls")
+	if strings.Contains(out, "cannot stat") {
+		t.Errorf("ls could not stat a name it listed")
+	}
+	if n := strings.Count(out, "big.bin"); n < 3 {
+		t.Errorf("big.bin should list via /mnt, mnt and . (got %d)", n)
+	}
+	if n := strings.Count(out, "long names work"); n < 2 {
+		t.Errorf("LFN and 8.3 stub should both cat (got %d)", n)
 	}
 }

@@ -63,7 +63,7 @@ func buildDisk(t *testing.T, v *emu.Variant) []byte {
 		b.AddFile(prog.name, blob)
 		if prog.name == "toolbox" {
 			for _, l := range []string{"kill", "spin", "trap", "free",
-				"sync", "mount", "umount", "wc", "mkdir"} {
+				"sync", "mount", "umount", "wc", "mkdir", "rm"} {
 				b.AddLink(l)
 			}
 		}

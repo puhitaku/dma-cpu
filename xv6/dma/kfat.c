@@ -195,12 +195,13 @@ dirent_at(uint cl, uint n)
   return 0;
 }
 
-/* Iterate a directory: fills name (up to 64 bytes, NUL-terminated,
- * LFN-assembled with 8.3 fallback), *clusp, *sizep, *dirp; *idx
- * advances past the consumed entries. Returns 1, or 0 at the end. */
+/* Iterate a directory: fills name (the long name when present, up to
+ * 64 bytes) and shortnm (the 8.3 form, always, lowercased "name.ext"
+ * in at most 13 bytes), *clusp, *sizep, *dirp; *idx advances past
+ * the consumed entries. Returns 1, or 0 at the end. */
 static int
-fat_iter(uint dircl, uint *idx, char *name, uint *clusp, uint *sizep,
-         int *dirp)
+fat_iter(uint dircl, uint *idx, char *name, char *shortnm, uint *clusp,
+         uint *sizep, int *dirp)
 {
   char lfn[64];
   int havelfn = 0;
@@ -236,27 +237,33 @@ fat_iter(uint dircl, uint *idx, char *name, uint *clusp, uint *sizep,
       havelfn = 0;
       continue;
     }
+    /* 8.3: "NAME    EXT" -> "name.ext" (lowercased: the common
+     * mkfs style stores uppercase; lookup is case-insensitive). */
+    {
+      int n = 0;
+      for (int i = 0; i < 8 && rd8(e + i) != ' '; i++) {
+        char c = (char)rd8(e + i);
+        shortnm[n++] = (c >= 'A' && c <= 'Z') ? c + 32 : c;
+      }
+      if (rd8(e + 8) != ' ') {
+        shortnm[n++] = '.';
+        for (int i = 8; i < 11 && rd8(e + i) != ' '; i++) {
+          char c = (char)rd8(e + i);
+          shortnm[n++] = (c >= 'A' && c <= 'Z') ? c + 32 : c;
+        }
+      }
+      shortnm[n] = 0;
+    }
     if (havelfn) {
       for (int i = 0; i < 64; i++)
         name[i] = lfn[i];
       name[63] = 0;
     } else {
-      /* 8.3: "NAME    EXT" -> "NAME.EXT" (lowercased: the common
-       * mkfs style stores uppercase; lowercase reads nicer and
-       * lookup is case-insensitive anyway). */
-      int n = 0;
-      for (int i = 0; i < 8 && rd8(e + i) != ' '; i++) {
-        char c = (char)rd8(e + i);
-        name[n++] = (c >= 'A' && c <= 'Z') ? c + 32 : c;
+      for (int i = 0; shortnm[i] || i == 0; i++) {
+        name[i] = shortnm[i];
+        if (shortnm[i] == 0)
+          break;
       }
-      if (rd8(e + 8) != ' ') {
-        name[n++] = '.';
-        for (int i = 8; i < 11 && rd8(e + i) != ' '; i++) {
-          char c = (char)rd8(e + i);
-          name[n++] = (c >= 'A' && c <= 'Z') ? c + 32 : c;
-        }
-      }
-      name[n] = 0;
     }
     *clusp = (rd16(e + 20) << 16) | rd16(e + 26);
     *sizep = rd32(e + 28);
@@ -293,9 +300,9 @@ fat_lookup(struct inode *dp, const char *name)
   }
   uint idx = 0, clus, size;
   int isdir;
-  char nm[64];
-  while (fat_iter(dircl, &idx, nm, &clus, &size, &isdir)) {
-    if (nameq(nm, name)) {
+  char nm[64], snm[16];
+  while (fat_iter(dircl, &idx, nm, snm, &clus, &size, &isdir)) {
+    if (nameq(nm, name) || nameq(snm, name)) {
       if (nameq(name, "..") && clus == 0)
         return fat_root(); /* ".." of a first-level subdir */
       uint ident = clus ? clus : (0x80000000u | (dircl << 8) | idx);
@@ -346,16 +353,21 @@ fat_readi(struct inode *ip, uint dst, uint off, uint n)
     uint start = off / sizeof(de);
     uint it = 0, clus, size;
     int isdir;
-    char nm[64];
+    char nm[64], snm[16];
     uint count = 0;
-    while (made < want && fat_iter(fatmeta[idx0].clus, &it, nm, &clus, &size, &isdir)) {
+    while (made < want &&
+           fat_iter(fatmeta[idx0].clus, &it, nm, snm, &clus, &size, &isdir)) {
       if (count++ < start)
         continue;
+      uint len = 0;
+      while (nm[len])
+        len++;
+      const char *use = len <= DIRSIZ ? nm : snm; /* stat-able either way */
       de.inum = (ushort)(clus ? clus : 0xFFFF);
       for (int i = 0; i < DIRSIZ; i++)
         de.name[i] = 0;
-      for (int i = 0; i < DIRSIZ && nm[i]; i++)
-        de.name[i] = nm[i];
+      for (int i = 0; i < DIRSIZ && use[i]; i++)
+        de.name[i] = use[i];
       memmove((void *)(dst + made * sizeof(de)), &de, sizeof(de));
       made++;
     }

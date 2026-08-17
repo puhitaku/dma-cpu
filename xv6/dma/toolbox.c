@@ -203,6 +203,23 @@ t_mkdir(int argc, char **argv)
   return 0;
 }
 
+/* --- rm: upstream user/rm.c, printf-free --- */
+static int
+t_rm(int argc, char **argv)
+{
+  if (argc < 2) {
+    write(2, "usage: rm file...\n", 18);
+    return 1;
+  }
+  for (int i = 1; i < argc; i++) {
+    if (unlink(argv[i]) < 0) {
+      write(2, "rm: failed\n", 11);
+      return 1;
+    }
+  }
+  return 0;
+}
+
 /* --- mount/umount: the vfat volume --- */
 static int
 t_mount(int argc, char **argv)
@@ -274,6 +291,8 @@ main(int argc, char **argv)
     exit(t_wc(argc, argv));
   if (streq(base, "mkdir"))
     exit(t_mkdir(argc, argv));
-  write(2, "toolbox: kill spin trap free sync mount umount wc mkdir\n", 56);
+  if (streq(base, "rm"))
+    exit(t_rm(argc, argv));
+  write(2, "toolbox: kill spin trap free sync mount umount wc mkdir rm\n", 59);
   exit(1);
 }
