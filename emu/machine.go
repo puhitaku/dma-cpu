@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math/bits"
 )
 
 // GPIOEvent records an output-level change decoded from a write to an
@@ -57,7 +58,7 @@ type Machine struct {
 	// TraceW, when non-nil, receives one line per DMA transfer.
 	TraceW io.Writer
 
-	watch    map[uint32]bool
+	watch    []uint32
 	watchHit *uint32
 }
 
@@ -190,9 +191,12 @@ func (m *Machine) Write(addr uint32, val uint32, size int) error {
 	if addr%uint32(size) != 0 {
 		return fmt.Errorf("unaligned %d-byte write at %#08x", size, addr)
 	}
-	if m.watch != nil && m.watch[addr] {
-		a := addr
-		m.watchHit = &a
+	for _, w := range m.watch {
+		if w == addr {
+			a := addr
+			m.watchHit = &a
+			break
+		}
 	}
 	switch {
 	case m.inSRAM(addr, size):
@@ -317,23 +321,21 @@ func (m *Machine) INTR() uint32 { return m.dma.intr }
 // transfer was issued.
 func (m *Machine) step() (bool, error) {
 	m.Cycle++
-	m.dma.tickTimers()
-
-	chIdx := -1
-	for pass := 0; pass < 2 && chIdx < 0; pass++ {
-		for i := 0; i < m.v.NChannels; i++ {
-			c := &m.dma.ch[i]
-			hp := c.ctrl&CtrlHighPriority != 0
-			if (pass == 0) == hp && m.dma.runnable(i) {
-				chIdx = i
-				break
-			}
-		}
+	if m.dma.timerActive != 0 {
+		m.dma.tickTimers()
 	}
-	if chIdx < 0 {
+	// Channel selection over the cached ready set: high-priority
+	// channels first, lowest index within a class (same order as the
+	// two-pass scan this replaces).
+	r := m.dma.ready
+	if r == 0 {
 		return false, nil
 	}
-	return true, m.transfer(chIdx)
+	pick := r & m.dma.hp
+	if pick == 0 {
+		pick = r
+	}
+	return true, m.transfer(bits.TrailingZeros32(pick))
 }
 
 // transfer issues one datum move for the given channel and handles
@@ -342,6 +344,7 @@ func (m *Machine) transfer(chIdx int) error {
 	c := &m.dma.ch[chIdx]
 	if m.v.ctrlTreqSel(c.ctrl) != TreqPermanent && c.credit > 0 {
 		c.credit--
+		m.dma.updateReady(chIdx)
 	}
 	size := 1 << ctrlDataSize(c.ctrl)
 	if size == 8 { // DATA_SIZE == 0x3 is reserved
@@ -426,10 +429,7 @@ func (m *Machine) Run(cfg RunConfig) (RunResult, error) {
 	if maxCycles == 0 {
 		maxCycles = 10_000_000
 	}
-	m.watch = make(map[uint32]bool, len(cfg.WatchWrites))
-	for _, a := range cfg.WatchWrites {
-		m.watch[a] = true
-	}
+	m.watch = append(m.watch[:0], cfg.WatchWrites...)
 	m.watchHit = nil
 	defer func() { m.watch = nil }()
 

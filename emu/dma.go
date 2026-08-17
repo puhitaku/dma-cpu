@@ -32,6 +32,45 @@ type dma struct {
 	inte      [maxIRQs]uint32
 	intf      [maxIRQs]uint32
 	zeroDepth int // guards zero-length-sequence chain cascades
+
+	// Scheduling caches (pure accelerators — recomputed from channel
+	// state at every mutation, never a source of truth). ready caches
+	// runnable() per channel; hp caches the CTRL high-priority bit;
+	// timerActive marks pacing timers with X and Y nonzero; timerListen
+	// holds the channels whose TREQ_SEL targets each timer.
+	ready       uint32
+	hp          uint32
+	timerActive uint32
+	timerListen [4]uint32
+}
+
+// updateReady recomputes one channel's bit of the ready cache.
+func (d *dma) updateReady(chIdx int) {
+	if d.runnable(chIdx) {
+		d.ready |= 1 << chIdx
+	} else {
+		d.ready &^= 1 << chIdx
+	}
+}
+
+// ctrlChanged refreshes every cache derived from a channel's CTRL.
+func (d *dma) ctrlChanged(chIdx int) {
+	bit := uint32(1) << chIdx
+	c := &d.ch[chIdx]
+	if c.ctrl&CtrlHighPriority != 0 {
+		d.hp |= bit
+	} else {
+		d.hp &^= bit
+	}
+	sel := d.v.ctrlTreqSel(c.ctrl)
+	for i := range d.timerListen {
+		if sel == TreqTimer0+uint32(i) {
+			d.timerListen[i] |= bit
+		} else {
+			d.timerListen[i] &^= bit
+		}
+	}
+	d.updateReady(chIdx)
 }
 
 // regRead returns the value of the register at offset (alias-op already
@@ -118,6 +157,7 @@ func (d *dma) regWrite(off, val uint32, rawNonZero bool) {
 			c.reload = val
 		case OffCtrlTrig, OffAl1Ctrl, OffAl2Ctrl, OffAl3Ctrl:
 			c.ctrl = val &^ d.v.CtrlBusy
+			d.ctrlChanged(chIdx)
 		}
 		switch reg {
 		case OffCtrlTrig, OffAl1TransCountTrig, OffAl2WriteAddrTrig, OffAl3ReadAddrTrig:
@@ -142,7 +182,13 @@ func (d *dma) regWrite(off, val uint32, rawNonZero bool) {
 	case offIntr:
 		d.intr &^= val // write-1-to-clear
 	case d.v.offTimer0, d.v.offTimer0 + 4, d.v.offTimer0 + 8, d.v.offTimer0 + 12:
-		d.timers[(off-d.v.offTimer0)/4].reg = val
+		i := (off - d.v.offTimer0) / 4
+		d.timers[i].reg = val
+		if val>>16 != 0 && val&0xFFFF != 0 {
+			d.timerActive |= 1 << i
+		} else {
+			d.timerActive &^= 1 << i
+		}
 	case d.v.offMultiChanTrigger:
 		for i := 0; i < d.v.NChannels; i++ {
 			if val&(1<<i) != 0 {
@@ -158,6 +204,7 @@ func (d *dma) regWrite(off, val uint32, rawNonZero bool) {
 			if val&(1<<i) != 0 {
 				d.ch[i].busy = false
 				d.ch[i].remaining = 0
+				d.updateReady(i)
 			}
 		}
 	}
@@ -199,6 +246,7 @@ func (d *dma) trigger(chIdx int, rawNonZero bool, quietCtrl uint32) {
 	}
 	c.busy = true
 	c.remaining = count
+	d.updateReady(chIdx)
 }
 
 // complete finishes a channel's sequence: raise IRQ (unless quiet), fire
@@ -206,6 +254,7 @@ func (d *dma) trigger(chIdx int, rawNonZero bool, quietCtrl uint32) {
 func (d *dma) complete(chIdx int) {
 	c := &d.ch[chIdx]
 	c.busy = false
+	d.updateReady(chIdx)
 	if c.ctrl&d.v.CtrlIRQQuiet == 0 {
 		d.intr |= 1 << chIdx
 	}
@@ -236,6 +285,19 @@ func (d *dma) pulseDreq(dreq uint32) {
 	for i := 0; i < d.v.NChannels; i++ {
 		if d.v.ctrlTreqSel(d.ch[i].ctrl) == dreq && d.ch[i].credit < maxCredit {
 			d.ch[i].credit++
+			d.updateReady(i)
+		}
+	}
+}
+
+// pulseTimer is pulseDreq for a pacing timer, over the cached listener
+// set (tickTimers runs every cycle; the generic scan was the hot path).
+func (d *dma) pulseTimer(i int) {
+	for m := d.timerListen[i]; m != 0; m &= m - 1 {
+		j := bits.TrailingZeros32(m)
+		if d.ch[j].credit < maxCredit {
+			d.ch[j].credit++
+			d.updateReady(j)
 		}
 	}
 }
@@ -244,17 +306,15 @@ func (d *dma) pulseDreq(dreq uint32) {
 // system-clock cycle. A timer with dividend X and divisor Y emits X DREQ
 // pulses every Y cycles.
 func (d *dma) tickTimers() {
-	for i := range d.timers {
+	for act := d.timerActive; act != 0; act &= act - 1 {
+		i := bits.TrailingZeros32(act)
 		t := &d.timers[i]
 		x := t.reg >> 16
 		y := t.reg & 0xFFFF
-		if x == 0 || y == 0 {
-			continue
-		}
 		t.acc += x
 		for t.acc >= y {
 			t.acc -= y
-			d.pulseDreq(TreqTimer0 + uint32(i))
+			d.pulseTimer(i)
 		}
 	}
 }
