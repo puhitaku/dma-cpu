@@ -37,7 +37,7 @@ func TestCompactSched(t *testing.T) {
 				return res
 			}
 			kern := asm(ksrc, 0x20000000, 0x20002000)
-			kernC := asm(kcDasm, 0x20004000, 0x20016000)
+			kernC := asm(kcDasm, 0x20004000, 0x20018000)
 			procA := asm(dasm, 0x2001C000, 0x2001F000)
 			procB := asm(dasm, 0x20020000, 0x20023000)
 

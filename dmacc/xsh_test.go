@@ -54,17 +54,15 @@ func buildDisk(t *testing.T, v *emu.Variant) []byte {
 		{"cat", []string{"printf"}},
 		{"wc", []string{"printf"}},
 		{"ls", []string{"printf"}},
-		{"syncprog", []string{"printf"}},
+		{"syncprog", nil},
+		{"trap", nil},
 	} {
 		res := buildUser(t, v, prog.name, prog.extra...)
 		blob, err := fsimg.DMXExec(res.Image, res.Symbol)
 		if err != nil {
 			t.Fatal(err)
 		}
-		name := prog.name
-		if name == "syncprog" {
-			name = "sync"
-		}
+		name := strings.TrimSuffix(prog.name, "prog") /* syncprog */
 		b.AddFile(name, blob)
 	}
 	return b.Bytes()
@@ -146,11 +144,11 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernC, err := casm(kcDasm, 0x2000C000, 0x20026000)
+	kernC, err := casm(kcDasm, 0x2000C000, 0x20028000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sh, err := casm(shDasm, 0x2002E000, 0x20044000)
+	sh, err := casm(shDasm, 0x20030000, 0x20044000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,6 +214,7 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007F000)
 	m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 	m.Poke32(mustSym(t, kernC, "g_initpid"), 2)
+	m.Poke32(mustSym(t, kernC, "g_fgpid"), 1)
 	m.Poke32(mustSym(t, kernC, "g_k_sysentry"), mustSym(t, kern, "sys_entry"))
 	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
 		Compact: true, Entry: entrySh, Scratch: 0x2007FE00,

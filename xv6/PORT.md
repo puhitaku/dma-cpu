@@ -141,13 +141,19 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
   (adoption); sbrkbasic/sbrkmuch stay out (fork-divergent memory /
   100 MB VA). The emulator's loader now refuses cross-image overlaps
   — the silent-clobber class this phase kept hitting.
-- [ ] Signals, with user-space handling in commands: today an
-  infinitely running foreground command (e.g. `spin` without `&`)
-  cannot be stopped — sh is blocked in wait() and the console line
-  discipline has no interrupt key. Deliver a Ctrl-C-style path
-  (console interrupt -> signal to the foreground process; default
-  death, user-registered handler otherwise) so runaway commands are
-  recoverable from the keyboard.
+- [x] Signals, with user-space handling in commands (prompts/026):
+  Ctrl-C interrupts the foreground job — the subtree under the fgpid
+  shell's wait()/vfork suspension; a shell at its prompt has no
+  foreground job, so background work survives. Default action is the
+  kill() death (wait reports -1); signal(SIGINT, fn) registers a
+  user-space handler — the kernel diverts the victim's next resume
+  into the image's usys stub (saving r0/r1 and the resume point in a
+  registration-time sigctx), a sleeping victim's syscall returns -1
+  first, and SYS_sigreturn restores everything. The RX FIFO drains
+  every tick (gated on fgpid, so raw-UART programs keep working).
+  Silicon-validated: ^C kills a foreground cat, the `trap` demo
+  catches it and exits politely, and a background spin outlives a
+  prompt-time ^C.
 - [ ] Parenthesized sh commands (deeper clone budget exists now).
 - [ ] More peripherals for the machine (GPIO/PIO surface).
 

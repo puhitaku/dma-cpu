@@ -25,7 +25,9 @@ const (
 	pfHeapbase
 	pfHeapmax
 	pfBrk
-	procWords // 16
+	pfSigctx
+	pfSigpend
+	procWords // 18
 )
 
 // enum procstate (kproc.c / upstream proc.h).

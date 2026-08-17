@@ -213,3 +213,37 @@ sys_sbrk(int n, int flags)
   fill(SYS_sbrk, (uint)n, (uint)flags, 0);
   return (char *)dma_trap();
 }
+
+/* --- SIGINT with user-space handlers (prompts/026) ---
+ * signal() deposits this context with the kernel; on delivery the
+ * kernel diverts the process's next resume into __dma_sigentry after
+ * saving r0/r1 and the original resume point here. The stub runs the
+ * handler and SYS_sigreturn restores everything. Handlers run on the
+ * interrupted context's static frames: keep them to leaf work (the
+ * frameless syscall wrappers, flags) or exit. */
+struct dma_sigctx {
+  uint entry;  /* &__dma_sigentry */
+  uint resume; /* kernel-saved: the interrupted resume point */
+  uint save0, save1; /* kernel-saved r0/r1 */
+};
+static struct dma_sigctx __dma_sigctx;
+static void (*__dma_sig_fn)(int);
+
+static void
+__dma_sigentry(void)
+{
+  (*__dma_sig_fn)(2 /* SIGINT (user.h) */);
+  fill(SYS_sigreturn, 0, 0, 0);
+  dma_trap(); /* does not return: the kernel resumes the interrupted
+               * point with r0/r1 restored */
+}
+
+int
+signal(int sig, void (*fn)(int))
+{
+  (void)sig; /* SIGINT is the only signal */
+  __dma_sig_fn = fn;
+  __dma_sigctx.entry = (uint)__dma_sigentry;
+  fill(SYS_signal, (uint)sig, 0, fn ? (uint)&__dma_sigctx : 0);
+  return dma_trap();
+}

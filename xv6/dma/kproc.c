@@ -74,6 +74,9 @@ struct proc {
   uint heapbase;   /* 13: sbrk heap region (0 = none yet) */
   uint heapmax;    /* 14: region end */
   uint brk;        /* 15: current program break */
+  uint sigctx;     /* 16: &usys sigctx {entry,resume,save0,save1};
+                    *     0 = no handler (SIGINT takes default death) */
+  uint sigpend;    /* 17: 0 idle, 1 delivery pending, 2 in handler */
 };
 
 struct proc proc[NPROC];
@@ -158,6 +161,9 @@ uint nextpid;           /* loader-patched: first unused pid */
 uint initpid;           /* loader-patched: adopter of orphans (0 = no
                          * reparenting). The init proc never waits, so
                          * its adoptees skip ZOMBIE and free directly. */
+uint fgpid;             /* loader-patched: the console shell's pid;
+                         * Ctrl-C interrupts its foreground job. 0
+                         * disables the interrupt key. */
 uint arena, arena_end;  /* loader-patched: exec placement region */
 
 /* First-fit allocator with coalescing over [arena, arena_end): each
@@ -247,6 +253,7 @@ kfree_exec(int slot)
   heapmem[slot] = 0;
   struct proc *p = &proc[slot];
   p->heapbase = p->heapmax = p->brk = 0;
+  p->sigctx = p->sigpend = 0;
 }
 
 /* SYS_sbrk (upstream sys_sbrk semantics, minus paging: the laziness
@@ -466,11 +473,17 @@ kconsread(uint dst, int n)
   return got;
 }
 
+static void deliver_sigint(void);
+
 static void
 cons_poll(void)
 {
   while (!(__dma_uart_fr & (1u << 4))) { /* RXFE clear: a byte waits */
     uint c = __dma_uart_dr & 0xFFu;
+    if (c == 3) { /* Ctrl-C: never buffered, interrupts the fg job */
+      deliver_sigint();
+      continue;
+    }
     if (c == '\r')
       c = '\n';
     if (c == '\b' || c == 0x7F) {
@@ -505,6 +518,119 @@ tick_income(void)
       p->chan = 0;
       p->state = RUNNABLE;
     }
+  }
+  /* Drain the RX FIFO every tick, not just on SYS_read: Ctrl-C must
+   * be seen even while a compute-bound foreground job runs and the
+   * shell sits in wait() reading nothing (prompts/026). Gated on the
+   * interrupt key being configured: a system without fgpid may read
+   * the UART raw from user space (dma-sh does), and the drain would
+   * steal its bytes. */
+  if (fgpid != 0)
+    cons_poll();
+}
+
+/* --- SIGINT (prompts/026): Ctrl-C interrupts the foreground job ---
+ *
+ * The foreground job is the subtree under the fgpid shell's current
+ * wait: the youngest live child while the shell blocks in wait(), or
+ * the vfork child it is suspended on (upstream sh runs commands —
+ * including whole pipelines — in that child). A shell at its prompt
+ * has no foreground job and the interrupt is dropped, so background
+ * jobs (`spin &`) survive Ctrl-C.
+ *
+ * Per victim: a registered handler (SYS_signal deposited a usys
+ * sigctx) gets sigpend=1 — kexit diverts its next resume into the
+ * image's signal stub, saving r0/r1 and the original resume in the
+ * ctx; SYS_sigreturn undoes the diversion. A sleeping victim's
+ * syscall is completed with -1 first so the handler runs on the way
+ * out. No handler means the kill() path: synchronous death when
+ * SLEEPING, the killed flag otherwise. */
+static int
+in_subtree(struct proc *root, struct proc *q)
+{
+  for (int hops = 0; q && hops < NPROC; hops++) {
+    if (q == root)
+      return 1;
+    if (q->ppid == 0)
+      return 0; /* roots of the tree have no parent */
+    struct proc *par = 0;
+    for (int i = 0; i < NPROC; i++) {
+      if (proc[i].state != UNUSED && proc[i].pid == q->ppid) {
+        par = &proc[i];
+        break;
+      }
+    }
+    q = par;
+  }
+  return 0;
+}
+
+static void
+sigint_one(struct proc *v)
+{
+  if (v->sigctx != 0) {
+    if (v->sigpend != 0)
+      return; /* already pending or in the handler: drop */
+    if (v->state == SLEEPING) {
+      setret(v, (uint)-1); /* the interrupted syscall returns -1 */
+      v->chan = 0;
+      v->state = RUNNABLE;
+    }
+    v->sigpend = 1;
+  } else if (v->state == SLEEPING) {
+    terminate(v, -1);
+  } else {
+    v->killed = 1; /* enforced at its next kernel entry */
+  }
+}
+
+static void
+deliver_sigint(void)
+{
+  if (fgpid == 0)
+    return;
+  struct proc *sh = 0;
+  for (int i = 0; i < NPROC; i++) {
+    if (proc[i].state != UNUSED && proc[i].pid == fgpid) {
+      sh = &proc[i];
+      break;
+    }
+  }
+  if (!sh || sh->state != SLEEPING)
+    return;
+  struct proc *root = 0;
+  if (sh->chan == (uint)sh) { /* wait(): the youngest live child */
+    uint best = 0;
+    for (int i = 0; i < NPROC; i++) {
+      if (proc[i].state != UNUSED && proc[i].state != ZOMBIE &&
+          proc[i].ppid == sh->pid && proc[i].pid > best) {
+        best = proc[i].pid;
+        root = &proc[i];
+      }
+    }
+  } else { /* vfork suspension: chan names the child directly */
+    for (int i = 0; i < NPROC; i++) {
+      if ((uint)&proc[i] == sh->chan && proc[i].state != UNUSED) {
+        root = &proc[i];
+        break;
+      }
+    }
+  }
+  if (!root)
+    return;
+  cputc('^');
+  cputc('C');
+  cputc('\n');
+  /* Snapshot the subtree before acting: terminate() reparents. */
+  uint mask = 0;
+  for (int i = 0; i < NPROC; i++) {
+    if (proc[i].state != UNUSED && proc[i].state != ZOMBIE &&
+        in_subtree(root, &proc[i]))
+      mask |= 1u << i;
+  }
+  for (int i = 0; i < NPROC; i++) {
+    if ((mask >> i) & 1)
+      sigint_one(&proc[i]);
   }
 }
 
@@ -574,6 +700,18 @@ kexit(uint next, uint resume)
     tick_income();
   }
   struct proc *p = &proc[next];
+  if (p->sigpend == 1 && p->sigctx != 0) {
+    /* Pending SIGINT with a handler: divert this resume into the
+     * image's signal stub. Save r0/r1 (the resume point may consume
+     * a syscall return) and the original resume in the usys sigctx;
+     * SYS_sigreturn restores all three. */
+    uint regs = p->pdispatch - 0x54;
+    W(p->sigctx + 4) = resume;
+    W(p->sigctx + 8) = W(regs);
+    W(p->sigctx + 12) = W(regs + 4);
+    resume = W(p->sigctx); /* ctx.entry: the stub */
+    p->sigpend = 2;        /* in handler: further Ctrl-C drops */
+  }
   curr = next;
   *kw_pcurdisp = p->pdispatch;
   *kw_curthunk = p->thunk;
@@ -1067,6 +1205,25 @@ dma_ksyscall(void)
     terminate(p, (int)m->a0);
     block = 1;
     break;
+  }
+  case SYS_signal: /* a0: signum (SIGINT only); a2: &usys sigctx
+                    * (0 = revert to the default death) */
+    p->sigctx = m->a2;
+    p->sigpend = 0;
+    ret = 0;
+    break;
+  case SYS_sigreturn: { /* the stub's handler returned: restore and
+                         * resume the interrupted point */
+    uint ctx = p->sigctx;
+    if (ctx == 0)
+      break; /* stray: fall through as a failed syscall */
+    uint regs = p->pdispatch - 0x54;
+    p->sigpend = 0;
+    W(regs) = W(ctx + 8);
+    W(regs + 4) = W(ctx + 12);
+    p->state = RUNNING;
+    kexit(curr, W(ctx + 4));
+    return;
   }
   case SYS_kill: {
     int found = -1;

@@ -9,7 +9,7 @@ int
 main(void)
 {
   if (sync() < 0) {
-    printf("sync: not supported\n");
+    write(2, "sync: not supported\n", 20);
     exit(1);
   }
   exit(0);

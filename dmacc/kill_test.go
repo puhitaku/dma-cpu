@@ -36,7 +36,7 @@ func TestXv6Kill(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x20004000, 0x20016000)
+			kernC := buildKernelC(t, v, 0x20004000, 0x20018000)
 			asm := func(text, data uint32) *dmaasm.Result {
 				res, err := dmaasm.Assemble(dasm, dmaasm.Options{
 					Variant: v, TextBase: text, DataBase: data})

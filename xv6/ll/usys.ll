@@ -3,8 +3,11 @@ source_filename = "dma/usys.c"
 target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
+%struct.dma_sigctx = type { i32, i32, i32, i32 }
 %struct.dma_sysmail = type { i32, i32, i32, i32, i32, i32 }
 
+@__dma_sig_fn = internal unnamed_addr global ptr null, align 4
+@__dma_sigctx = internal global %struct.dma_sigctx zeroinitializer, align 4
 @__dma_sysmail = dso_local global %struct.dma_sysmail zeroinitializer, align 4
 @__dma_syscall_entry = dso_local local_unnamed_addr global i32 0, align 4
 
@@ -294,6 +297,36 @@ define dso_local ptr @sys_sbrk(i32 noundef %0, i32 noundef %1) local_unnamed_add
   ret ptr %6
 }
 
+; Function Attrs: minsize nounwind optsize
+define dso_local i32 @signal(i32 noundef %0, ptr noundef %1) local_unnamed_addr #0 {
+  store ptr %1, ptr @__dma_sig_fn, align 4, !tbaa !14
+  store i32 ptrtoint (ptr @__dma_sigentry to i32), ptr @__dma_sigctx, align 4, !tbaa !16
+  %3 = icmp eq ptr %1, null
+  %4 = select i1 %3, i32 0, i32 ptrtoint (ptr @__dma_sigctx to i32)
+  store volatile i32 23, ptr @__dma_sysmail, align 4, !tbaa !3
+  store volatile i32 %0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 4), align 4, !tbaa !8
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 8), align 4, !tbaa !9
+  store volatile i32 %4, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 12), align 4, !tbaa !10
+  %5 = load i32, ptr @__dma_syscall_entry, align 4, !tbaa !11
+  %6 = inttoptr i32 %5 to ptr
+  %7 = tail call i32 %6() #2
+  ret i32 %7
+}
+
+; Function Attrs: minsize nounwind optsize
+define internal void @__dma_sigentry() #0 {
+  %1 = load ptr, ptr @__dma_sig_fn, align 4, !tbaa !14
+  tail call void %1(i32 noundef 2) #2
+  store volatile i32 24, ptr @__dma_sysmail, align 4, !tbaa !3
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 4), align 4, !tbaa !8
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 8), align 4, !tbaa !9
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 12), align 4, !tbaa !10
+  %2 = load i32, ptr @__dma_syscall_entry, align 4, !tbaa !11
+  %3 = inttoptr i32 %2 to ptr
+  %4 = tail call i32 %3() #2
+  ret void
+}
+
 attributes #0 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { minsize noreturn nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #2 = { minsize nobuiltin nounwind optsize "no-builtins" }
@@ -315,3 +348,7 @@ attributes #2 = { minsize nobuiltin nounwind optsize "no-builtins" }
 !11 = !{!5, !5, i64 0}
 !12 = distinct !{!12, !13}
 !13 = !{!"llvm.loop.unroll.disable"}
+!14 = !{!15, !15, i64 0}
+!15 = !{!"any pointer", !6, i64 0}
+!16 = !{!17, !5, i64 0}
+!17 = !{!"dma_sigctx", !5, i64 0, !5, i64 4, !5, i64 8, !5, i64 12}
