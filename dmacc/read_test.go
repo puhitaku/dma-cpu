@@ -100,6 +100,14 @@ func TestXv6Read(t *testing.T) {
 				t.Fatalf("reader never finished; console %q ticks=%d",
 					out, m.Peek32(mustSym(t, kernC, "g_ticks")))
 			}
+			// The final "!" can land at the very end of a run chunk with
+			// exit(0) still ahead of the reader: give the scheduler a
+			// few more quanta to reap it before asserting ZOMBIE.
+			for i := 0; i < 50 && procField(m, kernC, 1, pfState) != stZombie; i++ {
+				if _, err := m.Run(emu.RunConfig{MaxCycles: 200_000}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			// Echo shows the typed keys incl. the backspace erase;
 			// the cooked result must be "boom".
 			if !strings.Contains(out, "hi boom!") {

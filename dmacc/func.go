@@ -2,6 +2,7 @@ package dmacc
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/puhitaku/dma-cpu/llir"
@@ -16,20 +17,25 @@ type funcCtx struct {
 	g *gen
 	f *llir.Func
 
-	declared   map[string]bool   // value words already declared
-	allocas    map[string]string // alloca result -> data symbol
-	constAddr  map[string]addrC  // GEP result folded to a static address
-	uses       map[string]int
-	defs       map[string]*llir.Instr
-	defBlock   map[string]int
-	fused      map[string]bool   // icmp results emitted at their branch
-	fwd        map[string]string // pure-copy results forwarded to their source operand
-	blockIdx   map[string]int
-	directPhi  map[string]bool             // blocks whose phis are written directly on edges
-	tail       map[*llir.Instr]bool        // calls emitted as tail jumps
-	tailRet    map[*llir.Instr]bool        // rets consumed by a preceding tail call
-	pair64     map[*llir.Instr]*llir.Instr // i64 store -> its feeding i64 load (8-byte copy idiom)
-	pair64Ld   map[*llir.Instr]bool        // the loads consumed by pair64
+	declared  map[string]bool   // value words already declared
+	allocas   map[string]string // alloca result -> data symbol
+	constAddr map[string]addrC  // GEP result folded to a static address
+	uses      map[string]int
+	defs      map[string]*llir.Instr
+	defBlock  map[string]int
+	fused     map[string]bool   // icmp results emitted at their branch
+	fwd       map[string]string // pure-copy results forwarded to their source operand
+	blockIdx  map[string]int
+	directPhi map[string]bool             // blocks whose phis are written directly on edges
+	tail      map[*llir.Instr]bool        // calls emitted as tail jumps
+	tailRet   map[*llir.Instr]bool        // rets consumed by a preceding tail call
+	pair64    map[*llir.Instr]*llir.Instr // i64 store -> its feeding i64 load (8-byte copy idiom)
+	pair64Ld  map[*llir.Instr]bool        // the loads consumed by pair64
+	poolable  map[string]bool             // block-local temps eligible for slot sharing
+	poolSym   map[string]string           // current block: value -> assigned pool slot
+	poolFree  []string                    // recycled slots (freed at block boundaries)
+	poolN     int                         // slots minted for this function
+
 	hasCalls   bool
 	inRAM      bool // whole function emitted into .ramtext (RAMTextFuncs)
 	rec        bool // uses the recursion frame stack (push/pop)
@@ -55,6 +61,8 @@ func (g *gen) emitFunc(f *llir.Func) error {
 		pair64Ld:  map[*llir.Instr]bool{},
 		blockIdx:  map[string]int{},
 		directPhi: map[string]bool{},
+		poolable:  map[string]bool{},
+		poolSym:   map[string]string{},
 	}
 	if fc.rec {
 		// The whole frame must be contiguous for push/pop: label it and
@@ -74,7 +82,35 @@ func (g *gen) emitFunc(f *llir.Func) error {
 }
 
 func (fc *funcCtx) word(local string) string {
+	if fc.poolable[local] {
+		if s, ok := fc.poolSym[local]; ok {
+			return s
+		}
+		var s string
+		if n := len(fc.poolFree); n > 0 {
+			s = fc.poolFree[n-1]
+			fc.poolFree = fc.poolFree[:n-1]
+		} else {
+			fc.poolN++
+			s = fmt.Sprintf("pl_%s_%d", sanitize(fc.f.Name), fc.poolN)
+			fc.declWord(s)
+		}
+		fc.poolSym[local] = s
+		return s
+	}
 	return "v_" + sanitize(fc.f.Name) + "_" + sanitize(local)
+}
+
+// poolRelease returns the finished block's slot assignments to the free
+// list. Pool slots are only ever shared ACROSS blocks — every value
+// keeps a private word for its whole block, so no lowering order can
+// alias a live operand.
+func (fc *funcCtx) poolRelease() {
+	for n, s := range fc.poolSym {
+		fc.poolFree = append(fc.poolFree, s)
+		delete(fc.poolSym, n)
+	}
+	sort.Strings(fc.poolFree) // deterministic assignment order
 }
 func (fc *funcCtx) shadow(local string) string {
 	return "s_" + sanitize(fc.f.Name) + "_" + sanitize(local)
@@ -190,6 +226,47 @@ func (fc *funcCtx) prepass() error {
 			}
 		}
 	}
+	// Frame-slot coloring (downsizing 6/6): a value defined and only
+	// used inside one block can share its frame word with same-shaped
+	// values in other blocks. Escapes disqualify: a use in another
+	// block, a use on a phi edge from another block, or a use by a
+	// forwarding op (casts, GEP) whose result aliases our word and may
+	// itself travel anywhere. Phi results (written on edges/heads) and
+	// the pair64 ferry loads keep dedicated words.
+	fwdOps := map[string]bool{"zext": true, "bitcast": true, "ptrtoint": true,
+		"inttoptr": true, "freeze": true, "sext": true, "trunc": true,
+		"insertvalue": true, "extractvalue": true, "getelementptr": true}
+	escape := map[string]bool{}
+	noteUse := func(v *llir.Value, useBlk int, byFwd bool) {
+		if v == nil || v.Kind != llir.VLocal {
+			return
+		}
+		if byFwd || fc.defBlock[v.Name] != useBlk {
+			escape[v.Name] = true
+		}
+	}
+	for i, b := range f.Blocks {
+		for _, ins := range b.Instrs {
+			for _, a := range ins.Args {
+				noteUse(a, i, fwdOps[ins.Op])
+			}
+			noteUse(ins.CalleeVal, i, false)
+			for _, e := range ins.Phi {
+				// The edge copy reads the value at the END of the
+				// predecessor block.
+				noteUse(e.Val, fc.blockIdx[e.Pred], false)
+			}
+		}
+	}
+	// Pooling wins over the copy-fold peephole where they compete: a
+	// pooled slot is multi-referenced, so foldCopies skips it (+8B
+	// text per lost fold), but the shared word saves SRAM — and under
+	// XIP, text is flash while every data word is SRAM.
+	for n, d := range fc.defs {
+		if !escape[n] && d.Op != "phi" && d.Op != "alloca" {
+			fc.poolable[n] = true
+		}
+	}
 	// 8-byte copy idiom: clang -Oz coalesces small aggregate copies
 	// (a two-pointer argv array, a pair of ints) into an i64 load whose
 	// only use is an i64 store. Lower the pair to two word moves.
@@ -290,7 +367,7 @@ func (fc *funcCtx) prepass() error {
 				fmt.Fprintf(&fc.g.data, "%s: .space %d\n", sym, size)
 				continue
 			}
-			if ins.Res != "" {
+			if ins.Res != "" && !fc.poolable[ins.Res] {
 				fc.declWord(fc.word(ins.Res))
 			}
 			if ins.Op == "phi" && !fc.directPhi[b.Name] {
@@ -455,6 +532,7 @@ func (fc *funcCtx) emit() error {
 	}
 	for bi, b := range f.Blocks {
 		fc.curBlock = bi
+		fc.poolRelease()
 		fc.label(fc.blockLabel(b.Name))
 		// Phi heads: latch shadows into value words (shadow-mode blocks
 		// only — direct-mode blocks were written on the edges).
