@@ -22,7 +22,7 @@ define dso_local i32 @kflash_slot_gen() local_unnamed_addr #0 {
   %4 = add i32 %1, 67108864
   %5 = inttoptr i32 %4 to ptr
   %6 = load i32, ptr %5, align 4, !tbaa !3
-  %7 = icmp eq i32 %6, 1397116228
+  %7 = icmp eq i32 %6, 843468100
   br i1 %7, label %8, label %16
 
 8:                                                ; preds = %3
@@ -438,7 +438,7 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #3 {
   br i1 %49, label %50, label %72
 
 50:                                               ; preds = %47
-  store i32 1397116228, ptr %1, align 4, !tbaa !3
+  store i32 843468100, ptr %1, align 4, !tbaa !3
   %51 = load i32, ptr @fs_gen, align 4, !tbaa !3
   %52 = add i32 %51, 1
   %53 = getelementptr inbounds nuw i8, ptr %1, i32 4

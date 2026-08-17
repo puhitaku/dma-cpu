@@ -3,10 +3,10 @@ source_filename = "user/ls.c"
 target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
-%struct.dirent = type { i16, [14 x i8] }
+%struct.dirent = type { i16, [62 x i8] }
 %struct.stat = type { i32, i32, i16, i16, i32 }
 
-@fmtname.buf = internal global [15 x i8] zeroinitializer, align 1
+@fmtname.buf = internal global [63 x i8] zeroinitializer, align 1
 @.str = private unnamed_addr constant [17 x i8] c"ls: cannot open \00", align 1
 @.str.1 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
 @.str.2 = private unnamed_addr constant [17 x i8] c"ls: cannot stat \00", align 1
@@ -37,7 +37,7 @@ define dso_local noundef nonnull ptr @fmtname(ptr noundef %0) local_unnamed_addr
 12:                                               ; preds = %4, %7
   %13 = getelementptr inbounds nuw i8, ptr %5, i32 1
   %14 = tail call i32 @strlen(ptr noundef nonnull %13) #5
-  %15 = icmp ugt i32 %14, 13
+  %15 = icmp ugt i32 %14, 14
   br i1 %15, label %24, label %16
 
 16:                                               ; preds = %12
@@ -46,9 +46,9 @@ define dso_local noundef nonnull ptr @fmtname(ptr noundef %0) local_unnamed_addr
   %19 = tail call i32 @strlen(ptr noundef nonnull %13) #5
   %20 = getelementptr inbounds nuw i8, ptr @fmtname.buf, i32 %19
   %21 = tail call i32 @strlen(ptr noundef nonnull %13) #5
-  %22 = sub i32 14, %21
+  %22 = sub i32 15, %21
   %23 = tail call ptr @memset(ptr noundef nonnull %20, i32 noundef 32, i32 noundef %22) #5
-  store i8 0, ptr getelementptr inbounds nuw (i8, ptr @fmtname.buf, i32 14), align 1, !tbaa !3
+  store i8 0, ptr getelementptr inbounds nuw (i8, ptr @fmtname.buf, i32 15), align 1, !tbaa !3
   br label %24
 
 24:                                               ; preds = %12, %16
@@ -77,7 +77,7 @@ define dso_local void @ls(ptr noundef %0) local_unnamed_addr #0 {
   %3 = alloca %struct.dirent, align 2
   %4 = alloca %struct.stat, align 4
   call void @llvm.lifetime.start.p0(i64 512, ptr nonnull %2) #6
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %3) #6
+  call void @llvm.lifetime.start.p0(i64 64, ptr nonnull %3) #6
   call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #6
   %5 = tail call i32 @open(ptr noundef %0, i32 noundef 0) #5
   %6 = icmp slt i32 %5, 0
@@ -129,7 +129,7 @@ define dso_local void @ls(ptr noundef %0) local_unnamed_addr #0 {
 
 24:                                               ; preds = %13
   %25 = call i32 @strlen(ptr noundef %0) #5
-  %26 = add i32 %25, -497
+  %26 = add i32 %25, -449
   %27 = icmp ult i32 %26, -513
   br i1 %27, label %56, label %28
 
@@ -140,14 +140,14 @@ define dso_local void @ls(ptr noundef %0) local_unnamed_addr #0 {
   %32 = getelementptr inbounds nuw i8, ptr %31, i32 1
   store i8 47, ptr %31, align 1, !tbaa !3
   %33 = getelementptr inbounds nuw i8, ptr %3, i32 2
-  %34 = getelementptr inbounds nuw i8, ptr %31, i32 15
+  %34 = getelementptr inbounds nuw i8, ptr %31, i32 63
   %35 = getelementptr inbounds nuw i8, ptr %4, i32 4
   %36 = getelementptr inbounds nuw i8, ptr %4, i32 12
   br label %37
 
 37:                                               ; preds = %49, %28
-  %38 = call i32 @read(i32 noundef %5, ptr noundef nonnull %3, i32 noundef 16) #5
-  %39 = icmp eq i32 %38, 16
+  %38 = call i32 @read(i32 noundef %5, ptr noundef nonnull %3, i32 noundef 64) #5
+  %39 = icmp eq i32 %38, 64
   br i1 %39, label %40, label %58
 
 40:                                               ; preds = %37
@@ -156,7 +156,7 @@ define dso_local void @ls(ptr noundef %0) local_unnamed_addr #0 {
   br i1 %42, label %49, label %43
 
 43:                                               ; preds = %40
-  %44 = call ptr @memmove(ptr noundef nonnull %32, ptr noundef nonnull %33, i32 noundef 14) #5
+  %44 = call ptr @memmove(ptr noundef nonnull %32, ptr noundef nonnull %33, i32 noundef 62) #5
   store i8 0, ptr %34, align 1, !tbaa !3
   %45 = call i32 @stat(ptr noundef nonnull %2, ptr noundef nonnull %4) #5
   %46 = icmp slt i32 %45, 0
@@ -200,7 +200,7 @@ define dso_local void @ls(ptr noundef %0) local_unnamed_addr #0 {
 
 60:                                               ; preds = %58, %11, %7
   call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #6
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %3) #6
+  call void @llvm.lifetime.end.p0(i64 64, ptr nonnull %3) #6
   call void @llvm.lifetime.end.p0(i64 512, ptr nonnull %2) #6
   ret void
 }

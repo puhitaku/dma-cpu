@@ -15,12 +15,15 @@ fmtname(char *path)
     ;
   p++;
 
-  // Return blank-padded name.
-  if (strlen(p) >= DIRSIZ)
+  // Return blank-padded name. dma: pad to a 15-column display width
+  // instead of DIRSIZ — with DIRSIZ at 62 for vfat long names, DIRSIZ
+  // padding would bury every listing in spaces; longer names simply
+  // run past the column.
+  if (strlen(p) >= 15)
     return p;
   memmove(buf, p, strlen(p));
-  memset(buf + strlen(p), ' ', DIRSIZ - strlen(p));
-  buf[sizeof(buf) - 1] = '\0';
+  memset(buf + strlen(p), ' ', 15 - strlen(p));
+  buf[15] = '\0';
   return buf;
 }
 

@@ -26,7 +26,9 @@ var examTests = []string{
 	// fs: files, directories, links, truncation
 	"opentest", "writetest", "createtest", "dirtest", "createdelete",
 	"unlinkread", "linktest", "linkunlink", "concreate", "subdir",
-	"bigfile", "bigwrite", "dirfile", "fourteen", "rmdot", "iref",
+	// ("fourteen" left the roster with DIRSIZ grown to 62 for vfat
+	// long names: it hardcodes truncation at exactly 14.)
+	"bigfile", "bigwrite", "dirfile", "rmdot", "iref",
 	"truncate1", "truncate2", "truncate3", "unlinkcwd",
 	// process + fd inheritance under the vfork discipline
 	"exectest", "sharedfd", "fourfiles", "openiput", "exitiput", "iput",

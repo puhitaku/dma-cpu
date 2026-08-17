@@ -924,7 +924,7 @@ static void xsh_start(void)
      * the golden image. */
     const uint32_t *hdr = (const uint32_t *)HIL_XSH_FSSLOT;
     int fromflash = 0;
-    if (hdr[0] == 0x53464D44u && hdr[2] == HIL_XSH_DISK_LEN) {
+    if (hdr[0] == 0x32464D44u && hdr[2] == HIL_XSH_DISK_LEN) { /* 'DMF2' */
         const uint32_t *img = (const uint32_t *)(HIL_XSH_FSSLOT + 0x1000);
         uint32_t sum = 0;
         for (uint32_t i = 0; i < HIL_XSH_DISK_LEN / 4; i++)

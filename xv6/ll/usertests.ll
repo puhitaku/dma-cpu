@@ -4,7 +4,7 @@ target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
 %struct.test = type { ptr, ptr }
-%struct.anon = type { i16, [14 x i8] }
+%struct.anon = type { i16, [62 x i8] }
 %struct.stat = type { i32, i32, i16, i16, i32 }
 
 @.str = private unnamed_addr constant [8 x i8] c"copyin1\00", align 1
@@ -3083,7 +3083,7 @@ define dso_local void @concreate(ptr noundef %0) #0 {
   %5 = alloca i32, align 4
   call void @llvm.lifetime.start.p0(i64 3, ptr nonnull %2) #9
   call void @llvm.lifetime.start.p0(i64 40, ptr nonnull %3) #9
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #9
+  call void @llvm.lifetime.start.p0(i64 64, ptr nonnull %4) #9
   store i8 67, ptr %2, align 1, !tbaa !14
   %6 = getelementptr inbounds nuw i8, ptr %2, i32 2
   store i8 0, ptr %6, align 1, !tbaa !14
@@ -3172,7 +3172,7 @@ define dso_local void @concreate(ptr noundef %0) #0 {
   br label %55
 
 55:                                               ; preds = %54, %58
-  %56 = call i32 @read(i32 noundef %48, ptr noundef nonnull %4, i32 noundef 16) #7
+  %56 = call i32 @read(i32 noundef %48, ptr noundef nonnull %4, i32 noundef 64) #7
   %57 = icmp sgt i32 %56, 0
   br i1 %57, label %58, label %84
 
@@ -3300,7 +3300,7 @@ define dso_local void @concreate(ptr noundef %0) #0 {
   br label %89, !llvm.loop !67
 
 135:                                              ; preds = %89
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #9
+  call void @llvm.lifetime.end.p0(i64 64, ptr nonnull %4) #9
   call void @llvm.lifetime.end.p0(i64 40, ptr nonnull %3) #9
   call void @llvm.lifetime.end.p0(i64 3, ptr nonnull %2) #9
   ret void

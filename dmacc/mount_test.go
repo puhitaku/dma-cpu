@@ -51,8 +51,8 @@ func TestXv6Mount(t *testing.T) {
 	t.Logf("console:\n%s", out)
 	for _, want := range []string{
 		"fat0 on /mnt type vfat (ro)",
-		"hello.txt",    // 8.3 names list lowercased
-		"arathe~2.txt", // LFNs past DIRSIZ list as their 8.3 stub
+		"hello.txt", // 8.3 names list lowercased
+		"a-rather-long-file-name.txt", // LFNs list IN FULL (DIRSIZ 62)
 		"sub",
 		"hello from vfat",
 		"long names work",
@@ -65,6 +65,9 @@ func TestXv6Mount(t *testing.T) {
 	}
 	if strings.Contains(out, "cannot stat") {
 		t.Errorf("ls could not stat a name it listed")
+	}
+	if !strings.Contains(out, "big.bin ") {
+		t.Errorf("short name after a long one must terminate cleanly")
 	}
 	if n := strings.Count(out, "big.bin"); n < 3 {
 		t.Errorf("big.bin should list via /mnt, mnt and . (got %d)", n)

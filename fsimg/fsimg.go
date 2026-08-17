@@ -18,14 +18,14 @@ const (
 	FSMagic  = 0x10203040
 	NDirect  = 12
 	NIndir   = BSIZE / 4
-	DirSiz   = 14
+	DirSiz   = 62 // dma: grown with kernel/fs.h for vfat long names
 	RootIno  = 1
 	TDir     = 1
 	TFile    = 2
 	TDevice  = 3
 	dinodeSz = 64 // 4 shorts + uint size + 13 addrs
 	ipb      = BSIZE / dinodeSz
-	direntSz = 16
+	direntSz = 64
 )
 
 // Builder accumulates files and produces the image.

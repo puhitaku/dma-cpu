@@ -20,7 +20,7 @@
  *    fallback executor and for A/B validation.
  *
  * Slot layout (loader-patched fsslot, sector-aligned XIP address):
- *   +0x0000  header sector: magic 'DMFS', generation, length,
+ *   +0x0000  header sector: magic 'DMF2', generation, length,
  *            word-sum checksum of the image
  *   +0x1000  the disk image
  * The header is erased first and programmed LAST: a torn sync leaves
@@ -46,7 +46,9 @@
 
 #define FLASH_SECTOR 4096u
 #define FLASH_PAGE 256u
-#define FS_MAGIC 0x53464D44u /* 'DMFS' */
+#define FS_MAGIC 0x32464D44u /* 'DMF2': bumped with the on-disk
+ * dirent format (DIRSIZ 14 -> 62); pre-change slots are ignored
+ * and boot falls back to the golden image */
 
 #define TIMER_RAWL 0x400B0028u /* free-running us counter */
 

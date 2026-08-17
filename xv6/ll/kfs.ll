@@ -9,7 +9,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 %struct.inode = type { i32, i32, i32, %struct.sleeplock, i32, i16, i16, i16, i16, i32, [13 x i32] }
 %struct.sleeplock = type { i8 }
 %struct.dinode = type { i16, i16, i16, i16, i32, [13 x i32] }
-%struct.dirent = type { i16, [14 x i8] }
+%struct.dirent = type { i16, [62 x i8] }
 
 @sb = dso_local global %struct.superblock zeroinitializer, align 4
 @.str = private unnamed_addr constant [20 x i8] c"invalid file system\00", align 1
@@ -837,7 +837,7 @@ declare dso_local i32 @either_copyin(ptr noundef, i32 noundef, i32 noundef, i32 
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local i32 @namecmp(ptr noundef %0, ptr noundef %1) local_unnamed_addr #0 {
-  %3 = tail call i32 @strncmp(ptr noundef %0, ptr noundef %1, i32 noundef 14) #6
+  %3 = tail call i32 @strncmp(ptr noundef %0, ptr noundef %1, i32 noundef 62) #6
   ret i32 %3
 }
 
@@ -847,7 +847,7 @@ declare dso_local i32 @strncmp(ptr noundef, ptr noundef, i32 noundef) local_unna
 ; Function Attrs: minsize nounwind optsize
 define dso_local ptr @dirlookup(ptr noundef captures(none) %0, ptr noundef %1, ptr noundef writeonly captures(address_is_null) %2) local_unnamed_addr #0 {
   %4 = alloca %struct.dirent, align 2
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #9
+  call void @llvm.lifetime.start.p0(i64 64, ptr nonnull %4) #9
   %5 = getelementptr inbounds nuw i8, ptr %0, i32 20
   %6 = load i16, ptr %5, align 4, !tbaa !30
   %7 = icmp eq i16 %6, 1
@@ -870,8 +870,8 @@ define dso_local ptr @dirlookup(ptr noundef captures(none) %0, ptr noundef %1, p
   br i1 %16, label %17, label %37
 
 17:                                               ; preds = %13
-  %18 = call i32 @readi(ptr noundef nonnull %0, i32 noundef 0, i32 noundef %10, i32 noundef %14, i32 noundef 16) #8
-  %19 = icmp eq i32 %18, 16
+  %18 = call i32 @readi(ptr noundef nonnull %0, i32 noundef 0, i32 noundef %10, i32 noundef %14, i32 noundef 64) #8
+  %19 = icmp eq i32 %18, 64
   br i1 %19, label %21, label %20
 
 20:                                               ; preds = %17
@@ -904,19 +904,19 @@ define dso_local ptr @dirlookup(ptr noundef captures(none) %0, ptr noundef %1, p
   br label %37
 
 35:                                               ; preds = %24, %21
-  %36 = add i32 %14, 16
+  %36 = add i32 %14, 64
   br label %13, !llvm.loop !54
 
 37:                                               ; preds = %13, %30
   %38 = phi ptr [ %34, %30 ], [ null, %13 ]
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #9
+  call void @llvm.lifetime.end.p0(i64 64, ptr nonnull %4) #9
   ret ptr %38
 }
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local range(i32 -1, 1) i32 @dirlink(ptr noundef %0, ptr noundef %1, i32 noundef %2) local_unnamed_addr #0 {
   %4 = alloca %struct.dirent, align 2
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #9
+  call void @llvm.lifetime.start.p0(i64 64, ptr nonnull %4) #9
   %5 = tail call ptr @dirlookup(ptr noundef %0, ptr noundef %1, ptr noundef null) #8
   %6 = icmp eq ptr %5, null
   br i1 %6, label %7, label %10
@@ -937,8 +937,8 @@ define dso_local range(i32 -1, 1) i32 @dirlink(ptr noundef %0, ptr noundef %1, i
   br i1 %14, label %15, label %24
 
 15:                                               ; preds = %11
-  %16 = call i32 @readi(ptr noundef nonnull %0, i32 noundef 0, i32 noundef %9, i32 noundef %12, i32 noundef 16) #8
-  %17 = icmp eq i32 %16, 16
+  %16 = call i32 @readi(ptr noundef nonnull %0, i32 noundef 0, i32 noundef %9, i32 noundef %12, i32 noundef 64) #8
+  %17 = icmp eq i32 %16, 64
   br i1 %17, label %19, label %18
 
 18:                                               ; preds = %15
@@ -951,22 +951,22 @@ define dso_local range(i32 -1, 1) i32 @dirlink(ptr noundef %0, ptr noundef %1, i
   br i1 %21, label %24, label %22
 
 22:                                               ; preds = %19
-  %23 = add i32 %12, 16
+  %23 = add i32 %12, 64
   br label %11, !llvm.loop !55
 
 24:                                               ; preds = %19, %11
   %25 = getelementptr inbounds nuw i8, ptr %4, i32 2
-  %26 = call ptr @strncpy(ptr noundef nonnull %25, ptr noundef %1, i32 noundef 14) #6
+  %26 = call ptr @strncpy(ptr noundef nonnull %25, ptr noundef %1, i32 noundef 62) #6
   %27 = trunc i32 %2 to i16
   store i16 %27, ptr %4, align 2, !tbaa !52
-  %28 = call i32 @writei(ptr noundef nonnull %0, i32 noundef 0, i32 noundef %9, i32 noundef %12, i32 noundef 16) #8
-  %29 = icmp ne i32 %28, 16
+  %28 = call i32 @writei(ptr noundef nonnull %0, i32 noundef 0, i32 noundef %9, i32 noundef %12, i32 noundef 64) #8
+  %29 = icmp ne i32 %28, 64
   %30 = sext i1 %29 to i32
   br label %31
 
 31:                                               ; preds = %24, %10
   %32 = phi i32 [ -1, %10 ], [ %30, %24 ]
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #9
+  call void @llvm.lifetime.end.p0(i64 64, ptr nonnull %4) #9
   ret i32 %32
 }
 
@@ -975,10 +975,10 @@ declare dso_local ptr @strncpy(ptr noundef, ptr noundef, i32 noundef) local_unna
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local ptr @namei(ptr noundef %0) local_unnamed_addr #0 {
-  %2 = alloca [14 x i8], align 1
-  call void @llvm.lifetime.start.p0(i64 14, ptr nonnull %2) #9
+  %2 = alloca [62 x i8], align 1
+  call void @llvm.lifetime.start.p0(i64 62, ptr nonnull %2) #9
   %3 = call fastcc ptr @namex(ptr noundef %0, i32 noundef 0, ptr noundef nonnull %2) #8
-  call void @llvm.lifetime.end.p0(i64 14, ptr nonnull %2) #9
+  call void @llvm.lifetime.end.p0(i64 62, ptr nonnull %2) #9
   ret ptr %3
 }
 
@@ -1038,11 +1038,11 @@ define internal fastcc ptr @namex(ptr noundef %0, i32 noundef range(i32 0, 2) %1
   %31 = ptrtoint ptr %26 to i32
   %32 = ptrtoint ptr %20 to i32
   %33 = sub i32 %31, %32
-  %34 = icmp sgt i32 %33, 13
+  %34 = icmp sgt i32 %33, 61
   br i1 %34, label %35, label %37
 
 35:                                               ; preds = %30
-  %36 = tail call ptr @memmove(ptr noundef %2, ptr noundef nonnull %20, i32 noundef 14) #6
+  %36 = tail call ptr @memmove(ptr noundef %2, ptr noundef nonnull %20, i32 noundef 62) #6
   br label %40
 
 37:                                               ; preds = %30

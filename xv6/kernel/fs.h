@@ -50,7 +50,9 @@ struct dinode {
 #define BBLOCK(b, sb) ((b) / BPB + sb.bmapstart)
 
 // Directory is a file containing a sequence of dirent structures.
-#define DIRSIZ 14
+// dma: 62 (dirent grows 16 -> 64 bytes) so vfat long names are
+// first-class in directory listings; upstream is 14 (prompts/029).
+#define DIRSIZ 62
 
 // The name field may have DIRSIZ characters and not end in a NUL
 // character.

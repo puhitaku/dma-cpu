@@ -185,7 +185,7 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 		m.Flash = flash
 		off := slotXIP - emu.XIPBase
 		h := func(i int) uint32 { return binary.LittleEndian.Uint32(flash[off+4*i:]) }
-		if h(0) == 0x53464D44 && h(2) == uint32(len(disk)) {
+		if h(0) == 0x32464D44 && h(2) == uint32(len(disk)) { /* 'DMF2' */
 			var sum uint32
 			img := flash[off+0x1000 : off+0x1000+len(disk)]
 			for i := 0; i < len(img); i += 4 {

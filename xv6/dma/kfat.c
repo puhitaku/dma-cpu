@@ -11,8 +11,9 @@
  * cluster, reserved sectors, FAT count/size and the root cluster all
  * come from it, so real PC-formatted volumes (and SD cards later)
  * parse the same as fsimg's small test images. Long names (VFAT LFN
- * entries) are assembled for lookup and listing; listing truncates
- * to xv6's DIRSIZ. */
+ * entries) are assembled for lookup and listing; with DIRSIZ grown
+ * to 62 they list in full (the 8.3 form remains an internal lookup
+ * alias, and the fallback for names past 62). */
 #include "types.h"
 #include "riscv.h"
 #include "defs.h"
@@ -259,11 +260,10 @@ fat_iter(uint dircl, uint *idx, char *name, char *shortnm, uint *clusp,
         name[i] = lfn[i];
       name[63] = 0;
     } else {
-      for (int i = 0; shortnm[i] || i == 0; i++) {
+      int i = 0;
+      for (; shortnm[i]; i++)
         name[i] = shortnm[i];
-        if (shortnm[i] == 0)
-          break;
-      }
+      name[i] = 0; /* the terminator too — nm is reused across entries */
     }
     *clusp = (rd16(e + 20) << 16) | rd16(e + 26);
     *sizep = rd32(e + 28);

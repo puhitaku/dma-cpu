@@ -5,7 +5,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 
 %struct.proc = type { i32, i32, ptr, [16 x ptr] }
 %struct.devsw = type { ptr, ptr }
-%struct.dirent = type { i16, [14 x i8] }
+%struct.dirent = type { i16, [62 x i8] }
 
 @.str = private unnamed_addr constant [8 x i8] c"panic: \00", align 1
 @.str.1 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
@@ -1140,8 +1140,8 @@ define internal fastcc range(i32 0, 2) i32 @fat_writepath(ptr noundef readonly c
 
 ; Function Attrs: minsize nounwind optsize
 define internal fastcc ptr @create(ptr noundef %0, i16 noundef signext range(i16 1, 3) %1) unnamed_addr #1 {
-  %3 = alloca [14 x i8], align 1
-  call void @llvm.lifetime.start.p0(i64 14, ptr nonnull %3) #10
+  %3 = alloca [62 x i8], align 1
+  call void @llvm.lifetime.start.p0(i64 62, ptr nonnull %3) #10
   %4 = call ptr @nameiparent(ptr noundef %0, ptr noundef nonnull %3) #7
   %5 = icmp eq ptr %4, null
   br i1 %5, label %50, label %6
@@ -1231,7 +1231,7 @@ define internal fastcc ptr @create(ptr noundef %0, i16 noundef signext range(i16
 
 50:                                               ; preds = %47, %11, %2
   %51 = phi ptr [ null, %2 ], [ %7, %11 ], [ %49, %47 ]
-  call void @llvm.lifetime.end.p0(i64 14, ptr nonnull %3) #10
+  call void @llvm.lifetime.end.p0(i64 62, ptr nonnull %3) #10
   ret ptr %51
 }
 
@@ -1495,7 +1495,7 @@ define dso_local range(i32 -1, 1) i32 @kfs_mkdir(i32 noundef %0) local_unnamed_a
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local range(i32 -1, 1) i32 @kfs_link(i32 noundef %0, i32 noundef %1) local_unnamed_addr #1 {
-  %3 = alloca [14 x i8], align 1
+  %3 = alloca [62 x i8], align 1
   %4 = inttoptr i32 %0 to ptr
   %5 = tail call fastcc i32 @fat_writepath(ptr noundef %4) #9
   %6 = icmp eq i32 %5, 0
@@ -1508,7 +1508,7 @@ define dso_local range(i32 -1, 1) i32 @kfs_link(i32 noundef %0, i32 noundef %1) 
   br i1 %10, label %11, label %41
 
 11:                                               ; preds = %7
-  call void @llvm.lifetime.start.p0(i64 14, ptr nonnull %3) #10
+  call void @llvm.lifetime.start.p0(i64 62, ptr nonnull %3) #10
   %12 = tail call ptr @namei(ptr noundef %4) #7
   %13 = icmp eq ptr %12, null
   br i1 %13, label %39, label %14
@@ -1569,7 +1569,7 @@ define dso_local range(i32 -1, 1) i32 @kfs_link(i32 noundef %0, i32 noundef %1) 
 
 39:                                               ; preds = %34, %36, %11, %18
   %40 = phi i32 [ -1, %18 ], [ -1, %11 ], [ 0, %34 ], [ -1, %36 ]
-  call void @llvm.lifetime.end.p0(i64 14, ptr nonnull %3) #10
+  call void @llvm.lifetime.end.p0(i64 62, ptr nonnull %3) #10
   br label %41
 
 41:                                               ; preds = %2, %7, %39
@@ -1590,7 +1590,7 @@ declare dso_local i32 @dirlink(ptr noundef, ptr noundef, i32 noundef) local_unna
 define dso_local range(i32 -1, 1) i32 @kfs_unlink(i32 noundef %0) local_unnamed_addr #1 {
   %2 = alloca %struct.dirent, align 2
   %3 = alloca %struct.dirent, align 2
-  %4 = alloca [14 x i8], align 1
+  %4 = alloca [62 x i8], align 1
   %5 = alloca i32, align 4
   %6 = inttoptr i32 %0 to ptr
   %7 = tail call fastcc i32 @fat_writepath(ptr noundef %6) #9
@@ -1598,8 +1598,8 @@ define dso_local range(i32 -1, 1) i32 @kfs_unlink(i32 noundef %0) local_unnamed_
   br i1 %8, label %9, label %69
 
 9:                                                ; preds = %1
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %3) #10
-  call void @llvm.lifetime.start.p0(i64 14, ptr nonnull %4) #10
+  call void @llvm.lifetime.start.p0(i64 64, ptr nonnull %3) #10
+  call void @llvm.lifetime.start.p0(i64 62, ptr nonnull %4) #10
   call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %5) #10
   %10 = call ptr @nameiparent(ptr noundef %6, ptr noundef nonnull %4) #7
   %11 = icmp eq ptr %10, null
@@ -1639,20 +1639,20 @@ define dso_local range(i32 -1, 1) i32 @kfs_unlink(i32 noundef %0) local_unnamed_
   br i1 %29, label %30, label %47
 
 30:                                               ; preds = %26
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %2) #10
+  call void @llvm.lifetime.start.p0(i64 64, ptr nonnull %2) #10
   %31 = getelementptr inbounds nuw i8, ptr %19, i32 28
   %32 = ptrtoint ptr %2 to i32
   br label %33
 
 33:                                               ; preds = %41, %30
-  %34 = phi i32 [ 32, %30 ], [ %44, %41 ]
+  %34 = phi i32 [ 128, %30 ], [ %44, %41 ]
   %35 = load i32, ptr %31, align 4, !tbaa !55
   %36 = icmp ult i32 %34, %35
   br i1 %36, label %37, label %45
 
 37:                                               ; preds = %33
-  %38 = call i32 @readi(ptr noundef nonnull %19, i32 noundef 0, i32 noundef %32, i32 noundef %34, i32 noundef 16) #7
-  %39 = icmp eq i32 %38, 16
+  %38 = call i32 @readi(ptr noundef nonnull %19, i32 noundef 0, i32 noundef %32, i32 noundef %34, i32 noundef 64) #7
+  %39 = icmp eq i32 %38, 64
   br i1 %39, label %41, label %40
 
 40:                                               ; preds = %37
@@ -1662,24 +1662,24 @@ define dso_local range(i32 -1, 1) i32 @kfs_unlink(i32 noundef %0) local_unnamed_
 41:                                               ; preds = %37
   %42 = load i16, ptr %2, align 2, !tbaa !56
   %43 = icmp eq i16 %42, 0
-  %44 = add i32 %34, 16
+  %44 = add i32 %34, 64
   br i1 %43, label %33, label %46, !llvm.loop !58
 
 45:                                               ; preds = %33
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %2) #10
+  call void @llvm.lifetime.end.p0(i64 64, ptr nonnull %2) #10
   br label %47
 
 46:                                               ; preds = %41
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %2) #10
+  call void @llvm.lifetime.end.p0(i64 64, ptr nonnull %2) #10
   call void @iunlockput(ptr noundef nonnull %19) #7
   br label %64
 
 47:                                               ; preds = %45, %26
-  %48 = call ptr @memset(ptr noundef nonnull %3, i32 noundef 0, i32 noundef 16) #7
+  %48 = call ptr @memset(ptr noundef nonnull %3, i32 noundef 0, i32 noundef 64) #7
   %49 = ptrtoint ptr %3 to i32
   %50 = load i32, ptr %5, align 4, !tbaa !11
-  %51 = call i32 @writei(ptr noundef nonnull %10, i32 noundef 0, i32 noundef %49, i32 noundef %50, i32 noundef 16) #7
-  %52 = icmp eq i32 %51, 16
+  %51 = call i32 @writei(ptr noundef nonnull %10, i32 noundef 0, i32 noundef %49, i32 noundef %50, i32 noundef 64) #7
+  %52 = icmp eq i32 %51, 64
   br i1 %52, label %54, label %53
 
 53:                                               ; preds = %47
@@ -1716,8 +1716,8 @@ define dso_local range(i32 -1, 1) i32 @kfs_unlink(i32 noundef %0) local_unnamed_
 67:                                               ; preds = %64, %9
   %68 = phi i32 [ -1, %9 ], [ %66, %64 ]
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %5) #10
-  call void @llvm.lifetime.end.p0(i64 14, ptr nonnull %4) #10
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %3) #10
+  call void @llvm.lifetime.end.p0(i64 62, ptr nonnull %4) #10
+  call void @llvm.lifetime.end.p0(i64 64, ptr nonnull %3) #10
   br label %69
 
 69:                                               ; preds = %1, %67
