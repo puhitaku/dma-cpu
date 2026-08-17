@@ -2,6 +2,7 @@ package dmacc
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/puhitaku/dma-cpu/llir"
 )
@@ -75,9 +76,118 @@ __cw_ltu_f:
 `},
 }
 
-// emitCmpSite emits one outlined-comparison site.
+// Descriptor unpack variants: the whole site collapses to two records
+// (park the descriptor address, jump). The descriptor is a constant
+// data block — [&b][t][f][&a] for two-operand kinds, [t][f][&a] for
+// eqz — that the helper copies onto the contiguous cw_pb..cw_pa cells
+// with one count=N move, then dereferences into cw_a/cw_b and falls
+// into the plain helper.
+var cmpDescHelpers = map[string]string{
+	"eqz": `__cw_eqz_d:
+    move cw_d, CWDz.read
+CWDz:
+    move @0, cw_t, count=12, size8, incrr, incrw
+    move cw_pa, CWDza.read
+CWDza:
+    move @0, cw_a
+    jump __cw_eqz
+`,
+	"eq": `__cw_eq_d:
+    move cw_d, CWDq.read
+CWDq:
+    move @0, cw_pb, count=16, size8, incrr, incrw
+    move cw_pa, CWDqa.read
+CWDqa:
+    move @0, cw_a
+    move cw_pb, CWDqb.read
+CWDqb:
+    move @0, cw_b
+    jump __cw_eq
+`,
+	"lt": `__cw_lt_d:
+    move cw_d, CWDl.read
+CWDl:
+    move @0, cw_pb, count=16, size8, incrr, incrw
+    move cw_pa, CWDla.read
+CWDla:
+    move @0, cw_a
+    move cw_pb, CWDlb.read
+CWDlb:
+    move @0, cw_b
+    jump __cw_lt
+`,
+	"ltu": `__cw_ltu_d:
+    move cw_d, CWDu.read
+CWDu:
+    move @0, cw_pb, count=16, size8, incrr, incrw
+    move cw_pa, CWDua.read
+CWDua:
+    move @0, cw_a
+    move cw_pb, CWDub.read
+CWDub:
+    move @0, cw_b
+    jump __cw_ltu
+`,
+}
+
+// wordAddr returns a symbol whose link address holds the value of
+// operand op — the coin descriptor comparisons trade in. Plain value
+// words are their own storage; $constants and $address literals get a
+// deduplicated constant word. Compound operands ($sym+off) have no
+// .word spelling and report false (the site falls back to the plain
+// four-move form).
+func (fc *funcCtx) wordAddr(op string) (string, bool) {
+	if op == "" {
+		return "", false
+	}
+	if op[0] != '$' {
+		if strings.ContainsAny(op, "+%@.") {
+			return "", false
+		}
+		return op, true
+	}
+	lit := op[1:]
+	if strings.Contains(lit, "+") {
+		return "", false
+	}
+	if sym, ok := fc.g.cmpConst[op]; ok {
+		return sym, true
+	}
+	sym := fmt.Sprintf("cwc_%d", len(fc.g.cmpConst))
+	fc.g.cmpConst[op] = sym
+	fmt.Fprintf(&fc.g.desc, "%s: .word %s\n", sym, lit)
+	fc.g.descWords++
+	return sym, true
+}
+
+// emitCmpSite emits one outlined-comparison site, preferring the
+// two-record descriptor form.
 func (fc *funcCtx) emitCmpSite(helper, a, b, t, f string) {
 	fc.g.cmpUsed[helper] = true
+	// RAMTextFuncs code runs while XIP is down; its descriptors would
+	// live in flash text, so those sites keep the all-SRAM four-move
+	// protocol (the plain helpers and their operands are RAM-resident).
+	if pa, ok := fc.wordAddr(a); ok && !fc.inRAM {
+		pb, ok2 := "", b == ""
+		if b != "" {
+			pb, ok2 = fc.wordAddr(b)
+		}
+		if ok2 {
+			fc.g.stubN++
+			desc := fmt.Sprintf("cwd_%d", fc.g.stubN)
+			if b == "" {
+				fmt.Fprintf(&fc.g.desc, "%s: .word %s, %s, %s\n", desc, t, f, pa)
+				fc.g.descWords += 3
+			} else {
+				fmt.Fprintf(&fc.g.desc, "%s: .word %s, %s, %s, %s\n", desc, pb, t, f, pa)
+				fc.g.descWords += 4
+			}
+			fc.g.cmpUsedD[helper] = true
+			fc.ins("move $%s, cw_d", desc)
+			fc.ins("jump __cw_%s_d", helper)
+			return
+		}
+	}
 	fc.ins("move $%s, cw_t", t)
 	fc.ins("move $%s, cw_f", f)
 	fc.ins("move %s, cw_a", a)
@@ -199,7 +309,10 @@ func (g *gen) emitCmpHelpers() {
 		return
 	}
 	fmt.Fprintf(&g.out, "\n; --- comparison millicode ---\n.data\n")
-	fmt.Fprintf(&g.out, "cw_a: .word 0\ncw_b: .word 0\ncw_t: .word 0\ncw_f: .word 0\n")
+	// cw_pb..cw_pa are one contiguous run: descriptor unpack copies
+	// [pb][t][f][pa] (or [t][f][pa]) onto them with a single move.
+	fmt.Fprintf(&g.out, "cw_a: .word 0\ncw_b: .word 0\ncw_d: .word 0\n")
+	fmt.Fprintf(&g.out, "cw_pb: .word 0\ncw_t: .word 0\ncw_f: .word 0\ncw_pa: .word 0\n")
 	// XIPText: the millicode is shared by RAM-resident flash-session
 	// code (RAMTextFuncs), so it lives in .ramtext with everything the
 	// session may fetch.
@@ -212,6 +325,9 @@ func (g *gen) emitCmpHelpers() {
 	for _, h := range cmpHelpers {
 		if g.cmpUsed[h.name] {
 			w.WriteString(h.text)
+		}
+		if g.cmpUsedD[h.name] {
+			w.WriteString(cmpDescHelpers[h.name])
 		}
 	}
 }

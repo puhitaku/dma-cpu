@@ -64,11 +64,11 @@ type check struct {
 }
 
 type test struct {
-	Name string
-	Image *img.Image
-	Compact bool   // Tier-C encoding: loader uses the compact machine
-	Console []byte // expected console bytes (emulator verification)
-	Done  uint32 // absolute done-flag address; 0 = perf test (no done)
+	Name        string
+	Image       *img.Image
+	Compact     bool   // Tier-C encoding: loader uses the compact machine
+	Console     []byte // expected console bytes (emulator verification)
+	Done        uint32 // absolute done-flag address; 0 = perf test (no done)
 	PerfCounter uint32
 	BlocksPerIt uint32
 	Checks      []check
@@ -83,19 +83,19 @@ type export struct {
 
 // hilSpec declares one HIL test in terms of assembly symbols.
 type hilSpec struct {
-	name    string
-	file    string            // prog/hil/<file>.dasm
-	ll      string            // OR: compile this IR golden with dmacc (Phase 4)
-	extrall []string          // additional IR modules linked into the ll build
-	compactEnc bool           // assemble with the Tier-C 8-byte encoding
-	libc    bool              // link the picolibc goldens (libc/ll) into the ll build
-	console string            // expected console file (emulator check; prints on the UART on hardware)
-	skus    []string          // restrict to these SKUs (nil: all)
-	patch   map[string]uint32 // data words poked before encoding
-	mem     map[string]uint32 // symbol -> intended value (done=1 implied)
-	gpio    *check            // optional pin-level check
-	export  []string          // symbols emitted as HIL_SYM_<name>_<sym> macros
-	perf    *struct {
+	name       string
+	file       string            // prog/hil/<file>.dasm
+	ll         string            // OR: compile this IR golden with dmacc (Phase 4)
+	extrall    []string          // additional IR modules linked into the ll build
+	compactEnc bool              // assemble with the Tier-C 8-byte encoding
+	libc       bool              // link the picolibc goldens (libc/ll) into the ll build
+	console    string            // expected console file (emulator check; prints on the UART on hardware)
+	skus       []string          // restrict to these SKUs (nil: all)
+	patch      map[string]uint32 // data words poked before encoding
+	mem        map[string]uint32 // symbol -> intended value (done=1 implied)
+	gpio       *check            // optional pin-level check
+	export     []string          // symbols emitted as HIL_SYM_<name>_<sym> macros
+	perf       *struct {
 		counterSym  string
 		blocksPerIt uint32
 	}
@@ -486,20 +486,20 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1A000, DataBase: lay.text + 0x1B000})
+	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1B000, DataBase: lay.text + 0x1C000})
 	if err != nil {
 		return nil, err
 	}
-	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1C000, DataBase: lay.text + 0x1D000})
+	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1D000, DataBase: lay.text + 0x1E000})
 	if err != nil {
 		return nil, err
 	}
 	b := &kernBundle{names: []string{"kernel", "kernc", "proca", "procb"}, sym: map[string]uint32{}}
-	b.entry0 = lay.text + 0x1A000 + procA.Image.EntryOff
-	entryB := lay.text + 0x1C000 + procB.Image.EntryOff
+	b.entry0 = lay.text + 0x1B000 + procA.Image.EntryOff
+	entryB := lay.text + 0x1D000 + procB.Image.EntryOff
 	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x17000, []kprocSpec{
-		{procA, lay.text + 0x1B000, b.entry0, 1, 0, false},
-		{procB, lay.text + 0x1D000, entryB, 2, 0, false},
+		{procA, lay.text + 0x1C000, b.entry0, 1, 0, false},
+		{procB, lay.text + 0x1E000, entryB, 2, 0, false},
 	}); err != nil {
 		return nil, err
 	}
@@ -689,9 +689,9 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 // scratch (dmaasm CompactScratch). The RAM disk carries upstream
 // echo, cat, wc AND ls as DMX-exec files.
 func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
-	const fatVolXIP = 0x10140000  // vfat volume: above the fs slot
-	const cTextXIP = 0x10160000   // fs-kernel text, XIP-resident (prompts/030)
-	const sTextXIP = 0x101A0000   // sh text, XIP-resident
+	const fatVolXIP = 0x10140000 // vfat volume: above the fs slot
+	const cTextXIP = 0x10160000  // fs-kernel text, XIP-resident (prompts/030)
+	const sTextXIP = 0x101A0000  // sh text, XIP-resident
 	kText, kData := lay.text, lay.text+0x1000
 	cRText, cData := lay.text+0x2000, lay.text+0xA000
 	sRText, sData := lay.text+0x16000, lay.text+0x1A000
@@ -825,10 +825,10 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		{"g_inj_wreg", emu.ChanRegAddr(inj, emu.OffWriteAddr)},
 		{"g_inj_treg", emu.ChanRegAddr(inj, emu.OffAl1TransCountTrig)},
 		{"g_fsslot", fsSlotXIP},
-		{"g_initpid", 2}, /* idle adopts orphans (prompts/024) */
-		{"g_fgpid", 1},   /* Ctrl-C interrupts sh's foreground job */
+		{"g_initpid", 2},        /* idle adopts orphans (prompts/024) */
+		{"g_fgpid", 1},          /* Ctrl-C interrupts sh's foreground job */
 		{"g_fatvol", fatVolXIP}, /* the vfat volume (prompts/029) */
-		{"g_kflash_arm", 0}, /* 0: the MACHINE drives the QMI itself
+		{"g_kflash_arm", 0},     /* 0: the MACHINE drives the QMI itself
 		 * (prompts/028); the parked ARM's mailbox loop stays as a
 		 * dormant fallback — repoint this at scratch+0x10 to use it */
 	} {
@@ -863,7 +863,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 
 	// Emulator session verification: ls, files, redirection, a pipe.
 	m := emu.NewMachine(v)
-	m.TXPace = 13000 // ~115200 baud vs the 15000-cycle tick, as on silicon
+	m.TXPace = 13000                 // ~115200 baud vs the 15000-cycle tick, as on silicon
 	m.Flash = make([]byte, 0x200000) // slot header + XIP text regions
 	for i := range m.Flash {
 		m.Flash[i] = 0xFF
@@ -918,6 +918,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	}
 	return b, nil
 }
+
 // fsSlotXIP is the persistent-fs slot: one 4 KB header sector + the
 // disk image, at a fixed flash offset above the firmware region (the
 // firmware asserts it does not grow past it).
@@ -1034,7 +1035,6 @@ func pad4(b []byte) []byte {
 	}
 	return b
 }
-
 
 // regEntry names one image for the kernel's exec registry.
 type regEntry struct {
@@ -1347,7 +1347,7 @@ func patchData(im *img.Image, dataBase, addr, val uint32) error {
 // verify runs the image in the emulator; the intended values must match.
 func verify(v *emu.Variant, lay layout, t *test) error {
 	m := emu.NewMachine(v)
-	m.TXPace = 13000 // ~115200 baud vs the 15000-cycle tick, as on silicon
+	m.TXPace = 13000                 // ~115200 baud vs the 15000-cycle tick, as on silicon
 	m.Flash = make([]byte, 0x180000) // cal_flash probes the NOR model
 	for i := range m.Flash {
 		m.Flash[i] = 0xFF

@@ -96,8 +96,8 @@ type operand struct {
 	field      uint32 // opSym: byte offset for .read/.write/.count/.ctrl or +N
 	plusOff    bool   // field came from a +N suffix (allowed on data symbols)
 	blockField bool   // field came from .read/.write/.count/.ctrl syntax
-	num     uint32 // opLit(value)/opAbs
-	isNum   bool   // opLit: literal is a number, not a symbol
+	num        uint32 // opLit(value)/opAbs
+	isNum      bool   // opLit: literal is a number, not a symbol
 }
 
 var blockFields = map[string]uint32{"read": 0, "write": 4, "count": 8, "ctrl": 12}
@@ -105,12 +105,13 @@ var blockFields = map[string]uint32{"read": 0, "write": 4, "count": 8, "ctrl": 1
 // --- Statements ---
 
 type stmt struct {
-	line  int
-	label string   // set for label definitions
-	dir   string   // set for directives (leading '.')
-	mnem  string   // set for instructions
-	args  []string // raw comma-separated arguments
-	crecs uint32   // compact: records this instruction occupies (pass 1)
+	line   int
+	label  string   // set for label definitions
+	dir    string   // set for directives (leading '.')
+	mnem   string   // set for instructions
+	args   []string // raw comma-separated arguments
+	crecs  uint32   // compact: records this instruction occupies (pass 1)
+	inText bool     // directive was laid out in a text section (.word rodata)
 }
 
 type asm struct {
@@ -170,10 +171,10 @@ type symbol struct {
 }
 
 type writeStmt struct {
-	line     int
-	addr     uint32
-	valNum   uint32
-	valSym   string // if set, value is this symbol's address (relocated)
+	line   int
+	addr   uint32
+	valNum uint32
+	valSym string // if set, value is this symbol's address (relocated)
 }
 
 // Assemble compiles one source file.
@@ -593,13 +594,18 @@ func (a *asm) layout() error {
 				}
 				a.entry = s.args[0]
 			case "word":
-				if seg != "data" {
-					return fmt.Errorf("line %d: .word outside .data", s.line)
-				}
 				if len(s.args) == 0 {
 					return fmt.Errorf("line %d: .word needs values", s.line)
 				}
-				a.dataOff += uint32(4 * len(s.args))
+				if seg == "text" {
+					// Read-only data in the text segment (XIP images keep
+					// constant tables in flash). Callers must pad runs to
+					// the record alignment before more instructions follow.
+					s.inText = true
+					a.textOff += uint32(4 * len(s.args))
+				} else {
+					a.dataOff += uint32(4 * len(s.args))
+				}
 			case "space":
 				if seg != "data" || len(s.args) != 1 {
 					return fmt.Errorf("line %d: .space <bytes> in .data only", s.line)

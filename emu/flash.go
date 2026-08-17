@@ -2,10 +2,11 @@ package emu
 
 // QSPI flash model (Phase 10, prompts/022): enough of the RP2350 QMI
 // direct mode plus a serial-NOR command set for the kernel's flash
-// driver to be developed and tested off-silicon. XIP reads are served
-// from Flash regardless of direct-mode state (the real part stalls;
-// the kernel never reads XIP while in direct mode, so the divergence
-// is unobservable by correct drivers). Commands: WREN, RDSR, READ,
+// driver to be developed and tested off-silicon. While direct mode is
+// enabled, XIP-window reads bus-fault (the real part stalls) — with
+// XIP-resident text this is load-bearing: it catches any record the
+// machine would fetch from dead flash mid-session. Commands: WREN,
+// RDSR, READ,
 // 4K sector erase, 256B page program (with NOR and-semantics), and
 // anything else answers 0xFF (the exit-XIP dance is a no-op here).
 const (
@@ -30,7 +31,7 @@ type flashState struct {
 
 	inCmd bool
 	cmd   byte
-	nbyte int  // bytes seen after the command byte
+	nbyte int // bytes seen after the command byte
 	addr  uint32
 	wel   bool
 	page  []byte // PP data collected until CS deassert

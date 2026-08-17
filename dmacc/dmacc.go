@@ -51,7 +51,8 @@ func Compile(m *llir.Module, opts Options) (string, error) {
 		opts.Entry = "main"
 	}
 	m.ResolveAliases()
-	g := &gen{m: m, opts: opts, rt: map[string]bool{}, cmpUsed: map[string]bool{}}
+	g := &gen{m: m, opts: opts, rt: map[string]bool{},
+		cmpUsed: map[string]bool{}, cmpUsedD: map[string]bool{}, cmpConst: map[string]string{}}
 	if err := g.run(); err != nil {
 		return "", err
 	}
@@ -151,14 +152,19 @@ type gen struct {
 	text strings.Builder // .text lines (after crt0)
 	ram  strings.Builder // .ramtext lines (XIPText: RAM-resident stubs)
 
-	rt      map[string]bool // runtime routines needed
-	ramSet  map[string]bool // functions emitted into .ramtext (XIPText)
-	recSet  map[string]bool // functions using the recursion frame stack
-	frameSz map[string]int  // measured frame bytes per recSet function
-	cmpUsed map[string]bool // comparison millicode helpers needed
-	stubN   int             // generated label counter
-	funcIdx map[string]*llir.Func
-	maxVar  map[string]int // variadic callee -> max variadic arg count seen
+	desc      strings.Builder // comparison descriptors (outside frames)
+	descWords int             // words in desc (alignment padding)
+
+	rt       map[string]bool   // runtime routines needed
+	ramSet   map[string]bool   // functions emitted into .ramtext (XIPText)
+	recSet   map[string]bool   // functions using the recursion frame stack
+	frameSz  map[string]int    // measured frame bytes per recSet function
+	cmpUsed  map[string]bool   // comparison millicode helpers needed
+	cmpUsedD map[string]bool   // descriptor-form helpers needed
+	cmpConst map[string]string // $literal operand -> its constant word
+	stubN    int               // generated label counter
+	funcIdx  map[string]*llir.Func
+	maxVar   map[string]int // variadic callee -> max variadic arg count seen
 }
 
 // uartMMIO maps the compiler-known UART globals to dmaasm MMIO operands
@@ -294,6 +300,15 @@ func (g *gen) run() error {
 	fmt.Fprintf(w, ".data\n.regs\nexitcode: .word 0\ndone: .word 0\n")
 	fmt.Fprintf(w, "sc0: .word 0\nsc1: .word 0\nsc2: .word 0\n")
 	w.WriteString(g.data.String())
+	// Comparison descriptors: emitted outside the per-function data so
+	// they never land inside a recursion frame region (fr_*
+	// contiguity). They are constant, so XIP builds keep them in flash
+	// text instead of spending SRAM — appended after the last routine
+	// (never reachable by fall-through) and padded to the 8-byte
+	// record alignment the .ramtext split relies on.
+	if !g.opts.XIPText {
+		w.WriteString(g.desc.String())
+	}
 	fmt.Fprintf(w, "\n.text\n.entry __start\n__start:\n")
 	fmt.Fprintf(w, "    move $crtthunk, dispatch\n")
 	// warmstart: entry for loaders that preset dispatch themselves
@@ -310,6 +325,13 @@ func (g *gen) run() error {
 	g.emitCmpHelpers()
 	if err := g.emitRuntime(); err != nil {
 		return err
+	}
+	if g.opts.XIPText && g.desc.Len() > 0 {
+		fmt.Fprintf(w, "\n; --- comparison descriptors (constant flash rodata) ---\n.text\n")
+		w.WriteString(g.desc.String())
+		if g.descWords%2 != 0 {
+			fmt.Fprintf(w, "    .word 0 ; pad to record alignment\n")
+		}
 	}
 	if g.ram.Len() > 0 {
 		fmt.Fprintf(w, "\n; --- RAM-resident self-modifying records ---\n.ramtext\n")

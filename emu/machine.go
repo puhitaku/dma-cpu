@@ -143,6 +143,14 @@ func (m *Machine) Read(addr uint32, size int) (uint32, error) {
 			addr+uint32(size) <= XIPBase+0x04000000+uint32(len(m.Flash)):
 		// The second range is the uncached alias (0x14000000); the
 		// emulator has no cache, so both windows read the same bytes.
+		if m.fl.csr&qmiCSREn != 0 {
+			// QMI direct mode owns the bus: on silicon a memory-mapped
+			// access stalls or faults here. Anything the machine fetches
+			// or reads mid-session must be SRAM-resident (XIP text keeps
+			// the whole kflash_sync closure in .ramtext) — fault loudly
+			// instead of serving data the hardware would not.
+			return 0, fmt.Errorf("XIP read at %#08x during a QMI direct-mode session", addr)
+		}
 		off := (addr - XIPBase) & 0x03FFFFFF
 		switch size {
 		case 1:

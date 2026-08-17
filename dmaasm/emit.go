@@ -68,6 +68,9 @@ func (a *asm) emit() (*Result, error) {
 		}
 		switch s.dir {
 		case "word":
+			if s.inText {
+				continue // emitted in the text pass, in stream order
+			}
 			for _, arg := range s.args {
 				if v, err := parseNum(arg); err == nil {
 					data.Word(v)
@@ -266,6 +269,18 @@ func (a *asm) emit() (*Result, error) {
 			}
 			continue
 		}
+		if s.dir == "word" && s.inText {
+			for _, arg := range s.args {
+				if v, err := parseNum(arg); err == nil {
+					out.Word(v)
+				} else if sym, ok := a.syms[arg]; ok {
+					out.WordRef(symLoc(sym, 0))
+				} else {
+					return nil, fmt.Errorf("line %d: .word of undefined symbol %q", s.line, arg)
+				}
+			}
+			continue
+		}
 		if s.mnem == "" {
 			continue
 		}
@@ -441,8 +456,8 @@ func (a *asm) emit() (*Result, error) {
 				mv(litNumP(1), nullP, 1, execCtrl|a.v.CtrlSniffEn) // -d
 				mv(sniffP, at2P, 1, execCtrl)                      // at2 = -d
 				mv(at2P, sniffP, 1, execCtrl)
-				mv(atP, setP, 1, execCtrl)                    // -d | d
-				mv(sniffP, atP, 1, execCtrl|a.v.CtrlBswap)    // at = bswap(d | -d)
+				mv(atP, setP, 1, execCtrl)                 // -d | d
+				mv(sniffP, atP, 1, execCtrl|a.v.CtrlBswap) // at = bswap(d | -d)
 				if err := signTailC(atP, s.line); err != nil {
 					return nil, err
 				}
