@@ -2,3 +2,9 @@
 	path = lib/picolibc
 	url = https://github.com/picolibc/picolibc
 	shallow = true
+[submodule "references/pico-usb-disp"]
+	path = references/pico-usb-disp
+	url = git@github.com:htlabnet/Pico_USB_Disp.git
+[submodule "references/xv6-ns"]
+	path = references/xv6-ns
+	url = git@github.com:davidsaOpenu/xv6-ns.git

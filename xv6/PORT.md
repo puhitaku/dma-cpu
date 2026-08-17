@@ -99,5 +99,37 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
   process tests). Caught the console-inode bug (disks now carry a
   real T_DEVICE console, as mkfs does), sbrk shrink, and dmacc's i64
   copy-pair lowering. Exclusion reasons documented.
-- [ ] Persistence: back the RAM disk with a flash region.
-- [ ] init-style orphan reaping; unlink; parenthesized sh commands.
+- [ ] Persistence (NEXT): single-slot flash layout, kept simple by
+  decision — region 1 = firmware + rodata (baked images, golden
+  fs.img), region 2 = ONE fs slot (4 KB header: magic/generation/
+  length/CRC32, then the disk image), no free area, no A/B. Sync is
+  kernel-driven over QMI direct mode with the ARM parked in an
+  SRAM-resident `wfi` loop (no flash fetches); header programmed
+  last, so a torn sync falls back to the golden image. `cal_flash`
+  silicon experiment gates the QMI driver.
+- [ ] kill() + init-style orphan reaping (expands the usertests
+  roster: killstatus, reparent, preempt-adjacent tests).
+- [ ] Per-process heap (real sbrk semantics; admits the sbrk* tests).
+- [ ] Parenthesized sh commands (deeper clone budget exists now).
+- [ ] More peripherals for the machine (GPIO/PIO surface).
+
+## Presentation goals (beyond xv6)
+
+The machine presents itself at an upcoming event. Display output, two
+options, both PIO-era techniques on the machine's own terms:
+
+- [ ] Option 1 — DVI out: the PIO/HSTX DVI technique (RP2350 HSTX
+  serializer driving a DVI signal; framebuffer fed by the machine).
+- [ ] Option 2 — USB out: driving a DisplayLink-class USB display
+  adapter with a PIO USB host; reference OSS vendored as the
+  `references/pico-usb-disp` submodule (htlabnet Pico_USB_Disp — the
+  T6 protocol encoder + PIO USB host are the parts to study).
+- [ ] mount() + external SD card: a second block device (SPI SD via
+  PIO or spare channels) mounted into the fs when the internal disk
+  runs short; syscall/design reference vendored as `references/xv6-ns`
+  (an xv6 fork with mount and more syscalls — we take mount, NOT
+  namespaces).
+
+`references/` submodules are study material, not vendored code: if
+anything is derived from them into the tree, it gets a LICENSE
+section per the project's attribution format at that moment.
