@@ -936,14 +936,29 @@ func (fc *funcCtx) emitGEP(ins *llir.Instr) error {
 			return nil
 		}
 	}
+	// A no-op GEP (zero offset, no variable indices) is an alias of
+	// its base: forward instead of copying (0 blocks vs 1).
+	if constOff == 0 && len(vars) == 0 {
+		return fc.forward(ins.Res, base)
+	}
 	res := fc.word(ins.Res)
 	bv, err := fc.op(base)
 	if err != nil {
 		return err
 	}
-	fc.ins("move %s, %s", bv, res)
+	// Fold the base into the first arithmetic op instead of a leading
+	// `move base, res` (an add costs 3 blocks; the move is pure waste).
+	first := true
+	acc := func(operand string) {
+		if first {
+			fc.ins("add %s, %s, %s", bv, operand, res)
+			first = false
+			return
+		}
+		fc.ins("add %s, %s, %s", res, operand, res)
+	}
 	if constOff != 0 {
-		fc.ins("add %s, $0x%x, %s", res, uint32(int32(constOff)), res)
+		acc(fmt.Sprintf("$0x%x", uint32(int32(constOff))))
 	}
 	for _, vp := range vars {
 		iv, err := fc.op(vp.v)
@@ -951,11 +966,11 @@ func (fc *funcCtx) emitGEP(ins *llir.Instr) error {
 			return err
 		}
 		if vp.scale == 1 {
-			fc.ins("add %s, %s, %s", res, iv, res)
+			acc(iv)
 			continue
 		}
 		fc.emitMulConst(iv, uint32(vp.scale), "sc1")
-		fc.ins("add %s, sc1, %s", res, res)
+		acc("sc1")
 	}
 	return nil
 }
