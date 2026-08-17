@@ -6,6 +6,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @dma_disk = dso_local local_unnamed_addr global i32 0, align 4
 @dma_disksize = dso_local local_unnamed_addr global i32 0, align 4
 @fsready = dso_local local_unnamed_addr global i32 0, align 4
+@kflash_arm = dso_local local_unnamed_addr global i32 0, align 4
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none)
 define dso_local void @kfs_start() local_unnamed_addr #0 {
@@ -75,6 +76,16 @@ define dso_local noundef i32 @kfs_link(i32 noundef %0, i32 noundef %1) local_unn
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none)
 define dso_local noundef i32 @kfs_unlink(i32 noundef %0) local_unnamed_addr #0 {
   ret i32 -1
+}
+
+; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none)
+define dso_local noundef i32 @kflash_sync() local_unnamed_addr #0 {
+  ret i32 -1
+}
+
+; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none)
+define dso_local void @kflash_init() local_unnamed_addr #0 {
+  ret void
 }
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none)

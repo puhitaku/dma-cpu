@@ -172,6 +172,13 @@ fstat(int fd, struct stat *st)
 }
 
 int
+sync(void)
+{
+  fill(SYS_sync, 0, 0, 0);
+  return dma_trap();
+}
+
+int
 link(const char *old, const char *new)
 {
   fill(SYS_link, (uint)old, (uint)new, 0);

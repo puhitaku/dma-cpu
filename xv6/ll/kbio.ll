@@ -11,6 +11,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @bufs = internal global [8 x %struct.buf] zeroinitializer, align 4
 @.str.1 = private unnamed_addr constant [18 x i8] c"bread: no buffers\00", align 1
 @.str.2 = private unnamed_addr constant [7 x i8] c"brelse\00", align 1
+@fs_dirty = dso_local local_unnamed_addr global i32 0, align 4
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local ptr @bread(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
@@ -26,7 +27,7 @@ define dso_local ptr @bread(i32 noundef %0, i32 noundef %1) local_unnamed_addr #
   br i1 %9, label %10, label %11
 
 10:                                               ; preds = %5, %2
-  tail call void @panic(ptr noundef nonnull @.str) #3
+  tail call void @panic(ptr noundef nonnull @.str) #4
   unreachable
 
 11:                                               ; preds = %5, %27
@@ -72,7 +73,7 @@ define dso_local ptr @bread(i32 noundef %0, i32 noundef %1) local_unnamed_addr #
   br i1 %37, label %38, label %39
 
 38:                                               ; preds = %36
-  tail call void @panic(ptr noundef nonnull @.str.1) #3
+  tail call void @panic(ptr noundef nonnull @.str.1) #4
   unreachable
 
 39:                                               ; preds = %36
@@ -103,7 +104,7 @@ define dso_local void @brelse(ptr noundef captures(none) %0) local_unnamed_addr 
   br i1 %4, label %5, label %6
 
 5:                                                ; preds = %1
-  tail call void @panic(ptr noundef nonnull @.str.2) #3
+  tail call void @panic(ptr noundef nonnull @.str.2) #4
   unreachable
 
 6:                                                ; preds = %1
@@ -117,8 +118,16 @@ define dso_local void @bwrite(ptr noundef readnone captures(none) %0) local_unna
   ret void
 }
 
-; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none)
-define dso_local void @log_write(ptr noundef readnone captures(none) %0) local_unnamed_addr #2 {
+; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(readwrite, argmem: read, inaccessiblemem: none)
+define dso_local void @log_write(ptr noundef readonly captures(none) %0) local_unnamed_addr #3 {
+  %2 = getelementptr inbounds nuw i8, ptr %0, i32 4
+  %3 = load i32, ptr %2, align 4, !tbaa !11
+  %4 = lshr i32 %3, 2
+  %5 = and i32 %4, 1048575
+  %6 = shl nuw i32 1, %5
+  %7 = load i32, ptr @fs_dirty, align 4, !tbaa !3
+  %8 = or i32 %6, %7
+  store i32 %8, ptr @fs_dirty, align 4, !tbaa !3
   ret void
 }
 
@@ -140,7 +149,8 @@ define dso_local void @initlog(i32 noundef %0, ptr noundef readnone captures(non
 attributes #0 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { minsize noreturn optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #2 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #3 = { minsize nobuiltin noreturn nounwind optsize "no-builtins" }
+attributes #3 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(readwrite, argmem: read, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #4 = { minsize nobuiltin noreturn nounwind optsize "no-builtins" }
 
 !llvm.module.flags = !{!0, !1}
 !llvm.ident = !{!2}

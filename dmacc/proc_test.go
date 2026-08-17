@@ -31,7 +31,7 @@ func compileKernel(t *testing.T, fs bool) string {
 	t.Helper()
 	list := []string{"kproc", "kfsstub"}
 	if fs {
-		list = []string{"kproc", "kfs", "kfile", "kbio", "kfsglue", "kpipe", "string"}
+		list = []string{"kproc", "kfs", "kfile", "kbio", "kfsglue", "kpipe", "kflash", "string"}
 	}
 	var mods []*llir.Module
 	for _, p := range list {

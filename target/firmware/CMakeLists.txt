@@ -29,7 +29,8 @@ target_include_directories(dma_hil PRIVATE
 
 target_compile_definitions(dma_hil PRIVATE DMX_TARGET_RP2350)
 
-target_link_libraries(dma_hil pico_stdlib hardware_pio)
+target_link_libraries(dma_hil pico_stdlib hardware_pio
+        hardware_flash)
 
 pico_enable_stdio_uart(dma_hil 1)
 pico_enable_stdio_usb(dma_hil 0)

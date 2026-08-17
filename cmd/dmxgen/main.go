@@ -660,12 +660,12 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 // echo, cat, wc AND ls as DMX-exec files.
 func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x1A000
-	sText, sData := lay.text+0x22000, lay.text+0x38000
-	iText, iData := lay.text+0x46000, lay.text+0x47000
-	diskHome := lay.text + 0x48000
+	cText, cData := lay.text+0x4000, lay.text+0x1C000
+	sText, sData := lay.text+0x24000, lay.text+0x3A000
+	iText, iData := lay.text+0x48000, lay.text+0x49000
+	diskHome := lay.text + 0x4A000
 	diskMax := uint32(0x20000) // 128 KiB
-	arena, arenaEnd := lay.text+0x68000, lay.text+0x77000
+	arena, arenaEnd := lay.text+0x6A000, lay.text+0x77000
 
 	casm := func(src string, text, data uint32) (*dmaasm.Result, error) {
 		return dmaasm.Assemble(src, dmaasm.Options{
@@ -681,7 +681,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		return nil, err
 	}
 	kcDasm, err := compileLL([]string{"xv6/ll/kproc.ll", "xv6/ll/kfs.ll", "xv6/ll/kfile.ll",
-		"xv6/ll/kbio.ll", "xv6/ll/kfsglue.ll", "xv6/ll/kpipe.ll", "xv6/ll/string.ll"},
+		"xv6/ll/kbio.ll", "xv6/ll/kfsglue.ll", "xv6/ll/kpipe.ll", "xv6/ll/kflash.ll", "xv6/ll/string.ll"},
 		dmacc.Options{Entry: "kmain", NoSafepoints: true})
 	if err != nil {
 		return nil, err
@@ -717,7 +717,8 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		name  string
 		extra []string
 	}{{"echo", nil}, {"cat", []string{"xv6/ll/printf.ll"}},
-		{"wc", []string{"xv6/ll/printf.ll"}}, {"ls", []string{"xv6/ll/printf.ll"}}} {
+		{"wc", []string{"xv6/ll/printf.ll"}}, {"ls", []string{"xv6/ll/printf.ll"}},
+		{"syncprog", []string{"xv6/ll/printf.ll"}}} {
 		paths := append([]string{"xv6/ll/" + up.name + ".ll", "xv6/ll/ulib.ll", "xv6/ll/usys.ll"}, up.extra...)
 		udasm, err := compileLL(paths, dmacc.Options{})
 		if err != nil {
@@ -731,7 +732,11 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		if err != nil {
 			return nil, err
 		}
-		fb.AddFile(up.name, blob)
+		fname := up.name
+		if fname == "syncprog" {
+			fname = "sync"
+		}
+		fb.AddFile(fname, blob)
 	}
 	disk := fb.Bytes()
 	if uint32(len(disk)) > diskMax {
@@ -765,6 +770,8 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		{"g_nextpid", 3}, {"g_k_sysentry", sy(kern, "sys_entry")},
 		{"g_inj_wreg", emu.ChanRegAddr(inj, emu.OffWriteAddr)},
 		{"g_inj_treg", emu.ChanRegAddr(inj, emu.OffAl1TransCountTrig)},
+		{"g_fsslot", fsSlotXIP},
+		{"g_kflash_arm", lay.scratch + 0x10},
 	} {
 		if errs == nil {
 			if err := patchData(kernC.Image, cData, sy(kernC, g.name), g.val); err != nil {
@@ -776,6 +783,9 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	b.blobNames = []string{"disk"}
 	b.sym["BLOB_DISK_HOME"] = diskHome
 	b.sym["INJ_CH"] = uint32(inj)
+	b.sym["FSSLOT"] = fsSlotXIP
+	b.sym["DISK_LEN"] = uint32(len(disk))
+	b.sym["FLASHREQ"] = lay.scratch + 0x10
 	b.vec, b.disp0, b.inj = sy(kern, "vecSched"), sy(sh, "dispatch"), kernInjCtrlCh(v, inj)
 	b.ticks = sy(kernC, "g_ticks")
 	if errs != nil {
@@ -785,6 +795,10 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	// Emulator session verification: ls, files, redirection, a pipe.
 	m := emu.NewMachine(v)
 	m.TXPace = 13000 // ~115200 baud vs the 15000-cycle tick, as on silicon
+	m.Flash = make([]byte, 0x180000) // the kernel reads the slot header
+	for i := range m.Flash {
+		m.Flash[i] = 0xFF
+	}
 	results := []*dmaasm.Result{kern, kernC, sh, idle}
 	for _, r := range results {
 		if _, err := r.Image.Load(m, nil); err != nil {
@@ -818,6 +832,11 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	}
 	return b, nil
 }
+// fsSlotXIP is the persistent-fs slot: one 4 KB header sector + the
+// disk image, at a fixed flash offset above the firmware region (the
+// firmware asserts it does not grow past it).
+const fsSlotXIP = 0x10100000
+
 const sysWantConsole = "hello from pid 1 via SYS_write\n" +
 	"pid 1 saw the clock advance\n" +
 	"pid 1 exiting\n"

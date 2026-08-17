@@ -106,6 +106,8 @@ extern int kfs_chdir(uint pathaddr);
 extern int kfs_mkdir(uint pathaddr);
 extern int kfs_link(uint oldaddr, uint newaddr);
 extern int kfs_unlink(uint pathaddr);
+extern int kflash_sync(void);
+extern void kflash_init(void);
 extern uint kfs_iopen(const char *path);
 extern int kfs_iread(uint ipu, uint off, uint dst, uint n);
 extern void kfs_iclose(uint ipu);
@@ -388,8 +390,10 @@ static void
 kenter(void)
 {
   rearm = 0;
-  if (!fsready && dma_disk)
+  if (!fsready && dma_disk) {
     kfs_start();
+    kflash_init();
+  }
   struct proc *p = &proc[curr];
   entry_disp = p->pdispatch;
   entry_thunk = p->thunk;
@@ -620,6 +624,9 @@ dma_ksyscall(void)
     break;
   case SYS_unlink:
     ret = fsready ? (uint)kfs_unlink(m->a0) : (uint)-1;
+    break;
+  case SYS_sync:
+    ret = fsready ? (uint)kflash_sync() : (uint)-1;
     break;
   case SYS_read: {
     int r;

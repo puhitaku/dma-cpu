@@ -54,13 +54,18 @@ func buildDisk(t *testing.T, v *emu.Variant) []byte {
 		{"cat", []string{"printf"}},
 		{"wc", []string{"printf"}},
 		{"ls", []string{"printf"}},
+		{"syncprog", []string{"printf"}},
 	} {
 		res := buildUser(t, v, prog.name, prog.extra...)
 		blob, err := fsimg.DMXExec(res.Image, res.Symbol)
 		if err != nil {
 			t.Fatal(err)
 		}
-		b.AddFile(prog.name, blob)
+		name := prog.name
+		if name == "syncprog" {
+			name = "sync"
+		}
+		b.AddFile(name, blob)
 	}
 	return b.Bytes()
 }
@@ -68,6 +73,14 @@ func buildDisk(t *testing.T, v *emu.Variant) []byte {
 // bootXsh boots UPSTREAM sh.c (slot 0) on the full fs kernel with the
 // RAM disk mounted — exec resolves paths in the filesystem now.
 func bootXsh(t *testing.T) (*emu.Machine, *dmaasm.Result) {
+	return bootXshFlash(t, nil)
+}
+
+// bootXshFlash boots with a QSPI flash model attached. The disk is
+// staged from the flash slot when its header is valid (as the ARM
+// does at boot), else from the golden image; the kernel gets the slot
+// address so SYS_sync can burn it.
+func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	t.Helper()
 	v, err := emu.VariantByName("rp2350")
 	if err != nil {
@@ -103,15 +116,15 @@ func bootXsh(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernC, err := casm(kcDasm, 0x2000C000, 0x20022000)
+	kernC, err := casm(kcDasm, 0x2000C000, 0x20024000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sh, err := casm(shDasm, 0x2002A000, 0x20040000)
+	sh, err := casm(shDasm, 0x2002C000, 0x20042000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idle, err := casm(idleDasm, 0x2004E000, 0x2004F000)
+	idle, err := casm(idleDasm, 0x20050000, 0x20051000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,10 +148,28 @@ func bootXsh(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 		{sh, entrySh, 1, 0, true},
 		{idle, entryI, 2, 0, false},
 	}, true)
-	// The RAM disk.
+	// The RAM disk: staged from a valid flash slot, else golden.
 	disk := buildDisk(t, v)
-	const diskBase = 0x20050000
-	if diskBase+len(disk) > 0x20070000 {
+	const slotXIP = 0x10100000
+	if flash != nil {
+		m.Flash = flash
+		off := slotXIP - emu.XIPBase
+		h := func(i int) uint32 { return binary.LittleEndian.Uint32(flash[off+4*i:]) }
+		if h(0) == 0x53464D44 && h(2) == uint32(len(disk)) {
+			var sum uint32
+			img := flash[off+0x1000 : off+0x1000+len(disk)]
+			for i := 0; i < len(img); i += 4 {
+				sum += binary.LittleEndian.Uint32(img[i:])
+			}
+			if sum == h(3) {
+				disk = append([]byte(nil), img...)
+				t.Logf("staged disk from flash slot generation %d", h(1))
+			}
+		}
+		m.Poke32(mustSym(t, kernC, "g_fsslot"), slotXIP)
+	}
+	const diskBase = 0x20052000
+	if diskBase+len(disk) > 0x20072000 {
 		t.Fatalf("disk too large: %d", len(disk))
 	}
 	for i := 0; i < len(disk); i += 4 {
@@ -147,7 +178,7 @@ func bootXsh(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	m.Poke32(mustSym(t, kernC, "g_dma_disk"), diskBase)
 	m.Poke32(mustSym(t, kernC, "g_dma_disksize"), uint32(len(disk)))
 	// exec arena.
-	m.Poke32(mustSym(t, kernC, "g_arena"), 0x20070000)
+	m.Poke32(mustSym(t, kernC, "g_arena"), 0x20072000)
 	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007F000)
 	m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 	m.Poke32(mustSym(t, kernC, "g_k_sysentry"), mustSym(t, kern, "sys_entry"))

@@ -16,6 +16,9 @@
 
 uint dma_disk;     /* loader-patched: base of the fs image in RAM */
 uint dma_disksize; /* loader-patched: bytes */
+uint fs_dirty;     /* 4K-sector dirty bits since the last flash sync
+                    * (kflash.c); log_write is the upstream hook that
+                    * sees every modified block */
 
 static struct buf bufs[NBUFS];
 
@@ -60,7 +63,7 @@ bwrite(struct buf *b)
 void
 log_write(struct buf *b)
 {
-  (void)b;
+  fs_dirty |= 1u << (b->blockno * BSIZE / 4096);
 }
 
 void

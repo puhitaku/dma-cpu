@@ -99,14 +99,14 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
   process tests). Caught the console-inode bug (disks now carry a
   real T_DEVICE console, as mkfs does), sbrk shrink, and dmacc's i64
   copy-pair lowering. Exclusion reasons documented.
-- [ ] Persistence (NEXT): single-slot flash layout, kept simple by
-  decision — region 1 = firmware + rodata (baked images, golden
-  fs.img), region 2 = ONE fs slot (4 KB header: magic/generation/
-  length/CRC32, then the disk image), no free area, no A/B. Sync is
-  kernel-driven over QMI direct mode with the ARM parked in an
-  SRAM-resident `wfi` loop (no flash fetches); header programmed
-  last, so a torn sync falls back to the golden image. `cal_flash`
-  silicon experiment gates the QMI driver.
+- [x] Persistence (prompts/022): single flash slot (header-last
+  commit, generation counter, word-sum checksum, golden fallback).
+  Sync policy lives in the kernel (log_write dirty-sector map,
+  incremental burns); primitives run on a pluggable executor — QMI
+  direct mode (reference, emulator-validated three-boot loop) or the
+  parked ARM's SRAM loop running SDK flash routines (silicon: the
+  quad-mode exit-XIP dance belongs to the bootrom). Files survive
+  hard reboots on hardware ("disk: FLASH SLOT gen 2").
 - [ ] kill() + init-style orphan reaping (expands the usertests
   roster: killstatus, reparent, preempt-adjacent tests).
 - [ ] Per-process heap (real sbrk semantics; admits the sbrk* tests).

@@ -15,6 +15,7 @@
 #include <stdio.h>
 
 #include "pico/stdlib.h"
+#include "hardware/flash.h"
 #include "hardware/gpio.h"
 #include "hardware/pio.h"
 
@@ -777,6 +778,34 @@ static void shell_start(void)
 }
 #endif
 
+/* The ARM's final state: an SRAM-resident loop with interrupts masked
+ * that serves as the machine's flash executor (prompts/022): the
+ * kernel's sync posts erase/program requests to a mailbox and the ARM
+ * runs the SDK's XIP-safe routines (they handle the quad-mode
+ * exit-XIP dance the machine cannot). Between requests the loop just
+ * spins in SRAM — the ARM never fetches from flash again. */
+static void __attribute__((noinline, section(".time_critical.park"))) park_forever(void)
+{
+    __asm volatile("cpsid i");
+#ifdef HIL_XSH_FLASHREQ
+    volatile uint32_t *req = (volatile uint32_t *)HIL_XSH_FLASHREQ; /* op,off,src,seq,ack */
+    for (;;) {
+        if (req[3] != req[4]) {
+            uint32_t op = req[0], off = req[1], src = req[2];
+            if (op == 1)
+                flash_range_erase(off, 4096);
+            else if (op == 2)
+                flash_range_program(off, (const uint8_t *)src, 256);
+            req[4] = req[3];
+        }
+    }
+#else
+    for (;;) {
+        __asm volatile("wfi");
+    }
+#endif
+}
+
 #ifdef HIL_HAS_XSH
 /* Phase 7 (prompts/019): hand the console to UPSTREAM xv6 sh.c on the
  * full filesystem kernel. The RAM disk (echo, cat, wc, README as an
@@ -793,19 +822,38 @@ static void xsh_start(void)
         printf("XSH: FAIL load\n");
         return;
     }
-    stage_blob(HIL_XSH_BLOB_DISK_HOME, hil_xsh_blob_disk, sizeof hil_xsh_blob_disk);
+    /* Stage the disk: a valid persistent slot (magic, size, word-sum
+     * checksum, header written last by the kernel's sync) wins over
+     * the golden image. */
+    const uint32_t *hdr = (const uint32_t *)HIL_XSH_FSSLOT;
+    int fromflash = 0;
+    if (hdr[0] == 0x53464D44u && hdr[2] == HIL_XSH_DISK_LEN) {
+        const uint32_t *img = (const uint32_t *)(HIL_XSH_FSSLOT + 0x1000);
+        uint32_t sum = 0;
+        for (uint32_t i = 0; i < HIL_XSH_DISK_LEN / 4; i++)
+            sum += img[i];
+        if (sum == hdr[3]) {
+            for (uint32_t i = 0; i < HIL_XSH_DISK_LEN; i += 4)
+                reg_wr(HIL_XSH_BLOB_DISK_HOME + i, img[i / 4]);
+            fromflash = 1;
+        }
+    }
+    if (!fromflash) {
+        stage_blob(HIL_XSH_BLOB_DISK_HOME, hil_xsh_blob_disk, sizeof hil_xsh_blob_disk);
+    }
     printf("=== handing console to UPSTREAM xv6 sh + fs, Tier-C compact "
-           "(ARM parked; the $ prompt below is served entirely by the DMA "
-           "controller) ===\n");
+           "(disk: %s gen %lu; ARM -> SRAM wfi; the $ prompt below is served "
+           "entirely by the DMA controller) ===\n",
+           fromflash ? "FLASH SLOT" : "golden", fromflash ? (unsigned long)hdr[1] : 0);
     dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 1}; /* compact machine */
     if (dmx_start(&cfg, HIL_XSH_ENTRY) != DMX_OK) {
         printf("XSH: FAIL start\n");
         return;
     }
+    for (int i = 0; i < 5; i++) /* clear the flash-request mailbox */
+        reg_wr(HIL_XSH_FLASHREQ + 4u * i, 0);
     arm_tick_ch(HIL_XSH_INJ_CH, HIL_XSH_VEC, HIL_XSH_DISP0, HIL_XSH_INJ_CTRL);
-    for (;;) {
-        tight_loop_contents();
-    }
+    park_forever();
 }
 #endif
 
@@ -824,6 +872,14 @@ int main(void)
                HIL_SKU, iter, (void *)&__bss_end__,
                (unsigned long)HIL_MACHINE_RAM_START,
                (unsigned long)HIL_MACHINE_RAM_END);
+#ifdef HIL_XSH_FSSLOT
+        extern char __flash_binary_end;
+        if ((uintptr_t)&__flash_binary_end >= HIL_XSH_FSSLOT) {
+            printf("FATAL: firmware overlaps the fs flash slot\n");
+            sleep_ms(5000);
+            continue;
+        }
+#endif
         if ((uintptr_t)&__bss_end__ >= HIL_MACHINE_RAM_START) {
             printf("FATAL: firmware bss overlaps machine RAM\n");
             sleep_ms(5000);
