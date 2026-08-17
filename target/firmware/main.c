@@ -772,6 +772,42 @@ static void shell_start(void)
 }
 #endif
 
+#ifdef HIL_HAS_XSH
+/* Phase 6 (prompts/018): hand the console to UPSTREAM xv6 sh.c. Same
+ * discipline as shell_start: banner, start, then arm the tick chain
+ * onto the running process. The registry blobs (echo, hello) are
+ * staged first so `echo ...` and `hello` exec from the $ prompt. */
+static void xsh_start(void)
+{
+    machine_reset();
+    uint32_t e;
+    if (dmx_load(hil_xsh_kernel_dmx, sizeof hil_xsh_kernel_dmx, NULL, &e) != DMX_OK ||
+        dmx_load(hil_xsh_kernc_dmx, sizeof hil_xsh_kernc_dmx, NULL, &e) != DMX_OK ||
+        dmx_load(hil_xsh_sh_dmx, sizeof hil_xsh_sh_dmx, NULL, &e) != DMX_OK ||
+        dmx_load(hil_xsh_idle_dmx, sizeof hil_xsh_idle_dmx, NULL, &e) != DMX_OK) {
+        printf("XSH: FAIL load\n");
+        return;
+    }
+    stage_blob(HIL_XSH_BLOB_ECHO_TEXT_HOME, hil_xsh_blob_echo_text, sizeof hil_xsh_blob_echo_text);
+    stage_blob(HIL_XSH_BLOB_ECHO_DATA_HOME, hil_xsh_blob_echo_data, sizeof hil_xsh_blob_echo_data);
+    stage_blob(HIL_XSH_BLOB_ECHO_RELOCS_HOME, hil_xsh_blob_echo_relocs, sizeof hil_xsh_blob_echo_relocs);
+    stage_blob(HIL_XSH_BLOB_HELLO_TEXT_HOME, hil_xsh_blob_hello_text, sizeof hil_xsh_blob_hello_text);
+    stage_blob(HIL_XSH_BLOB_HELLO_DATA_HOME, hil_xsh_blob_hello_data, sizeof hil_xsh_blob_hello_data);
+    stage_blob(HIL_XSH_BLOB_HELLO_RELOCS_HOME, hil_xsh_blob_hello_relocs, sizeof hil_xsh_blob_hello_relocs);
+    printf("=== handing console to UPSTREAM xv6 sh (ARM parked; the $ prompt "
+           "below is served entirely by the DMA controller) ===\n");
+    dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 0};
+    if (dmx_start(&cfg, HIL_XSH_ENTRY) != DMX_OK) {
+        printf("XSH: FAIL start\n");
+        return;
+    }
+    arm_tick(HIL_XSH_VEC, HIL_XSH_DISP0, HIL_XSH_INJ_CTRL);
+    for (;;) {
+        tight_loop_contents();
+    }
+}
+#endif
+
 int main(void)
 {
     stdio_init_all();
@@ -818,8 +854,10 @@ int main(void)
         exp_exec();
 #endif
         printf("=== END iter=%u\n", iter);
-#ifdef HIL_HAS_SHELL
-        shell_start(); /* one validation pass, then the console is the shell's */
+#ifdef HIL_HAS_XSH
+        xsh_start(); /* one validation pass, then the console belongs to xv6 sh */
+#elif defined(HIL_HAS_SHELL)
+        shell_start();
 #endif
         sleep_ms(2000);
     }

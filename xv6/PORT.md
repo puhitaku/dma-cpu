@@ -55,6 +55,13 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
   pause(n)/exit/wait with ZOMBIE reaping and deposit-at-exit, the
   scheduler in C, kernel.dasm reduced to two entry stubs, a single
   one-shot tick injector. Silicon-validated.
+- [x] UPSTREAM sh.c as the shell (prompts/018): dmacc gained tail-call
+  optimization (frameless single-call wrappers) and bounded recursion
+  via depth cloning (functions on call cycles — plus fork-callers
+  reachable from them, the vfork-reentrancy set — get per-depth
+  frames); the kernel completes syscalls into the caller's r0. sh.c
+  runs byte-for-byte upstream: exec with argv, `;` lists over nested
+  vfork, error paths. Silicon-validated. Pipes/redirection await fs.
 - [x] SYS_read + argv (prompts/017): cooked console input (the
   consoleintr slice of console.c in kproc.c: echo, backspace, CR→NL),
   blocking read() via tick-retry, argv passed through the exec'd

@@ -8,6 +8,14 @@
 
 volatile uint seed = 12345;
 
+/* ulib.c owns sbrk() now (wrapping sys_sbrk); this test links
+   umalloc + string.c without ulib, so provide the wrapper here. */
+char *
+sbrk(int n)
+{
+  return sys_sbrk(n, 0);
+}
+
 int
 main(void)
 {

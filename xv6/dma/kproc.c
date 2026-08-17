@@ -87,6 +87,13 @@ uint *volatile kw_khalt; /* &kernel.dasm khalt: park when nothing runnable */
 /* Absorbs injector fires that land while the kernel is running. */
 uint tickpending;
 
+/* Tick injector: ABI channel 3, family-common register addresses. */
+#define INJ_WRITE_ADDR (*(volatile uint *)0x500000C4u)  /* CH3 WRITE_ADDR */
+#define INJ_COUNT_TRIG (*(volatile uint *)0x500000DCu)  /* CH3 AL1_TRANS_COUNT_TRIG */
+
+#define W(a) (*(volatile uint *)(a))
+
+
 /* --- Process creation (Phase 5e): image registry + region allocator.
  * The registry rows are pre-parsed DMX images (segments + a packed
  * relocation table + the symbol offsets the kernel needs), poked by
@@ -146,6 +153,19 @@ lookup(const char *name)
   return 0;
 }
 
+/* Completes a syscall for proc p: the return value goes into the
+ * mailbox AND the image's r0 word — frameless usys wrappers tail-jump
+ * into the kernel, so the kernel's return lands directly at the
+ * wrapper's caller, which reads r0 per the ABI. */
+static void
+setret(struct proc *p, uint v)
+{
+  volatile struct dma_sysmail *m = (volatile struct dma_sysmail *)p->pmail;
+  m->ret = v;
+  m->done = 1;
+  W(p->pdispatch - 0x54) = v; /* r0: regs base is 0x54 below dispatch */
+}
+
 /* Releases a vfork parent (sleeping on the child's proc struct) when
  * the child execs or exits, depositing the child pid — the parent's
  * fork() return value — into its mailbox. */
@@ -155,19 +175,12 @@ vfork_release(struct proc *p)
   for (int i = 0; i < NPROC; i++) {
     struct proc *q = &proc[i];
     if (q->state == SLEEPING && q->chan == (uint)p) {
-      volatile struct dma_sysmail *qm = (volatile struct dma_sysmail *)q->pmail;
-      qm->ret = p->pid;
+      setret(q, p->pid);
       q->chan = 0;
       q->state = RUNNABLE;
     }
   }
 }
-
-/* Tick injector: ABI channel 3, family-common register addresses. */
-#define INJ_WRITE_ADDR (*(volatile uint *)0x500000C4u)  /* CH3 WRITE_ADDR */
-#define INJ_COUNT_TRIG (*(volatile uint *)0x500000DCu)  /* CH3 AL1_TRANS_COUNT_TRIG */
-
-#define W(a) (*(volatile uint *)(a))
 
 static uint rearm;
 
@@ -528,7 +541,7 @@ dma_ksyscall(void)
         volatile struct dma_sysmail *qm = (volatile struct dma_sysmail *)q->pmail;
         if (qm->a0)
           W(qm->a0) = p->xstate;
-        qm->ret = p->pid;
+        setret(q, p->pid);
         q->chan = 0;
         q->state = RUNNABLE;
         reaped = 1;
@@ -542,15 +555,13 @@ dma_ksyscall(void)
   }
 
   if (!block) {
-    m->ret = ret;
-    m->done = 1;
+    setret(p, ret);
     p->state = RUNNING;
     kexit(curr, W(p->plr));
     return;
   }
   if (p->state == SLEEPING)
-    m->ret = ret; /* pause/wait: value for when the sleeper resumes */
-  m->done = 1;
+    setret(p, ret); /* pause/wait/fork: value for when it resumes */
   swtch();
 }
 

@@ -7,24 +7,24 @@ target triple = "thumbv6m-unknown-none-eabi"
 @dma_heap = internal global [36864 x i8] zeroinitializer, align 1
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(readwrite, argmem: none, inaccessiblemem: none)
-define dso_local nonnull ptr @sbrk(i32 noundef %0) local_unnamed_addr #0 {
-  %2 = icmp slt i32 %0, 0
-  br i1 %2, label %9, label %3
+define dso_local nonnull ptr @sys_sbrk(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
+  %3 = icmp slt i32 %0, 0
+  br i1 %3, label %10, label %4
 
-3:                                                ; preds = %1
-  %4 = load i32, ptr @dma_brk, align 4, !tbaa !3
-  %5 = add nuw i32 %4, %0
-  %6 = icmp ugt i32 %5, 36864
-  br i1 %6, label %9, label %7
+4:                                                ; preds = %2
+  %5 = load i32, ptr @dma_brk, align 4, !tbaa !3
+  %6 = add nuw i32 %5, %0
+  %7 = icmp ugt i32 %6, 36864
+  br i1 %7, label %10, label %8
 
-7:                                                ; preds = %3
-  %8 = getelementptr inbounds nuw i8, ptr @dma_heap, i32 %4
-  store i32 %5, ptr @dma_brk, align 4, !tbaa !3
-  br label %9
+8:                                                ; preds = %4
+  %9 = getelementptr inbounds nuw i8, ptr @dma_heap, i32 %5
+  store i32 %6, ptr @dma_brk, align 4, !tbaa !3
+  br label %10
 
-9:                                                ; preds = %1, %3, %7
-  %10 = phi ptr [ %8, %7 ], [ inttoptr (i32 -1 to ptr), %3 ], [ inttoptr (i32 -1 to ptr), %1 ]
-  ret ptr %10
+10:                                               ; preds = %2, %4, %8
+  %11 = phi ptr [ %9, %8 ], [ inttoptr (i32 -1 to ptr), %4 ], [ inttoptr (i32 -1 to ptr), %2 ]
+  ret ptr %11
 }
 
 attributes #0 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(readwrite, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }

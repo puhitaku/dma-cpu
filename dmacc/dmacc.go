@@ -27,6 +27,7 @@ type Options struct {
 	NoSafepoints    bool   // omit safepoints at backward branches
 	InlineCompares  bool   // inline comparison sequences (faster, much larger)
 	Stats           *Stats // when non-nil, collect size attribution
+	RecursionDepth  int    // max recursion depth (frame clones); default 12
 }
 
 // Compile translates a parsed module into dmaasm source. The generated
@@ -84,7 +85,7 @@ func (g *gen) run() error {
 		return fmt.Errorf("dmacc: entry function %q must return an integer", g.opts.Entry)
 	}
 	g.collectGarbage(entry)
-	if err := g.checkNoRecursion(); err != nil {
+	if err := g.expandRecursion(); err != nil {
 		return err
 	}
 	// Variadic frames are static too: size each callee's vararg area to
@@ -222,6 +223,188 @@ func (g *gen) collectGarbage(entry *llir.Func) {
 		}
 	}
 	g.m.Globals = globals
+}
+
+// expandRecursion makes recursion work with static frames by cloning:
+// every function on a call-graph cycle is copied RecursionDepth times
+// (F, F__r2, ..., F__rK), each clone owning its own frame words, and
+// intra-cycle calls at depth d are rewritten to the depth-d+1 clones.
+// Depth-K intra-cycle calls go to the reserved overflow name, which
+// emitCall lowers to HALT — bounded recursion, honestly enforced.
+// Each nesting level owning distinct words also makes recursive code
+// safe under vfork (a child re-entering at a deeper level cannot
+// clobber the suspended parent's frames; see prompts/018).
+func (g *gen) expandRecursion() error {
+	depth := g.opts.RecursionDepth
+	if depth <= 0 {
+		depth = 12
+	}
+	// Find the members of call-graph cycles (plain DFS: a function is
+	// cyclic if it can reach itself through direct calls).
+	callees := func(f *llir.Func) []string {
+		var out []string
+		for _, b := range f.Blocks {
+			for _, ins := range b.Instrs {
+				if ins.Op == "call" && ins.Callee != "" && !strings.HasPrefix(ins.Callee, "llvm.") {
+					if _, ok := g.funcIdx[ins.Callee]; ok {
+						out = append(out, ins.Callee)
+					}
+				}
+			}
+		}
+		return out
+	}
+	reaches := func(from, target string) bool {
+		seen := map[string]bool{}
+		var walk func(n string) bool
+		walk = func(n string) bool {
+			if seen[n] {
+				return false
+			}
+			seen[n] = true
+			for _, c := range callees(g.funcIdx[n]) {
+				if c == target || walk(c) {
+					return true
+				}
+			}
+			return false
+		}
+		return walk(from)
+	}
+	cyclic := map[string]bool{}
+	names := make([]string, 0, len(g.funcIdx))
+	for n := range g.funcIdx {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		for _, c := range callees(g.funcIdx[n]) {
+			if c == n || reaches(c, n) {
+				cyclic[n] = true
+				break
+			}
+		}
+	}
+	// vfork reentrancy (xv6/PORT.md): fork() suspends its caller chain
+	// MID-FUNCTION while the child runs the same image; if the child can
+	// re-enter a suspended function (sh's runcmd calling fork1 again for
+	// a `;` list), that function has two live activations and needs
+	// per-depth frames exactly like recursion. Re-entry can only happen
+	// through recursive code, so the exact clone set addition is:
+	// functions that transitively reach fork() AND are reachable from a
+	// cycle member. (A fork-caller used only from straight-line code —
+	// dma-sh's run command — keeps its single frame.)
+	if _, hasFork := g.funcIdx["fork"]; hasFork && len(cyclic) > 0 {
+		fromCyclic := map[string]bool{}
+		var mark func(n string)
+		mark = func(n string) {
+			if fromCyclic[n] {
+				return
+			}
+			fromCyclic[n] = true
+			for _, c := range callees(g.funcIdx[n]) {
+				mark(c)
+			}
+		}
+		for n := range cyclic {
+			mark(n)
+		}
+		for _, n := range names {
+			if !cyclic[n] && fromCyclic[n] && reaches(n, "fork") {
+				cyclic[n] = true
+			}
+		}
+	}
+	if len(cyclic) == 0 {
+		return nil
+	}
+	// Address-taken cycle members would escape the depth routing.
+	taken := map[string]bool{}
+	seeVal := func(v *llir.Value) {
+		if v != nil && (v.Kind == llir.VFunc || v.Kind == llir.VGlobal) && cyclic[v.Name] {
+			taken[v.Name] = true
+		}
+	}
+	for _, f := range g.m.Funcs {
+		for _, b := range f.Blocks {
+			for _, ins := range b.Instrs {
+				for _, a := range ins.Args {
+					seeVal(a)
+				}
+				for _, e := range ins.Phi {
+					seeVal(e.Val)
+				}
+				seeVal(ins.CalleeVal)
+			}
+		}
+	}
+	for n := range taken {
+		return fmt.Errorf("dmacc: recursive function %q has its address taken (depth cloning cannot route it)", n)
+	}
+	// Rewrite intra-cycle calls in the originals (depth 1) and clones.
+	rewrite := func(f *llir.Func, d int) {
+		for _, b := range f.Blocks {
+			for i, ins := range b.Instrs {
+				if ins.Op == "call" && cyclic[strings.TrimSuffix(ins.Callee, recSuffix(d))] {
+					base := ins.Callee
+					ni := *ins // instrs may be shared with nothing, but stay safe
+					if d >= depth {
+						ni.Callee = recOverflowName
+					} else {
+						ni.Callee = base + recSuffix(d+1)
+					}
+					b.Instrs[i] = &ni
+				}
+			}
+		}
+	}
+	// Clone each cyclic function for depths 2..K. Blocks and Instrs are
+	// copied (Callee is mutated per depth); Values/Types are shared.
+	cyclicNames := make([]string, 0, len(cyclic))
+	for n := range cyclic {
+		cyclicNames = append(cyclicNames, n)
+	}
+	sort.Strings(cyclicNames)
+	for _, n := range cyclicNames {
+		orig := g.funcIdx[n]
+		for d := 2; d <= depth; d++ {
+			nf := &llir.Func{
+				Name:     n + recSuffix(d),
+				Ret:      orig.Ret,
+				Params:   orig.Params,
+				Variadic: orig.Variadic,
+				Internal: orig.Internal,
+			}
+			for _, b := range orig.Blocks {
+				nb := &llir.Block{Name: b.Name}
+				for _, ins := range b.Instrs {
+					ni := *ins
+					nb.Instrs = append(nb.Instrs, &ni)
+				}
+				nf.Blocks = append(nf.Blocks, nb)
+			}
+			g.m.Funcs = append(g.m.Funcs, nf)
+			g.funcIdx[nf.Name] = nf
+		}
+	}
+	// Route calls: depth-1 originals call __r2; clone d calls d+1. The
+	// clone rewrite must look up the ORIGINAL callee name.
+	for _, n := range cyclicNames {
+		rewrite(g.funcIdx[n], 1)
+		for d := 2; d <= depth; d++ {
+			rewrite(g.funcIdx[n+recSuffix(d)], d)
+		}
+	}
+	return nil
+}
+
+const recOverflowName = "__dmacc_recursion_overflow"
+
+func recSuffix(d int) string {
+	if d <= 1 {
+		return ""
+	}
+	return fmt.Sprintf("__r%d", d)
 }
 
 // checkNoRecursion rejects call-graph cycles: v0 frames are static.

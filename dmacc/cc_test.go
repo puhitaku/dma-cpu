@@ -188,9 +188,10 @@ func TestLibcStdio(t *testing.T) {
 	}
 }
 
-// TestRecursionRejected: v0 static frames make recursion a compile-time
-// error, not a silent miscompile.
-func TestRecursionRejected(t *testing.T) {
+// TestRecursion: bounded recursion via depth cloning (each level owns
+// its own static frame; depth-K overflow lowers to HALT). tree(10)
+// requires depth 10 of the default 12.
+func TestRecursion(t *testing.T) {
 	src, err := os.ReadFile("testdata/recurse.ll")
 	if err != nil {
 		t.Fatal(err)
@@ -199,10 +200,30 @@ func TestRecursionRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := dmacc.Compile(mod, dmacc.Options{}); err == nil {
-		t.Fatal("expected a recursion error")
-	} else if !strings.Contains(err.Error(), "recursion") {
-		t.Fatalf("wrong error: %v", err)
+	dasm, err := dmacc.Compile(mod, dmacc.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range emu.Variants {
+		res, err := dmaasm.Assemble(dasm, dmaasm.Options{Variant: v})
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := emu.NewMachine(v)
+		if err := res.Image.LoadAndStart(m, nil, img.DefaultMachine()); err != nil {
+			t.Fatal(err)
+		}
+		rr, err := m.Run(emu.RunConfig{MaxCycles: 50_000_000})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rr.Reason != emu.StopIdle {
+			t.Fatalf("%s: did not halt: %v", v.Name, rr.Reason)
+		}
+		ec, _ := res.Symbol("exitcode")
+		if got := m.Peek32(ec); got != 89 {
+			t.Errorf("%s: tree(10) = %d, want 89", v.Name, got)
+		}
 	}
 }
 

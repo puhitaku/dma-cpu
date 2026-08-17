@@ -26,6 +26,8 @@ type funcCtx struct {
 	fwd       map[string]string // pure-copy results forwarded to their source operand
 	blockIdx  map[string]int
 	directPhi map[string]bool // blocks whose phis are written directly on edges
+	tail      map[*llir.Instr]bool // calls emitted as tail jumps
+	tailRet   map[*llir.Instr]bool // rets consumed by a preceding tail call
 	hasCalls  bool
 	curBlock  int
 	cat       string // size-report attribution for emitted code
@@ -42,6 +44,8 @@ func (g *gen) emitFunc(f *llir.Func) error {
 		defBlock:  map[string]int{},
 		fused:     map[string]bool{},
 		fwd:       map[string]string{},
+		tail:      map[*llir.Instr]bool{},
+		tailRet:   map[*llir.Instr]bool{},
 		blockIdx:  map[string]int{},
 		directPhi: map[string]bool{},
 	}
@@ -137,11 +141,50 @@ func (fc *funcCtx) prepass() error {
 				fc.defs[ins.Res] = ins
 				fc.defBlock[ins.Res] = i
 			}
+		}
+	}
+	// Tail calls: a call immediately followed by a ret of its (sole-use)
+	// result — or a discarded/void result — jumps to the callee with the
+	// caller's lr intact, so the callee returns directly to our caller.
+	// This makes single-call wrappers frameless, which the vfork
+	// discipline relies on (xv6/dma/usys.c).
+	for _, b := range f.Blocks {
+		for j := 0; j+1 < len(b.Instrs); j++ {
+			ins, ret := b.Instrs[j], b.Instrs[j+1]
+			if ins.Op != "call" || ret.Op != "ret" {
+				continue
+			}
+			if isNopIntrinsic(ins.Callee) || strings.HasPrefix(ins.Callee, "llvm.") {
+				continue
+			}
+			if ins.CalleeVal == nil {
+				if _, ok := fc.g.funcIdx[ins.Callee]; !ok {
+					continue // undefined (memcpy/memset lowering)
+				}
+			} else if len(ins.Args) > 4 || ins.FixedArgs >= 0 && len(ins.Args) > ins.FixedArgs {
+				continue // emitIndirectCall would reject; keep its error path
+			}
+			ok := false
+			if len(ret.Args) == 0 {
+				ok = ins.Res == "" || fc.uses[ins.Res] == 0
+			} else if a := ret.Args[0]; a.Kind == llir.VLocal && ins.Res != "" &&
+				a.Name == ins.Res && fc.uses[ins.Res] == 1 {
+				ok = true
+			}
+			if ok {
+				fc.tail[ins] = true
+				fc.tailRet[ret] = true
+			}
+		}
+	}
+	for _, b := range f.Blocks {
+		for _, ins := range b.Instrs {
 			// Conservative: ops that may lower to runtime calls count as
 			// calls, so the prologue always saves lr before one happens.
+			// Tail calls never clobber lr and don't count.
 			switch ins.Op {
 			case "call":
-				if !isNopIntrinsic(ins.Callee) {
+				if !isNopIntrinsic(ins.Callee) && !fc.tail[ins] {
 					fc.hasCalls = true
 				}
 			case "mul", "shl", "lshr", "ashr", "udiv", "sdiv", "urem", "srem":
@@ -626,6 +669,9 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 		return fc.emitSwitch(b, ins)
 
 	case "ret":
+		if fc.tailRet[ins] {
+			return nil // the preceding tail call already left
+		}
 		if len(ins.Args) > 0 {
 			v, err := fc.op(ins.Args[0])
 			if err != nil {
@@ -897,6 +943,12 @@ func (fc *funcCtx) emitCall(ins *llir.Instr) error {
 	if ins.CalleeVal != nil {
 		return fc.emitIndirectCall(ins)
 	}
+	if name == recOverflowName {
+		// Depth-K intra-cycle call: bounded recursion exhausted. HALT
+		// stops the machine at a well-defined point.
+		fc.ins("halt")
+		return nil
+	}
 	callee, ok := fc.g.funcIdx[name]
 	if !ok {
 		// Freestanding clang may emit direct libcalls for the memory
@@ -944,6 +996,13 @@ func (fc *funcCtx) emitCall(ins *llir.Instr) error {
 			fc.ins("move %s, v_%s_%s", v, ccName, sanitize(callee.Params[i].Name))
 		}
 	}
+	if fc.tail[ins] {
+		if fc.hasCalls {
+			fc.ins("move %s, lr", fc.lrsWord()) // restore before leaving
+		}
+		fc.ins("jump %s", funcSym(name))
+		return nil
+	}
 	fc.ins("call %s", funcSym(name))
 	if ins.Res != "" && ins.Typ.Kind != llir.TVoid {
 		fc.ins("move r0, %s", fc.word(ins.Res))
@@ -972,6 +1031,13 @@ func (fc *funcCtx) emitIndirectCall(ins *llir.Instr) error {
 	ptr, err := fc.op(ins.CalleeVal)
 	if err != nil {
 		return err
+	}
+	if fc.tail[ins] {
+		if fc.hasCalls {
+			fc.ins("move %s, lr", fc.lrsWord())
+		}
+		fc.ins("jumpr %s", ptr)
+		return nil
 	}
 	ret := fc.stub("Ri")
 	fc.ins("move $%s, lr", ret)

@@ -1,18 +1,19 @@
 /* DMA-machine replacement for user/usys.pl's ecall stubs (not from
  * upstream xv6): the "syscall instruction" of this machine.
  *
- * A syscall stores its number and arguments into the process's mailbox
- * and then CALLS the kernel's per-process syscall vector (sys_from_a/b
- * in kernel.dasm) as a plain indirect function call. Unlike a trap,
- * a syscall is voluntary, so nothing needs the dispatch word: the
- * kernel stub returns (or, for yield/exit, switches away and later
- * resumes) through this process's lr, and pending scheduler ticks are
- * untouched — they deliver at the next safepoint as usual. This keeps
- * the syscall path completely free of races against the tick injectors.
+ * A syscall writes the process's mailbox and TAIL-CALLS the kernel
+ * vector: dmacc's tail-call optimization turns `return dma_trap()`
+ * into a jump with the caller's lr intact, so these wrappers have NO
+ * frames at all — the kernel returns straight to the wrapper's caller
+ * with the result already in r0 and mail.ret. Framelessness is what
+ * makes the whole syscall layer safe under vfork: a child sharing the
+ * parent's image can make any syscall without clobbering a frame the
+ * suspended parent resumes through (prompts/018).
  *
- * Loader-patched: __dma_syscall_entry (this instance's kernel vector).
+ * Loader-patched: __dma_syscall_entry (kernel.dasm sys_entry).
  */
 #include "kernel/types.h"
+#include "kernel/stat.h"
 #include "kernel/syscall.h"
 
 struct dma_sysmail {
@@ -22,35 +23,50 @@ struct dma_sysmail {
 volatile struct dma_sysmail __dma_sysmail;
 uint __dma_syscall_entry;
 
+/* The trap itself: a tail call all the way into the kernel. */
 static int
-dma_syscall(uint num, uint a0, uint a1, uint a2)
+dma_trap(void)
+{
+  return ((int (*)(void))__dma_syscall_entry)();
+}
+
+static void
+fill(uint num, uint a0, uint a1, uint a2)
 {
   volatile struct dma_sysmail *m = &__dma_sysmail;
   m->num = num;
   m->a0 = a0;
   m->a1 = a1;
   m->a2 = a2;
-  m->done = 0;
-  ((void (*)(void))__dma_syscall_entry)();
-  return (int)m->ret;
 }
 
 int
 write(int fd, const void *buf, int n)
 {
-  return dma_syscall(SYS_write, (uint)fd, (uint)buf, (uint)n);
+  fill(SYS_write, (uint)fd, (uint)buf, (uint)n);
+  return dma_trap();
 }
 
 int
 getpid(void)
 {
-  return dma_syscall(SYS_getpid, 0, 0, 0);
+  fill(SYS_getpid, 0, 0, 0);
+  return dma_trap();
 }
 
 int
 uptime(void)
 {
-  return dma_syscall(SYS_uptime, 0, 0, 0);
+  fill(SYS_uptime, 0, 0, 0);
+  return dma_trap();
+}
+
+/* Sleeps n ticks (upstream sys_sleep semantics; n=0 yields). */
+int
+pause(int n)
+{
+  fill(SYS_pause, (uint)n, 0, 0);
+  return dma_trap();
 }
 
 /* Console read with blocking semantics: the kernel returns 0 while no
@@ -60,55 +76,42 @@ int
 read(int fd, void *buf, int n)
 {
   for (;;) {
-    int r = dma_syscall(SYS_read, (uint)fd, (uint)buf, (uint)n);
+    fill(SYS_read, (uint)fd, (uint)buf, (uint)n);
+    int r = dma_trap();
     if (r != 0)
       return r;
-    dma_syscall(SYS_pause, 1, 0, 0);
+    fill(SYS_pause, 1, 0, 0);
+    dma_trap();
   }
-}
-
-/* Sleeps n ticks (upstream sys_sleep semantics; n=0 yields). */
-int
-pause(int n)
-{
-  return dma_syscall(SYS_pause, (uint)n, 0, 0);
-}
-
-/* Blocks until a child exits; the exiting child deposits its pid (the
- * return value) and status into this process's mailbox (kproc.c). */
-int
-wait(int *status)
-{
-  return dma_syscall(SYS_wait, (uint)status, 0, 0);
 }
 
 /* vfork semantics (xv6/PORT.md): the child shares the parent's image
  * and frames; the parent is suspended until the child calls exec() or
- * exit(). Between fork() and exec() the child must touch nothing else
- * — in particular it must not make other syscalls (see below). */
+ * exit(). With frameless wrappers the child may use any syscall in
+ * between; it must only avoid clobbering the parent's live locals. */
 int
 fork(void)
 {
-  return dma_syscall(SYS_fork, 0, 0, 0);
+  fill(SYS_fork, 0, 0, 0);
+  return dma_trap();
 }
 
-/* exec and exit do NOT go through dma_syscall: a vforked child shares
- * the parent's static frames, and re-entering dma_syscall would
- * overwrite the saved return address the suspended parent resumes
- * through. Each gets a private invocation with its own frame. */
+/* Blocks until a child exits; the exiting child deposits its pid (the
+ * return value) and status into this process's mailbox and r0. */
+int
+wait(int *status)
+{
+  fill(SYS_wait, (uint)status, 0, 0);
+  return dma_trap();
+}
 
-/* argv is accepted for the upstream signature but not passed yet. */
+/* argv is copied by the kernel into the fresh image (kproc.c). Only
+ * returns on failure. */
 int
 exec(const char *path, char **argv)
 {
-  volatile struct dma_sysmail *m = &__dma_sysmail;
-  m->num = SYS_exec;
-  m->a0 = (uint)path;
-  m->a1 = (uint)argv;
-  m->a2 = 0;
-  m->done = 0;
-  ((void (*)(void))__dma_syscall_entry)();
-  return (int)m->ret; /* reached only on failure */
+  fill(SYS_exec, (uint)path, (uint)argv, 0);
+  return dma_trap();
 }
 
 /* Never returns: the kernel marks the process ZOMBIE (or reaps it
@@ -117,13 +120,60 @@ exec(const char *path, char **argv)
 void
 exit(int status)
 {
-  volatile struct dma_sysmail *m = &__dma_sysmail;
-  m->num = SYS_exit;
-  m->a0 = (uint)status;
-  m->a1 = 0;
-  m->a2 = 0;
-  m->done = 0;
-  ((void (*)(void))__dma_syscall_entry)();
+  fill(SYS_exit, (uint)status, 0, 0);
+  dma_trap();
   for (;;)
     ;
+}
+
+/* File-layer syscalls sh.c and ulib.c reference: the kernel answers
+ * -1 until fs.c is ported (sh degrades gracefully — redirection and
+ * pipes report failure, `cd` prints its error). */
+int
+open(const char *path, int mode)
+{
+  fill(SYS_open, (uint)path, (uint)mode, 0);
+  return dma_trap();
+}
+
+int
+close(int fd)
+{
+  fill(SYS_close, (uint)fd, 0, 0);
+  return dma_trap();
+}
+
+int
+dup(int fd)
+{
+  fill(SYS_dup, (uint)fd, 0, 0);
+  return dma_trap();
+}
+
+int
+pipe(int *p)
+{
+  fill(SYS_pipe, (uint)p, 0, 0);
+  return dma_trap();
+}
+
+int
+chdir(const char *path)
+{
+  fill(SYS_chdir, (uint)path, 0, 0);
+  return dma_trap();
+}
+
+int
+fstat(int fd, struct stat *st)
+{
+  fill(SYS_fstat, (uint)fd, (uint)st, 0);
+  return dma_trap();
+}
+
+int
+kill(int pid)
+{
+  fill(SYS_kill, (uint)pid, 0, 0);
+  return dma_trap();
 }
