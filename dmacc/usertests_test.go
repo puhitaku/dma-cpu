@@ -120,6 +120,7 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 	m.Poke32(mustSym(t, kernC, "g_arena"), 0x2007A000)
 	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007E000)
 	m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
+	m.Poke32(mustSym(t, kernC, "g_initpid"), 2)
 	m.Poke32(mustSym(t, kernC, "g_k_sysentry"), mustSym(t, kern, "sys_entry"))
 	m.Poke32(mustSym(t, kernC, "g_inj_wreg"), emu.ChanRegAddr(emu.CompactInjector, emu.OffWriteAddr))
 	m.Poke32(mustSym(t, kernC, "g_inj_treg"), emu.ChanRegAddr(emu.CompactInjector, emu.OffAl1TransCountTrig))

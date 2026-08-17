@@ -21,7 +21,8 @@ const (
 	pfThunk
 	pfResume
 	pfPmail
-	procWords // 12
+	pfKilled
+	procWords // 13
 )
 
 // enum procstate (kproc.c / upstream proc.h).
@@ -75,7 +76,8 @@ func wireKernelEnc(t *testing.T, m *emu.Machine, v *emu.Variant,
 	m.Poke32(kc("g_kw_pcurresume"), ks("pCurResume"))
 	m.Poke32(kc("g_kw_curresume"), ks("curResume"))
 	m.Poke32(kc("g_kw_nextresume"), ks("nextResume"))
-	m.Poke32(kc("g_kw_khalt"), ks("khalt"))
+	m.Poke32(kc("g_kw_park"), ks("parkloop"))
+	m.Poke32(kc("g_kw_parkvec"), ks("parkvec"))
 
 	// The proc table.
 	base := kc("g_proc")
@@ -94,7 +96,12 @@ func wireKernelEnc(t *testing.T, m *emu.Machine, v *emu.Variant,
 		pf(i, pfPirqresume, sym(p.res, "irqresume"))
 		pf(i, pfPlr, sym(p.res, "lr"))
 		pf(i, pfThunk, sym(p.res, "crtthunk"))
-		pf(i, pfResume, p.entry)
+		// First schedule enters at warmstart with dispatch preset here
+		// (as exec does): a cold-entry resume would let crt0's dispatch
+		// write clobber a tick that fired during the switch to this
+		// proc, killing the timer (prompts/024).
+		pf(i, pfResume, sym(p.res, "warmstart"))
+		m.Poke32(sym(p.res, "dispatch"), sym(p.res, "crtthunk"))
 		if p.syscall {
 			pf(i, pfPmail, sym(p.res, "g___dma_sysmail"))
 			m.Poke32(sym(p.res, "g___dma_syscall_entry"), ks("sys_entry"))

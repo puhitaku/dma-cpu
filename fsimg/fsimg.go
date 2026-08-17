@@ -53,7 +53,9 @@ type dinode struct {
 // New sizes the image: total blocks, inode count, log blocks (the
 // kernel never replays the log, but the superblock reserves it).
 func New(blocks, ninodes uint32) *Builder {
-	b := &Builder{size: blocks, ninodes: ninodes, nlog: 8}
+	// nlog 0: the DMA kernel's log layer is a no-op (kbio.c) — the log
+	// region would only waste blocks on an already-tight disk.
+	b := &Builder{size: blocks, ninodes: ninodes, nlog: 0}
 	ninodeblocks := ninodes/ipb + 1
 	nbitmap := blocks/(BSIZE*8) + 1
 	b.disk = make([]byte, blocks*BSIZE)

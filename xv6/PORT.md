@@ -117,8 +117,18 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
   status, time its own delays, nor verify. The ARM executor is the
   irreducible ~dozen SDK calls; persistence ships on it (re-verified,
   gen 2). Reproducible cal_flash probe prints the finding every boot.
-- [ ] kill() + init-style orphan reaping (expands the usertests
-  roster: killstatus, reparent, preempt-adjacent tests).
+- [x] kill() + init-style orphan reaping (prompts/024): a `killed`
+  flag enforced at kernel entry, one shared terminate() path for
+  exit/kill, orphans adopted by a loader-named init pid (the idle
+  proc, which never waits, so adoptees free without lingering). The
+  disk gains compact printf-free `kill` and `spin` utilities; the
+  silicon demo (`spin &` … `kill 5`) stops the dots mid-prompt.
+  Chasing a timer regression this exposed fixed two latent lost-tick
+  hazards: preloaded processes now first-schedule at `warmstart` with
+  dispatch preset by the loader (a cold-entry crt0 could clobber a
+  just-landed fire), and the nothing-runnable park is now a wakeable
+  spin through a kernel-owned `parkvec` the injector patches, instead
+  of an unwakeable HALT.
 - [ ] Per-process heap (real sbrk semantics; admits the sbrk* tests).
 - [ ] Parenthesized sh commands (deeper clone budget exists now).
 - [ ] More peripherals for the machine (GPIO/PIO surface).

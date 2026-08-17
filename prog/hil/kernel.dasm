@@ -34,6 +34,7 @@ ksysv:      .word 0        ; &f_dma_ksyscall
 retT:       .word sched_ret
 retS:       .word sys_ret
 vecSched:   .word sched_entry  ; injector READ source
+parkvec:    .word parkloop     ; park-loop dispatch word (see parkloop)
 
 .text
 .entry sched_entry
@@ -63,5 +64,11 @@ sy1:
 sys_ret:
     jumpr nextResume
 
-khalt:                     ; C parks here when no process is runnable
-    halt
+parkloop:                  ; C parks here when no process is runnable:
+    jumpr parkvec          ; spin through parkvec, which the C side
+                           ; aimed the injector at — the next tick
+                           ; patches it and the spin detours into
+                           ; sched_entry, waking the machine. A HALT
+                           ; park would be unwakeable: an injector
+                           ; write to a dispatch word cannot restart
+                           ; stopped channels (prompts/024).

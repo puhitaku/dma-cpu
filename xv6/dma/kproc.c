@@ -70,6 +70,7 @@ struct proc {
   uint thunk;      /* 9 */
   uint resume;     /* 10: where this proc continues when scheduled */
   uint pmail;      /* 11 */
+  uint killed;     /* 12: kill() pending; enforced at kernel entry */
 };
 
 struct proc proc[NPROC];
@@ -82,7 +83,10 @@ uint *volatile kw_curthunk;
 uint *volatile kw_pcurresume;
 uint *volatile kw_curresume;
 uint *volatile kw_nextresume;
-uint *volatile kw_khalt; /* &kernel.dasm khalt: park when nothing runnable */
+uint *volatile kw_park;    /* kernel.dasm parkloop: spin when nothing
+                            * is runnable */
+uint *volatile kw_parkvec; /* &parkvec: the park loop's dispatch word;
+                            * the injector patches it to wake us */
 
 /* Absorbs injector fires that land while the kernel is running. */
 uint tickpending;
@@ -148,6 +152,9 @@ struct kimg {
 struct kimg kimages[NIMG];
 uint k_sysentry;        /* loader-patched: &kernel.dasm sys_entry */
 uint nextpid;           /* loader-patched: first unused pid */
+uint initpid;           /* loader-patched: adopter of orphans (0 = no
+                         * reparenting). The init proc never waits, so
+                         * its adoptees skip ZOMBIE and free directly. */
 uint arena, arena_end;  /* loader-patched: exec placement region */
 
 /* First-fit allocator with coalescing over [arena, arena_end): each
@@ -281,6 +288,9 @@ vfork_release(struct proc *p)
 }
 
 static uint rearm;
+static uint parked;  /* left the kernel into the park loop */
+static uint waspark; /* this entry is a park-loop wake (set by kenter) */
+static void terminate(struct proc *p, int status);
 
 /* --- Cooked console input (the consoleintr slice of kernel/console.c,
  * see xv6/PORT.md): SYS_read drains the UART RX FIFO through a line
@@ -394,12 +404,21 @@ kenter(void)
     kfs_start();
     kflash_init();
   }
-  struct proc *p = &proc[curr];
-  entry_disp = p->pdispatch;
-  entry_thunk = p->thunk;
-  if (W(entry_disp) != entry_thunk) { /* fire landed just before entry */
-    W(entry_disp) = entry_thunk;
-    tick_income();
+  waspark = parked;
+  if (parked) {
+    /* Woken from the park loop by the fire that detoured us here
+     * (accounted by the caller). curr may be a freed zombie: never
+     * dereference its dispatch. */
+    parked = 0;
+    entry_disp = 0;
+  } else {
+    struct proc *p = &proc[curr];
+    entry_disp = p->pdispatch;
+    entry_thunk = p->thunk;
+    if (W(entry_disp) != entry_thunk) { /* fire landed just before entry */
+      W(entry_disp) = entry_thunk;
+      tick_income();
+    }
   }
   INJ_WRITE_ADDR = (uint)&tickpending;
   if (tickpending) {
@@ -453,9 +472,30 @@ swtch(void)
 {
   int next = pick();
   if (next < 0) {
-    /* Nothing runnable: park at kernel.dasm's halt block. A live
-     * system keeps an always-runnable process (idle/shell). */
-    kexit(curr, (uint)kw_khalt);
+    /* Nothing runnable: spin at kernel.dasm's parkloop with the
+     * injector aimed at parkvec — the next tick patches it and the
+     * spin detours into sched_entry (prompts/024). curr may be a
+     * freed zombie, so every published cur* word points at the park
+     * cells, never into its image; kenter's `parked` flag skips the
+     * dispatch checks on the way back in. A tick consumed below may
+     * make someone runnable again — they run one fire later. */
+    if (entry_disp && W(entry_disp) != entry_thunk) {
+      W(entry_disp) = entry_thunk;
+      tick_income();
+    }
+    *kw_parkvec = (uint)kw_park;
+    *kw_pcurdisp = (uint)kw_parkvec;
+    *kw_curthunk = (uint)kw_park;
+    *kw_pcurresume = (uint)kw_parkvec;
+    *kw_nextresume = (uint)kw_park;
+    INJ_WRITE_ADDR = (uint)kw_parkvec;
+    parked = 1;
+    if (tickpending) {
+      tickpending = 0;
+      tick_income();
+    }
+    if (rearm)
+      INJ_COUNT_TRIG = 1;
     return;
   }
   kexit((uint)next, proc[next].resume);
@@ -562,11 +602,68 @@ dma_ktick(void)
 {
   kenter();
   tick_income(); /* the delivered detour that brought us here */
-  struct proc *p = &proc[curr];
-  p->resume = *kw_curresume; /* saved by the dasm stub */
-  if (p->state == RUNNING)
-    p->state = RUNNABLE;
+  /* A park-loop wake arrives with curr sleeping (or gone): nothing
+   * was executing, so there is nothing to save or kill here. */
+  if (!waspark) {
+    struct proc *p = &proc[curr];
+    if (p->killed) {
+      terminate(p, -1); /* the pending kill lands here */
+      swtch();
+      return;
+    }
+    p->resume = *kw_curresume; /* saved by the dasm stub */
+    if (p->state == RUNNING)
+      p->state = RUNNABLE;
+  }
   swtch();
+}
+
+/* Ends process p with the given status: closes its fs state, frees
+ * its exec'd image, releases vfork/wait sleepers, reparents its
+ * children to initpid, and leaves the slot ZOMBIE or UNUSED. Works
+ * for the current process and (kill) for a sleeping victim alike. */
+static void
+terminate(struct proc *p, int status)
+{
+  int slot = (int)(p - proc);
+  p->xstate = (uint)status;
+  if (fsready)
+    kfs_exit(slot);
+  kfree_exec(slot);
+  vfork_release(p); /* also ends a pre-exec vfork suspension */
+  /* Orphans go to init; init never waits, so its adoptees (including
+   * already-ZOMBIE children of the dying process) free immediately. */
+  if (initpid != 0) {
+    for (int i = 0; i < NPROC; i++) {
+      struct proc *q = &proc[i];
+      if (q->state != UNUSED && q != p && q->ppid == p->pid) {
+        q->ppid = initpid;
+        if (q->state == ZOMBIE)
+          q->state = UNUSED;
+      }
+    }
+  }
+  /* If the parent is blocked in wait() on us, deposit and wake:
+   * this IS the reap (the parent cannot re-run its scan). */
+  int reaped = 0;
+  for (int i = 0; i < NPROC; i++) {
+    struct proc *q = &proc[i];
+    if (q->pid == p->ppid && q->state == SLEEPING && q->chan == (uint)q) {
+      volatile struct dma_sysmail *qm = (volatile struct dma_sysmail *)q->pmail;
+      if (qm->a0)
+        W(qm->a0) = p->xstate;
+      setret(q, p->pid);
+      q->chan = 0;
+      q->state = RUNNABLE;
+      reaped = 1;
+      break;
+    }
+  }
+  if (reaped || (initpid != 0 && p->ppid == initpid))
+    p->state = UNUSED; /* init-adopted processes never linger */
+  else
+    p->state = ZOMBIE;
+  p->killed = 0;
 }
 
 void
@@ -574,6 +671,11 @@ dma_ksyscall(void)
 {
   kenter();
   struct proc *p = &proc[curr];
+  if (p->killed) { /* a kill raced this syscall: die instead */
+    terminate(p, -1);
+    swtch();
+    return;
+  }
   volatile struct dma_sysmail *m = (volatile struct dma_sysmail *)p->pmail;
   uint ret = (uint)-1;
   int block = 0; /* handler slept/exited: switch instead of return */
@@ -831,29 +933,35 @@ dma_ksyscall(void)
     return;
   }
   case SYS_exit: {
-    p->xstate = m->a0;
-    if (fsready)
-      kfs_exit((int)curr);
-    kfree_exec((int)curr);
-    vfork_release(p); /* exit also ends a pre-exec vfork suspension */
-    /* If the parent is blocked in wait() on us, deposit and wake:
-     * this IS the reap (the parent cannot re-run its scan). */
-    int reaped = 0;
+    terminate(p, (int)m->a0);
+    block = 1;
+    break;
+  }
+  case SYS_kill: {
+    int found = -1;
     for (int i = 0; i < NPROC; i++) {
-      struct proc *q = &proc[i];
-      if (q->pid == p->ppid && q->state == SLEEPING && q->chan == (uint)q) {
-        volatile struct dma_sysmail *qm = (volatile struct dma_sysmail *)q->pmail;
-        if (qm->a0)
-          W(qm->a0) = p->xstate;
-        setret(q, p->pid);
-        q->chan = 0;
-        q->state = RUNNABLE;
-        reaped = 1;
+      if (proc[i].state != UNUSED && proc[i].pid == m->a0) {
+        found = i;
         break;
       }
     }
-    p->state = reaped ? UNUSED : ZOMBIE;
-    block = 1;
+    if (found < 0 || proc[found].state == ZOMBIE) {
+      ret = (uint)-1;
+      break;
+    }
+    if (found == (int)curr) { /* suicide: exit now */
+      terminate(p, -1);
+      block = 1;
+      break;
+    }
+    if (proc[found].state == SLEEPING) {
+      /* Not running and not schedulable mid-syscall: the kernel can
+       * execute its death synchronously. */
+      terminate(&proc[found], -1);
+    } else {
+      proc[found].killed = 1; /* enforced at its next kernel entry */
+    }
+    ret = 0;
     break;
   }
   }

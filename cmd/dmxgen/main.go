@@ -251,6 +251,7 @@ const (
 	pfThunk
 	pfResume
 	pfPmail
+	pfKilled
 	procWords
 )
 
@@ -324,7 +325,8 @@ func wireKernel(kern *dmaasm.Result, kData uint32, kernC *dmaasm.Result, cData u
 		patch{kernC.Image, cData, sy(kernC, "g_kw_pcurresume"), sy(kern, "pCurResume")},
 		patch{kernC.Image, cData, sy(kernC, "g_kw_curresume"), sy(kern, "curResume")},
 		patch{kernC.Image, cData, sy(kernC, "g_kw_nextresume"), sy(kern, "nextResume")},
-		patch{kernC.Image, cData, sy(kernC, "g_kw_khalt"), sy(kern, "khalt")},
+		patch{kernC.Image, cData, sy(kernC, "g_kw_park"), sy(kern, "parkloop")},
+		patch{kernC.Image, cData, sy(kernC, "g_kw_parkvec"), sy(kern, "parkvec")},
 	)
 	base := sy(kernC, "g_proc")
 	pf := func(slot, field int, val uint32) {
@@ -343,7 +345,13 @@ func wireKernel(kern *dmaasm.Result, kData uint32, kernC *dmaasm.Result, cData u
 		pf(i, pfPirqresume, sy(p.res, "irqresume"))
 		pf(i, pfPlr, sy(p.res, "lr"))
 		pf(i, pfThunk, sy(p.res, "crtthunk"))
-		pf(i, pfResume, p.entry)
+		// First schedule enters at warmstart with dispatch preset here
+		// (as exec does): a cold-entry resume would let crt0's dispatch
+		// write clobber a tick that fired during the switch to this
+		// proc, killing the timer (prompts/024).
+		pf(i, pfResume, sy(p.res, "warmstart"))
+		ps = append(ps, patch{p.res.Image, p.data,
+			sy(p.res, "dispatch"), sy(p.res, "crtthunk")})
 		if p.syscall {
 			pf(i, pfPmail, sy(p.res, "g___dma_sysmail"))
 			ps = append(ps, patch{p.res.Image, p.data,
@@ -724,7 +732,8 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		extra []string
 	}{{"echo", nil}, {"cat", []string{"xv6/ll/printf.ll"}},
 		{"wc", []string{"xv6/ll/printf.ll"}}, {"ls", []string{"xv6/ll/printf.ll"}},
-		{"syncprog", []string{"xv6/ll/printf.ll"}}} {
+		{"syncprog", []string{"xv6/ll/printf.ll"}},
+		{"killprog", nil}, {"spin", nil}} {
 		paths := append([]string{"xv6/ll/" + up.name + ".ll", "xv6/ll/ulib.ll", "xv6/ll/usys.ll"}, up.extra...)
 		udasm, err := compileLL(paths, dmacc.Options{})
 		if err != nil {
@@ -738,10 +747,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		if err != nil {
 			return nil, err
 		}
-		fname := up.name
-		if fname == "syncprog" {
-			fname = "sync"
-		}
+		fname := strings.TrimSuffix(up.name, "prog") /* syncprog, killprog */
 		fb.AddFile(fname, blob)
 	}
 	disk := fb.Bytes()
@@ -777,6 +783,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		{"g_inj_wreg", emu.ChanRegAddr(inj, emu.OffWriteAddr)},
 		{"g_inj_treg", emu.ChanRegAddr(inj, emu.OffAl1TransCountTrig)},
 		{"g_fsslot", fsSlotXIP},
+		{"g_initpid", 2}, /* idle adopts orphans (prompts/024) */
 		{"g_kflash_arm", lay.scratch + 0x10},
 	} {
 		if errs == nil {
