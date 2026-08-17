@@ -355,26 +355,31 @@ func wireKernel(kern *dmaasm.Result, kData uint32, kernC *dmaasm.Result, cData u
 	return nil
 }
 
-func kernInjCtrl(v *emu.Variant) uint32 {
-	const inj = 3
+func kernInjCtrlCh(v *emu.Variant, inj int) uint32 {
 	return emu.CtrlEN | emu.CtrlHighPriority | emu.CtrlSize32 |
 		v.CtrlTreq(emu.TreqTimer1) | v.CtrlChainTo(inj) | v.CtrlIRQQuiet
 }
 
+func kernInjCtrl(v *emu.Variant) uint32 { return kernInjCtrlCh(v, 3) }
+
 // armKernel pokes the runtime tick setup into an emulator machine for
-// bundle verification (mirrors what the firmware does).
-func armKernel(m *emu.Machine, v *emu.Variant, kern *dmaasm.Result, disp0 uint32) error {
+// bundle verification (mirrors what the firmware does). The injector
+// channel is 3 (classic) or emu.CompactInjector.
+func armKernelCh(m *emu.Machine, v *emu.Variant, kern *dmaasm.Result, disp0 uint32, inj int) error {
 	vec, err := kern.Symbol("vecSched")
 	if err != nil {
 		return err
 	}
-	const inj = 3
 	m.Poke32(v.TimerAddr(1), 1<<16|15000)
 	m.Poke32(emu.ChanRegAddr(inj, emu.OffAl1ReadAddr), vec)
 	m.Poke32(emu.ChanRegAddr(inj, emu.OffAl1WriteAddr), disp0)
 	m.Poke32(emu.ChanRegAddr(inj, emu.OffTransCount), 1)
-	m.Poke32(emu.ChanRegAddr(inj, emu.OffCtrlTrig), kernInjCtrl(v))
+	m.Poke32(emu.ChanRegAddr(inj, emu.OffCtrlTrig), kernInjCtrlCh(v, inj))
 	return nil
+}
+
+func armKernel(m *emu.Machine, v *emu.Variant, kern *dmaasm.Result, disp0 uint32) error {
+	return armKernelCh(m, v, kern, disp0, 3)
 }
 
 // kernBundle is the common emitted form of every Phase 5d bundle.
@@ -647,26 +652,31 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 }
 
 // buildXsh: UPSTREAM user/sh.c as the boot shell on the FULL
-// filesystem kernel (verbatim fs.c/file.c + glue, Phase 7): exec
-// resolves paths on the RAM disk (echo, cat, wc, README — built by
-// fsimg), redirection and pipes work. The firmware stages the disk
-// image at its home; everything else is patched at generation time.
+// filesystem kernel, the WHOLE SYSTEM in Tier-C compact encoding
+// (Phase 8, prompts/020): 8-byte records halve text, the tick
+// injector rides the compact machine's channel 9, and every image's
+// mode-switch records share one window-selector word at the machine
+// scratch (dmaasm CompactScratch). The RAM disk carries upstream
+// echo, cat, wc AND ls as DMX-exec files.
 func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x27000
-	sText, sData := lay.text+0x2F000, lay.text+0x47000
-	iText, iData := lay.text+0x54000, lay.text+0x55000
-	diskHome := lay.text + 0x56000
-	diskMax := uint32(0x16000) // 88 KiB
-	arena, arenaEnd := lay.text+0x6C000, lay.text+0x77800
+	cText, cData := lay.text+0x4000, lay.text+0x1A000
+	sText, sData := lay.text+0x22000, lay.text+0x38000
+	iText, iData := lay.text+0x46000, lay.text+0x47000
+	diskHome := lay.text + 0x48000
+	diskMax := uint32(0x20000) // 128 KiB
+	arena, arenaEnd := lay.text+0x68000, lay.text+0x77000
 
-	kern, err := func() (*dmaasm.Result, error) {
-		ksrc, err := prog.HIL("kernel")
-		if err != nil {
-			return nil, err
-		}
-		return dmaasm.Assemble(ksrc, dmaasm.Options{Variant: v, TextBase: kText, DataBase: kData})
-	}()
+	casm := func(src string, text, data uint32) (*dmaasm.Result, error) {
+		return dmaasm.Assemble(src, dmaasm.Options{
+			Variant: v, Compact: true, CompactScratch: lay.scratch,
+			TextBase: text, DataBase: data})
+	}
+	ksrc, err := prog.HIL("kernel")
+	if err != nil {
+		return nil, err
+	}
+	kern, err := casm(ksrc, kText, kData)
 	if err != nil {
 		return nil, err
 	}
@@ -676,17 +686,17 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	kernC, err := dmaasm.Assemble(kcDasm, dmaasm.Options{Variant: v, TextBase: cText, DataBase: cData})
+	kernC, err := casm(kcDasm, cText, cData)
 	if err != nil {
 		return nil, fmt.Errorf("fs kernel: %w", err)
 	}
 	shDasm, err := compileLL([]string{"xv6/ll/sh.ll", "xv6/ll/ulib.ll", "xv6/ll/printf.ll",
 		"xv6/ll/umalloc.ll", "xv6/ll/sbrk.ll", "xv6/ll/usys.ll"},
-		dmacc.Options{RecursionDepth: 5})
+		dmacc.Options{RecursionDepth: 8})
 	if err != nil {
 		return nil, err
 	}
-	sh, err := dmaasm.Assemble(shDasm, dmaasm.Options{Variant: v, TextBase: sText, DataBase: sData})
+	sh, err := casm(shDasm, sText, sData)
 	if err != nil {
 		return nil, fmt.Errorf("xv6 sh: %w", err)
 	}
@@ -694,24 +704,25 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	idle, err := dmaasm.Assemble(idasm, dmaasm.Options{Variant: v, TextBase: iText, DataBase: iData})
+	idle, err := casm(idasm, iText, iData)
 	if err != nil {
 		return nil, err
 	}
 
-	// The disk: user programs as DMX-exec files + README.
-	fb := fsimg.New(88, 64)
+	// The disk: upstream user programs as compact DMX-exec files.
+	fb := fsimg.New(128, 64)
 	fb.AddFile("README", []byte("the DMA machine runs upstream xv6.\n"))
 	for _, up := range []struct {
 		name  string
 		extra []string
-	}{{"echo", nil}, {"cat", []string{"xv6/ll/printf.ll"}}, {"wc", []string{"xv6/ll/printf.ll"}}} {
+	}{{"echo", nil}, {"cat", []string{"xv6/ll/printf.ll"}},
+		{"wc", []string{"xv6/ll/printf.ll"}}, {"ls", []string{"xv6/ll/printf.ll"}}} {
 		paths := append([]string{"xv6/ll/" + up.name + ".ll", "xv6/ll/ulib.ll", "xv6/ll/usys.ll"}, up.extra...)
 		udasm, err := compileLL(paths, dmacc.Options{})
 		if err != nil {
 			return nil, err
 		}
-		ures, err := dmaasm.Assemble(udasm, dmaasm.Options{Variant: v, TextBase: 0x10000000, DataBase: 0x10040000})
+		ures, err := casm(udasm, 0x10000000, 0x10040000)
 		if err != nil {
 			return nil, err
 		}
@@ -743,6 +754,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		}
 		return a
 	}
+	const inj = emu.CompactInjector
 	for _, g := range []struct {
 		name string
 		val  uint32
@@ -750,9 +762,11 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		{"g_dma_disk", diskHome}, {"g_dma_disksize", uint32(len(disk))},
 		{"g_arena", arena}, {"g_arena_end", arenaEnd},
 		{"g_nextpid", 3}, {"g_k_sysentry", sy(kern, "sys_entry")},
+		{"g_inj_wreg", emu.ChanRegAddr(inj, emu.OffWriteAddr)},
+		{"g_inj_treg", emu.ChanRegAddr(inj, emu.OffAl1TransCountTrig)},
 	} {
 		if errs == nil {
-			if err := patchData(kernC.Image, cData, sy(kernC, "g_"+g.name[2:]), g.val); err != nil {
+			if err := patchData(kernC.Image, cData, sy(kernC, g.name), g.val); err != nil {
 				return nil, err
 			}
 		}
@@ -760,13 +774,14 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	b.blobs = [][]byte{pad4(disk)}
 	b.blobNames = []string{"disk"}
 	b.sym["BLOB_DISK_HOME"] = diskHome
-	b.vec, b.disp0, b.inj = sy(kern, "vecSched"), sy(sh, "dispatch"), kernInjCtrl(v)
+	b.sym["INJ_CH"] = uint32(inj)
+	b.vec, b.disp0, b.inj = sy(kern, "vecSched"), sy(sh, "dispatch"), kernInjCtrlCh(v, inj)
 	b.ticks = sy(kernC, "g_ticks")
 	if errs != nil {
 		return nil, errs
 	}
 
-	// Emulator session verification: files, redirection, a pipe.
+	// Emulator session verification: ls, files, redirection, a pipe.
 	m := emu.NewMachine(v)
 	m.TXPace = 13000 // ~115200 baud vs the 15000-cycle tick, as on silicon
 	results := []*dmaasm.Result{kern, kernC, sh, idle}
@@ -778,20 +793,20 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	for o := 0; o < len(disk); o += 4 {
 		m.Poke32(diskHome+uint32(o), binary.LittleEndian.Uint32(disk[o:]))
 	}
-	if err := armKernel(m, v, kern, b.disp0); err != nil {
+	if err := armKernelCh(m, v, kern, b.disp0, inj); err != nil {
 		return nil, err
 	}
 	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
-		Fetch: 0, Exec: 1, Fix: 2, Entry: b.entry0, Scratch: lay.scratch,
+		Compact: true, Entry: b.entry0, Scratch: lay.scratch,
 	}); err != nil {
 		return nil, err
 	}
-	m.FeedConsole("cat README\recho booom > note\rcat note\rcat README | wc\r")
+	m.FeedConsole("ls\rcat README\recho booom > note\rcat note\rcat README | wc\r")
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
 		return nil, err
 	}
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
-	for _, want := range []string{"$ ", "the DMA machine runs upstream xv6.",
+	for _, want := range []string{"$ ", "README", "the DMA machine runs upstream xv6.",
 		"booom", "1 6 35"} {
 		if !strings.Contains(out, want) {
 			return nil, fmt.Errorf("xsh bundle: session missing %q:\n%s", want, out)

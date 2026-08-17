@@ -6,6 +6,8 @@ target triple = "thumbv6m-unknown-none-eabi"
 %struct.proc = type { i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32 }
 %struct.kimg = type { [12 x i8], i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32 }
 
+@inj_wreg = dso_local local_unnamed_addr global i32 1342177476, align 4
+@inj_treg = dso_local local_unnamed_addr global i32 1342177500, align 4
 @cons_r = internal unnamed_addr global i32 0, align 4
 @cons_w = internal unnamed_addr global i32 0, align 4
 @cons_buf = internal unnamed_addr global [128 x i8] zeroinitializer, align 1
@@ -373,17 +375,19 @@ define internal fastcc void @kenter() unnamed_addr #6 {
   br label %18
 
 18:                                               ; preds = %17, %7
-  store volatile i32 ptrtoint (ptr @tickpending to i32), ptr inttoptr (i32 1342177476 to ptr), align 4, !tbaa !9
-  %19 = load i32, ptr @tickpending, align 4, !tbaa !9
-  %20 = icmp eq i32 %19, 0
-  br i1 %20, label %22, label %21
+  %19 = load i32, ptr @inj_wreg, align 4, !tbaa !9
+  %20 = inttoptr i32 %19 to ptr
+  store volatile i32 ptrtoint (ptr @tickpending to i32), ptr %20, align 4, !tbaa !9
+  %21 = load i32, ptr @tickpending, align 4, !tbaa !9
+  %22 = icmp eq i32 %21, 0
+  br i1 %22, label %24, label %23
 
-21:                                               ; preds = %18
+23:                                               ; preds = %18
   store i32 0, ptr @tickpending, align 4, !tbaa !9
   tail call fastcc void @tick_income() #12
-  br label %22
+  br label %24
 
-22:                                               ; preds = %21, %18
+24:                                               ; preds = %23, %18
   ret void
 }
 
@@ -1663,25 +1667,29 @@ define internal fastcc void @kexit(i32 noundef %0, i32 noundef %1) unnamed_addr 
   %22 = load volatile ptr, ptr @kw_nextresume, align 4, !tbaa !25
   store i32 %1, ptr %22, align 4, !tbaa !9
   %23 = load i32, ptr %13, align 4, !tbaa !22
-  store volatile i32 %23, ptr inttoptr (i32 1342177476 to ptr), align 4, !tbaa !9
-  %24 = load i32, ptr @tickpending, align 4, !tbaa !9
-  %25 = icmp eq i32 %24, 0
-  br i1 %25, label %27, label %26
+  %24 = load i32, ptr @inj_wreg, align 4, !tbaa !9
+  %25 = inttoptr i32 %24 to ptr
+  store volatile i32 %23, ptr %25, align 4, !tbaa !9
+  %26 = load i32, ptr @tickpending, align 4, !tbaa !9
+  %27 = icmp eq i32 %26, 0
+  br i1 %27, label %29, label %28
 
-26:                                               ; preds = %11
+28:                                               ; preds = %11
   store i32 0, ptr @tickpending, align 4, !tbaa !9
   tail call fastcc void @tick_income() #12
-  br label %27
+  br label %29
 
-27:                                               ; preds = %26, %11
-  %28 = load i1, ptr @rearm, align 4
-  br i1 %28, label %29, label %30
+29:                                               ; preds = %28, %11
+  %30 = load i1, ptr @rearm, align 4
+  br i1 %30, label %31, label %34
 
-29:                                               ; preds = %27
-  store volatile i32 1, ptr inttoptr (i32 1342177500 to ptr), align 4, !tbaa !9
-  br label %30
+31:                                               ; preds = %29
+  %32 = load i32, ptr @inj_treg, align 4, !tbaa !9
+  %33 = inttoptr i32 %32 to ptr
+  store volatile i32 1, ptr %33, align 4, !tbaa !9
+  br label %34
 
-30:                                               ; preds = %29, %27
+34:                                               ; preds = %31, %29
   ret void
 }
 

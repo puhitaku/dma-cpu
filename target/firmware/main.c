@@ -240,13 +240,18 @@ static inline uint32_t chreg(int ch, uint32_t off)
  * every pacing-timer tick, and the running process detours into the
  * scheduler at its next safepoint. The images arrive pre-wired from
  * dmxgen; this only loads, arms, starts A, and samples the counters. */
-static void arm_tick(uint32_t vec, uint32_t disp0, uint32_t ctrl)
+static void arm_tick_ch(int ch, uint32_t vec, uint32_t disp0, uint32_t ctrl)
 {
     reg_wr(HIL_TIMER0_ADDR + 4, (1u << 16) | 15000u); /* TIMER1 tick */
-    reg_wr(chreg(3, CH_AL1_READ_ADDR), vec);
-    reg_wr(chreg(3, CH_AL1_WRITE_ADDR), disp0);
-    reg_wr(chreg(3, CH_TRANS_COUNT), 1);
-    reg_wr(chreg(3, CH_CTRL_TRIG), ctrl);
+    reg_wr(chreg(ch, CH_AL1_READ_ADDR), vec);
+    reg_wr(chreg(ch, CH_AL1_WRITE_ADDR), disp0);
+    reg_wr(chreg(ch, CH_TRANS_COUNT), 1);
+    reg_wr(chreg(ch, CH_CTRL_TRIG), ctrl);
+}
+
+static void arm_tick(uint32_t vec, uint32_t disp0, uint32_t ctrl)
+{
+    arm_tick_ch(3, vec, disp0, ctrl);
 }
 
 static void exp_sched(void)
@@ -789,14 +794,15 @@ static void xsh_start(void)
         return;
     }
     stage_blob(HIL_XSH_BLOB_DISK_HOME, hil_xsh_blob_disk, sizeof hil_xsh_blob_disk);
-    printf("=== handing console to UPSTREAM xv6 sh + fs (ARM parked; the $ "
-           "prompt below is served entirely by the DMA controller) ===\n");
-    dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 0};
+    printf("=== handing console to UPSTREAM xv6 sh + fs, Tier-C compact "
+           "(ARM parked; the $ prompt below is served entirely by the DMA "
+           "controller) ===\n");
+    dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 1}; /* compact machine */
     if (dmx_start(&cfg, HIL_XSH_ENTRY) != DMX_OK) {
         printf("XSH: FAIL start\n");
         return;
     }
-    arm_tick(HIL_XSH_VEC, HIL_XSH_DISP0, HIL_XSH_INJ_CTRL);
+    arm_tick_ch(HIL_XSH_INJ_CH, HIL_XSH_VEC, HIL_XSH_DISP0, HIL_XSH_INJ_CTRL);
     for (;;) {
         tight_loop_contents();
     }

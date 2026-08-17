@@ -36,6 +36,12 @@ type Options struct {
 	// bank/fix configuration as init writes and loaders do fetch-only
 	// setup (emu.FetchExecConfig.Compact).
 	Compact bool
+	// CompactScratch, when nonzero, places the window-selector word at
+	// this absolute address instead of in the image's data segment.
+	// REQUIRED when several compact images share one machine: the fix
+	// channel reads a single selector, so every image's mode-switch
+	// records must target the same word (prompts/020).
+	CompactScratch uint32
 }
 
 // Result is the assembled program.
@@ -669,11 +675,14 @@ func (a *asm) layout() error {
 			return fmt.Errorf("compact mode requires the .regs directive")
 		}
 		// The window-selector word the fix channel reads (and switch
-		// records rewrite). Placed before the literal pool. The plain
-		// window literal always exists: the cleanup channel reads it.
+		// records rewrite). Placed before the literal pool — unless a
+		// machine-global CompactScratch hosts it. The plain window
+		// literal always exists: the cleanup channel reads it.
 		a.internLit(operand{kind: opLit, num: emu.CompactWindow(emu.CompactPlain), isNum: true})
-		a.syms[cscrName] = symbol{off: a.dataOff}
-		a.dataOff += 4
+		if a.opts.CompactScratch == 0 {
+			a.syms[cscrName] = symbol{off: a.dataOff}
+			a.dataOff += 4
+		}
 	}
 	// Literal pool goes after all explicit data.
 	for _, k := range a.litOrder {

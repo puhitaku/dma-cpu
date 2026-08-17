@@ -78,8 +78,9 @@ func (a *asm) emit() (*Result, error) {
 			}
 		}
 	}
-	// Compact: the window-selector word, initially the plain bank.
-	if a.opts.Compact {
+	// Compact: the window-selector word, initially the plain bank
+	// (in-image unless a machine-global CompactScratch hosts it).
+	if a.opts.Compact && a.opts.CompactScratch == 0 {
 		data.Word(emu.CompactWindow(emu.CompactPlain))
 	}
 	// Literal pool.
@@ -108,7 +109,12 @@ func (a *asm) emit() (*Result, error) {
 			bld.AddWrite(emu.ChanRegAddr(ch, emu.OffAl1Ctrl), emu.CompactBankCtrl(a.v, ch))
 			bld.AddWrite(emu.ChanRegAddr(ch, emu.OffAl2TransCount), 1)
 		}
-		bld.AddWriteRef(emu.ChanRegAddr(emu.CompactFix, emu.OffAl1ReadAddr), data, a.syms[cscrName].off)
+		if a.opts.CompactScratch != 0 {
+			bld.AddWrite(a.opts.CompactScratch, emu.CompactWindow(emu.CompactPlain))
+			bld.AddWrite(emu.ChanRegAddr(emu.CompactFix, emu.OffAl1ReadAddr), a.opts.CompactScratch)
+		} else {
+			bld.AddWriteRef(emu.ChanRegAddr(emu.CompactFix, emu.OffAl1ReadAddr), data, a.syms[cscrName].off)
+		}
 		bld.AddWrite(emu.ChanRegAddr(emu.CompactFix, emu.OffAl1WriteAddr),
 			emu.ChanRegAddr(emu.CompactFetch, emu.OffAl2WriteAddrTrig))
 		bld.AddWrite(emu.ChanRegAddr(emu.CompactFix, emu.OffAl2TransCount), 1)
@@ -117,7 +123,11 @@ func (a *asm) emit() (*Result, error) {
 		// chains to fix (auto-return for the bswap/size banks).
 		winPOff := a.litOffs[litKey(operand{kind: opLit, num: emu.CompactWindow(emu.CompactPlain), isNum: true})]
 		bld.AddWriteRef(emu.ChanRegAddr(emu.CompactCleanup, emu.OffAl1ReadAddr), data, winPOff)
-		bld.AddWriteRef(emu.ChanRegAddr(emu.CompactCleanup, emu.OffAl1WriteAddr), data, a.syms[cscrName].off)
+		if a.opts.CompactScratch != 0 {
+			bld.AddWrite(emu.ChanRegAddr(emu.CompactCleanup, emu.OffAl1WriteAddr), a.opts.CompactScratch)
+		} else {
+			bld.AddWriteRef(emu.ChanRegAddr(emu.CompactCleanup, emu.OffAl1WriteAddr), data, a.syms[cscrName].off)
+		}
 		bld.AddWrite(emu.ChanRegAddr(emu.CompactCleanup, emu.OffAl2TransCount), 1)
 		bld.AddWrite(emu.ChanRegAddr(emu.CompactCleanup, emu.OffAl1Ctrl), emu.CompactCleanupCtrl(a.v))
 	}
@@ -161,9 +171,13 @@ func (a *asm) emit() (*Result, error) {
 		if !ok {
 			return nil, fmt.Errorf("compact mode requires the .regs directive")
 		}
+		scrP := img.In(data, a.syms[cscrName].off)
+		if a.opts.CompactScratch != 0 {
+			scrP = img.Abs(a.opts.CompactScratch)
+		}
 		ce = &cemit{
 			a: a, text: text, st: newCstate(),
-			scrP: img.In(data, a.syms[cscrName].off),
+			scrP: scrP,
 			atP:  img.In(data, atSym.off),
 		}
 	}

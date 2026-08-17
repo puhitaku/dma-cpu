@@ -31,7 +31,8 @@ func buildUser(t *testing.T, v *emu.Variant, name string, extra ...string) *dmaa
 		t.Fatal(err)
 	}
 	res, err := dmaasm.Assemble(dasm, dmaasm.Options{
-		Variant: v, TextBase: 0x10000000, DataBase: 0x10040000})
+		Variant: v, Compact: true, CompactScratch: 0x2007FE00,
+		TextBase: 0x10000000, DataBase: 0x10040000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +43,7 @@ func buildUser(t *testing.T, v *emu.Variant, name string, extra ...string) *dmaa
 // them (plus README) into an xv6 filesystem image.
 func buildDisk(t *testing.T, v *emu.Variant) []byte {
 	t.Helper()
-	b := fsimg.New(88, 64) // 96 KiB: programs + README + slack
+	b := fsimg.New(128, 64) // 96 KiB: programs + README + slack
 	b.AddFile("README", []byte("the DMA machine runs upstream xv6.\n"))
 	for _, prog := range []struct {
 		name  string
@@ -51,6 +52,7 @@ func buildDisk(t *testing.T, v *emu.Variant) []byte {
 		{"echo", nil},
 		{"cat", []string{"printf"}},
 		{"wc", []string{"printf"}},
+		{"ls", []string{"printf"}},
 	} {
 		res := buildUser(t, v, prog.name, prog.extra...)
 		blob, err := fsimg.DMXExec(res.Image, res.Symbol)
@@ -77,7 +79,7 @@ func bootXsh(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 5})
+	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 8})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,23 +93,24 @@ func bootXsh(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 		t.Fatal(err)
 	}
 
-	kern, err := dmaasm.Assemble(ksrc, dmaasm.Options{
-		Variant: v, TextBase: 0x20008000, DataBase: 0x2000A000})
+	casm := func(src string, text, data uint32) (*dmaasm.Result, error) {
+		return dmaasm.Assemble(src, dmaasm.Options{
+			Variant: v, Compact: true, CompactScratch: 0x2007FE00,
+			TextBase: text, DataBase: data})
+	}
+	kern, err := casm(ksrc, 0x20008000, 0x2000A000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernC, err := dmaasm.Assemble(kcDasm, dmaasm.Options{
-		Variant: v, TextBase: 0x2000C000, DataBase: 0x2002F000})
+	kernC, err := casm(kcDasm, 0x2000C000, 0x20022000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sh, err := dmaasm.Assemble(shDasm, dmaasm.Options{
-		Variant: v, TextBase: 0x20037000, DataBase: 0x2004F000})
+	sh, err := casm(shDasm, 0x2002A000, 0x20040000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idle, err := dmaasm.Assemble(idleDasm, dmaasm.Options{
-		Variant: v, TextBase: 0x2005C000, DataBase: 0x2005D000})
+	idle, err := casm(idleDasm, 0x2004E000, 0x2004F000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,14 +130,14 @@ func bootXsh(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 			t.Fatal(err)
 		}
 	}
-	wireKernel(t, m, v, kern, kernC, []kproc{
+	wireKernelEnc(t, m, v, kern, kernC, []kproc{
 		{sh, entrySh, 1, 0, true},
 		{idle, entryI, 2, 0, false},
-	})
+	}, true)
 	// The RAM disk.
 	disk := buildDisk(t, v)
-	const diskBase = 0x2005E000
-	if diskBase+len(disk) > 0x20074000 {
+	const diskBase = 0x20050000
+	if diskBase+len(disk) > 0x20070000 {
 		t.Fatalf("disk too large: %d", len(disk))
 	}
 	for i := 0; i < len(disk); i += 4 {
@@ -143,12 +146,12 @@ func bootXsh(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	m.Poke32(mustSym(t, kernC, "g_dma_disk"), diskBase)
 	m.Poke32(mustSym(t, kernC, "g_dma_disksize"), uint32(len(disk)))
 	// exec arena.
-	m.Poke32(mustSym(t, kernC, "g_arena"), 0x20074000)
-	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007F800)
+	m.Poke32(mustSym(t, kernC, "g_arena"), 0x20070000)
+	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007F000)
 	m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 	m.Poke32(mustSym(t, kernC, "g_k_sysentry"), mustSym(t, kern, "sys_entry"))
 	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
-		Fetch: 0, Exec: 1, Fix: 2, Entry: entrySh, Scratch: 0x2007FE00,
+		Compact: true, Entry: entrySh, Scratch: 0x2007FE00,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +162,7 @@ func bootXsh(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 // (O_CREATE through sysfile's create), and a pipe into wc.
 func TestXv6Sh(t *testing.T) {
 	m, _ := bootXsh(t)
-	m.FeedConsole("cat README\recho booom > note\rcat note\recho one; echo two\rcat README | wc\r")
+	m.FeedConsole("ls\rcat README\recho booom > note\rcat note\recho one; echo two\rcat README | wc\r")
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
 		t.Fatal(err)
 	}
@@ -167,6 +170,7 @@ func TestXv6Sh(t *testing.T) {
 	t.Logf("console:\n%s", out)
 	for _, want := range []string{
 		"$ ",
+		"README",                             // ls lists it
 		"the DMA machine runs upstream xv6.", // cat README
 		"booom",               // cat note (redirected write)
 		"one\n", "two\n",      // the ; list still works

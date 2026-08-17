@@ -44,10 +44,16 @@ type kproc struct {
 
 // wireKernel pokes the Phase 5d kernel wiring: the kernel.dasm words,
 // the kproc.c proc table, each process's syscall vector, and the
-// single one-shot tick injector (ABI ch3) aimed at slot 0's dispatch.
-// Slot 0 must be always-runnable (it starts as the machine's entry).
+// single one-shot tick injector aimed at slot 0's dispatch (classic:
+// ABI ch3; compact: emu.CompactInjector, see wireKernelEnc). Slot 0
+// must be always-runnable (it starts as the machine's entry).
 func wireKernel(t *testing.T, m *emu.Machine, v *emu.Variant,
 	kern, kernC *dmaasm.Result, procs []kproc) {
+	wireKernelEnc(t, m, v, kern, kernC, procs, false)
+}
+
+func wireKernelEnc(t *testing.T, m *emu.Machine, v *emu.Variant,
+	kern, kernC *dmaasm.Result, procs []kproc, compact bool) {
 	t.Helper()
 	sym := func(res *dmaasm.Result, name string) uint32 {
 		a, err := res.Symbol(name)
@@ -101,7 +107,12 @@ func wireKernel(t *testing.T, m *emu.Machine, v *emu.Variant,
 	m.Poke32(ks("pCurResume"), sym(procs[0].res, "irqresume"))
 
 	// Single one-shot tick injector: timer-paced, no chain.
-	const inj = 3
+	inj := 3
+	if compact {
+		inj = emu.CompactInjector
+		m.Poke32(kc("g_inj_wreg"), emu.ChanRegAddr(inj, emu.OffWriteAddr))
+		m.Poke32(kc("g_inj_treg"), emu.ChanRegAddr(inj, emu.OffAl1TransCountTrig))
+	}
 	m.Poke32(v.TimerAddr(1), 1<<16|15000)
 	m.Poke32(emu.ChanRegAddr(inj, emu.OffAl1ReadAddr), ks("vecSched"))
 	m.Poke32(emu.ChanRegAddr(inj, emu.OffAl1WriteAddr), sym(procs[0].res, "dispatch"))

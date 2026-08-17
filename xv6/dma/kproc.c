@@ -108,9 +108,14 @@ extern uint kfs_iopen(const char *path);
 extern int kfs_iread(uint ipu, uint off, uint dst, uint n);
 extern void kfs_iclose(uint ipu);
 
-/* Tick injector: ABI channel 3, family-common register addresses. */
-#define INJ_WRITE_ADDR (*(volatile uint *)0x500000C4u)  /* CH3 WRITE_ADDR */
-#define INJ_COUNT_TRIG (*(volatile uint *)0x500000DCu)  /* CH3 AL1_TRANS_COUNT_TRIG */
+/* Tick injector registers (family-common DMA base). Classic machines
+ * use ABI channel 3; the compact machine's injector is channel 9
+ * (emu/compact.go), so the loader patches these when the system runs
+ * in Tier-C encoding. */
+uint inj_wreg = 0x500000C4u; /* CH3 WRITE_ADDR */
+uint inj_treg = 0x500000DCu; /* CH3 AL1_TRANS_COUNT_TRIG */
+#define INJ_WRITE_ADDR (*(volatile uint *)inj_wreg)
+#define INJ_COUNT_TRIG (*(volatile uint *)inj_treg)
 
 #define W(a) (*(volatile uint *)(a))
 

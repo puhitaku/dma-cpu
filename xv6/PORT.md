@@ -87,7 +87,11 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
   stubs so the shared frames survive). The fork() return value is
   deposited by the child's exec/exit. Silicon-validated
   (fork→exec→wait→exit end to end).
-- [ ] Compact (Tier-C) encoding for the whole system: halves all text,
-  brings back `ls`, deeper clone depth, more disk.
+- [x] Compact (Tier-C) whole-system encoding (prompts/020): kernel,
+  sh, and all user programs in 8-byte records; `ls` restored, clone
+  depth 8, 128 KiB disk, 60 KiB arena. Required a machine-global
+  window selector (dmaasm CompactScratch) — per-image selectors
+  cannot share one machine — and the injector on compact channel 9.
+  Closed the long-open compact+scheduler validation. Silicon-green.
 - [ ] Persistence: back the RAM disk with a flash region.
 - [ ] init-style orphan reaping; unlink; parenthesized sh commands.
