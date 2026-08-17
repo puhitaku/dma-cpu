@@ -17,6 +17,13 @@
 volatile unsigned int *volatile stat_ticks;   /* loader-patched: &kernel.ticks */
 volatile unsigned int *volatile stat_counter; /* loader-patched: &procB.counter */
 
+/* Phase 5f: `run` spawns registered images via the kernel's own
+ * loader (xv6/dma/usys.c syscalls; linked in as a separate module). */
+int fork(void);
+int exec(const char *path, char **argv);
+int wait(int *status);
+void exit(int status);
+
 static int sh_getchar(void) {
   while (__dma_uart_fr & DMA_UART_FR_RXFE)
     ;
@@ -87,7 +94,43 @@ static void cmd_help(void) {
          "  stat              scheduler ticks + background process counter\n"
          "  peek <addr>       read a 32-bit word (SRAM or MMIO)\n"
          "  poke <addr> <val> write a 32-bit word\n"
-         "  primes <n>        sieve primes up to n (max 500)\n");
+         "  primes <n>        sieve primes up to n (max 500)\n"
+         "  run <img> [args]  fork+exec a registered image, wait for it\n");
+}
+
+/* fork + exec + wait. The vfork child only calls exec/exit (both have
+ * private frames in usys.c), keeping the shared frames intact for the
+ * suspended parent. On exec failure it must NOT printf (that would
+ * re-enter shared libc/syscall frames): the parent reports instead. */
+static void cmd_run(char *args) {
+  char *argv[8];
+  int argc = 0;
+  char *p = args;
+  while (argc < 7) {
+    while (*p == ' ')
+      *p++ = 0;
+    if (!*p)
+      break;
+    argv[argc++] = p;
+    while (*p && *p != ' ')
+      p++;
+  }
+  argv[argc] = 0;
+  if (argc == 0) {
+    printf("usage: run <img> [args]\n");
+    return;
+  }
+  int pid = fork();
+  if (pid == 0) {
+    exec(argv[0], argv);
+    exit(127); /* exec failed */
+  }
+  int st = -1;
+  int rp = wait(&st);
+  if (st == 127)
+    printf("run: exec %s failed\n", argv[0]);
+  else
+    printf("[pid %d exited, status %d]\n", rp, st);
 }
 
 static void cmd_stat(void) {
@@ -165,6 +208,8 @@ int main(void) {
       cmd_poke(s + 4);
     else if (!strncmp(s, "primes", 6))
       cmd_primes(s + 6);
+    else if (!strncmp(s, "run ", 4))
+      cmd_run((char *)s + 4);
     else
       printf("unknown command: %s\n", s);
   }

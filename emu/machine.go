@@ -39,6 +39,13 @@ type Machine struct {
 	// ConsoleIn feeds UART0 reads — the machine's stdin (Phase 5b): a
 	// DR read pops the next byte, and FR's RXFE bit reflects emptiness.
 	ConsoleIn []byte
+	// TXPace, when nonzero, models the transmit FIFO draining at one
+	// byte per TXPace cycles: after a DR write, FR reads TXFF (bit 5)
+	// until the pace elapses. Real 115200-baud silicon spends ~87 us
+	// per byte — long kernel writes behave very differently from the
+	// always-ready default (see prompts/017).
+	TXPace  uint64
+	lastTX  uint64
 
 	// TraceW, when non-nil, receives one line per DMA transfer.
 	TraceW io.Writer
@@ -134,11 +141,15 @@ func (m *Machine) Read(addr uint32, size int) (uint32, error) {
 			m.ConsoleIn = m.ConsoleIn[1:]
 			return uint32(b), nil
 		case m.v.UARTFRAddr():
-			// TXFF always clear; RXFE tracks the input queue.
+			// RXFE tracks the input queue; TXFF models TXPace.
+			var fr uint32
 			if len(m.ConsoleIn) == 0 {
-				return 1 << 4, nil
+				fr |= 1 << 4
 			}
-			return 0, nil
+			if m.TXPace != 0 && m.Cycle-m.lastTX < m.TXPace {
+				fr |= 1 << 5
+			}
+			return fr, nil
 		}
 		return m.mmio[norm], nil
 	}
@@ -183,6 +194,7 @@ func (m *Machine) Write(addr uint32, val uint32, size int) error {
 		m.decodeGPIO(norm, final)
 		if norm == m.v.UARTDRAddr() {
 			m.ConsoleOut = append(m.ConsoleOut, byte(final))
+			m.lastTX = m.Cycle
 		}
 		return nil
 	}

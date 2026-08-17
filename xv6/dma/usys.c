@@ -53,6 +53,20 @@ uptime(void)
   return dma_syscall(SYS_uptime, 0, 0, 0);
 }
 
+/* Console read with blocking semantics: the kernel returns 0 while no
+ * cooked line is available (its line discipline echoes and edits), so
+ * poll once per tick. fd is ignored until the file layer exists. */
+int
+read(int fd, void *buf, int n)
+{
+  for (;;) {
+    int r = dma_syscall(SYS_read, (uint)fd, (uint)buf, (uint)n);
+    if (r != 0)
+      return r;
+    dma_syscall(SYS_pause, 1, 0, 0);
+  }
+}
+
 /* Sleeps n ticks (upstream sys_sleep semantics; n=0 yields). */
 int
 pause(int n)

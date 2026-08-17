@@ -171,6 +171,54 @@ vfork_release(struct proc *p)
 
 static uint rearm;
 
+/* --- Cooked console input (the consoleintr slice of kernel/console.c,
+ * see xv6/PORT.md): SYS_read drains the UART RX FIFO through a line
+ * discipline — echo, backspace editing, CR->NL — and hands out only
+ * committed lines. There is no RX interrupt: draining happens on each
+ * SYS_read poll (the usys read() wrapper retries once per tick). */
+#define INPUT_BUF 128
+static char cons_buf[INPUT_BUF];
+static uint cons_r, cons_w, cons_e; /* read, committed, edit (free-running) */
+
+static void
+cputc(int c)
+{
+  if (c == '\n') {
+    while (__dma_uart_fr & (1u << 5))
+      ;
+    __dma_uart_dr = '\r';
+  }
+  while (__dma_uart_fr & (1u << 5))
+    ;
+  __dma_uart_dr = (uchar)c;
+}
+
+static void
+cons_poll(void)
+{
+  while (!(__dma_uart_fr & (1u << 4))) { /* RXFE clear: a byte waits */
+    uint c = __dma_uart_dr & 0xFFu;
+    if (c == '\r')
+      c = '\n';
+    if (c == '\b' || c == 0x7F) {
+      if (cons_e != cons_w) {
+        cons_e--;
+        cputc('\b');
+        cputc(' ');
+        cputc('\b');
+      }
+      continue;
+    }
+    if (cons_e - cons_r < INPUT_BUF) {
+      cons_buf[cons_e % INPUT_BUF] = (char)c;
+      cons_e++;
+      cputc((int)c);
+      if (c == '\n' || cons_e - cons_r == INPUT_BUF)
+        cons_w = cons_e;
+    }
+  }
+}
+
 static void
 tick_income(void)
 {
@@ -187,6 +235,14 @@ tick_income(void)
   }
 }
 
+/* The dispatch word the injector was aimed at when the kernel was
+ * entered: a fire can land there between kenter's check and the
+ * retarget, so kexit MUST re-check this exact address (not
+ * proc[curr].pdispatch — exec repoints that mid-call). A fire missed
+ * here would never be consumed and the timer would never re-arm:
+ * this closed a real silicon hang (prompts/017). */
+static uint entry_disp, entry_thunk;
+
 /* Consume any fire that landed on curr's dispatch word or in
  * tickpending, then aim in-kernel fires at tickpending. */
 static void
@@ -194,8 +250,10 @@ kenter(void)
 {
   rearm = 0;
   struct proc *p = &proc[curr];
-  if (W(p->pdispatch) != p->thunk) { /* fire landed just before entry */
-    W(p->pdispatch) = p->thunk;
+  entry_disp = p->pdispatch;
+  entry_thunk = p->thunk;
+  if (W(entry_disp) != entry_thunk) { /* fire landed just before entry */
+    W(entry_disp) = entry_thunk;
     tick_income();
   }
   INJ_WRITE_ADDR = (uint)&tickpending;
@@ -223,6 +281,12 @@ pick(void)
 static void
 kexit(uint next, uint resume)
 {
+  /* Close the kenter window: a fire that hit the entry-time dispatch
+   * between its check and the retarget. */
+  if (entry_disp && W(entry_disp) != entry_thunk) {
+    W(entry_disp) = entry_thunk;
+    tick_income();
+  }
   struct proc *p = &proc[next];
   curr = next;
   *kw_pcurdisp = p->pdispatch;
@@ -302,14 +366,32 @@ dma_ksyscall(void)
   case SYS_uptime:
     ret = ticks;
     break;
-  case SYS_write: { /* fd ignored until the file layer exists */
+  case SYS_write: { /* fd ignored until the file layer exists; cputc
+                     * pacing + NL->CRNL so terminals stay aligned */
     char *b = (char *)m->a1;
-    for (uint i = 0; i < m->a2; i++) {
-      while (__dma_uart_fr & (1u << 5)) /* TXFF */
-        ;
-      __dma_uart_dr = (uchar)b[i];
-    }
+    for (uint i = 0; i < m->a2; i++)
+      cputc(b[i]);
     ret = m->a2;
+    break;
+  }
+  case SYS_read: { /* console only; returns 0 when no line is cooked
+                    * yet — the usys wrapper sleeps a tick and retries,
+                    * so read() blocks from the caller's view */
+    cons_poll();
+    if (cons_r == cons_w) {
+      ret = 0;
+      break;
+    }
+    char *dst = (char *)m->a1;
+    uint n = 0;
+    while (n < m->a2 && cons_r != cons_w) {
+      char c = cons_buf[cons_r % INPUT_BUF];
+      cons_r++;
+      dst[n++] = c;
+      if (c == '\n')
+        break;
+    }
+    ret = n;
     break;
   }
   case SYS_pause: /* sleep a0 ticks on &ticks (upstream sys_sleep) */
@@ -394,6 +476,30 @@ dma_ksyscall(void)
       uint tgt = ((r & 0x80000000u) ? db : tb) + (r & 0x3FFFFFFFu);
       W(tgt) += (r & 0x40000000u) ? dD : tD;
     }
+    /* argv: copy the caller's vector + strings into a fresh area and
+     * pass argc/argv through the image's r0/r1 register words (crt0's
+     * `call main` leaves them untouched; .regs zero-init means plain
+     * loads see argc=0). The regs bank sits 0x54 below dispatch. */
+    uint argc = 0, argvdst = 0;
+    if (m->a1) {
+      uint area = kalloc(256);
+      if (area) {
+        uint *av = (uint *)m->a1;
+        uint *slots = (uint *)area;
+        char *sp = (char *)(area + 16 * 4);
+        char *lim = (char *)(area + 256) - 1;
+        while (argc < 15 && av[argc]) {
+          char *s = (char *)av[argc];
+          slots[argc] = (uint)sp;
+          while (*s && sp < lim)
+            *sp++ = *s++;
+          *sp++ = 0;
+          argc++;
+        }
+        slots[argc] = 0;
+        argvdst = area;
+      }
+    }
     p->pdispatch = db + im->dispoff;
     p->pirqresume = db + im->irqoff;
     p->plr = db + im->lroff;
@@ -401,6 +507,9 @@ dma_ksyscall(void)
     p->pmail = db + im->mailoff;
     W(db + im->sysoff) = k_sysentry;
     W(p->pdispatch) = p->thunk; /* preset; entryoff skips crt0's write */
+    uint regs = db + im->dispoff - 0x54; /* .regs base */
+    W(regs + 0) = argc;                  /* r0 */
+    W(regs + 4) = argvdst;               /* r1 */
     vfork_release(p);
     /* exec does not return: continue at the fresh image's crt0. */
     p->state = RUNNING;

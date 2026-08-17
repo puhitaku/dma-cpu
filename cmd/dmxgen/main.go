@@ -448,7 +448,7 @@ func libcPaths(first ...string) ([]string, error) {
 // buildSched: the scheduler-only bundle (two counter processes, no
 // syscalls). Fits the narrow rp2040 layout.
 func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
-	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x7800)
+	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x9000)
 	if err != nil {
 		return nil, err
 	}
@@ -456,20 +456,20 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x8800, DataBase: lay.text + 0xA000})
+	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0xA800, DataBase: lay.text + 0xC000})
 	if err != nil {
 		return nil, err
 	}
-	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0xB000, DataBase: lay.text + 0xC800})
+	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0xC800, DataBase: lay.text + 0xE000})
 	if err != nil {
 		return nil, err
 	}
 	b := &kernBundle{names: []string{"kernel", "kernc", "proca", "procb"}, sym: map[string]uint32{}}
-	b.entry0 = lay.text + 0x8800 + procA.Image.EntryOff
-	entryB := lay.text + 0xB000 + procB.Image.EntryOff
-	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x7800, []kprocSpec{
-		{procA, lay.text + 0xA000, b.entry0, 1, 0, false},
-		{procB, lay.text + 0xC800, entryB, 2, 0, false},
+	b.entry0 = lay.text + 0xA800 + procA.Image.EntryOff
+	entryB := lay.text + 0xC800 + procB.Image.EntryOff
+	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x9000, []kprocSpec{
+		{procA, lay.text + 0xC000, b.entry0, 1, 0, false},
+		{procB, lay.text + 0xE000, entryB, 2, 0, false},
 	}); err != nil {
 		return nil, err
 	}
@@ -491,6 +491,7 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 
 	// Emulator verification before shipping.
 	m := emu.NewMachine(v)
+	m.TXPace = 13000 // ~115200 baud vs the 15000-cycle tick, as on silicon
 	results := []*dmaasm.Result{kern, kernC, procA, procB}
 	for _, r := range results {
 		if _, err := r.Image.Load(m, nil); err != nil {
@@ -522,14 +523,16 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 // Needs the wide rp2350 layout.
 func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0xB000
-	sText, sData := lay.text+0xC000, lay.text+0x24000
-	pText, pData := lay.text+0x2A000, lay.text+0x2C000
+	cText, cData := lay.text+0x4000, lay.text+0xD000
+	sText, sData := lay.text+0xF000, lay.text+0x21000
+	pText, pData := lay.text+0x27000, lay.text+0x28000
+	blobHome := lay.text + 0x29000
+	arena, arenaEnd := lay.text+0x2B000, lay.text+0x2F800
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {
 		return nil, err
 	}
-	paths, err := libcPaths("dmacc/testdata/shell.ll")
+	paths, err := libcPaths("dmacc/testdata/shell.ll", "xv6/ll/usys.ll")
 	if err != nil {
 		return nil, err
 	}
@@ -553,9 +556,26 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	b.entry0 = sText + shell.Image.EntryOff
 	entryB := pText + procB.Image.EntryOff
 	if err := wireKernel(kern, kData, kernC, cData, []kprocSpec{
-		{shell, sData, b.entry0, 1, 0, false},
+		{shell, sData, b.entry0, 1, 0, true},
 		{procB, pData, entryB, 2, 0, false},
 	}); err != nil {
+		return nil, err
+	}
+	// The exec registry behind dma-sh's `run`: upstream echo + hello.
+	echoDasm, err := compileLL([]string{"xv6/ll/echo.ll", "xv6/ll/ulib.ll", "xv6/ll/usys.ll"}, dmacc.Options{})
+	if err != nil {
+		return nil, err
+	}
+	echoImg, err := dmaasm.Assemble(echoDasm, dmaasm.Options{Variant: v, TextBase: 0x10000000, DataBase: 0x10020000})
+	if err != nil {
+		return nil, err
+	}
+	helloDasm, err := compileLL([]string{"dmacc/testdata/xv6hello.ll", "xv6/ll/usys.ll"}, dmacc.Options{})
+	if err != nil {
+		return nil, err
+	}
+	helloImg, err := dmaasm.Assemble(helloDasm, dmaasm.Options{Variant: v, TextBase: 0x10000000, DataBase: 0x10020000})
+	if err != nil {
 		return nil, err
 	}
 	var errs error
@@ -586,9 +606,20 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if errs != nil {
 		return nil, errs
 	}
+	regs := []regEntry{{"echo", echoImg}, {"hello", helloImg}}
+	blobs, blobNames, regSyms, err := stageRegistry(kernC, cData, blobHome,
+		arena, arenaEnd, sy(kern, "sys_entry"), 3, regs)
+	if err != nil {
+		return nil, err
+	}
+	b.blobs, b.blobNames = blobs, blobNames
+	for k, v2 := range regSyms {
+		b.sym[k] = v2
+	}
 
 	// Emulator session verification.
 	m := emu.NewMachine(v)
+	m.TXPace = 13000 // ~115200 baud vs the 15000-cycle tick, as on silicon
 	results := []*dmaasm.Result{kern, kernC, shell, procB}
 	for _, r := range results {
 		if _, err := r.Image.Load(m, nil); err != nil {
@@ -603,12 +634,15 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	}); err != nil {
 		return nil, err
 	}
-	m.FeedConsole("stat\rstat\r")
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 60_000_000}); err != nil {
+	stageBlobsEmu(m, b.blobs, b.blobNames, b.sym, regs)
+	m.FeedConsole("stat\rrun echo booom from xv6\rrun hello\rstat\r")
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 120_000_000}); err != nil {
 		return nil, err
 	}
 	out := string(m.ConsoleOut)
-	if !strings.Contains(out, "dma-sh") || strings.Count(out, "ticks=") != 2 {
+	if !strings.Contains(out, "dma-sh") || strings.Count(out, "ticks=") != 2 ||
+		!strings.Contains(out, "booom from xv6") ||
+		!strings.Contains(out, "hello from exec") {
 		return nil, fmt.Errorf("shell bundle: emulator session unexpected:\n%s", out)
 	}
 	if err := finishBundle(b, results); err != nil {
@@ -625,9 +659,9 @@ const sysWantConsole = "hello from pid 1 via SYS_write\n" +
 // (dmacc/testdata/xv6sys.c + xv6/dma/usys.c). Wide layout.
 func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0xB000
-	aText, aData := lay.text+0xC000, lay.text+0x10000
-	bText, bData := lay.text+0x14000, lay.text+0x18000
+	cText, cData := lay.text+0x4000, lay.text+0xD000
+	aText, aData := lay.text+0xF000, lay.text+0x13000
+	bText, bData := lay.text+0x17000, lay.text+0x1B000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {
 		return nil, err
@@ -672,6 +706,7 @@ func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 
 	// Emulator verification: the full pid-1 lifecycle plus survivor.
 	m := emu.NewMachine(v)
+	m.TXPace = 13000 // ~115200 baud vs the 15000-cycle tick, as on silicon
 	results := []*dmaasm.Result{kern, kernC, procA, procB}
 	for _, r := range results {
 		if _, err := r.Image.Load(m, nil); err != nil {
@@ -689,7 +724,7 @@ func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 20_000_000}); err != nil {
 		return nil, err
 	}
-	if got := string(m.ConsoleOut); got != sysWantConsole {
+	if got := strings.ReplaceAll(string(m.ConsoleOut), "\r", ""); got != sysWantConsole {
 		return nil, fmt.Errorf("syscall bundle: console mismatch:\n got %q\nwant %q", got, sysWantConsole)
 	}
 	bg1 := m.Peek32(b.sym["BGCOUNT_B"])
@@ -728,16 +763,127 @@ func pad4(b []byte) []byte {
 	return b
 }
 
+
+// regEntry names one image for the kernel's exec registry.
+type regEntry struct {
+	name string
+	res  *dmaasm.Result // assembled with relocs intact (not baked)
+}
+
+// stageRegistry patches kimages rows + loader globals into the kproc
+// image and returns the blob payloads (text/data/relocs per entry) the
+// firmware must stage at their registered homes, plus <NAME>_HOME
+// symbol macros. Blobs are placed consecutively from home.
+func stageRegistry(kernC *dmaasm.Result, cData uint32, home, arena, arenaEnd,
+	sysentry, nextpid uint32, entries []regEntry) ([][]byte, []string, map[string]uint32, error) {
+	var blobs [][]byte
+	var names []string
+	syms := map[string]uint32{}
+	rowBase, err := kernC.Symbol("g_kimages")
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	cursor := home
+	for slot, e := range entries {
+		hText := pad4(e.res.Image.Segments[0].Data)
+		hData := pad4(e.res.Image.Segments[1].Data)
+		var hRel []byte
+		for _, r := range e.res.Image.Relocs {
+			var w [4]byte
+			binary.LittleEndian.PutUint32(w[:], packReloc(r))
+			hRel = append(hRel, w[:]...)
+		}
+		textHome := cursor
+		dataHome := textHome + uint32(len(hText))
+		relHome := dataHome + uint32(len(hData))
+		cursor = relHome + uint32(len(hRel))
+		if cursor > arena {
+			return nil, nil, nil, fmt.Errorf("registry: blobs overflow the home window at %q", e.name)
+		}
+		up := strings.ToUpper(e.name)
+		blobs = append(blobs, hText, hData, hRel)
+		names = append(names, e.name+"_text", e.name+"_data", e.name+"_relocs")
+		syms["BLOB_"+up+"_TEXT_HOME"] = textHome
+		syms["BLOB_"+up+"_DATA_HOME"] = dataHome
+		syms["BLOB_"+up+"_RELOCS_HOME"] = relHome
+
+		var errs error
+		sy := func(n string) uint32 {
+			a, e2 := e.res.Symbol(n)
+			if e2 != nil && errs == nil {
+				errs = e2
+			}
+			return a
+		}
+		tl, dl := e.res.Image.Segments[0].LinkAddr, e.res.Image.Segments[1].LinkAddr
+		var name [12]byte
+		copy(name[:], e.name)
+		rowVals := []uint32{
+			binary.LittleEndian.Uint32(name[0:]), binary.LittleEndian.Uint32(name[4:]),
+			binary.LittleEndian.Uint32(name[8:]),
+			textHome, uint32(len(hText)),
+			dataHome, uint32(len(hData)),
+			tl, dl,
+			relHome, uint32(len(e.res.Image.Relocs)),
+			sy("warmstart") - tl, sy("crtthunk") - tl,
+			sy("dispatch") - dl, sy("irqresume") - dl, sy("lr") - dl,
+			sy("g___dma_sysmail") - dl, sy("g___dma_syscall_entry") - dl,
+		}
+		if errs != nil {
+			return nil, nil, nil, errs
+		}
+		row := rowBase + uint32(slot)*72
+		for i, val := range rowVals {
+			if err := patchData(kernC.Image, cData, row+uint32(i)*4, val); err != nil {
+				return nil, nil, nil, err
+			}
+		}
+	}
+	for _, g := range []struct {
+		name string
+		val  uint32
+	}{
+		{"g_arena", arena}, {"g_arena_end", arenaEnd},
+		{"g_nextpid", nextpid}, {"g_k_sysentry", sysentry},
+	} {
+		addr, err := kernC.Symbol(g.name)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if err := patchData(kernC.Image, cData, addr, g.val); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	return blobs, names, syms, nil
+}
+
+// stageBlobsEmu pokes staged blobs into an emulator machine at their
+// homes (mirrors the firmware's stage_blob) for bundle verification.
+func stageBlobsEmu(m *emu.Machine, blobs [][]byte, names []string, syms map[string]uint32, entries []regEntry) {
+	i := 0
+	for _, e := range entries {
+		up := strings.ToUpper(e.name)
+		for _, part := range []string{"TEXT", "DATA", "RELOCS"} {
+			home := syms["BLOB_"+up+"_"+part+"_HOME"]
+			blob := blobs[i]
+			i++
+			for o := 0; o < len(blob); o += 4 {
+				m.Poke32(home+uint32(o), binary.LittleEndian.Uint32(blob[o:]))
+			}
+		}
+	}
+}
+
 // buildExec: Phase 5e — the kernel's own loader. Two instances of the
 // spawner (fork/exec/wait) plus the "hello" image as a REGISTRY row:
 // its segments and packed relocs are staged to fixed RAM homes and the
 // kernel places, relocates and runs it at exec() time.
 func buildExec(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0xB000
-	aText, aData := lay.text+0xC000, lay.text+0x10000
-	bText, bData := lay.text+0x14000, lay.text+0x18000
-	blobHome := lay.text + 0x1A000
+	cText, cData := lay.text+0x4000, lay.text+0xD000
+	aText, aData := lay.text+0xF000, lay.text+0x13000
+	bText, bData := lay.text+0x17000, lay.text+0x1B000
+	blobHome := lay.text + 0x1D000
 	arena, arenaEnd := lay.text+0x20000, lay.text+0x2F000
 
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
@@ -785,61 +931,15 @@ func buildExec(v *emu.Variant, lay layout) (*kernBundle, error) {
 		}
 		return a
 	}
-	// The hello blob: text, data, packed relocs at fixed homes.
-	hText := pad4(hello.Image.Segments[0].Data)
-	hData := pad4(hello.Image.Segments[1].Data)
-	var hRel []byte
-	for _, r := range hello.Image.Relocs {
-		var w [4]byte
-		binary.LittleEndian.PutUint32(w[:], packReloc(r))
-		hRel = append(hRel, w[:]...)
+	regs := []regEntry{{"hello", hello}}
+	blobs, blobNames, regSyms, err := stageRegistry(kernC, cData, blobHome,
+		arena, arenaEnd, sy(kern, "sys_entry"), 3, regs)
+	if err != nil {
+		return nil, err
 	}
-	textHome := blobHome
-	dataHome := textHome + uint32(len(hText))
-	relHome := dataHome + uint32(len(hData))
-	if relHome+uint32(len(hRel)) > arena {
-		return nil, fmt.Errorf("exec bundle: blob overflows its home window")
-	}
-	b.blobs = [][]byte{hText, hData, hRel}
-	b.blobNames = []string{"text", "data", "relocs"}
-	b.sym["BLOB_TEXT_HOME"] = textHome
-	b.sym["BLOB_DATA_HOME"] = dataHome
-	b.sym["BLOB_RELOCS_HOME"] = relHome
-
-	// Registry row 0 + loader globals, patched into kernC's data.
-	hoff := func(n string, base uint32) uint32 { return sy(hello, n) - base }
-	tl, dl := hello.Image.Segments[0].LinkAddr, hello.Image.Segments[1].LinkAddr
-	row := sy(kernC, "g_kimages")
-	name := [12]byte{'h', 'e', 'l', 'l', 'o'}
-	rowVals := []uint32{
-		binary.LittleEndian.Uint32(name[0:]), binary.LittleEndian.Uint32(name[4:]),
-		binary.LittleEndian.Uint32(name[8:]),
-		textHome, uint32(len(hText)),
-		dataHome, uint32(len(hData)),
-		tl, dl,
-		relHome, uint32(len(hello.Image.Relocs)),
-		hoff("warmstart", tl), hoff("crtthunk", tl),
-		hoff("dispatch", dl), hoff("irqresume", dl), hoff("lr", dl),
-		hoff("g___dma_sysmail", dl), hoff("g___dma_syscall_entry", dl),
-	}
-	if errs != nil {
-		return nil, errs
-	}
-	for i, val := range rowVals {
-		if err := patchData(kernC.Image, cData, row+uint32(i)*4, val); err != nil {
-			return nil, err
-		}
-	}
-	for _, g := range []struct {
-		name string
-		val  uint32
-	}{
-		{"g_arena", arena}, {"g_arena_end", arenaEnd},
-		{"g_nextpid", 3}, {"g_k_sysentry", sy(kern, "sys_entry")},
-	} {
-		if err := patchData(kernC.Image, cData, sy(kernC, g.name), g.val); err != nil {
-			return nil, err
-		}
+	b.blobs, b.blobNames = blobs, blobNames
+	for k, v2 := range regSyms {
+		b.sym[k] = v2
 	}
 	b.vec, b.disp0, b.inj = sy(kern, "vecSched"), sy(idle, "dispatch"), kernInjCtrl(v)
 	b.ticks = sy(kernC, "g_ticks")
@@ -853,18 +953,14 @@ func buildExec(v *emu.Variant, lay layout) (*kernBundle, error) {
 
 	// Emulator verification of the full spawn.
 	m := emu.NewMachine(v)
+	m.TXPace = 13000 // ~115200 baud vs the 15000-cycle tick, as on silicon
 	results := []*dmaasm.Result{kern, kernC, idle, parent}
 	for _, r := range results {
 		if _, err := r.Image.Load(m, nil); err != nil {
 			return nil, err
 		}
 	}
-	for i, blob := range b.blobs {
-		home := []uint32{textHome, dataHome, relHome}[i]
-		for o := 0; o < len(blob); o += 4 {
-			m.Poke32(home+uint32(o), binary.LittleEndian.Uint32(blob[o:]))
-		}
-	}
+	stageBlobsEmu(m, b.blobs, b.blobNames, b.sym, regs)
 	if err := armKernel(m, v, kern, b.disp0); err != nil {
 		return nil, err
 	}
@@ -877,7 +973,7 @@ func buildExec(v *emu.Variant, lay layout) (*kernBundle, error) {
 		return nil, err
 	}
 	const want = "parent: spawning\nhello from exec\nparent: reaped\n"
-	if got := string(m.ConsoleOut); got != want {
+	if got := strings.ReplaceAll(string(m.ConsoleOut), "\r", ""); got != want {
 		return nil, fmt.Errorf("exec bundle: console mismatch:\n got %q\nwant %q", got, want)
 	}
 	if sp, rp := m.Peek32(b.sym["SPAWN_PID"]), m.Peek32(b.sym["REAP_PID"]); sp != 3 || rp != 3 {
@@ -979,6 +1075,7 @@ func patchData(im *img.Image, dataBase, addr, val uint32) error {
 // verify runs the image in the emulator; the intended values must match.
 func verify(v *emu.Variant, lay layout, t *test) error {
 	m := emu.NewMachine(v)
+	m.TXPace = 13000 // ~115200 baud vs the 15000-cycle tick, as on silicon
 	cfg := emu.FetchExecConfig{Fetch: 0, Exec: 1, Fix: 2, Scratch: lay.scratch}
 	if t.Compact {
 		cfg = emu.FetchExecConfig{Compact: true}
@@ -1039,6 +1136,7 @@ func verify(v *emu.Variant, lay layout, t *test) error {
 // sniffed copy on calCh.
 func calExpect(v *emu.Variant, sniffCtrl, seed, word uint32) uint32 {
 	m := emu.NewMachine(v)
+	m.TXPace = 13000 // ~115200 baud vs the 15000-cycle tick, as on silicon
 	src, dst := uint32(0x20001000), uint32(0x20001100)
 	m.Poke32(src, word)
 	m.Poke32(v.SniffCtrlAddr(), sniffCtrl)
@@ -1200,6 +1298,9 @@ func emitHeader(v *emu.Variant, lay layout, tests []*test, sched, shl, sys, exe 
 		for i, im := range b.images {
 			dump(fmt.Sprintf("hil_%s_%s_dmx", strings.ToLower(prefix), b.names[i]), im)
 		}
+		for i, blob := range b.blobs {
+			dump(fmt.Sprintf("hil_%s_blob_%s", strings.ToLower(prefix), b.blobNames[i]), blob)
+		}
 		up := strings.ToUpper(prefix)
 		p("#define HIL_%s_ENTRY 0x%08Xu", up, b.entry0)
 		p("#define HIL_%s_VEC 0x%08Xu", up, b.vec)
@@ -1243,9 +1344,6 @@ func emitHeader(v *emu.Variant, lay layout, tests []*test, sched, shl, sys, exe 
 		p(" * and runs it at exec() time. */")
 		p("#define HIL_HAS_EXEC 1")
 		emitBundle("exec", exe)
-		for i, blob := range exe.blobs {
-			dump(fmt.Sprintf("hil_exec_blob_%s", exe.blobNames[i]), blob)
-		}
 	}
 	p("")
 	p("#endif /* DMX_HIL_IMAGES_H */")

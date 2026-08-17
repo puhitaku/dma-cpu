@@ -14,8 +14,9 @@ import (
 	"github.com/puhitaku/dma-cpu/prog"
 )
 
-// compileWithLibc links an IR golden against the picolibc goldens.
-func compileWithLibc(t *testing.T, name string) string {
+// compileWithLibc links an IR golden against the picolibc goldens,
+// plus any extra modules (paths relative to the dmacc dir).
+func compileWithLibc(t *testing.T, name string, extra ...string) string {
 	t.Helper()
 	src, err := os.ReadFile("testdata/" + name + ".ll")
 	if err != nil {
@@ -26,6 +27,9 @@ func compileWithLibc(t *testing.T, name string) string {
 		t.Fatal(err)
 	}
 	all := append([]*llir.Module{mod}, loadLibc(t)...)
+	for _, p := range extra {
+		all = append(all, parseLL(t, p))
+	}
 	merged, err := llir.Merge(all...)
 	if err != nil {
 		t.Fatal(err)
@@ -42,7 +46,24 @@ func compileWithLibc(t *testing.T, name string) string {
 // session must show the background counter advancing between two `stat`
 // commands — multitasking observable from inside the shell.
 func TestShellSystem(t *testing.T) {
-	shellDasm := compileWithLibc(t, "shell")
+	shellDasm := compileWithLibc(t, "shell", "../xv6/ll/usys.ll")
+	echoMod, err := llir.Merge(parseLL(t, "../xv6/ll/echo.ll"),
+		parseLL(t, "../xv6/ll/ulib.ll"), parseLL(t, "../xv6/ll/usys.ll"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	echoDasm, err := dmacc.Compile(echoMod, dmacc.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	helloMod, err := llir.Merge(parseLL(t, "testdata/xv6hello.ll"), parseLL(t, "../xv6/ll/usys.ll"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	helloDasm, err := dmacc.Compile(helloMod, dmacc.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	procSrc, err := os.ReadFile("testdata/proc.ll")
 	if err != nil {
 		t.Fatal(err)
@@ -67,19 +88,20 @@ func TestShellSystem(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x20034000, 0x2003B000)
+			kernC := buildKernelC(t, v, 0x20029000, 0x20032000)
 			shell, err := dmaasm.Assemble(shellDasm, dmaasm.Options{
-				Variant: v, TextBase: 0x20008000, DataBase: 0x20028000})
+				Variant: v, TextBase: 0x20006000, DataBase: 0x20020000})
 			if err != nil {
 				t.Fatal(err)
 			}
 			procB, err := dmaasm.Assemble(procDasm, dmaasm.Options{
-				Variant: v, TextBase: 0x20030000, DataBase: 0x20032000})
+				Variant: v, TextBase: 0x20026000, DataBase: 0x20028000})
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			m := emu.NewMachine(v)
+			m.TXPace = 13000 // ~115200 baud: ~0.87 tick periods per byte, as on silicon
 			for _, r := range []*dmaasm.Result{kern, kernC} {
 				if _, err := r.Image.Load(m, nil); err != nil {
 					t.Fatal(err)
@@ -104,9 +126,30 @@ func TestShellSystem(t *testing.T) {
 			// Phase 5d proc-table wiring: shell is slot 0 (always
 			// runnable — it never syscalls), counter is slot 1.
 			wireKernel(t, m, v, kern, kernC, []kproc{
-				{shell, entryA, 1, 0, false},
+				{shell, entryA, 1, 0, true},
 				{procB, entryB, 2, 0, false},
 			})
+			// Registry for `run`: upstream echo, linked at arbitrary
+			// bases (the kernel places it).
+			echoImg, err := dmaasm.Assemble(echoDasm, dmaasm.Options{
+				Variant: v, TextBase: 0x10000000, DataBase: 0x10020000})
+			if err != nil {
+				t.Fatal(err)
+			}
+			helloImg, err := dmaasm.Assemble(helloDasm, dmaasm.Options{
+				Variant: v, TextBase: 0x10000000, DataBase: 0x10020000})
+			if err != nil {
+				t.Fatal(err)
+			}
+			end := registerImage(t, m, kernC, 0, "echo", echoImg, 0x20034000)
+			end = registerImage(t, m, kernC, 1, "hello", helloImg, end)
+			if end > 0x20036000 {
+				t.Fatalf("blob storage overflow: %#x", end)
+			}
+			m.Poke32(mustSym(t, kernC, "g_arena"), 0x20036000)
+			m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2003FE00)
+			m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
+			m.Poke32(mustSym(t, kernC, "g_k_sysentry"), mustSym(t, kern, "sys_entry"))
 			// Shell stat pointers (ticks live in the C kernel now).
 			m.Poke32(sym(shell, "g_stat_ticks"), sym(kernC, "g_ticks"))
 			m.Poke32(sym(shell, "g_stat_counter"), sym(procB, "g_counter"))
@@ -117,13 +160,15 @@ func TestShellSystem(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			m.FeedConsole("stat\rprimes 30\rstat\r")
+			m.FeedConsole("stat\rprimes 30\rrun echo booom from real silicon\rrun hello\rstat\r")
 			if _, err := m.Run(emu.RunConfig{MaxCycles: 80_000_000}); err != nil {
 				t.Fatal(err)
 			}
 			out := string(m.ConsoleOut)
 			t.Logf("console:\n%s", out)
-			for _, want := range []string{"dma-sh", "dma> ", "(10 primes <= 30)"} {
+			for _, want := range []string{"dma-sh", "dma> ", "(10 primes <= 30)",
+				"booom from real silicon", "hello from exec", "[pid 3 exited, status 0]",
+				"[pid 4 exited, status 7]"} {
 				if !strings.Contains(out, want) {
 					t.Errorf("console missing %q", want)
 				}

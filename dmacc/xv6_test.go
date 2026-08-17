@@ -2,7 +2,6 @@ package dmacc_test
 
 import (
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/puhitaku/dma-cpu/dmaasm"
@@ -17,16 +16,8 @@ import (
 // xv6/dma/sbrk.c shim, driven by a self-checking allocator exercise
 // (testdata/xv6malloc.c). Goldens regenerate with `make xv6-ll`.
 func TestXv6Malloc(t *testing.T) {
-	paths := []string{"testdata/xv6malloc.ll"}
-	entries, err := os.ReadDir("../xv6/ll")
-	if err != nil {
-		t.Fatalf("xv6 goldens missing (run `make xv6-ll`): %v", err)
-	}
-	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".ll") {
-			paths = append(paths, "../xv6/ll/"+e.Name())
-		}
-	}
+	paths := []string{"testdata/xv6malloc.ll",
+		"../xv6/ll/string.ll", "../xv6/ll/umalloc.ll", "../xv6/ll/sbrk.ll"}
 	var mods []*llir.Module
 	for _, p := range paths {
 		src, err := os.ReadFile(p)

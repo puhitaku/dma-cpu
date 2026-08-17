@@ -104,7 +104,7 @@ func TestXv6Exec(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x20004000, 0x2000C000)
+			kernC := buildKernelC(t, v, 0x20004000, 0x2000D000)
 			asm := func(text, data uint32) *dmaasm.Result {
 				res, err := dmaasm.Assemble(spawnDasm, dmaasm.Options{
 					Variant: v, TextBase: text, DataBase: data})
@@ -161,7 +161,7 @@ func TestXv6Exec(t *testing.T) {
 				if _, err := m.Run(emu.RunConfig{MaxCycles: 200_000}); err != nil {
 					t.Fatal(err)
 				}
-				if strings.Contains(string(m.ConsoleOut), "parent: reaped\n") {
+				if strings.Contains(string(m.ConsoleOut), "parent: reaped") {
 					done = true
 					break
 				}
@@ -174,7 +174,7 @@ func TestXv6Exec(t *testing.T) {
 					procField(m, kernC, 2, pfState),
 					m.Peek32(mustSym(t, kernC, "g_ticks")))
 			}
-			if got := string(m.ConsoleOut); got != wantConsole {
+			if got := strings.ReplaceAll(string(m.ConsoleOut), "\r", ""); got != wantConsole {
 				t.Errorf("console:\n got %q\nwant %q", got, wantConsole)
 			}
 			psym := func(n string) uint32 { return mustSym(t, parent, n) }

@@ -45,7 +45,8 @@ libc:
 # --- xv6 port (xv6/PORT.md): compile vendored sources to IR goldens ---
 # The curated list grows as the port proceeds; goldens in xv6/ll are
 # committed and linked by dmacc like the libc ones.
-XV6_SRCS = kernel/string.c user/umalloc.c dma/sbrk.c dma/usys.c dma/kproc.c
+XV6_SRCS = kernel/string.c user/umalloc.c user/ulib.c user/printf.c user/echo.c \
+           dma/sbrk.c dma/usys.c dma/kproc.c
 XV6_CLANG = clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding \
             -I$(CURDIR)/xv6 -S -emit-llvm
 
@@ -99,7 +100,7 @@ llgen:
 	(cd dmacc/testdata && $(LIBC_CLANG) shell.c -o shell.ll)
 	clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding -I$(CURDIR)/xv6 \
 	  -S -emit-llvm dmacc/testdata/xv6malloc.c -o dmacc/testdata/xv6malloc.ll
-	@for f in xv6sys xv6proc xv6spawn xv6hello; do \
+	@for f in xv6sys xv6proc xv6spawn xv6hello xv6readline; do \
 	  clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding -I$(CURDIR)/xv6 \
 	    -S -emit-llvm dmacc/testdata/$$f.c -o dmacc/testdata/$$f.ll || exit 1; done
 

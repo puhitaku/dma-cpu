@@ -55,6 +55,14 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
   pause(n)/exit/wait with ZOMBIE reaping and deposit-at-exit, the
   scheduler in C, kernel.dasm reduced to two entry stubs, a single
   one-shot tick injector. Silicon-validated.
+- [x] SYS_read + argv (prompts/017): cooked console input (the
+  consoleintr slice of console.c in kproc.c: echo, backspace, CR→NL),
+  blocking read() via tick-retry, argv passed through the exec'd
+  image's r0/r1. Upstream ulib.c + echo.c run unmodified (printf.c
+  narrowed to ILP32); dma-sh spawns them interactively with `run`.
+  Silicon-validated; also fixed a silicon-only lost-tick window in
+  the kernel entry path. Upstream sh.c is BLOCKED on dmacc dynamic
+  frames (parsecmd/runcmd recursion) — the next compiler rung.
 - [x] fork/exec (prompts/016): the loader lives IN the kernel — an
   image registry (pre-parsed segments + packed relocs), a bump
   allocator, and exec() that places, relocates and runs a fresh

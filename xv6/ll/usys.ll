@@ -52,6 +52,40 @@ define dso_local i32 @uptime() local_unnamed_addr #0 {
 }
 
 ; Function Attrs: minsize nounwind optsize
+define dso_local range(i32 1, 0) i32 @read(i32 noundef %0, ptr noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = ptrtoint ptr %1 to i32
+  br label %5
+
+5:                                                ; preds = %10, %3
+  store volatile i32 5, ptr @__dma_sysmail, align 4, !tbaa !3
+  store volatile i32 %0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 4), align 4, !tbaa !8
+  store volatile i32 %4, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 8), align 4, !tbaa !9
+  store volatile i32 %2, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 12), align 4, !tbaa !10
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 20), align 4, !tbaa !11
+  %6 = load i32, ptr @__dma_syscall_entry, align 4, !tbaa !12
+  %7 = inttoptr i32 %6 to ptr
+  tail call void %7() #2
+  %8 = load volatile i32, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 16), align 4, !tbaa !13
+  %9 = icmp eq i32 %8, 0
+  br i1 %9, label %10, label %14
+
+10:                                               ; preds = %5
+  store volatile i32 13, ptr @__dma_sysmail, align 4, !tbaa !3
+  store volatile i32 1, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 4), align 4, !tbaa !8
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 8), align 4, !tbaa !9
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 12), align 4, !tbaa !10
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 20), align 4, !tbaa !11
+  %11 = load i32, ptr @__dma_syscall_entry, align 4, !tbaa !12
+  %12 = inttoptr i32 %11 to ptr
+  tail call void %12() #2
+  %13 = load volatile i32, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 16), align 4, !tbaa !13
+  br label %5
+
+14:                                               ; preds = %5
+  ret i32 %8
+}
+
+; Function Attrs: minsize nounwind optsize
 define dso_local i32 @pause(i32 noundef %0) local_unnamed_addr #0 {
   store volatile i32 13, ptr @__dma_sysmail, align 4, !tbaa !3
   store volatile i32 %0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 4), align 4, !tbaa !8

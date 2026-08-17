@@ -701,9 +701,9 @@ static void exp_exec(void)
         printf("EXP exec: FAIL load\n");
         return;
     }
-    stage_blob(HIL_EXEC_BLOB_TEXT_HOME, hil_exec_blob_text, sizeof hil_exec_blob_text);
-    stage_blob(HIL_EXEC_BLOB_DATA_HOME, hil_exec_blob_data, sizeof hil_exec_blob_data);
-    stage_blob(HIL_EXEC_BLOB_RELOCS_HOME, hil_exec_blob_relocs, sizeof hil_exec_blob_relocs);
+    stage_blob(HIL_EXEC_BLOB_HELLO_TEXT_HOME, hil_exec_blob_hello_text, sizeof hil_exec_blob_hello_text);
+    stage_blob(HIL_EXEC_BLOB_HELLO_DATA_HOME, hil_exec_blob_hello_data, sizeof hil_exec_blob_hello_data);
+    stage_blob(HIL_EXEC_BLOB_HELLO_RELOCS_HOME, hil_exec_blob_hello_relocs, sizeof hil_exec_blob_hello_relocs);
     printf("EXP exec: start (the kernel loads \"hello\" itself)\n");
     dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 0};
     if (dmx_start(&cfg, HIL_EXEC_ENTRY) != DMX_OK) {
@@ -752,6 +752,12 @@ static void shell_start(void)
      * injector then never gets re-armed (diagnosed on silicon with the
      * shell's own peek command). Order: banner, start the shell, then
      * arm the tick chain onto the already-running process. */
+    stage_blob(HIL_SHELL_BLOB_ECHO_TEXT_HOME, hil_shell_blob_echo_text, sizeof hil_shell_blob_echo_text);
+    stage_blob(HIL_SHELL_BLOB_ECHO_DATA_HOME, hil_shell_blob_echo_data, sizeof hil_shell_blob_echo_data);
+    stage_blob(HIL_SHELL_BLOB_ECHO_RELOCS_HOME, hil_shell_blob_echo_relocs, sizeof hil_shell_blob_echo_relocs);
+    stage_blob(HIL_SHELL_BLOB_HELLO_TEXT_HOME, hil_shell_blob_hello_text, sizeof hil_shell_blob_hello_text);
+    stage_blob(HIL_SHELL_BLOB_HELLO_DATA_HOME, hil_shell_blob_hello_data, sizeof hil_shell_blob_hello_data);
+    stage_blob(HIL_SHELL_BLOB_HELLO_RELOCS_HOME, hil_shell_blob_hello_relocs, sizeof hil_shell_blob_hello_relocs);
     printf("=== handing console to dma-sh (ARM parked; the prompt below is "
            "served entirely by the DMA controller) ===\n");
     dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 0};
