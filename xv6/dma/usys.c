@@ -205,3 +205,11 @@ kill(int pid)
   fill(SYS_kill, (uint)pid, 0, 0);
   return dma_trap();
 }
+
+/* ulib.c's sbrk()/sbrklazy() wrap this. */
+char *
+sys_sbrk(int n, int flags)
+{
+  fill(SYS_sbrk, (uint)n, (uint)flags, 0);
+  return (char *)dma_trap();
+}

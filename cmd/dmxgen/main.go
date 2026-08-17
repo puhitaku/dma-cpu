@@ -252,7 +252,10 @@ const (
 	pfResume
 	pfPmail
 	pfKilled
-	procWords
+	pfHeapbase
+	pfHeapmax
+	pfBrk
+	procWords // 16
 )
 
 const (
@@ -462,7 +465,7 @@ func libcPaths(first ...string) ([]string, error) {
 // buildSched: the scheduler-only bundle (two counter processes, no
 // syscalls). Fits the narrow rp2040 layout.
 func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
-	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0xF000)
+	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x11000)
 	if err != nil {
 		return nil, err
 	}
@@ -470,20 +473,20 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x11000, DataBase: lay.text + 0x12000})
+	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x14000, DataBase: lay.text + 0x15000})
 	if err != nil {
 		return nil, err
 	}
-	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x13000, DataBase: lay.text + 0x14000})
+	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x16000, DataBase: lay.text + 0x17000})
 	if err != nil {
 		return nil, err
 	}
 	b := &kernBundle{names: []string{"kernel", "kernc", "proca", "procb"}, sym: map[string]uint32{}}
-	b.entry0 = lay.text + 0x11000 + procA.Image.EntryOff
-	entryB := lay.text + 0x13000 + procB.Image.EntryOff
-	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0xF000, []kprocSpec{
-		{procA, lay.text + 0x12000, b.entry0, 1, 0, false},
-		{procB, lay.text + 0x14000, entryB, 2, 0, false},
+	b.entry0 = lay.text + 0x14000 + procA.Image.EntryOff
+	entryB := lay.text + 0x16000 + procB.Image.EntryOff
+	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x11000, []kprocSpec{
+		{procA, lay.text + 0x15000, b.entry0, 1, 0, false},
+		{procB, lay.text + 0x17000, entryB, 2, 0, false},
 	}); err != nil {
 		return nil, err
 	}
@@ -537,11 +540,11 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 // Needs the wide rp2350 layout.
 func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x12000
-	sText, sData := lay.text+0x14000, lay.text+0x2C000
+	cText, cData := lay.text+0x4000, lay.text+0x16000
+	sText, sData := lay.text+0x1C000, lay.text+0x34000
 	pText, pData := lay.text+0x32000, lay.text+0x33000
-	blobHome := lay.text + 0x34000
-	arena, arenaEnd := lay.text+0x36000, lay.text+0x4C000
+	blobHome := lay.text + 0x3C000
+	arena, arenaEnd := lay.text+0x3E000, lay.text+0x54000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {
 		return nil, err
@@ -674,12 +677,12 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 // echo, cat, wc AND ls as DMX-exec files.
 func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x1C000
-	sText, sData := lay.text+0x24000, lay.text+0x3A000
-	iText, iData := lay.text+0x48000, lay.text+0x49000
-	diskHome := lay.text + 0x4A000
+	cText, cData := lay.text+0x4000, lay.text+0x1E000
+	sText, sData := lay.text+0x26000, lay.text+0x3C000
+	iText, iData := lay.text+0x42000, lay.text+0x43000
+	diskHome := lay.text + 0x44000
 	diskMax := uint32(0x20000) // 128 KiB
-	arena, arenaEnd := lay.text+0x6A000, lay.text+0x77000
+	arena, arenaEnd := lay.text+0x64000, lay.text+0x77000
 
 	casm := func(src string, text, data uint32) (*dmaasm.Result, error) {
 		return dmaasm.Assemble(src, dmaasm.Options{
@@ -705,7 +708,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		return nil, fmt.Errorf("fs kernel: %w", err)
 	}
 	shDasm, err := compileLL([]string{"xv6/ll/sh.ll", "xv6/ll/ulib.ll", "xv6/ll/printf.ll",
-		"xv6/ll/umalloc.ll", "xv6/ll/sbrk.ll", "xv6/ll/usys.ll"},
+		"xv6/ll/umalloc.ll", "xv6/ll/usys.ll"},
 		dmacc.Options{RecursionDepth: 8})
 	if err != nil {
 		return nil, err
@@ -858,9 +861,9 @@ const sysWantConsole = "hello from pid 1 via SYS_write\n" +
 // (dmacc/testdata/xv6sys.c + xv6/dma/usys.c). Wide layout.
 func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x12000
-	aText, aData := lay.text+0x14000, lay.text+0x18000
-	bText, bData := lay.text+0x1C000, lay.text+0x20000
+	cText, cData := lay.text+0x4000, lay.text+0x16000
+	aText, aData := lay.text+0x1C000, lay.text+0x20000
+	bText, bData := lay.text+0x24000, lay.text+0x28000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {
 		return nil, err
@@ -1079,11 +1082,11 @@ func stageBlobsEmu(m *emu.Machine, blobs [][]byte, names []string, syms map[stri
 // kernel places, relocates and runs it at exec() time.
 func buildExec(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x12000
-	aText, aData := lay.text+0x14000, lay.text+0x18000
-	bText, bData := lay.text+0x1C000, lay.text+0x20000
-	blobHome := lay.text + 0x22000
-	arena, arenaEnd := lay.text+0x26000, lay.text+0x35000
+	cText, cData := lay.text+0x4000, lay.text+0x16000
+	aText, aData := lay.text+0x1C000, lay.text+0x20000
+	bText, bData := lay.text+0x24000, lay.text+0x28000
+	blobHome := lay.text + 0x2A000
+	arena, arenaEnd := lay.text+0x2E000, lay.text+0x37000
 
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {

@@ -55,8 +55,8 @@ enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 /* All-uint layout: the loader pokes fields by word offset (0..11).
  * The address-valued fields point into the process image: its
- * dispatch/irqresume/lr register-bank words, its crt0 resume thunk,
- * and its usys mailbox (0 for processes that never syscall). */
+ * dispatch/irqresume/lr register-bank words, its usys mailbox (0 for
+ * processes that never syscall), and its crt0 resume thunk. */
 struct proc {
   uint state;      /* 0: enum procstate */
   uint pid;        /* 1 */
@@ -71,6 +71,9 @@ struct proc {
   uint resume;     /* 10: where this proc continues when scheduled */
   uint pmail;      /* 11 */
   uint killed;     /* 12: kill() pending; enforced at kernel entry */
+  uint heapbase;   /* 13: sbrk heap region (0 = none yet) */
+  uint heapmax;    /* 14: region end */
+  uint brk;        /* 15: current program break */
 };
 
 struct proc proc[NPROC];
@@ -227,6 +230,12 @@ kfree(uint a)
  * or on re-exec): text, data, argv area. */
 static uint execmem[NPROC][3];
 
+/* The heap chunk a slot ALLOCATED (0 = none). Distinct from the proc
+ * fields: a vfork child copies its parent's heapbase/heapmax/brk and
+ * shares the region, but only the allocating slot owns the chunk and
+ * frees it (exit or re-exec). */
+static uint heapmem[NPROC];
+
 static void
 kfree_exec(int slot)
 {
@@ -234,6 +243,119 @@ kfree_exec(int slot)
     kfree(execmem[slot][i]);
     execmem[slot][i] = 0;
   }
+  kfree(heapmem[slot]);
+  heapmem[slot] = 0;
+  struct proc *p = &proc[slot];
+  p->heapbase = p->heapmax = p->brk = 0;
+}
+
+/* SYS_sbrk (upstream sys_sbrk semantics, minus paging: the laziness
+ * flag is meaningless and both flavors are eager). The heap region is
+ * an arena chunk allocated at the first call — at least HEAPCHUNK so
+ * later small growth (the sbrk* tests) has headroom, or the ask when
+ * it is bigger (umalloc's morecore wants 32 KB in one call) or when
+ * the arena cannot spare HEAPCHUNK — and the break moves within it;
+ * there is no growth past the chunk. Newly exposed bytes are zeroed,
+ * as upstream's fresh pages are. Returns the old break, or -1
+ * (SBRK_ERROR). */
+#define HEAPCHUNK 16384u
+
+static uint
+ksbrk(struct proc *p, int n)
+{
+  if (p->heapbase == 0) {
+    if (n < 0)
+      return (uint)-1;
+    uint want = ((uint)n + 0xFFu) & ~0xFFu;
+    uint size = want < HEAPCHUNK ? HEAPCHUNK : want;
+    uint chunk = kalloc(size);
+    if (chunk == 0 && size > want) {
+      size = want;
+      chunk = kalloc(size);
+    }
+    if (chunk == 0)
+      return (uint)-1;
+    heapmem[curr] = chunk;
+    p->heapbase = p->brk = chunk;
+    p->heapmax = chunk + size;
+  }
+  uint old = p->brk;
+  if (n >= 0) {
+    if ((uint)n > p->heapmax - p->brk)
+      return (uint)-1;
+    for (uint a = old; a < old + (uint)n; a++)
+      *(volatile uchar *)a = 0;
+    p->brk += (uint)n;
+  } else {
+    if ((uint)-n > p->brk - p->heapbase)
+      return (uint)-1;
+    p->brk -= (uint)-n;
+  }
+  /* vfork: the image — and the K&R allocator's statics inside it —
+   * is shared with the suspended parent chain (upstream sh parses,
+   * and so mallocs, in the CHILD). Introduce the chunk to the chain
+   * and hoist its ownership to the top, or the child's exec/exit
+   * would free memory the parent's free list still references. The
+   * BREAK is not mirrored here: a child that exits without exec rolls
+   * its growth back (as upstream's per-process memory would), keeping
+   * usertests' free-page accounting honest; exec syncs it instead
+   * (vfork_sync_brk), because then the allocator state hands off. */
+  int slot = (int)(p - proc);
+  for (struct proc *q = p;;) {
+    struct proc *par = 0;
+    for (int i = 0; i < NPROC; i++) {
+      if (proc[i].state == SLEEPING && proc[i].chan == (uint)q) {
+        par = &proc[i];
+        break;
+      }
+    }
+    if (!par)
+      break;
+    if (par->heapbase != p->heapbase) {
+      par->heapbase = p->heapbase;
+      par->heapmax = p->heapmax;
+      par->brk = p->heapbase;
+    }
+    if (heapmem[slot]) {
+      heapmem[par - proc] = heapmem[slot];
+      heapmem[slot] = 0;
+    }
+    slot = (int)(par - proc);
+    q = par;
+  }
+  return old;
+}
+
+/* exec hands the shared image (with the child's mallocs live in it)
+ * back to the suspended vfork parents: their break must match. */
+static void
+vfork_sync_brk(struct proc *p)
+{
+  for (struct proc *q = p;;) {
+    struct proc *par = 0;
+    for (int i = 0; i < NPROC; i++) {
+      if (proc[i].state == SLEEPING && proc[i].chan == (uint)q) {
+        par = &proc[i];
+        break;
+      }
+    }
+    if (!par)
+      break;
+    par->heapbase = p->heapbase;
+    par->heapmax = p->heapmax;
+    par->brk = p->brk;
+    q = par;
+  }
+}
+
+/* rwsbrk's contract: the kernel refuses fs buffers in the RETURNED
+ * part of the heap ([brk, heapmax)). Buffers outside the heap region
+ * (data, frames) stay fair game — there is no MMU to say otherwise. */
+static int
+badbuf(struct proc *p, uint addr, uint n)
+{
+  return p->heapmax != 0 && n != 0 && addr < p->heapmax &&
+         addr + n > p->brk && addr + n >= addr;
 }
 
 static struct kimg *
@@ -689,7 +811,9 @@ dma_ksyscall(void)
     break;
   case SYS_write: {
     int r;
-    if (fsready)
+    if (badbuf(p, m->a1, m->a2))
+      r = -1;
+    else if (fsready)
       r = kfs_write((int)m->a0, m->a1, (int)m->a2);
     else {
       kconswrite((const char *)m->a1, (int)m->a2);
@@ -732,7 +856,9 @@ dma_ksyscall(void)
     break;
   case SYS_read: {
     int r;
-    if (fsready)
+    if (badbuf(p, m->a1, m->a2))
+      r = -1;
+    else if (fsready)
       r = kfs_read((int)m->a0, m->a1, (int)m->a2);
     else
       r = kconsread(m->a1, (int)m->a2);
@@ -741,6 +867,10 @@ dma_ksyscall(void)
     ret = (uint)r;
     break;
   }
+  case SYS_sbrk: /* a0: n (signed); a1: laziness flag (eager either
+                  * way — no paging) */
+    ret = ksbrk(p, (int)m->a0);
+    break;
   case SYS_pause: /* sleep a0 ticks on &ticks (upstream sys_sleep) */
     p->wake_tick = ticks + m->a0;
     sleep((uint)&ticks);
@@ -888,6 +1018,7 @@ dma_ksyscall(void)
       uint tgt = ((r & 0x80000000u) ? db : tb) + (r & 0x3FFFFFFFu);
       W(tgt) += (r & 0x40000000u) ? dD : tD;
     }
+    vfork_sync_brk(p); /* before kfree_exec clears this proc's view */
     kfree_exec((int)curr); /* a re-exec'd image releases its old one */
     execmem[curr][0] = tb;
     execmem[curr][1] = db;

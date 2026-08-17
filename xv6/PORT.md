@@ -129,7 +129,18 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
   just-landed fire), and the nothing-runnable park is now a wakeable
   spin through a kernel-owned `parkvec` the injector patches, instead
   of an unwakeable HALT.
-- [ ] Per-process heap (real sbrk semantics; admits the sbrk* tests).
+- [x] Per-process heap (prompts/025): SYS_sbrk in the kernel — per-proc
+  heapbase/heapmax/brk, chunks allocated lazily from the exec arena
+  (the 36 KB static BSS heap every malloc-linked binary carried is
+  gone), new bytes zeroed, and fs buffers in the returned region
+  [brk, heapmax) refused (rwsbrk's contract). vfork sharing is
+  honored: upstream sh mallocs in the CHILD, so chunk identity and
+  ownership mirror up the suspended parent chain, and exec syncs the
+  break while exit rolls it back. Exam roster grows to 36 with
+  rwsbrk, sbrkarg, sbrklast, sbrk8000 (heap) and reparent, reparent2
+  (adoption); sbrkbasic/sbrkmuch stay out (fork-divergent memory /
+  100 MB VA). The emulator's loader now refuses cross-image overlaps
+  — the silent-clobber class this phase kept hitting.
 - [ ] Signals, with user-space handling in commands: today an
   infinitely running foreground command (e.g. `spin` without `&`)
   cannot be stopped — sh is blocked in wait() and the console line

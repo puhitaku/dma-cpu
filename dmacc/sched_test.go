@@ -42,14 +42,14 @@ func TestPreemptiveScheduler(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x20004000, 0x20012000)
+			kernC := buildKernelC(t, v, 0x20004000, 0x20016000)
 			procA, err := dmaasm.Assemble(dasm, dmaasm.Options{
-				Variant: v, TextBase: 0x20014000, DataBase: 0x20017000})
+				Variant: v, TextBase: 0x2001C000, DataBase: 0x2001F000})
 			if err != nil {
 				t.Fatal(err)
 			}
 			procB, err := dmaasm.Assemble(dasm, dmaasm.Options{
-				Variant: v, TextBase: 0x20018000, DataBase: 0x2001B000})
+				Variant: v, TextBase: 0x20020000, DataBase: 0x20023000})
 			if err != nil {
 				t.Fatal(err)
 			}

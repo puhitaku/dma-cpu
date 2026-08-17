@@ -17,8 +17,11 @@ import (
 // test per boot (usertests <name> prints "ALL TESTS PASSED" on
 // success). The curation reflects the machine honestly: fs and
 // process tests run; tests that need an MMU (bad-pointer copyin
-// probes, stack guard pages), true concurrent fork (pipe pumps), or
-// kill() stay out — the reasons live in prompts/021.
+// probes, stack guard pages), true concurrent fork (pipe pumps,
+// killstatus/preempt's spinning children), fork-divergent memory
+// (sbrkbasic under the shared vfork image), or a large virtual
+// address space (sbrkmuch, the lazy tests) stay out — the reasons
+// live in prompts/021 and prompts/025.
 var examTests = []string{
 	// fs: files, directories, links, truncation
 	"opentest", "writetest", "createtest", "dirtest", "createdelete",
@@ -28,6 +31,10 @@ var examTests = []string{
 	// process + fd inheritance under the vfork discipline
 	"exectest", "sharedfd", "fourfiles", "openiput", "exitiput", "iput",
 	"exitwait", "twochildren", "forkfork", "bsstest",
+	// the kernel heap (prompts/025): sbrk semantics + buffer refusal
+	"rwsbrk", "sbrkarg", "sbrklast", "sbrk8000",
+	// init-style adoption under kill()/exit (prompts/024)
+	"reparent", "reparent2",
 }
 
 func bootExam(t *testing.T, arg string) *emu.Machine {
@@ -39,7 +46,7 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 	utMod, err := llir.Merge(
 		parseLL(t, "../xv6/ll/usertests.ll"), parseLL(t, "../xv6/ll/ulib.ll"),
 		parseLL(t, "../xv6/ll/printf.ll"), parseLL(t, "../xv6/ll/umalloc.ll"),
-		parseLL(t, "../xv6/ll/sbrk.ll"), parseLL(t, "../xv6/ll/usys.ll"))
+		parseLL(t, "../xv6/ll/usys.ll"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,9 +74,9 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 		return res
 	}
 	kern := casm(ksrc, 0x20008000, 0x2000A000)
-	kernC := casm(kcDasm, 0x2000C000, 0x20024000)
-	ut := casm(utDasm, 0x2002C000, 0x20048000)
-	idle := casm(idleDasm, 0x20062000, 0x20063000)
+	kernC := casm(kcDasm, 0x2000C000, 0x20026000)
+	ut := casm(utDasm, 0x2002E000, 0x2004A000)
+	idle := casm(idleDasm, 0x2005A000, 0x2005B000)
 
 	m := emu.NewMachine(v)
 	m.TXPace = 0 // the exam prints a lot; run the console at full speed
@@ -111,14 +118,14 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 	fb.AddFile("README", []byte("exam disk\n"))
 	fb.AddFile("echo", blob)
 	disk := fb.Bytes()
-	const diskBase = 0x20064000
+	const diskBase = 0x2005C000
 	for i := 0; i < len(disk); i += 4 {
 		m.Poke32(uint32(diskBase+i), binary.LittleEndian.Uint32(disk[i:]))
 	}
 	m.Poke32(mustSym(t, kernC, "g_dma_disk"), diskBase)
 	m.Poke32(mustSym(t, kernC, "g_dma_disksize"), uint32(len(disk)))
-	m.Poke32(mustSym(t, kernC, "g_arena"), 0x2007A000)
-	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007E000)
+	m.Poke32(mustSym(t, kernC, "g_arena"), 0x20074000)
+	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007F000)
 	m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 	m.Poke32(mustSym(t, kernC, "g_initpid"), 2)
 	m.Poke32(mustSym(t, kernC, "g_k_sysentry"), mustSym(t, kern, "sys_entry"))
@@ -126,7 +133,7 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 	m.Poke32(mustSym(t, kernC, "g_inj_treg"), emu.ChanRegAddr(emu.CompactInjector, emu.OffAl1TransCountTrig))
 
 	// argv for the preloaded exam: usertests <arg>.
-	const argvBase = 0x2007E000
+	const argvBase = 0x2007F000 /* between arena_end and the machine scratch */
 	pokeStr := func(addr uint32, s string) uint32 {
 		b := append([]byte(s), 0)
 		for len(b)%4 != 0 {

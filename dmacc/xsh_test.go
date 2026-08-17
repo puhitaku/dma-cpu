@@ -119,7 +119,7 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	shMod, err := llir.Merge(
 		parseLL(t, "../xv6/ll/sh.ll"), parseLL(t, "../xv6/ll/ulib.ll"),
 		parseLL(t, "../xv6/ll/printf.ll"), parseLL(t, "../xv6/ll/umalloc.ll"),
-		parseLL(t, "../xv6/ll/sbrk.ll"), parseLL(t, "../xv6/ll/usys.ll"))
+		parseLL(t, "../xv6/ll/usys.ll"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,15 +146,15 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernC, err := casm(kcDasm, 0x2000C000, 0x20024000)
+	kernC, err := casm(kcDasm, 0x2000C000, 0x20026000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sh, err := casm(shDasm, 0x2002C000, 0x20042000)
+	sh, err := casm(shDasm, 0x2002E000, 0x20044000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idle, err := casm(idleDasm, 0x20050000, 0x20051000)
+	idle, err := casm(idleDasm, 0x2004A000, 0x2004B000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,8 +202,8 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 		// playing the parked ARM (kflash.c explains why).
 		m.Poke32(mustSym(t, kernC, "g_kflash_arm"), flashMailbox)
 	}
-	const diskBase = 0x20052000
-	if diskBase+len(disk) > 0x20072000 {
+	const diskBase = 0x2004C000
+	if diskBase+len(disk) > 0x2006C000 {
 		t.Fatalf("disk too large: %d", len(disk))
 	}
 	for i := 0; i < len(disk); i += 4 {
@@ -212,7 +212,7 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	m.Poke32(mustSym(t, kernC, "g_dma_disk"), diskBase)
 	m.Poke32(mustSym(t, kernC, "g_dma_disksize"), uint32(len(disk)))
 	// exec arena.
-	m.Poke32(mustSym(t, kernC, "g_arena"), 0x20072000)
+	m.Poke32(mustSym(t, kernC, "g_arena"), 0x2006C000)
 	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007F000)
 	m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 	m.Poke32(mustSym(t, kernC, "g_initpid"), 2)

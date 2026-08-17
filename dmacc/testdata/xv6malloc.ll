@@ -4,18 +4,50 @@ target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
 @seed = dso_local global i32 12345, align 4
+@heap_brk = internal unnamed_addr global i32 0, align 4
+@heap = internal global [36864 x i8] zeroinitializer, align 1
 
-; Function Attrs: minsize nounwind optsize
-define dso_local ptr @sbrk(i32 noundef %0) local_unnamed_addr #0 {
-  %2 = tail call ptr @sys_sbrk(i32 noundef %0, i32 noundef 0) #3
-  ret ptr %2
+; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(readwrite, argmem: none, inaccessiblemem: none)
+define dso_local nonnull ptr @sbrk(i32 noundef %0) local_unnamed_addr #0 {
+  %2 = icmp slt i32 %0, 0
+  br i1 %2, label %3, label %10
+
+3:                                                ; preds = %1
+  %4 = sub nsw i32 0, %0
+  %5 = load i32, ptr @heap_brk, align 4, !tbaa !3
+  %6 = icmp ult i32 %5, %4
+  br i1 %6, label %16, label %7
+
+7:                                                ; preds = %3
+  %8 = add i32 %5, %0
+  store i32 %8, ptr @heap_brk, align 4, !tbaa !3
+  %9 = getelementptr inbounds nuw i8, ptr @heap, i32 %8
+  br label %16
+
+10:                                               ; preds = %1
+  %11 = load i32, ptr @heap_brk, align 4, !tbaa !3
+  %12 = add i32 %11, %0
+  %13 = icmp ugt i32 %12, 36864
+  br i1 %13, label %16, label %14
+
+14:                                               ; preds = %10
+  %15 = getelementptr inbounds nuw i8, ptr @heap, i32 %11
+  store i32 %12, ptr @heap_brk, align 4, !tbaa !3
+  br label %16
+
+16:                                               ; preds = %10, %3, %14, %7
+  %17 = phi ptr [ %9, %7 ], [ %15, %14 ], [ inttoptr (i32 -1 to ptr), %3 ], [ inttoptr (i32 -1 to ptr), %10 ]
+  ret ptr %17
 }
 
-; Function Attrs: minsize optsize
-declare dso_local ptr @sys_sbrk(i32 noundef, i32 noundef) local_unnamed_addr #1
+; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
+declare void @llvm.lifetime.start.p0(i64 immarg, ptr captures(none)) #1
+
+; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
+declare void @llvm.lifetime.end.p0(i64 immarg, ptr captures(none)) #1
 
 ; Function Attrs: minsize nounwind optsize
-define dso_local range(i32 1, 12648431) i32 @main() local_unnamed_addr #0 {
+define dso_local range(i32 1, 12648431) i32 @main() local_unnamed_addr #2 {
   %1 = alloca [12 x ptr], align 4
   %2 = alloca [12 x i32], align 4
   call void @llvm.lifetime.start.p0(i64 48, ptr nonnull %1) #4
@@ -39,7 +71,7 @@ define dso_local range(i32 1, 12648431) i32 @main() local_unnamed_addr #0 {
   %15 = zext nneg i16 %14 to i32
   %16 = getelementptr inbounds nuw [12 x i32], ptr %2, i32 0, i32 %5
   store i32 %15, ptr %16, align 4, !tbaa !3
-  %17 = tail call ptr @malloc(i32 noundef %15) #3
+  %17 = tail call ptr @malloc(i32 noundef %15) #5
   %18 = getelementptr inbounds nuw [12 x ptr], ptr %1, i32 0, i32 %5
   store ptr %17, ptr %18, align 4, !tbaa !7
   %19 = icmp eq ptr %17, null
@@ -47,7 +79,7 @@ define dso_local range(i32 1, 12648431) i32 @main() local_unnamed_addr #0 {
 
 20:                                               ; preds = %8
   %21 = or disjoint i32 %5, 64
-  %22 = tail call ptr @memset(ptr noundef nonnull %17, i32 noundef %21, i32 noundef %15) #3
+  %22 = tail call ptr @memset(ptr noundef nonnull %17, i32 noundef %21, i32 noundef %15) #5
   %23 = add nuw nsw i32 %5, 1
   br label %4, !llvm.loop !9
 
@@ -59,7 +91,7 @@ define dso_local range(i32 1, 12648431) i32 @main() local_unnamed_addr #0 {
 27:                                               ; preds = %24
   %28 = getelementptr inbounds nuw [12 x ptr], ptr %1, i32 0, i32 %25
   %29 = load ptr, ptr %28, align 4, !tbaa !7
-  tail call void @free(ptr noundef %29) #3
+  tail call void @free(ptr noundef %29) #5
   %30 = add nuw nsw i32 %25, 2
   br label %24, !llvm.loop !12
 
@@ -73,7 +105,7 @@ define dso_local range(i32 1, 12648431) i32 @main() local_unnamed_addr #0 {
   %36 = load i32, ptr %35, align 4, !tbaa !3
   %37 = lshr i32 %36, 1
   %38 = add nuw i32 %37, 4
-  %39 = tail call ptr @malloc(i32 noundef %38) #3
+  %39 = tail call ptr @malloc(i32 noundef %38) #5
   %40 = getelementptr inbounds nuw [12 x ptr], ptr %1, i32 0, i32 %32
   store ptr %39, ptr %40, align 4, !tbaa !7
   %41 = icmp eq ptr %39, null
@@ -81,7 +113,7 @@ define dso_local range(i32 1, 12648431) i32 @main() local_unnamed_addr #0 {
 
 42:                                               ; preds = %34
   %43 = or disjoint i32 %32, 96
-  %44 = tail call ptr @memset(ptr noundef nonnull %39, i32 noundef %43, i32 noundef %38) #3
+  %44 = tail call ptr @memset(ptr noundef nonnull %39, i32 noundef %43, i32 noundef %38) #5
   store i32 %38, ptr %35, align 4, !tbaa !3
   %45 = add nuw nsw i32 %32, 2
   br label %31, !llvm.loop !13
@@ -132,7 +164,7 @@ define dso_local range(i32 1, 12648431) i32 @main() local_unnamed_addr #0 {
   br i1 %74, label %75, label %79
 
 75:                                               ; preds = %72
-  %76 = tail call ptr @malloc(i32 noundef 4000) #3
+  %76 = tail call ptr @malloc(i32 noundef 4000) #5
   %77 = icmp eq ptr %76, null
   %78 = select i1 %77, i32 4, i32 12648430
   br label %83
@@ -140,7 +172,7 @@ define dso_local range(i32 1, 12648431) i32 @main() local_unnamed_addr #0 {
 79:                                               ; preds = %72
   %80 = getelementptr inbounds nuw [12 x ptr], ptr %1, i32 0, i32 %73
   %81 = load ptr, ptr %80, align 4, !tbaa !7
-  tail call void @free(ptr noundef %81) #3
+  tail call void @free(ptr noundef %81) #5
   %82 = add nuw nsw i32 %73, 1
   br label %72, !llvm.loop !17
 
@@ -151,26 +183,21 @@ define dso_local range(i32 1, 12648431) i32 @main() local_unnamed_addr #0 {
   ret i32 %84
 }
 
-; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
-declare void @llvm.lifetime.start.p0(i64 immarg, ptr captures(none)) #2
+; Function Attrs: minsize optsize
+declare dso_local ptr @malloc(i32 noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize optsize
-declare dso_local ptr @malloc(i32 noundef) local_unnamed_addr #1
+declare dso_local ptr @memset(ptr noundef, i32 noundef, i32 noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize optsize
-declare dso_local ptr @memset(ptr noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
+declare dso_local void @free(ptr noundef) local_unnamed_addr #3
 
-; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
-declare void @llvm.lifetime.end.p0(i64 immarg, ptr captures(none)) #2
-
-; Function Attrs: minsize optsize
-declare dso_local void @free(ptr noundef) local_unnamed_addr #1
-
-attributes #0 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #1 = { minsize optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #2 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
-attributes #3 = { minsize nobuiltin nounwind optsize "no-builtins" }
+attributes #0 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(readwrite, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
+attributes #2 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #3 = { minsize optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #4 = { nounwind }
+attributes #5 = { minsize nobuiltin nounwind optsize "no-builtins" }
 
 !llvm.module.flags = !{!0, !1}
 !llvm.ident = !{!2}

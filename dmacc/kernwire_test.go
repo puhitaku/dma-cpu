@@ -22,7 +22,10 @@ const (
 	pfResume
 	pfPmail
 	pfKilled
-	procWords // 13
+	pfHeapbase
+	pfHeapmax
+	pfBrk
+	procWords // 16
 )
 
 // enum procstate (kproc.c / upstream proc.h).

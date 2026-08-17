@@ -8,12 +8,27 @@
 
 volatile uint seed = 12345;
 
-/* ulib.c owns sbrk() now (wrapping sys_sbrk); this test links
-   umalloc + string.c without ulib, so provide the wrapper here. */
+/* This exercise runs kernel-less (no usys, no SYS_sbrk), so back
+   sbrk with a local static arena — the machine-side equivalent of
+   what the kernel's ksbrk provides to real processes. */
+#define HEAPSZ 36864
+static char heap[HEAPSZ];
+static uint heap_brk;
+
 char *
 sbrk(int n)
 {
-  return sys_sbrk(n, 0);
+  if (n < 0) {
+    if ((uint)-n > heap_brk)
+      return (char *)-1;
+    heap_brk -= (uint)-n;
+    return heap + heap_brk;
+  }
+  if (heap_brk + (uint)n > HEAPSZ)
+    return (char *)-1;
+  char *p = heap + heap_brk;
+  heap_brk += (uint)n;
+  return p;
 }
 
 int

@@ -21,9 +21,10 @@ type GPIOEvent struct {
 // real transfers take a few system clocks each, so cycle counts are
 // proportional to, not equal to, hardware time.
 type Machine struct {
-	v    *Variant
-	sram []byte
-	dma  dma
+	v      *Variant
+	sram   []byte
+	loaded [][2]uint32 // LoadBytes ranges, for cross-image overlap checks
+	dma    dma
 
 	// mmio backs peripheral registers the emulator has no model for, so DMA
 	// programs can use arbitrary SFRs as scratch (a documented idiom).
@@ -44,8 +45,8 @@ type Machine struct {
 	// until the pace elapses. Real 115200-baud silicon spends ~87 us
 	// per byte — long kernel writes behave very differently from the
 	// always-ready default (see prompts/017).
-	TXPace  uint64
-	lastTX  uint64
+	TXPace uint64
+	lastTX uint64
 
 	// Flash, when non-nil, is the QSPI flash content, served read-only
 	// through the XIP window (flash.go explains why writes are the ARM
@@ -251,11 +252,23 @@ func (m *Machine) Peek32(addr uint32) uint32 {
 	return v
 }
 
-// LoadBytes copies a raw image into memory at addr (SRAM only).
+// LoadBytes copies a raw image into memory at addr (SRAM only). Ranges
+// loaded this way are remembered per machine, and a later load that
+// overlaps one is an error: silent cross-image clobbering (a kernel data
+// segment growing into a process image) has produced ticks-dead machines
+// with no fault more than once.
 func (m *Machine) LoadBytes(addr uint32, data []byte) error {
 	if !m.inSRAM(addr, len(data)) {
 		return fmt.Errorf("image [%#08x, +%#x) outside SRAM", addr, len(data))
 	}
+	lo, hi := addr, addr+uint32(len(data))
+	for _, r := range m.loaded {
+		if lo < r[1] && r[0] < hi {
+			return fmt.Errorf("image [%#08x, %#08x) overlaps previously loaded [%#08x, %#08x)",
+				lo, hi, r[0], r[1])
+		}
+	}
+	m.loaded = append(m.loaded, [2]uint32{lo, hi})
 	copy(m.sram[addr-SRAMBase:], data)
 	return nil
 }

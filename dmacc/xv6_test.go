@@ -12,12 +12,12 @@ import (
 )
 
 // TestXv6Malloc runs the first upstream xv6 code on the DMA machine:
-// user/umalloc.c (unmodified) and kernel/string.c, backed by the
-// xv6/dma/sbrk.c shim, driven by a self-checking allocator exercise
+// user/umalloc.c (unmodified) and kernel/string.c, backed by a
+// test-local static-arena sbrk (kernel-less machine), driven by a self-checking allocator exercise
 // (testdata/xv6malloc.c). Goldens regenerate with `make xv6-ll`.
 func TestXv6Malloc(t *testing.T) {
 	paths := []string{"testdata/xv6malloc.ll",
-		"../xv6/ll/string.ll", "../xv6/ll/umalloc.ll", "../xv6/ll/sbrk.ll"}
+		"../xv6/ll/string.ll", "../xv6/ll/umalloc.ll"}
 	var mods []*llir.Module
 	for _, p := range paths {
 		src, err := os.ReadFile(p)
