@@ -773,10 +773,10 @@ static void shell_start(void)
 #endif
 
 #ifdef HIL_HAS_XSH
-/* Phase 6 (prompts/018): hand the console to UPSTREAM xv6 sh.c. Same
- * discipline as shell_start: banner, start, then arm the tick chain
- * onto the running process. The registry blobs (echo, hello) are
- * staged first so `echo ...` and `hello` exec from the $ prompt. */
+/* Phase 7 (prompts/019): hand the console to UPSTREAM xv6 sh.c on the
+ * full filesystem kernel. The RAM disk (echo, cat, wc, README as an
+ * xv6 fs image) is staged first; exec resolves paths on it, and
+ * redirection and pipes work from the $ prompt. */
 static void xsh_start(void)
 {
     machine_reset();
@@ -788,14 +788,9 @@ static void xsh_start(void)
         printf("XSH: FAIL load\n");
         return;
     }
-    stage_blob(HIL_XSH_BLOB_ECHO_TEXT_HOME, hil_xsh_blob_echo_text, sizeof hil_xsh_blob_echo_text);
-    stage_blob(HIL_XSH_BLOB_ECHO_DATA_HOME, hil_xsh_blob_echo_data, sizeof hil_xsh_blob_echo_data);
-    stage_blob(HIL_XSH_BLOB_ECHO_RELOCS_HOME, hil_xsh_blob_echo_relocs, sizeof hil_xsh_blob_echo_relocs);
-    stage_blob(HIL_XSH_BLOB_HELLO_TEXT_HOME, hil_xsh_blob_hello_text, sizeof hil_xsh_blob_hello_text);
-    stage_blob(HIL_XSH_BLOB_HELLO_DATA_HOME, hil_xsh_blob_hello_data, sizeof hil_xsh_blob_hello_data);
-    stage_blob(HIL_XSH_BLOB_HELLO_RELOCS_HOME, hil_xsh_blob_hello_relocs, sizeof hil_xsh_blob_hello_relocs);
-    printf("=== handing console to UPSTREAM xv6 sh (ARM parked; the $ prompt "
-           "below is served entirely by the DMA controller) ===\n");
+    stage_blob(HIL_XSH_BLOB_DISK_HOME, hil_xsh_blob_disk, sizeof hil_xsh_blob_disk);
+    printf("=== handing console to UPSTREAM xv6 sh + fs (ARM parked; the $ "
+           "prompt below is served entirely by the DMA controller) ===\n");
     dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 0};
     if (dmx_start(&cfg, HIL_XSH_ENTRY) != DMX_OK) {
         printf("XSH: FAIL start\n");

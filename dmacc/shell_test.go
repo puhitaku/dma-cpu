@@ -88,14 +88,14 @@ func TestShellSystem(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x2002C000, 0x20035000)
+			kernC := buildKernelC(t, v, 0x2001E000, 0x2002C000)
 			shell, err := dmaasm.Assemble(shellDasm, dmaasm.Options{
-				Variant: v, TextBase: 0x20006000, DataBase: 0x20024000})
+				Variant: v, TextBase: 0x20006000, DataBase: 0x20016000})
 			if err != nil {
 				t.Fatal(err)
 			}
 			procB, err := dmaasm.Assemble(procDasm, dmaasm.Options{
-				Variant: v, TextBase: 0x2002A000, DataBase: 0x2002B000})
+				Variant: v, TextBase: 0x2001C000, DataBase: 0x2001D000})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -141,12 +141,12 @@ func TestShellSystem(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			end := registerImage(t, m, kernC, 0, "echo", echoImg, 0x20037000)
+			end := registerImage(t, m, kernC, 0, "echo", echoImg, 0x2002E000)
 			end = registerImage(t, m, kernC, 1, "hello", helloImg, end)
-			if end > 0x20039000 {
+			if end > 0x20030000 {
 				t.Fatalf("blob storage overflow: %#x", end)
 			}
-			m.Poke32(mustSym(t, kernC, "g_arena"), 0x20039000)
+			m.Poke32(mustSym(t, kernC, "g_arena"), 0x20030000)
 			m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2003FE00)
 			m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 			m.Poke32(mustSym(t, kernC, "g_k_sysentry"), mustSym(t, kern, "sys_entry"))

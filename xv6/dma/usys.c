@@ -78,7 +78,7 @@ read(int fd, void *buf, int n)
   for (;;) {
     fill(SYS_read, (uint)fd, (uint)buf, (uint)n);
     int r = dma_trap();
-    if (r != 0)
+    if (r != -2) /* -2: console has no cooked line yet; 0 is EOF */
       return r;
     fill(SYS_pause, 1, 0, 0);
     dma_trap();
@@ -168,6 +168,13 @@ int
 fstat(int fd, struct stat *st)
 {
   fill(SYS_fstat, (uint)fd, (uint)st, 0);
+  return dma_trap();
+}
+
+int
+mkdir(const char *path)
+{
+  fill(SYS_mkdir, (uint)path, 0, 0);
   return dma_trap();
 }
 

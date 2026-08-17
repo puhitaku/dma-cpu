@@ -46,9 +46,17 @@ libc:
 # The curated list grows as the port proceeds; goldens in xv6/ll are
 # committed and linked by dmacc like the libc ones.
 XV6_SRCS = kernel/string.c user/umalloc.c user/ulib.c user/printf.c user/echo.c user/sh.c \
-           dma/sbrk.c dma/usys.c dma/kproc.c
+           user/cat.c user/ls.c user/wc.c \
+           dma/sbrk.c dma/usys.c dma/kproc.c dma/kfsstub.c
 XV6_CLANG = clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding \
             -I$(CURDIR)/xv6 -S -emit-llvm
+
+# Kernel-side fs sources compile VERBATIM against the shim headers in
+# xv6/dma/shim (no-op locks, pointer-into-disk bufs, fs-view proc): the
+# shadow copy makes quoted includes resolve shim-first, then upstream.
+XV6_FS_SRCS = fs.c file.c
+# DMA-side fs glue, compiled against the same shim-first include order.
+XV6_FSGLUE_SRCS = kbio.c kfsglue.c kpipe.c
 
 .PHONY: xv6-ll
 xv6-ll:
@@ -57,6 +65,20 @@ xv6-ll:
 	  out=xv6/ll/$$(basename $$f .c).ll; \
 	  (cd xv6 && $(XV6_CLANG) $$f -o $(CURDIR)/$$out) || exit 1; \
 	  echo "  $$f -> $$out"; \
+	done
+	@mkdir -p bin/fsshadow
+	@for f in $(XV6_FS_SRCS); do \
+	  cp xv6/kernel/$$f bin/fsshadow/ && \
+	  (cd bin/fsshadow && clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding \
+	    -I$(CURDIR)/xv6/dma/shim -I$(CURDIR)/xv6/kernel -S -emit-llvm \
+	    $$f -o $(CURDIR)/xv6/ll/k$$(basename $$f .c).ll) || exit 1; \
+	  echo "  kernel/$$f (shimmed) -> xv6/ll/k$$(basename $$f .c).ll"; \
+	done
+	@for f in $(XV6_FSGLUE_SRCS); do \
+	  (cd xv6/dma && clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding \
+	    -I$(CURDIR)/xv6/dma/shim -I$(CURDIR)/xv6/kernel -S -emit-llvm \
+	    $$f -o $(CURDIR)/xv6/ll/$$(basename $$f .c).ll) || exit 1; \
+	  echo "  dma/$$f -> xv6/ll/$$(basename $$f .c).ll"; \
 	done
 
 # --- Compiler goldens (Phase 4) ---

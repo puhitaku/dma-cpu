@@ -87,6 +87,27 @@ uint *volatile kw_khalt; /* &kernel.dasm khalt: park when nothing runnable */
 /* Absorbs injector fires that land while the kernel is running. */
 uint tickpending;
 
+/* --- The file layer (Phase 7): verbatim fs.c/file.c + glue. The
+ * kernel mounts the RAM disk lazily on the first entry after the
+ * loader configured dma_disk (kbio.c). --- */
+extern uint dma_disk;
+extern uint fsready;
+extern void kfs_start(void);
+extern void kfs_forkcopy(int parent, int child);
+extern void kfs_exit(int slot);
+extern int kfs_read(int fd, uint addr, int n);
+extern int kfs_write(int fd, uint addr, int n);
+extern int kfs_open(uint pathaddr, int omode);
+extern int kfs_close(int fd);
+extern int kfs_dup(int fd);
+extern int kfs_fstat(int fd, uint staddr);
+extern int kfs_pipe(uint fdarray);
+extern int kfs_chdir(uint pathaddr);
+extern int kfs_mkdir(uint pathaddr);
+extern uint kfs_iopen(const char *path);
+extern int kfs_iread(uint ipu, uint off, uint dst, uint n);
+extern void kfs_iclose(uint ipu);
+
 /* Tick injector: ABI channel 3, family-common register addresses. */
 #define INJ_WRITE_ADDR (*(volatile uint *)0x500000C4u)  /* CH3 WRITE_ADDR */
 #define INJ_COUNT_TRIG (*(volatile uint *)0x500000DCu)  /* CH3 AL1_TRANS_COUNT_TRIG */
@@ -120,15 +141,83 @@ uint k_sysentry;        /* loader-patched: &kernel.dasm sys_entry */
 uint nextpid;           /* loader-patched: first unused pid */
 uint arena, arena_end;  /* loader-patched: exec placement region */
 
+/* First-fit allocator with coalescing over [arena, arena_end): each
+ * block carries a one-word size header. exec() frees its relocation
+ * scratch immediately and exit() frees the process image, so spawn
+ * sessions no longer exhaust the arena (prompts/019). */
+struct khdr {
+  uint size;         /* bytes including the header */
+  struct khdr *next; /* free list, address-ordered */
+};
+static struct khdr *kfreelist;
+static uint kheap_init;
+
 static uint
 kalloc(uint n)
 {
-  n = (n + 0xFFu) & ~0xFFu;
-  if (arena + n > arena_end)
-    return 0;
-  uint a = arena;
-  arena += n;
-  return a; /* bump only; exec'd images are never freed yet */
+  if (!kheap_init) {
+    kheap_init = 1;
+    kfreelist = (struct khdr *)arena;
+    kfreelist->size = arena_end - arena;
+    kfreelist->next = 0;
+  }
+  n = ((n + 0xFFu) & ~0xFFu) + 0x100u; /* header burns one 256B unit */
+  struct khdr **pp = &kfreelist;
+  for (struct khdr *h = kfreelist; h; pp = &h->next, h = h->next) {
+    if (h->size >= n) {
+      if (h->size - n >= 0x200u) { /* split */
+        struct khdr *rest = (struct khdr *)((uint)h + n);
+        rest->size = h->size - n;
+        rest->next = h->next;
+        h->size = n;
+        *pp = rest;
+      } else {
+        *pp = h->next;
+      }
+      return (uint)h + 0x100u;
+    }
+  }
+  return 0;
+}
+
+static void
+kfree(uint a)
+{
+  if (!a)
+    return;
+  struct khdr *h = (struct khdr *)(a - 0x100u);
+  struct khdr *prev = 0;
+  struct khdr *cur = kfreelist;
+  while (cur && (uint)cur < (uint)h) {
+    prev = cur;
+    cur = cur->next;
+  }
+  h->next = cur;
+  if (prev)
+    prev->next = h;
+  else
+    kfreelist = h;
+  if (cur && (uint)h + h->size == (uint)cur) { /* merge up */
+    h->size += cur->size;
+    h->next = cur->next;
+  }
+  if (prev && (uint)prev + prev->size == (uint)h) { /* merge down */
+    prev->size += h->size;
+    prev->next = h->next;
+  }
+}
+
+/* Arena allocations owned by each slot's exec'd image (freed at exit
+ * or on re-exec): text, data, argv area. */
+static uint execmem[NPROC][3];
+
+static void
+kfree_exec(int slot)
+{
+  for (int i = 0; i < 3; i++) {
+    kfree(execmem[slot][i]);
+    execmem[slot][i] = 0;
+  }
 }
 
 static struct kimg *
@@ -206,6 +295,36 @@ cputc(int c)
   __dma_uart_dr = (uchar)c;
 }
 
+/* Exported console I/O (also the devsw[CONSOLE] backend once the fs
+ * is up): kconswrite paces cputc; kconsread hands out cooked lines,
+ * -2 (EAGAIN) when none is ready — the usys read() wrapper retries. */
+void
+kconswrite(const char *b, int n)
+{
+  for (int i = 0; i < n; i++)
+    cputc(b[i]);
+}
+
+static void cons_poll(void);
+
+int
+kconsread(uint dst, int n)
+{
+  cons_poll();
+  if (cons_r == cons_w)
+    return -2;
+  char *d = (char *)dst;
+  int got = 0;
+  while (got < n && cons_r != cons_w) {
+    char c = cons_buf[cons_r % INPUT_BUF];
+    cons_r++;
+    d[got++] = c;
+    if (c == '\n')
+      break;
+  }
+  return got;
+}
+
 static void
 cons_poll(void)
 {
@@ -262,6 +381,8 @@ static void
 kenter(void)
 {
   rearm = 0;
+  if (!fsready && dma_disk)
+    kfs_start();
   struct proc *p = &proc[curr];
   entry_disp = p->pdispatch;
   entry_thunk = p->thunk;
@@ -351,6 +472,80 @@ wakeup(uint chan)
   }
 }
 
+/* --- Scheduler fence for the fs layer (kpipe.c): sleeper lookup,
+ * mailbox access, deposit-completion, and voluntary blocking, without
+ * exposing the ABI proc table. Mail fields: 1 a0, 2 a1, 3 a2, 4 ret,
+ * 5 done. --- */
+int
+kfind_sleeper(uint chan)
+{
+  for (int i = 0; i < NPROC; i++)
+    if (proc[i].state == SLEEPING && proc[i].chan == chan)
+      return i;
+  return -1;
+}
+
+static volatile struct dma_sysmail *
+mailof(int slot)
+{
+  return (volatile struct dma_sysmail *)proc[slot].pmail;
+}
+
+uint
+kmail_get(int slot, int field)
+{
+  volatile struct dma_sysmail *m = mailof(slot);
+  switch (field) {
+  case 1:
+    return m->a0;
+  case 2:
+    return m->a1;
+  case 3:
+    return m->a2;
+  case 4:
+    return m->ret;
+  }
+  return m->done;
+}
+
+void
+kmail_set(int slot, int field, uint v)
+{
+  volatile struct dma_sysmail *m = mailof(slot);
+  switch (field) {
+  case 2:
+    m->a1 = v;
+    break;
+  case 3:
+    m->a2 = v;
+    break;
+  case 5:
+    m->done = v;
+    break;
+  }
+}
+
+void
+kcomplete(int slot, uint ret)
+{
+  struct proc *q = &proc[slot];
+  setret(q, ret);
+  q->chan = 0;
+  q->state = RUNNABLE;
+}
+
+int
+kblock_self_slot(void)
+{
+  return (int)curr;
+}
+
+void
+kblock_current(uint chan)
+{
+  sleep(chan);
+}
+
 void
 dma_ktick(void)
 {
@@ -379,32 +574,49 @@ dma_ksyscall(void)
   case SYS_uptime:
     ret = ticks;
     break;
-  case SYS_write: { /* fd ignored until the file layer exists; cputc
-                     * pacing + NL->CRNL so terminals stay aligned */
-    char *b = (char *)m->a1;
-    for (uint i = 0; i < m->a2; i++)
-      cputc(b[i]);
-    ret = m->a2;
+  case SYS_write: {
+    int r;
+    if (fsready)
+      r = kfs_write((int)m->a0, m->a1, (int)m->a2);
+    else {
+      kconswrite((const char *)m->a1, (int)m->a2);
+      r = (int)m->a2;
+    }
+    if (r == -3)
+      block = 1; /* pipe full: sleeping; the reader pulls + deposits */
+    ret = (uint)r;
     break;
   }
-  case SYS_read: { /* console only; returns 0 when no line is cooked
-                    * yet — the usys wrapper sleeps a tick and retries,
-                    * so read() blocks from the caller's view */
-    cons_poll();
-    if (cons_r == cons_w) {
-      ret = 0;
-      break;
-    }
-    char *dst = (char *)m->a1;
-    uint n = 0;
-    while (n < m->a2 && cons_r != cons_w) {
-      char c = cons_buf[cons_r % INPUT_BUF];
-      cons_r++;
-      dst[n++] = c;
-      if (c == '\n')
-        break;
-    }
-    ret = n;
+  case SYS_open:
+    ret = fsready ? (uint)kfs_open(m->a0, (int)m->a1) : (uint)-1;
+    break;
+  case SYS_close:
+    ret = fsready ? (uint)kfs_close((int)m->a0) : (uint)-1;
+    break;
+  case SYS_dup:
+    ret = fsready ? (uint)kfs_dup((int)m->a0) : (uint)-1;
+    break;
+  case SYS_fstat:
+    ret = fsready ? (uint)kfs_fstat((int)m->a0, m->a1) : (uint)-1;
+    break;
+  case SYS_pipe:
+    ret = fsready ? (uint)kfs_pipe(m->a0) : (uint)-1;
+    break;
+  case SYS_chdir:
+    ret = fsready ? (uint)kfs_chdir(m->a0) : (uint)-1;
+    break;
+  case SYS_mkdir:
+    ret = fsready ? (uint)kfs_mkdir(m->a0) : (uint)-1;
+    break;
+  case SYS_read: {
+    int r;
+    if (fsready)
+      r = kfs_read((int)m->a0, m->a1, (int)m->a2);
+    else
+      r = kconsread(m->a1, (int)m->a2);
+    if (r == -3)
+      block = 1; /* pipe: already sleeping; the peer deposits */
+    ret = (uint)r;
     break;
   }
   case SYS_pause: /* sleep a0 ticks on &ticks (upstream sys_sleep) */
@@ -453,6 +665,8 @@ dma_ksyscall(void)
     }
     struct proc *c = &proc[ci];
     *c = *p;
+    if (fsready)
+      kfs_forkcopy((int)curr, ci);
     c->pid = nextpid++;
     c->ppid = p->pid;
     c->chan = 0;
@@ -465,23 +679,86 @@ dma_ksyscall(void)
     block = 1;
     break;
   }
-  case SYS_exec: { /* a0: image name (argv not passed yet) */
-    struct kimg *im = lookup((const char *)m->a0);
-    if (!im) {
-      ret = (uint)-1;
-      break;
+  case SYS_exec: { /* a0: path (fs) or registry name; a1: argv */
+    struct kimg fsim; /* header-backed row for the fs path */
+    struct kimg *im = 0;
+    uint tb = 0, db = 0;
+    uint ipu = fsready ? kfs_iopen((const char *)m->a0) : 0;
+    if (ipu) {
+      /* DMX-exec file: 13-word header, then text, data, packed relocs
+       * (the registry row shape, serialized — see fsimg). */
+      uint hdr[13];
+      if (kfs_iread(ipu, 0, (uint)hdr, 52) != 52 || hdr[0] != 0x58414D44u) {
+        kfs_iclose(ipu);
+        ret = (uint)-1;
+        break;
+      }
+      fsim.textlen = hdr[1];
+      fsim.datalen = hdr[2];
+      fsim.textlink = hdr[3];
+      fsim.datalink = hdr[4];
+      fsim.nreloc = hdr[5];
+      fsim.entryoff = hdr[6];
+      fsim.thunkoff = hdr[7];
+      fsim.dispoff = hdr[8];
+      fsim.irqoff = hdr[9];
+      fsim.lroff = hdr[10];
+      fsim.mailoff = hdr[11];
+      fsim.sysoff = hdr[12];
+      tb = kalloc(fsim.textlen);
+      db = kalloc(fsim.datalen);
+      uint toff = 52, doff = toff + fsim.textlen, roff = doff + fsim.datalen;
+      if (!tb || !db ||
+          kfs_iread(ipu, toff, tb, fsim.textlen) != (int)fsim.textlen ||
+          kfs_iread(ipu, doff, db, fsim.datalen) != (int)fsim.datalen) {
+        kfree(tb);
+        kfree(db);
+        kfs_iclose(ipu);
+        ret = (uint)-1;
+        break;
+      }
+      /* Relocations stream from the file in small chunks — no arena
+       * scratch (the pipe demo's peak lives on this). */
+      {
+        uint tD2 = tb - fsim.textlink, dD2 = db - fsim.datalink;
+        uint rw[64];
+        uint left = fsim.nreloc, off = roff;
+        while (left > 0) {
+          uint take = left > 64 ? 64 : left;
+          if (kfs_iread(ipu, off, (uint)rw, take * 4) != (int)(take * 4))
+            break;
+          for (uint n = 0; n < take; n++) {
+            uint r = rw[n];
+            uint tgt = ((r & 0x80000000u) ? db : tb) + (r & 0x3FFFFFFFu);
+            W(tgt) += (r & 0x40000000u) ? dD2 : tD2;
+          }
+          left -= take;
+          off += take * 4;
+        }
+      }
+      kfs_iclose(ipu);
+      fsim.nreloc = 0; /* already applied */
+      fsim.relocs = 0;
+      im = &fsim;
+    } else {
+      im = lookup((const char *)m->a0);
+      if (!im) {
+        ret = (uint)-1;
+        break;
+      }
+      tb = kalloc(im->textlen);
+      db = kalloc(im->datalen);
+      if (!tb || !db) {
+        ret = (uint)-1;
+        break;
+      }
+      uint *src = (uint *)im->text, *dst = (uint *)tb;
+      for (uint n = 0; n < im->textlen; n += 4)
+        *dst++ = *src++;
+      src = (uint *)im->data, dst = (uint *)db;
+      for (uint n = 0; n < im->datalen; n += 4)
+        *dst++ = *src++;
     }
-    uint tb = kalloc(im->textlen), db = kalloc(im->datalen);
-    if (!tb || !db) {
-      ret = (uint)-1;
-      break;
-    }
-    uint *src = (uint *)im->text, *dst = (uint *)tb;
-    for (uint n = 0; n < im->textlen; n += 4)
-      *dst++ = *src++;
-    src = (uint *)im->data, dst = (uint *)db;
-    for (uint n = 0; n < im->datalen; n += 4)
-      *dst++ = *src++;
     uint tD = tb - im->textlink, dD = db - im->datalink;
     uint *rl = (uint *)im->relocs;
     for (uint n = 0; n < im->nreloc; n++) {
@@ -489,6 +766,9 @@ dma_ksyscall(void)
       uint tgt = ((r & 0x80000000u) ? db : tb) + (r & 0x3FFFFFFFu);
       W(tgt) += (r & 0x40000000u) ? dD : tD;
     }
+    kfree_exec((int)curr); /* a re-exec'd image releases its old one */
+    execmem[curr][0] = tb;
+    execmem[curr][1] = db;
     /* argv: copy the caller's vector + strings into a fresh area and
      * pass argc/argv through the image's r0/r1 register words (crt0's
      * `call main` leaves them untouched; .regs zero-init means plain
@@ -511,6 +791,7 @@ dma_ksyscall(void)
         }
         slots[argc] = 0;
         argvdst = area;
+        execmem[curr][2] = area;
       }
     }
     p->pdispatch = db + im->dispoff;
@@ -531,6 +812,9 @@ dma_ksyscall(void)
   }
   case SYS_exit: {
     p->xstate = m->a0;
+    if (fsready)
+      kfs_exit((int)curr);
+    kfree_exec((int)curr);
     vfork_release(p); /* exit also ends a pre-exec vfork suspension */
     /* If the parent is blocked in wait() on us, deposit and wake:
      * this IS the reap (the parent cannot re-run its scan). */

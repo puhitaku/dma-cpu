@@ -25,14 +25,33 @@ func parseLL(t *testing.T, path string) *llir.Module {
 	return m
 }
 
-// buildKernelC compiles the Phase 5d C kernel core (xv6/dma/kproc.c).
-func buildKernelC(t *testing.T, v *emu.Variant, text, data uint32) *dmaasm.Result {
+// compileKernel builds the kernel core: lean (kproc + fs stubs) or
+// full (verbatim fs.c/file.c + glue — ~134 KB text, wide layouts only).
+func compileKernel(t *testing.T, fs bool) string {
 	t.Helper()
-	dasm, err := dmacc.Compile(parseLL(t, "../xv6/ll/kproc.ll"),
-		dmacc.Options{Entry: "kmain", NoSafepoints: true})
+	list := []string{"kproc", "kfsstub"}
+	if fs {
+		list = []string{"kproc", "kfs", "kfile", "kbio", "kfsglue", "kpipe", "string"}
+	}
+	var mods []*llir.Module
+	for _, p := range list {
+		mods = append(mods, parseLL(t, "../xv6/ll/"+p+".ll"))
+	}
+	merged, err := llir.Merge(mods...)
 	if err != nil {
 		t.Fatal(err)
 	}
+	dasm, err := dmacc.Compile(merged, dmacc.Options{Entry: "kmain", NoSafepoints: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dasm
+}
+
+// buildKernelC assembles the LEAN kernel (no fs).
+func buildKernelC(t *testing.T, v *emu.Variant, text, data uint32) *dmaasm.Result {
+	t.Helper()
+	dasm := compileKernel(t, false)
 	res, err := dmaasm.Assemble(dasm, dmaasm.Options{Variant: v, TextBase: text, DataBase: data})
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +88,7 @@ func TestXv6Proc(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x20004000, 0x2000D000)
+			kernC := buildKernelC(t, v, 0x20004000, 0x20012000)
 			asm := func(text, data uint32) *dmaasm.Result {
 				res, err := dmaasm.Assemble(pdasm, dmaasm.Options{
 					Variant: v, TextBase: text, DataBase: data})
@@ -78,9 +97,9 @@ func TestXv6Proc(t *testing.T) {
 				}
 				return res
 			}
-			idle := asm(0x20010000, 0x20014000)
-			parent := asm(0x20016000, 0x2001A000)
-			child := asm(0x2001C000, 0x20020000)
+			idle := asm(0x20014000, 0x20018000)
+			parent := asm(0x2001A000, 0x2001E000)
+			child := asm(0x20020000, 0x20024000)
 
 			m := emu.NewMachine(v)
 			var entries [3]uint32

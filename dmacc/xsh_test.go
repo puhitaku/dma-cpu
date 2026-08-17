@@ -1,21 +1,69 @@
 package dmacc_test
 
 import (
+	"encoding/binary"
 	"strings"
 	"testing"
 
 	"github.com/puhitaku/dma-cpu/dmaasm"
 	"github.com/puhitaku/dma-cpu/dmacc"
 	"github.com/puhitaku/dma-cpu/emu"
+	"github.com/puhitaku/dma-cpu/fsimg"
 	"github.com/puhitaku/dma-cpu/llir"
 	"github.com/puhitaku/dma-cpu/prog"
 )
 
-// TestXv6Sh boots UPSTREAM user/sh.c as the shell (slot 0) — the
-// parser and runcmd recursion runs on depth-cloned frames, the vfork
-// discipline holds through the frameless syscall wrappers, and exec
-// resolves names in the kernel's image registry. rp2350 only: the
-// clone family needs the wide RAM.
+// buildUser compiles an xv6 user program (name.ll + the userland
+// modules) and assembles it reloc-intact at canonical link bases.
+func buildUser(t *testing.T, v *emu.Variant, name string, extra ...string) *dmaasm.Result {
+	t.Helper()
+	paths := append([]string{name, "ulib", "usys"}, extra...)
+	var mods []*llir.Module
+	for _, p := range paths {
+		mods = append(mods, parseLL(t, "../xv6/ll/"+p+".ll"))
+	}
+	mod, err := llir.Merge(mods...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dasm, err := dmacc.Compile(mod, dmacc.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := dmaasm.Assemble(dasm, dmaasm.Options{
+		Variant: v, TextBase: 0x10000000, DataBase: 0x10040000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+// buildDisk assembles the user programs as DMX-exec files and packs
+// them (plus README) into an xv6 filesystem image.
+func buildDisk(t *testing.T, v *emu.Variant) []byte {
+	t.Helper()
+	b := fsimg.New(88, 64) // 96 KiB: programs + README + slack
+	b.AddFile("README", []byte("the DMA machine runs upstream xv6.\n"))
+	for _, prog := range []struct {
+		name  string
+		extra []string
+	}{
+		{"echo", nil},
+		{"cat", []string{"printf"}},
+		{"wc", []string{"printf"}},
+	} {
+		res := buildUser(t, v, prog.name, prog.extra...)
+		blob, err := fsimg.DMXExec(res.Image, res.Symbol)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.AddFile(prog.name, blob)
+	}
+	return b.Bytes()
+}
+
+// bootXsh boots UPSTREAM sh.c (slot 0) on the full fs kernel with the
+// RAM disk mounted — exec resolves paths in the filesystem now.
 func bootXsh(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	t.Helper()
 	v, err := emu.VariantByName("rp2350")
@@ -29,19 +77,11 @@ func bootXsh(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shDasm, err := dmacc.Compile(shMod, dmacc.Options{})
+	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 5})
 	if err != nil {
 		t.Fatal(err)
 	}
-	echoMod, err := llir.Merge(parseLL(t, "../xv6/ll/echo.ll"),
-		parseLL(t, "../xv6/ll/ulib.ll"), parseLL(t, "../xv6/ll/usys.ll"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	echoDasm, err := dmacc.Compile(echoMod, dmacc.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	kcDasm := compileKernel(t, true)
 	idleDasm, err := dmacc.Compile(parseLL(t, "testdata/proc.ll"), dmacc.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -56,19 +96,18 @@ func bootXsh(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernC := buildKernelC(t, v, 0x2000C000, 0x20015000)
+	kernC, err := dmaasm.Assemble(kcDasm, dmaasm.Options{
+		Variant: v, TextBase: 0x2000C000, DataBase: 0x2002F000})
+	if err != nil {
+		t.Fatal(err)
+	}
 	sh, err := dmaasm.Assemble(shDasm, dmaasm.Options{
-		Variant: v, TextBase: 0x20018000, DataBase: 0x20048000})
+		Variant: v, TextBase: 0x20037000, DataBase: 0x2004F000})
 	if err != nil {
 		t.Fatal(err)
 	}
 	idle, err := dmaasm.Assemble(idleDasm, dmaasm.Options{
-		Variant: v, TextBase: 0x20058000, DataBase: 0x20059000})
-	if err != nil {
-		t.Fatal(err)
-	}
-	echoImg, err := dmaasm.Assemble(echoDasm, dmaasm.Options{
-		Variant: v, TextBase: 0x10000000, DataBase: 0x10020000})
+		Variant: v, TextBase: 0x2005C000, DataBase: 0x2005D000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,12 +131,20 @@ func bootXsh(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 		{sh, entrySh, 1, 0, true},
 		{idle, entryI, 2, 0, false},
 	})
-	end := registerImage(t, m, kernC, 0, "echo", echoImg, 0x2005A000)
-	if end > 0x2005E000 {
-		t.Fatalf("blob overflow: %#x", end)
+	// The RAM disk.
+	disk := buildDisk(t, v)
+	const diskBase = 0x2005E000
+	if diskBase+len(disk) > 0x20074000 {
+		t.Fatalf("disk too large: %d", len(disk))
 	}
-	m.Poke32(mustSym(t, kernC, "g_arena"), 0x2005E000)
-	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007F000)
+	for i := 0; i < len(disk); i += 4 {
+		m.Poke32(uint32(diskBase+i), binary.LittleEndian.Uint32(disk[i:]))
+	}
+	m.Poke32(mustSym(t, kernC, "g_dma_disk"), diskBase)
+	m.Poke32(mustSym(t, kernC, "g_dma_disksize"), uint32(len(disk)))
+	// exec arena.
+	m.Poke32(mustSym(t, kernC, "g_arena"), 0x20074000)
+	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007F800)
 	m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 	m.Poke32(mustSym(t, kernC, "g_k_sysentry"), mustSym(t, kern, "sys_entry"))
 	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
@@ -108,20 +155,22 @@ func bootXsh(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	return m, kernC
 }
 
+// TestXv6Sh: upstream sh on the full fs — ls, cat, output redirection
+// (O_CREATE through sysfile's create), and a pipe into wc.
 func TestXv6Sh(t *testing.T) {
 	m, _ := bootXsh(t)
-	m.FeedConsole("echo hi from xv6 sh\recho a; echo b\rzzz\rcd nowhere\r")
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 400_000_000}); err != nil {
+	m.FeedConsole("cat README\recho booom > note\rcat note\recho one; echo two\rcat README | wc\r")
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
 		t.Fatal(err)
 	}
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
 	t.Logf("console:\n%s", out)
 	for _, want := range []string{
-		"$ ",                    // upstream getcmd prompt
-		"hi from xv6 sh",        // exec'd registry echo with argv
-		"a\n", "b\n",            // the `;` list: nested vfork
-		"exec zzz failed",       // runcmd's error path (vfork child printf)
-		"cannot cd nowhere",     // the cd builtin hitting chdir = -1
+		"$ ",
+		"the DMA machine runs upstream xv6.", // cat README
+		"booom",               // cat note (redirected write)
+		"one\n", "two\n",      // the ; list still works
+		"1 6 35",              // wc on README: 1 line, 6 words, 35 bytes
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("console missing %q", want)

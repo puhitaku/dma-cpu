@@ -25,6 +25,7 @@ import (
 	"github.com/puhitaku/dma-cpu/dmaasm"
 	"github.com/puhitaku/dma-cpu/dmacc"
 	"github.com/puhitaku/dma-cpu/emu"
+	"github.com/puhitaku/dma-cpu/fsimg"
 	"github.com/puhitaku/dma-cpu/img"
 	"github.com/puhitaku/dma-cpu/llir"
 	"github.com/puhitaku/dma-cpu/prog"
@@ -42,7 +43,7 @@ var layouts = map[string]layout{
 	// core stacks live in the scratch banks above 0x20080000) — the
 	// xv6 sh image with its recursion clones needs the room.
 	"rp2350": {text: 0x20008000, data: 0x20050000, scratch: 0x2007FE00},
-	"rp2040": {text: 0x20010000, data: 0x20018000, scratch: 0x2001FF00},
+	"rp2040": {text: 0x20008000, data: 0x20030000, scratch: 0x2003FE00},
 }
 
 const calCh = 8 // channel used by the C-side calibration experiments
@@ -270,15 +271,8 @@ func buildKernelPair(v *emu.Variant, kText, kData, cText, cData uint32) (*dmaasm
 	if err != nil {
 		return nil, nil, fmt.Errorf("kernel: %w", err)
 	}
-	src, err := os.ReadFile("xv6/ll/kproc.ll")
-	if err != nil {
-		return nil, nil, fmt.Errorf("kproc golden missing (make xv6-ll): %w", err)
-	}
-	mod, err := llir.Parse(string(src))
-	if err != nil {
-		return nil, nil, err
-	}
-	dasm, err := dmacc.Compile(mod, dmacc.Options{Entry: "kmain", NoSafepoints: true})
+	dasm, err := compileLL([]string{"xv6/ll/kproc.ll", "xv6/ll/kfsstub.ll"},
+		dmacc.Options{Entry: "kmain", NoSafepoints: true})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -449,7 +443,7 @@ func libcPaths(first ...string) ([]string, error) {
 // buildSched: the scheduler-only bundle (two counter processes, no
 // syscalls). Fits the narrow rp2040 layout.
 func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
-	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x9800)
+	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0xF000)
 	if err != nil {
 		return nil, err
 	}
@@ -457,20 +451,20 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0xB000, DataBase: lay.text + 0xC800})
+	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x11000, DataBase: lay.text + 0x12000})
 	if err != nil {
 		return nil, err
 	}
-	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0xD000, DataBase: lay.text + 0xE800})
+	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x13000, DataBase: lay.text + 0x14000})
 	if err != nil {
 		return nil, err
 	}
 	b := &kernBundle{names: []string{"kernel", "kernc", "proca", "procb"}, sym: map[string]uint32{}}
-	b.entry0 = lay.text + 0xB000 + procA.Image.EntryOff
-	entryB := lay.text + 0xD000 + procB.Image.EntryOff
-	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x9800, []kprocSpec{
-		{procA, lay.text + 0xC800, b.entry0, 1, 0, false},
-		{procB, lay.text + 0xE800, entryB, 2, 0, false},
+	b.entry0 = lay.text + 0x11000 + procA.Image.EntryOff
+	entryB := lay.text + 0x13000 + procB.Image.EntryOff
+	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0xF000, []kprocSpec{
+		{procA, lay.text + 0x12000, b.entry0, 1, 0, false},
+		{procB, lay.text + 0x14000, entryB, 2, 0, false},
 	}); err != nil {
 		return nil, err
 	}
@@ -524,11 +518,11 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 // Needs the wide rp2350 layout.
 func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0xD000
-	sText, sData := lay.text+0x10000, lay.text+0x28000
-	pText, pData := lay.text+0x2E000, lay.text+0x2F000
-	blobHome := lay.text + 0x30000
-	arena, arenaEnd := lay.text+0x32000, lay.text+0x48000
+	cText, cData := lay.text+0x4000, lay.text+0x12000
+	sText, sData := lay.text+0x14000, lay.text+0x2C000
+	pText, pData := lay.text+0x32000, lay.text+0x33000
+	blobHome := lay.text + 0x34000
+	arena, arenaEnd := lay.text+0x36000, lay.text+0x4C000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {
 		return nil, err
@@ -652,24 +646,43 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	return b, nil
 }
 
-// buildXsh: UPSTREAM user/sh.c as the boot shell (Phase 6,
-// prompts/018) — the parse/runcmd recursion on depth-cloned frames,
-// fork1 cloned for vfork reentrancy, exec resolving names in the
-// kernel registry. Slot 1 is the always-runnable idle counter.
+// buildXsh: UPSTREAM user/sh.c as the boot shell on the FULL
+// filesystem kernel (verbatim fs.c/file.c + glue, Phase 7): exec
+// resolves paths on the RAM disk (echo, cat, wc, README — built by
+// fsimg), redirection and pipes work. The firmware stages the disk
+// image at its home; everything else is patched at generation time.
 func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0xD000
-	sText, sData := lay.text+0x10000, lay.text+0x40000
-	iText, iData := lay.text+0x50000, lay.text+0x51000
-	blobHome := lay.text + 0x52000
-	arena, arenaEnd := lay.text+0x56000, lay.text+0x77000
+	cText, cData := lay.text+0x4000, lay.text+0x27000
+	sText, sData := lay.text+0x2F000, lay.text+0x47000
+	iText, iData := lay.text+0x54000, lay.text+0x55000
+	diskHome := lay.text + 0x56000
+	diskMax := uint32(0x16000) // 88 KiB
+	arena, arenaEnd := lay.text+0x6C000, lay.text+0x77800
 
-	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
+	kern, err := func() (*dmaasm.Result, error) {
+		ksrc, err := prog.HIL("kernel")
+		if err != nil {
+			return nil, err
+		}
+		return dmaasm.Assemble(ksrc, dmaasm.Options{Variant: v, TextBase: kText, DataBase: kData})
+	}()
 	if err != nil {
 		return nil, err
 	}
+	kcDasm, err := compileLL([]string{"xv6/ll/kproc.ll", "xv6/ll/kfs.ll", "xv6/ll/kfile.ll",
+		"xv6/ll/kbio.ll", "xv6/ll/kfsglue.ll", "xv6/ll/kpipe.ll", "xv6/ll/string.ll"},
+		dmacc.Options{Entry: "kmain", NoSafepoints: true})
+	if err != nil {
+		return nil, err
+	}
+	kernC, err := dmaasm.Assemble(kcDasm, dmaasm.Options{Variant: v, TextBase: cText, DataBase: cData})
+	if err != nil {
+		return nil, fmt.Errorf("fs kernel: %w", err)
+	}
 	shDasm, err := compileLL([]string{"xv6/ll/sh.ll", "xv6/ll/ulib.ll", "xv6/ll/printf.ll",
-		"xv6/ll/umalloc.ll", "xv6/ll/sbrk.ll", "xv6/ll/usys.ll"}, dmacc.Options{})
+		"xv6/ll/umalloc.ll", "xv6/ll/sbrk.ll", "xv6/ll/usys.ll"},
+		dmacc.Options{RecursionDepth: 5})
 	if err != nil {
 		return nil, err
 	}
@@ -685,21 +698,32 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	echoDasm, err := compileLL([]string{"xv6/ll/echo.ll", "xv6/ll/ulib.ll", "xv6/ll/usys.ll"}, dmacc.Options{})
-	if err != nil {
-		return nil, err
+
+	// The disk: user programs as DMX-exec files + README.
+	fb := fsimg.New(88, 64)
+	fb.AddFile("README", []byte("the DMA machine runs upstream xv6.\n"))
+	for _, up := range []struct {
+		name  string
+		extra []string
+	}{{"echo", nil}, {"cat", []string{"xv6/ll/printf.ll"}}, {"wc", []string{"xv6/ll/printf.ll"}}} {
+		paths := append([]string{"xv6/ll/" + up.name + ".ll", "xv6/ll/ulib.ll", "xv6/ll/usys.ll"}, up.extra...)
+		udasm, err := compileLL(paths, dmacc.Options{})
+		if err != nil {
+			return nil, err
+		}
+		ures, err := dmaasm.Assemble(udasm, dmaasm.Options{Variant: v, TextBase: 0x10000000, DataBase: 0x10040000})
+		if err != nil {
+			return nil, err
+		}
+		blob, err := fsimg.DMXExec(ures.Image, ures.Symbol)
+		if err != nil {
+			return nil, err
+		}
+		fb.AddFile(up.name, blob)
 	}
-	echoImg, err := dmaasm.Assemble(echoDasm, dmaasm.Options{Variant: v, TextBase: 0x10000000, DataBase: 0x10020000})
-	if err != nil {
-		return nil, err
-	}
-	helloDasm, err := compileLL([]string{"dmacc/testdata/xv6hello.ll", "xv6/ll/usys.ll"}, dmacc.Options{})
-	if err != nil {
-		return nil, err
-	}
-	helloImg, err := dmaasm.Assemble(helloDasm, dmaasm.Options{Variant: v, TextBase: 0x10000000, DataBase: 0x10020000})
-	if err != nil {
-		return nil, err
+	disk := fb.Bytes()
+	if uint32(len(disk)) > diskMax {
+		return nil, fmt.Errorf("xsh disk too large: %d", len(disk))
 	}
 
 	b := &kernBundle{names: []string{"kernel", "kernc", "sh", "idle"}, sym: map[string]uint32{}}
@@ -719,23 +743,30 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		}
 		return a
 	}
-	regs := []regEntry{{"echo", echoImg}, {"hello", helloImg}}
-	blobs, blobNames, regSyms, err := stageRegistry(kernC, cData, blobHome,
-		arena, arenaEnd, sy(kern, "sys_entry"), 3, regs)
-	if err != nil {
-		return nil, err
+	for _, g := range []struct {
+		name string
+		val  uint32
+	}{
+		{"g_dma_disk", diskHome}, {"g_dma_disksize", uint32(len(disk))},
+		{"g_arena", arena}, {"g_arena_end", arenaEnd},
+		{"g_nextpid", 3}, {"g_k_sysentry", sy(kern, "sys_entry")},
+	} {
+		if errs == nil {
+			if err := patchData(kernC.Image, cData, sy(kernC, "g_"+g.name[2:]), g.val); err != nil {
+				return nil, err
+			}
+		}
 	}
-	b.blobs, b.blobNames = blobs, blobNames
-	for k, v2 := range regSyms {
-		b.sym[k] = v2
-	}
+	b.blobs = [][]byte{pad4(disk)}
+	b.blobNames = []string{"disk"}
+	b.sym["BLOB_DISK_HOME"] = diskHome
 	b.vec, b.disp0, b.inj = sy(kern, "vecSched"), sy(sh, "dispatch"), kernInjCtrl(v)
 	b.ticks = sy(kernC, "g_ticks")
 	if errs != nil {
 		return nil, errs
 	}
 
-	// Emulator session verification: exec, a `;` list, error paths.
+	// Emulator session verification: files, redirection, a pipe.
 	m := emu.NewMachine(v)
 	m.TXPace = 13000 // ~115200 baud vs the 15000-cycle tick, as on silicon
 	results := []*dmaasm.Result{kern, kernC, sh, idle}
@@ -744,7 +775,9 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 			return nil, err
 		}
 	}
-	stageBlobsEmu(m, b.blobs, b.blobNames, b.sym, regs)
+	for o := 0; o < len(disk); o += 4 {
+		m.Poke32(diskHome+uint32(o), binary.LittleEndian.Uint32(disk[o:]))
+	}
 	if err := armKernel(m, v, kern, b.disp0); err != nil {
 		return nil, err
 	}
@@ -753,13 +786,13 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	}); err != nil {
 		return nil, err
 	}
-	m.FeedConsole("echo hi from xv6 sh\recho a; echo b\rhello\rzzz\r")
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 500_000_000}); err != nil {
+	m.FeedConsole("cat README\recho booom > note\rcat note\rcat README | wc\r")
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
 		return nil, err
 	}
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
-	for _, want := range []string{"$ ", "hi from xv6 sh", "a\n", "b\n",
-		"hello from exec", "exec zzz failed"} {
+	for _, want := range []string{"$ ", "the DMA machine runs upstream xv6.",
+		"booom", "1 6 35"} {
 		if !strings.Contains(out, want) {
 			return nil, fmt.Errorf("xsh bundle: session missing %q:\n%s", want, out)
 		}
@@ -769,7 +802,6 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	}
 	return b, nil
 }
-
 const sysWantConsole = "hello from pid 1 via SYS_write\n" +
 	"pid 1 saw the clock advance\n" +
 	"pid 1 exiting\n"
@@ -778,9 +810,9 @@ const sysWantConsole = "hello from pid 1 via SYS_write\n" +
 // (dmacc/testdata/xv6sys.c + xv6/dma/usys.c). Wide layout.
 func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0xD000
-	aText, aData := lay.text+0xF000, lay.text+0x13000
-	bText, bData := lay.text+0x17000, lay.text+0x1B000
+	cText, cData := lay.text+0x4000, lay.text+0x12000
+	aText, aData := lay.text+0x14000, lay.text+0x18000
+	bText, bData := lay.text+0x1C000, lay.text+0x20000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {
 		return nil, err
@@ -999,11 +1031,11 @@ func stageBlobsEmu(m *emu.Machine, blobs [][]byte, names []string, syms map[stri
 // kernel places, relocates and runs it at exec() time.
 func buildExec(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0xD000
-	aText, aData := lay.text+0xF000, lay.text+0x13000
-	bText, bData := lay.text+0x17000, lay.text+0x1B000
-	blobHome := lay.text + 0x1D000
-	arena, arenaEnd := lay.text+0x20000, lay.text+0x2F000
+	cText, cData := lay.text+0x4000, lay.text+0x12000
+	aText, aData := lay.text+0x14000, lay.text+0x18000
+	bText, bData := lay.text+0x1C000, lay.text+0x20000
+	blobHome := lay.text + 0x22000
+	arena, arenaEnd := lay.text+0x26000, lay.text+0x35000
 
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {
