@@ -130,6 +130,13 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
   spin through a kernel-owned `parkvec` the injector patches, instead
   of an unwakeable HALT.
 - [ ] Per-process heap (real sbrk semantics; admits the sbrk* tests).
+- [ ] Signals, with user-space handling in commands: today an
+  infinitely running foreground command (e.g. `spin` without `&`)
+  cannot be stopped — sh is blocked in wait() and the console line
+  discipline has no interrupt key. Deliver a Ctrl-C-style path
+  (console interrupt -> signal to the foreground process; default
+  death, user-registered handler otherwise) so runaway commands are
+  recoverable from the keyboard.
 - [ ] Parenthesized sh commands (deeper clone budget exists now).
 - [ ] More peripherals for the machine (GPIO/PIO surface).
 
