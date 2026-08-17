@@ -87,16 +87,26 @@ handoff: loads the four images, starts pid 1, arms the tick chain
 and prints PASS with ticks/donetick/exit/bgcount. pid 1's SYS_write
 lines appear directly on the UART.
 
-## Silicon status: blocked on the probe, not the design
+## Silicon: PASS
 
-The full firmware (with exp_syscall) flashes and runs — fragments of
-the whole test pass and the dma-sh banner are visible — but the Debug
-Probe's USB-UART bridge is degraded again (the prompts/013 failure
-mode, this time dropping ~99% of bytes instead of all of them; SWD
-unaffected). Silicon confirmation of exp_syscall waits for a probe
-replug.
+After the probe replug, the full boot pass captured clean (Pico 2,
+iter=1): all 19 TESTs PASS, all CALs MATCH, and
 
-Bring-up lessons that cost real time today:
+    EXP syscall: start (pid 1 speaks via SYS_write)
+    hello from pid 1 via SYS_write
+    pid 1 saw the clock advance
+    pid 1 exiting
+
+    EXP syscall: PASS ticks=753 donetick=6 exit=0 bgcount=3197->19087
+
+pid 1's three SYS_write lines are printed on the UART by the C kernel
+core on behalf of the process; donetick=6 matches the emulator
+exactly; pid 2 advanced 15,890 counts after pid 1's exit. The pass
+then hands the console to dma-sh as usual (shell verified live:
+ticks/bgcounter growing).
+
+Bring-up lessons that cost real time (two separate serial failures,
+plus SWD state):
 
 - A failed `halt`/`resume` over SWD can leave the RP2350 with its
   debug domain unreachable ("Failed to read memory at 0xe000edf0"
@@ -106,14 +116,18 @@ Bring-up lessons that cost real time today:
   state.
 - The capture must hold one fd with raw termios for the whole window;
   `stty && cat` reopens the device and loses the stream.
-- Distinguish "board dead" from "bridge dead" before touching the
-  board: SWD liveness + fragment analysis of whatever bytes arrive.
-  The fragments here spanned the entire pass — firmware fine, link
-  sick.
+- Total serial deadness (zero bytes both directions, SWD fine) is the
+  probe bridge wedge from prompts/013 — only a physical replug fixes
+  it. But ~99% byte LOSS on sustained bursts with clean low-rate
+  interactive traffic is a different failure: the host. macOS's CDC
+  buffer is tiny; polling at 0.2 s drops most of a full-speed 115200
+  stream. Capture with a ~5 ms select loop and the stream is
+  lossless.
+- Distinguish "board dead" from "bridge dead" from "host dropping"
+  before touching anything: SWD liveness, then fragment analysis —
+  fragments spanning the entire pass mean the firmware is fine.
 
 ## Next
-
-- Silicon PASS of exp_syscall after the probe replug.
 - proc.c adaptation: struct proc, real states (RUNNABLE/SLEEPING/
   ZOMBIE), an N-slot run queue replacing the hardwired A/B dasm
   scheduler, upstream syscall.c's dispatch-table shape.
