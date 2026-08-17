@@ -711,6 +711,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 
 	// The disk: upstream user programs as compact DMX-exec files.
 	fb := fsimg.New(128, 64)
+	fb.AddDevice("console", 1, 0)
 	fb.AddFile("README", []byte("the DMA machine runs upstream xv6.\n"))
 	for _, up := range []struct {
 		name  string

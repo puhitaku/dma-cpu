@@ -104,6 +104,8 @@ extern int kfs_fstat(int fd, uint staddr);
 extern int kfs_pipe(uint fdarray);
 extern int kfs_chdir(uint pathaddr);
 extern int kfs_mkdir(uint pathaddr);
+extern int kfs_link(uint oldaddr, uint newaddr);
+extern int kfs_unlink(uint pathaddr);
 extern uint kfs_iopen(const char *path);
 extern int kfs_iread(uint ipu, uint off, uint dst, uint n);
 extern void kfs_iclose(uint ipu);
@@ -612,6 +614,12 @@ dma_ksyscall(void)
     break;
   case SYS_mkdir:
     ret = fsready ? (uint)kfs_mkdir(m->a0) : (uint)-1;
+    break;
+  case SYS_link:
+    ret = fsready ? (uint)kfs_link(m->a0, m->a1) : (uint)-1;
+    break;
+  case SYS_unlink:
+    ret = fsready ? (uint)kfs_unlink(m->a0) : (uint)-1;
     break;
   case SYS_read: {
     int r;

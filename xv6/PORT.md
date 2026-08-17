@@ -93,5 +93,11 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
   window selector (dmaasm CompactScratch) — per-image selectors
   cannot share one machine — and the injector on compact channel 9.
   Closed the long-open compact+scheduler validation. Silicon-green.
+- [x] The exam (prompts/021): upstream usertests.c compiles verbatim
+  (shadow riscv/memlayout shims) and runs preloaded, one test per
+  boot — 30/30 on the curated roster (all fs tests, vfork-discipline
+  process tests). Caught the console-inode bug (disks now carry a
+  real T_DEVICE console, as mkfs does), sbrk shrink, and dmacc's i64
+  copy-pair lowering. Exclusion reasons documented.
 - [ ] Persistence: back the RAM disk with a flash region.
 - [ ] init-style orphan reaping; unlink; parenthesized sh commands.

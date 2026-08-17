@@ -66,6 +66,12 @@ xv6-ll:
 	  (cd xv6 && $(XV6_CLANG) $$f -o $(CURDIR)/$$out) || exit 1; \
 	  echo "  $$f -> $$out"; \
 	done
+	@mkdir -p bin/utshadow/kernel bin/utshadow/user
+	@for f in param.h types.h stat.h fs.h fcntl.h syscall.h; do cp xv6/kernel/$$f bin/utshadow/kernel/; done
+	@cp xv6/dma/shim/riscv.h xv6/dma/shim/memlayout.h bin/utshadow/kernel/
+	@cp xv6/user/user.h bin/utshadow/user/ && cp xv6/user/usertests.c bin/utshadow/
+	@(cd bin/utshadow && clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding \
+	  -I. -S -emit-llvm usertests.c -o $(CURDIR)/xv6/ll/usertests.ll) && echo "  user/usertests.c (shimmed riscv/memlayout) -> xv6/ll/usertests.ll"
 	@mkdir -p bin/fsshadow
 	@for f in $(XV6_FS_SRCS); do \
 	  cp xv6/kernel/$$f bin/fsshadow/ && \

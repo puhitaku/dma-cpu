@@ -9,22 +9,34 @@ target triple = "thumbv6m-unknown-none-eabi"
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(readwrite, argmem: none, inaccessiblemem: none)
 define dso_local nonnull ptr @sys_sbrk(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
   %3 = icmp slt i32 %0, 0
-  br i1 %3, label %10, label %4
+  br i1 %3, label %4, label %11
 
 4:                                                ; preds = %2
-  %5 = load i32, ptr @dma_brk, align 4, !tbaa !3
-  %6 = add nuw i32 %5, %0
-  %7 = icmp ugt i32 %6, 36864
-  br i1 %7, label %10, label %8
+  %5 = sub nsw i32 0, %0
+  %6 = load i32, ptr @dma_brk, align 4, !tbaa !3
+  %7 = icmp ult i32 %6, %5
+  br i1 %7, label %17, label %8
 
 8:                                                ; preds = %4
-  %9 = getelementptr inbounds nuw i8, ptr @dma_heap, i32 %5
-  store i32 %6, ptr @dma_brk, align 4, !tbaa !3
-  br label %10
+  %9 = add i32 %6, %0
+  store i32 %9, ptr @dma_brk, align 4, !tbaa !3
+  %10 = getelementptr inbounds nuw i8, ptr @dma_heap, i32 %9
+  br label %17
 
-10:                                               ; preds = %2, %4, %8
-  %11 = phi ptr [ %9, %8 ], [ inttoptr (i32 -1 to ptr), %4 ], [ inttoptr (i32 -1 to ptr), %2 ]
-  ret ptr %11
+11:                                               ; preds = %2
+  %12 = load i32, ptr @dma_brk, align 4, !tbaa !3
+  %13 = add i32 %12, %0
+  %14 = icmp ugt i32 %13, 36864
+  br i1 %14, label %17, label %15
+
+15:                                               ; preds = %11
+  %16 = getelementptr inbounds nuw i8, ptr @dma_heap, i32 %12
+  store i32 %13, ptr @dma_brk, align 4, !tbaa !3
+  br label %17
+
+17:                                               ; preds = %11, %4, %15, %8
+  %18 = phi ptr [ %10, %8 ], [ %16, %15 ], [ inttoptr (i32 -1 to ptr), %4 ], [ inttoptr (i32 -1 to ptr), %11 ]
+  ret ptr %18
 }
 
 attributes #0 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(readwrite, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }

@@ -22,6 +22,7 @@ const (
 	RootIno  = 1
 	TDir     = 1
 	TFile    = 2
+	TDevice  = 3
 	dinodeSz = 64 // 4 shorts + uint size + 13 addrs
 	ipb      = BSIZE / dinodeSz
 	direntSz = 16
@@ -42,10 +43,11 @@ type Builder struct {
 }
 
 type dinode struct {
-	typ   int16
-	nlink int16
-	size  uint32
-	addrs [NDirect + 1]uint32
+	typ          int16
+	major, minor int16
+	nlink        int16
+	size         uint32
+	addrs        [NDirect + 1]uint32
 }
 
 // New sizes the image: total blocks, inode count, log blocks (the
@@ -147,6 +149,15 @@ func (b *Builder) dirlink(dir uint32, name string, inum uint32) {
 	b.iappend(dir, ent)
 }
 
+// AddDevice creates a device inode in the root directory (upstream
+// mkfs makes "console" this way).
+func (b *Builder) AddDevice(name string, major, minor int16) {
+	in := b.freeInode
+	b.freeInode++
+	b.inodes[in] = dinode{typ: TDevice, major: major, minor: minor, nlink: 1}
+	b.dirlink(RootIno, name, in)
+}
+
 // AddFile creates name in the root directory with the given content.
 func (b *Builder) AddFile(name string, content []byte) {
 	in := b.freeInode
@@ -163,6 +174,8 @@ func (b *Builder) Bytes() []byte {
 		off := (b.inodestart+i/ipb)*BSIZE + (i%ipb)*dinodeSz
 		d := b.disk[off:]
 		binary.LittleEndian.PutUint16(d[0:], uint16(ip.typ))
+		binary.LittleEndian.PutUint16(d[2:], uint16(ip.major))
+		binary.LittleEndian.PutUint16(d[4:], uint16(ip.minor))
 		binary.LittleEndian.PutUint16(d[6:], uint16(ip.nlink))
 		binary.LittleEndian.PutUint32(d[8:], ip.size)
 		for j, a := range ip.addrs {

@@ -43,7 +43,8 @@ func buildUser(t *testing.T, v *emu.Variant, name string, extra ...string) *dmaa
 // them (plus README) into an xv6 filesystem image.
 func buildDisk(t *testing.T, v *emu.Variant) []byte {
 	t.Helper()
-	b := fsimg.New(128, 64) // 96 KiB: programs + README + slack
+	b := fsimg.New(128, 64)
+	b.AddDevice("console", 1, 0)
 	b.AddFile("README", []byte("the DMA machine runs upstream xv6.\n"))
 	for _, prog := range []struct {
 		name  string

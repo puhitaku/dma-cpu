@@ -15,7 +15,13 @@ char *
 sys_sbrk(int n, int flags)
 {
   (void)flags;
-  if (n < 0 || dma_brk + (uint)n > DMA_HEAP_SIZE)
+  if (n < 0) { /* shrink: usertests' countfree releases what it probed */
+    if ((uint)-n > dma_brk)
+      return (char *)-1;
+    dma_brk -= (uint)-n;
+    return dma_heap + dma_brk;
+  }
+  if (dma_brk + (uint)n > DMA_HEAP_SIZE)
     return (char *)-1;
   char *p = dma_heap + dma_brk;
   dma_brk += (uint)n;

@@ -68,6 +68,16 @@ define dso_local noundef i32 @kfs_mkdir(i32 noundef %0) local_unnamed_addr #0 {
 }
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none)
+define dso_local noundef i32 @kfs_link(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
+  ret i32 -1
+}
+
+; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none)
+define dso_local noundef i32 @kfs_unlink(i32 noundef %0) local_unnamed_addr #0 {
+  ret i32 -1
+}
+
+; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none)
 define dso_local noundef i32 @kfs_iopen(ptr noundef readnone captures(none) %0) local_unnamed_addr #0 {
   ret i32 0
 }

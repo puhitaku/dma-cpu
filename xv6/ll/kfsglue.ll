@@ -5,18 +5,24 @@ target triple = "thumbv6m-unknown-none-eabi"
 
 %struct.proc = type { i32, i32, ptr, [16 x ptr] }
 %struct.devsw = type { ptr, ptr }
+%struct.dirent = type { i16, [14 x i8] }
 
 @.str = private unnamed_addr constant [8 x i8] c"panic: \00", align 1
 @.str.1 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
 @fsproc = dso_local global [8 x %struct.proc] zeroinitializer, align 4
 @curr = external dso_local local_unnamed_addr global i32, align 4
 @devsw = external dso_local local_unnamed_addr global [0 x %struct.devsw], align 4
-@.str.2 = private unnamed_addr constant [2 x i8] c"/\00", align 1
+@.str.2 = private unnamed_addr constant [9 x i8] c"/console\00", align 1
+@.str.3 = private unnamed_addr constant [22 x i8] c"kfs_start: no console\00", align 1
+@.str.4 = private unnamed_addr constant [2 x i8] c"/\00", align 1
 @fsready = dso_local local_unnamed_addr global i32 0, align 4
-@.str.3 = private unnamed_addr constant [2 x i8] c".\00", align 1
-@.str.4 = private unnamed_addr constant [3 x i8] c"..\00", align 1
-@.str.5 = private unnamed_addr constant [12 x i8] c"create dots\00", align 1
-@.str.6 = private unnamed_addr constant [16 x i8] c"create: dirlink\00", align 1
+@.str.5 = private unnamed_addr constant [2 x i8] c".\00", align 1
+@.str.6 = private unnamed_addr constant [3 x i8] c"..\00", align 1
+@.str.7 = private unnamed_addr constant [18 x i8] c"unlink: nlink < 1\00", align 1
+@.str.8 = private unnamed_addr constant [15 x i8] c"unlink: writei\00", align 1
+@.str.9 = private unnamed_addr constant [12 x i8] c"create dots\00", align 1
+@.str.10 = private unnamed_addr constant [16 x i8] c"create: dirlink\00", align 1
+@.str.11 = private unnamed_addr constant [18 x i8] c"isdirempty: readi\00", align 1
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none)
 define dso_local void @initlock(ptr noundef readnone captures(none) %0, ptr noundef readnone captures(none) %1) local_unnamed_addr #0 {
@@ -145,49 +151,59 @@ define dso_local void @kfs_start() local_unnamed_addr #1 {
   tail call void @fileinit() #7
   store ptr @consoleread, ptr getelementptr inbounds nuw (i8, ptr @devsw, i32 8), align 4, !tbaa !13
   store ptr @consolewrite, ptr getelementptr inbounds nuw (i8, ptr @devsw, i32 12), align 4, !tbaa !16
-  br label %1
+  %1 = tail call ptr @namei(ptr noundef nonnull @.str.2) #7
+  %2 = icmp eq ptr %1, null
+  br i1 %2, label %3, label %4
 
-1:                                                ; preds = %14, %0
-  %2 = phi i32 [ 0, %0 ], [ %15, %14 ]
-  %3 = icmp eq i32 %2, 8
-  br i1 %3, label %4, label %5
+3:                                                ; preds = %0
+  tail call void @panic(ptr noundef nonnull @.str.3) #8
+  unreachable
 
-4:                                                ; preds = %1
+4:                                                ; preds = %0, %17
+  %5 = phi i32 [ %18, %17 ], [ 0, %0 ]
+  %6 = icmp eq i32 %5, 8
+  br i1 %6, label %7, label %8
+
+7:                                                ; preds = %4
+  tail call void @iput(ptr noundef nonnull %1) #7
   store i32 1, ptr @fsready, align 4, !tbaa !11
   ret void
 
-5:                                                ; preds = %1
-  %6 = getelementptr inbounds nuw [8 x %struct.proc], ptr @fsproc, i32 0, i32 %2
-  %7 = getelementptr inbounds nuw i8, ptr %6, i32 4
-  store i32 -1, ptr %7, align 4, !tbaa !17
-  %8 = tail call ptr @namei(ptr noundef nonnull @.str.2) #7
-  %9 = getelementptr inbounds nuw i8, ptr %6, i32 8
-  store ptr %8, ptr %9, align 4, !tbaa !21
-  %10 = getelementptr inbounds nuw i8, ptr %6, i32 12
-  br label %11
+8:                                                ; preds = %4
+  %9 = getelementptr inbounds nuw [8 x %struct.proc], ptr @fsproc, i32 0, i32 %5
+  %10 = getelementptr inbounds nuw i8, ptr %9, i32 4
+  store i32 -1, ptr %10, align 4, !tbaa !17
+  %11 = tail call ptr @namei(ptr noundef nonnull @.str.4) #7
+  %12 = getelementptr inbounds nuw i8, ptr %9, i32 8
+  store ptr %11, ptr %12, align 4, !tbaa !21
+  %13 = getelementptr inbounds nuw i8, ptr %9, i32 12
+  br label %14
 
-11:                                               ; preds = %16, %5
-  %12 = phi i32 [ 0, %5 ], [ %22, %16 ]
-  %13 = icmp eq i32 %12, 3
-  br i1 %13, label %14, label %16
+14:                                               ; preds = %19, %8
+  %15 = phi i32 [ 0, %8 ], [ %27, %19 ]
+  %16 = icmp eq i32 %15, 3
+  br i1 %16, label %17, label %19
 
-14:                                               ; preds = %11
-  %15 = add nuw nsw i32 %2, 1
-  br label %1, !llvm.loop !22
+17:                                               ; preds = %14
+  %18 = add nuw nsw i32 %5, 1
+  br label %4, !llvm.loop !22
 
-16:                                               ; preds = %11
-  %17 = tail call ptr @filealloc() #7
-  store i32 3, ptr %17, align 4, !tbaa !23
-  %18 = getelementptr inbounds nuw i8, ptr %17, i32 24
-  store i16 1, ptr %18, align 4, !tbaa !27
-  %19 = getelementptr inbounds nuw i8, ptr %17, i32 8
-  store i8 1, ptr %19, align 4, !tbaa !28
-  %20 = getelementptr inbounds nuw i8, ptr %17, i32 9
-  store i8 1, ptr %20, align 1, !tbaa !29
-  %21 = getelementptr inbounds nuw [16 x ptr], ptr %10, i32 0, i32 %12
-  store ptr %17, ptr %21, align 4, !tbaa !30
-  %22 = add nuw nsw i32 %12, 1
-  br label %11, !llvm.loop !32
+19:                                               ; preds = %14
+  %20 = tail call ptr @filealloc() #7
+  store i32 3, ptr %20, align 4, !tbaa !23
+  %21 = getelementptr inbounds nuw i8, ptr %20, i32 24
+  store i16 1, ptr %21, align 4, !tbaa !27
+  %22 = getelementptr inbounds nuw i8, ptr %20, i32 8
+  store i8 1, ptr %22, align 4, !tbaa !28
+  %23 = getelementptr inbounds nuw i8, ptr %20, i32 9
+  store i8 1, ptr %23, align 1, !tbaa !29
+  %24 = tail call ptr @idup(ptr noundef nonnull %1) #7
+  %25 = getelementptr inbounds nuw i8, ptr %20, i32 16
+  store ptr %24, ptr %25, align 4, !tbaa !30
+  %26 = getelementptr inbounds nuw [16 x ptr], ptr %13, i32 0, i32 %15
+  store ptr %20, ptr %26, align 4, !tbaa !31
+  %27 = add nuw nsw i32 %15, 1
+  br label %14, !llvm.loop !33
 }
 
 ; Function Attrs: minsize optsize
@@ -215,6 +231,12 @@ declare dso_local ptr @namei(ptr noundef) local_unnamed_addr #3
 ; Function Attrs: minsize optsize
 declare dso_local ptr @filealloc() local_unnamed_addr #3
 
+; Function Attrs: minsize optsize
+declare dso_local ptr @idup(ptr noundef) local_unnamed_addr #3
+
+; Function Attrs: minsize optsize
+declare dso_local void @iput(ptr noundef) local_unnamed_addr #3
+
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @kfs_forkcopy(i32 noundef %0, i32 noundef %1) local_unnamed_addr #1 {
   %3 = getelementptr inbounds [8 x %struct.proc], ptr @fsproc, i32 0, i32 %0
@@ -240,7 +262,7 @@ define dso_local void @kfs_forkcopy(i32 noundef %0, i32 noundef %1) local_unname
 
 17:                                               ; preds = %10
   %18 = getelementptr inbounds nuw [16 x ptr], ptr %8, i32 0, i32 %11
-  %19 = load ptr, ptr %18, align 4, !tbaa !30
+  %19 = load ptr, ptr %18, align 4, !tbaa !31
   %20 = icmp eq ptr %19, null
   br i1 %20, label %23, label %21
 
@@ -251,9 +273,9 @@ define dso_local void @kfs_forkcopy(i32 noundef %0, i32 noundef %1) local_unname
 23:                                               ; preds = %17, %21
   %24 = phi ptr [ %22, %21 ], [ null, %17 ]
   %25 = getelementptr inbounds nuw [16 x ptr], ptr %9, i32 0, i32 %11
-  store ptr %24, ptr %25, align 4, !tbaa !30
+  store ptr %24, ptr %25, align 4, !tbaa !31
   %26 = add nuw nsw i32 %11, 1
-  br label %10, !llvm.loop !33
+  br label %10, !llvm.loop !34
 
 27:                                               ; preds = %13
   %28 = tail call ptr @idup(ptr noundef nonnull %15) #7
@@ -268,9 +290,6 @@ define dso_local void @kfs_forkcopy(i32 noundef %0, i32 noundef %1) local_unname
 
 ; Function Attrs: minsize optsize
 declare dso_local ptr @filedup(ptr noundef) local_unnamed_addr #3
-
-; Function Attrs: minsize optsize
-declare dso_local ptr @idup(ptr noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @kfs_exit(i32 noundef %0) local_unnamed_addr #1 {
@@ -291,18 +310,18 @@ define dso_local void @kfs_exit(i32 noundef %0) local_unnamed_addr #1 {
 
 11:                                               ; preds = %4
   %12 = getelementptr inbounds nuw [16 x ptr], ptr %3, i32 0, i32 %5
-  %13 = load ptr, ptr %12, align 4, !tbaa !30
+  %13 = load ptr, ptr %12, align 4, !tbaa !31
   %14 = icmp eq ptr %13, null
   br i1 %14, label %16, label %15
 
 15:                                               ; preds = %11
   tail call void @fileclose(ptr noundef nonnull %13) #7
-  store ptr null, ptr %12, align 4, !tbaa !30
+  store ptr null, ptr %12, align 4, !tbaa !31
   br label %16
 
 16:                                               ; preds = %11, %15
   %17 = add nuw nsw i32 %5, 1
-  br label %4, !llvm.loop !34
+  br label %4, !llvm.loop !35
 
 18:                                               ; preds = %7
   tail call void @iput(ptr noundef nonnull %9) #7
@@ -316,9 +335,6 @@ define dso_local void @kfs_exit(i32 noundef %0) local_unnamed_addr #1 {
 ; Function Attrs: minsize optsize
 declare dso_local void @fileclose(ptr noundef) local_unnamed_addr #3
 
-; Function Attrs: minsize optsize
-declare dso_local void @iput(ptr noundef) local_unnamed_addr #3
-
 ; Function Attrs: minsize nounwind optsize
 define dso_local i32 @kfs_read(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #1 {
   %4 = icmp slt i32 %0, 0
@@ -331,7 +347,7 @@ define dso_local i32 @kfs_read(i32 noundef %0, i32 noundef %1, i32 noundef %2) l
 7:                                                ; preds = %5
   %8 = load i32, ptr @curr, align 4, !tbaa !11
   %9 = getelementptr inbounds nuw [8 x %struct.proc], ptr @fsproc, i32 0, i32 %8, i32 3, i32 %0
-  %10 = load ptr, ptr %9, align 4, !tbaa !30
+  %10 = load ptr, ptr %9, align 4, !tbaa !31
   %11 = icmp eq ptr %10, null
   br i1 %11, label %14, label %12
 
@@ -359,7 +375,7 @@ define dso_local i32 @kfs_write(i32 noundef %0, i32 noundef %1, i32 noundef %2) 
 7:                                                ; preds = %5
   %8 = load i32, ptr @curr, align 4, !tbaa !11
   %9 = getelementptr inbounds nuw [8 x %struct.proc], ptr @fsproc, i32 0, i32 %8, i32 3, i32 %0
-  %10 = load ptr, ptr %9, align 4, !tbaa !30
+  %10 = load ptr, ptr %9, align 4, !tbaa !31
   %11 = icmp eq ptr %10, null
   br i1 %11, label %14, label %12
 
@@ -387,12 +403,12 @@ define dso_local range(i32 -1, 1) i32 @kfs_close(i32 noundef %0) local_unnamed_a
 5:                                                ; preds = %3
   %6 = load i32, ptr @curr, align 4, !tbaa !11
   %7 = getelementptr inbounds [8 x %struct.proc], ptr @fsproc, i32 0, i32 %6, i32 3, i32 %0
-  %8 = load ptr, ptr %7, align 4, !tbaa !30
+  %8 = load ptr, ptr %7, align 4, !tbaa !31
   %9 = icmp eq ptr %8, null
   br i1 %9, label %11, label %10
 
 10:                                               ; preds = %5
-  store ptr null, ptr %7, align 4, !tbaa !30
+  store ptr null, ptr %7, align 4, !tbaa !31
   tail call void @fileclose(ptr noundef nonnull %8) #7
   br label %11
 
@@ -413,12 +429,12 @@ define dso_local range(i32 -1, 16) i32 @kfs_dup(i32 noundef %0) local_unnamed_ad
 5:                                                ; preds = %3
   %6 = load i32, ptr @curr, align 4, !tbaa !11
   %7 = getelementptr inbounds nuw [8 x %struct.proc], ptr @fsproc, i32 0, i32 %6, i32 3, i32 %0
-  %8 = load ptr, ptr %7, align 4, !tbaa !30
+  %8 = load ptr, ptr %7, align 4, !tbaa !31
   %9 = icmp eq ptr %8, null
   br i1 %9, label %15, label %10
 
 10:                                               ; preds = %5
-  %11 = tail call fastcc i32 @fdalloc(ptr noundef nonnull %8) #8
+  %11 = tail call fastcc i32 @fdalloc(ptr noundef nonnull %8) #9
   %12 = icmp slt i32 %11, 0
   br i1 %12, label %15, label %13
 
@@ -443,17 +459,17 @@ define internal fastcc range(i32 -1, 16) i32 @fdalloc(ptr noundef %0) unnamed_ad
 
 6:                                                ; preds = %3
   %7 = getelementptr inbounds nuw [8 x %struct.proc], ptr @fsproc, i32 0, i32 %2, i32 3, i32 %4
-  %8 = load ptr, ptr %7, align 4, !tbaa !30
+  %8 = load ptr, ptr %7, align 4, !tbaa !31
   %9 = icmp eq ptr %8, null
   br i1 %9, label %10, label %11
 
 10:                                               ; preds = %6
-  store ptr %0, ptr %7, align 4, !tbaa !30
+  store ptr %0, ptr %7, align 4, !tbaa !31
   br label %13
 
 11:                                               ; preds = %6
   %12 = add nuw nsw i32 %4, 1
-  br label %3, !llvm.loop !35
+  br label %3, !llvm.loop !36
 
 13:                                               ; preds = %3, %10
   %14 = phi i32 [ %4, %10 ], [ -1, %3 ]
@@ -472,7 +488,7 @@ define dso_local i32 @kfs_fstat(i32 noundef %0, i32 noundef %1) local_unnamed_ad
 6:                                                ; preds = %4
   %7 = load i32, ptr @curr, align 4, !tbaa !11
   %8 = getelementptr inbounds nuw [8 x %struct.proc], ptr @fsproc, i32 0, i32 %7, i32 3, i32 %0
-  %9 = load ptr, ptr %8, align 4, !tbaa !30
+  %9 = load ptr, ptr %8, align 4, !tbaa !31
   %10 = icmp eq ptr %9, null
   br i1 %10, label %13, label %11
 
@@ -492,34 +508,34 @@ declare dso_local i32 @filestat(ptr noundef, i32 noundef) local_unnamed_addr #3
 define dso_local range(i32 -1, 1) i32 @kfs_pipe(i32 noundef %0) local_unnamed_addr #1 {
   %2 = alloca ptr, align 4
   %3 = alloca ptr, align 4
-  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %2) #9
-  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %3) #9
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %2) #10
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %3) #10
   %4 = call i32 @pipealloc(ptr noundef nonnull %2, ptr noundef nonnull %3) #7
   %5 = icmp slt i32 %4, 0
   br i1 %5, label %23, label %6
 
 6:                                                ; preds = %1
-  %7 = load ptr, ptr %2, align 4, !tbaa !30
-  %8 = call fastcc i32 @fdalloc(ptr noundef %7) #8
+  %7 = load ptr, ptr %2, align 4, !tbaa !31
+  %8 = call fastcc i32 @fdalloc(ptr noundef %7) #9
   %9 = icmp sgt i32 %8, -1
   br i1 %9, label %10, label %17
 
 10:                                               ; preds = %6
-  %11 = load ptr, ptr %3, align 4, !tbaa !30
-  %12 = call fastcc i32 @fdalloc(ptr noundef %11) #8
+  %11 = load ptr, ptr %3, align 4, !tbaa !31
+  %12 = call fastcc i32 @fdalloc(ptr noundef %11) #9
   %13 = icmp slt i32 %12, 0
   br i1 %13, label %14, label %20
 
 14:                                               ; preds = %10
   %15 = load i32, ptr @curr, align 4, !tbaa !11
   %16 = getelementptr inbounds nuw [8 x %struct.proc], ptr @fsproc, i32 0, i32 %15, i32 3, i32 %8
-  store ptr null, ptr %16, align 4, !tbaa !30
+  store ptr null, ptr %16, align 4, !tbaa !31
   br label %17
 
 17:                                               ; preds = %6, %14
-  %18 = load ptr, ptr %2, align 4, !tbaa !30
+  %18 = load ptr, ptr %2, align 4, !tbaa !31
   call void @fileclose(ptr noundef %18) #7
-  %19 = load ptr, ptr %3, align 4, !tbaa !30
+  %19 = load ptr, ptr %3, align 4, !tbaa !31
   call void @fileclose(ptr noundef %19) #7
   br label %23
 
@@ -532,8 +548,8 @@ define dso_local range(i32 -1, 1) i32 @kfs_pipe(i32 noundef %0) local_unnamed_ad
 
 23:                                               ; preds = %17, %20, %1
   %24 = phi i32 [ -1, %1 ], [ -1, %17 ], [ 0, %20 ]
-  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %3) #9
-  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %2) #9
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %3) #10
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %2) #10
   ret i32 %24
 }
 
@@ -548,7 +564,7 @@ define dso_local range(i32 -1, 16) i32 @kfs_open(i32 noundef %0, i32 noundef %1)
   br i1 %5, label %9, label %6
 
 6:                                                ; preds = %2
-  %7 = tail call fastcc ptr @create(ptr noundef %3, i16 noundef signext 2) #8
+  %7 = tail call fastcc ptr @create(ptr noundef %3, i16 noundef signext 2) #9
   %8 = icmp eq ptr %7, null
   br i1 %8, label %55, label %19
 
@@ -560,7 +576,7 @@ define dso_local range(i32 -1, 16) i32 @kfs_open(i32 noundef %0, i32 noundef %1)
 12:                                               ; preds = %9
   tail call void @ilock(ptr noundef nonnull %10) #7
   %13 = getelementptr inbounds nuw i8, ptr %10, i32 20
-  %14 = load i16, ptr %13, align 4, !tbaa !36
+  %14 = load i16, ptr %13, align 4, !tbaa !37
   %15 = icmp eq i16 %14, 1
   %16 = icmp ne i32 %1, 0
   %17 = and i1 %16, %15
@@ -577,7 +593,7 @@ define dso_local range(i32 -1, 16) i32 @kfs_open(i32 noundef %0, i32 noundef %1)
   br i1 %22, label %27, label %23
 
 23:                                               ; preds = %19
-  %24 = tail call fastcc i32 @fdalloc(ptr noundef nonnull %21) #8
+  %24 = tail call fastcc i32 @fdalloc(ptr noundef nonnull %21) #9
   %25 = icmp slt i32 %24, 0
   br i1 %25, label %26, label %28
 
@@ -591,27 +607,27 @@ define dso_local range(i32 -1, 16) i32 @kfs_open(i32 noundef %0, i32 noundef %1)
 
 28:                                               ; preds = %23
   %29 = getelementptr inbounds nuw i8, ptr %20, i32 20
-  %30 = load i16, ptr %29, align 4, !tbaa !36
+  %30 = load i16, ptr %29, align 4, !tbaa !37
   %31 = icmp eq i16 %30, 3
   br i1 %31, label %32, label %36
 
 32:                                               ; preds = %28
   %33 = getelementptr inbounds nuw i8, ptr %20, i32 22
-  %34 = load i16, ptr %33, align 2, !tbaa !39
+  %34 = load i16, ptr %33, align 2, !tbaa !40
   %35 = getelementptr inbounds nuw i8, ptr %21, i32 24
   store i16 %34, ptr %35, align 4, !tbaa !27
   br label %38
 
 36:                                               ; preds = %28
   %37 = getelementptr inbounds nuw i8, ptr %21, i32 20
-  store i32 0, ptr %37, align 4, !tbaa !40
+  store i32 0, ptr %37, align 4, !tbaa !41
   br label %38
 
 38:                                               ; preds = %36, %32
   %39 = phi i32 [ 3, %32 ], [ 2, %36 ]
   store i32 %39, ptr %21, align 4, !tbaa !23
   %40 = getelementptr inbounds nuw i8, ptr %21, i32 16
-  store ptr %20, ptr %40, align 4, !tbaa !41
+  store ptr %20, ptr %40, align 4, !tbaa !30
   %41 = trunc i32 %1 to i8
   %42 = and i8 %41, 1
   %43 = xor i8 %42, 1
@@ -644,7 +660,7 @@ define dso_local range(i32 -1, 16) i32 @kfs_open(i32 noundef %0, i32 noundef %1)
 ; Function Attrs: minsize nounwind optsize
 define internal fastcc ptr @create(ptr noundef %0, i16 noundef signext range(i16 1, 3) %1) unnamed_addr #1 {
   %3 = alloca [14 x i8], align 1
-  call void @llvm.lifetime.start.p0(i64 14, ptr nonnull %3) #9
+  call void @llvm.lifetime.start.p0(i64 14, ptr nonnull %3) #10
   %4 = call ptr @nameiparent(ptr noundef %0, ptr noundef nonnull %3) #7
   %5 = icmp eq ptr %4, null
   br i1 %5, label %50, label %6
@@ -663,7 +679,7 @@ define internal fastcc ptr @create(ptr noundef %0, i16 noundef signext range(i16
 
 11:                                               ; preds = %9
   %12 = getelementptr inbounds nuw i8, ptr %7, i32 20
-  %13 = load i16, ptr %12, align 4, !tbaa !36
+  %13 = load i16, ptr %12, align 4, !tbaa !37
   %14 = and i16 %13, -2
   %15 = icmp eq i16 %14, 2
   br i1 %15, label %50, label %47
@@ -677,7 +693,7 @@ define internal fastcc ptr @create(ptr noundef %0, i16 noundef signext range(i16
 20:                                               ; preds = %16
   call void @ilock(ptr noundef nonnull %18) #7
   %21 = getelementptr inbounds nuw i8, ptr %18, i32 22
-  store i16 0, ptr %21, align 2, !tbaa !39
+  store i16 0, ptr %21, align 2, !tbaa !40
   %22 = getelementptr inbounds nuw i8, ptr %18, i32 24
   store i16 0, ptr %22, align 4, !tbaa !43
   %23 = getelementptr inbounds nuw i8, ptr %18, i32 26
@@ -689,19 +705,19 @@ define internal fastcc ptr @create(ptr noundef %0, i16 noundef signext range(i16
 25:                                               ; preds = %20
   %26 = getelementptr inbounds nuw i8, ptr %18, i32 4
   %27 = load i32, ptr %26, align 4, !tbaa !45
-  %28 = call i32 @dirlink(ptr noundef nonnull %18, ptr noundef nonnull @.str.3, i32 noundef %27) #7
+  %28 = call i32 @dirlink(ptr noundef nonnull %18, ptr noundef nonnull @.str.5, i32 noundef %27) #7
   %29 = icmp slt i32 %28, 0
   br i1 %29, label %35, label %30
 
 30:                                               ; preds = %25
   %31 = getelementptr inbounds nuw i8, ptr %4, i32 4
   %32 = load i32, ptr %31, align 4, !tbaa !45
-  %33 = call i32 @dirlink(ptr noundef nonnull %18, ptr noundef nonnull @.str.4, i32 noundef %32) #7
+  %33 = call i32 @dirlink(ptr noundef nonnull %18, ptr noundef nonnull @.str.6, i32 noundef %32) #7
   %34 = icmp slt i32 %33, 0
   br i1 %34, label %35, label %36
 
 35:                                               ; preds = %30, %25
-  call void @panic(ptr noundef nonnull @.str.5) #10
+  call void @panic(ptr noundef nonnull @.str.9) #8
   unreachable
 
 36:                                               ; preds = %30, %20
@@ -712,7 +728,7 @@ define internal fastcc ptr @create(ptr noundef %0, i16 noundef signext range(i16
   br i1 %40, label %41, label %42
 
 41:                                               ; preds = %36
-  call void @panic(ptr noundef nonnull @.str.6) #10
+  call void @panic(ptr noundef nonnull @.str.10) #8
   unreachable
 
 42:                                               ; preds = %36
@@ -734,7 +750,7 @@ define internal fastcc ptr @create(ptr noundef %0, i16 noundef signext range(i16
 
 50:                                               ; preds = %47, %11, %2
   %51 = phi ptr [ null, %2 ], [ %7, %11 ], [ %49, %47 ]
-  call void @llvm.lifetime.end.p0(i64 14, ptr nonnull %3) #9
+  call void @llvm.lifetime.end.p0(i64 14, ptr nonnull %3) #10
   ret ptr %51
 }
 
@@ -761,7 +777,7 @@ define dso_local range(i32 -1, 1) i32 @kfs_chdir(i32 noundef %0) local_unnamed_a
 6:                                                ; preds = %1
   tail call void @ilock(ptr noundef nonnull %4) #7
   %7 = getelementptr inbounds nuw i8, ptr %4, i32 20
-  %8 = load i16, ptr %7, align 4, !tbaa !36
+  %8 = load i16, ptr %7, align 4, !tbaa !37
   %9 = icmp eq i16 %8, 1
   br i1 %9, label %11, label %10
 
@@ -792,7 +808,7 @@ define dso_local range(i32 -1, 1) i32 @kfs_chdir(i32 noundef %0) local_unnamed_a
 ; Function Attrs: minsize nounwind optsize
 define dso_local range(i32 -1, 1) i32 @kfs_mkdir(i32 noundef %0) local_unnamed_addr #1 {
   %2 = inttoptr i32 %0 to ptr
-  %3 = tail call fastcc ptr @create(ptr noundef %2, i16 noundef signext 1) #8
+  %3 = tail call fastcc ptr @create(ptr noundef %2, i16 noundef signext 1) #9
   %4 = icmp eq ptr %3, null
   br i1 %4, label %6, label %5
 
@@ -806,6 +822,227 @@ define dso_local range(i32 -1, 1) i32 @kfs_mkdir(i32 noundef %0) local_unnamed_a
 }
 
 ; Function Attrs: minsize nounwind optsize
+define dso_local range(i32 -1, 1) i32 @kfs_link(i32 noundef %0, i32 noundef %1) local_unnamed_addr #1 {
+  %3 = alloca [14 x i8], align 1
+  call void @llvm.lifetime.start.p0(i64 14, ptr nonnull %3) #10
+  %4 = inttoptr i32 %0 to ptr
+  %5 = tail call ptr @namei(ptr noundef %4) #7
+  %6 = icmp eq ptr %5, null
+  br i1 %6, label %33, label %7
+
+7:                                                ; preds = %2
+  tail call void @ilock(ptr noundef nonnull %5) #7
+  %8 = getelementptr inbounds nuw i8, ptr %5, i32 20
+  %9 = load i16, ptr %8, align 4, !tbaa !37
+  %10 = icmp eq i16 %9, 1
+  br i1 %10, label %11, label %12
+
+11:                                               ; preds = %7
+  tail call void @iunlockput(ptr noundef nonnull %5) #7
+  br label %33
+
+12:                                               ; preds = %7
+  %13 = getelementptr inbounds nuw i8, ptr %5, i32 26
+  %14 = load i16, ptr %13, align 2, !tbaa !44
+  %15 = add i16 %14, 1
+  store i16 %15, ptr %13, align 2, !tbaa !44
+  tail call void @iupdate(ptr noundef nonnull %5) #7
+  tail call void @iunlock(ptr noundef nonnull %5) #7
+  %16 = inttoptr i32 %1 to ptr
+  %17 = call ptr @nameiparent(ptr noundef %16, ptr noundef nonnull %3) #7
+  %18 = icmp eq ptr %17, null
+  br i1 %18, label %30, label %19
+
+19:                                               ; preds = %12
+  call void @ilock(ptr noundef nonnull %17) #7
+  %20 = load i32, ptr %17, align 4, !tbaa !42
+  %21 = load i32, ptr %5, align 4, !tbaa !42
+  %22 = icmp eq i32 %20, %21
+  br i1 %22, label %23, label %29
+
+23:                                               ; preds = %19
+  %24 = getelementptr inbounds nuw i8, ptr %5, i32 4
+  %25 = load i32, ptr %24, align 4, !tbaa !45
+  %26 = call i32 @dirlink(ptr noundef nonnull %17, ptr noundef nonnull %3, i32 noundef %25) #7
+  %27 = icmp sgt i32 %26, -1
+  br i1 %27, label %28, label %29
+
+28:                                               ; preds = %23
+  call void @iunlockput(ptr noundef nonnull %17) #7
+  call void @iput(ptr noundef nonnull %5) #7
+  br label %33
+
+29:                                               ; preds = %23, %19
+  call void @iunlockput(ptr noundef nonnull %17) #7
+  br label %30
+
+30:                                               ; preds = %29, %12
+  call void @ilock(ptr noundef nonnull %5) #7
+  %31 = load i16, ptr %13, align 2, !tbaa !44
+  %32 = add i16 %31, -1
+  store i16 %32, ptr %13, align 2, !tbaa !44
+  call void @iupdate(ptr noundef nonnull %5) #7
+  call void @iunlockput(ptr noundef nonnull %5) #7
+  br label %33
+
+33:                                               ; preds = %28, %30, %2, %11
+  %34 = phi i32 [ -1, %11 ], [ -1, %2 ], [ 0, %28 ], [ -1, %30 ]
+  call void @llvm.lifetime.end.p0(i64 14, ptr nonnull %3) #10
+  ret i32 %34
+}
+
+; Function Attrs: minsize optsize
+declare dso_local void @iupdate(ptr noundef) local_unnamed_addr #3
+
+; Function Attrs: minsize optsize
+declare dso_local ptr @nameiparent(ptr noundef, ptr noundef) local_unnamed_addr #3
+
+; Function Attrs: minsize optsize
+declare dso_local i32 @dirlink(ptr noundef, ptr noundef, i32 noundef) local_unnamed_addr #3
+
+; Function Attrs: minsize nounwind optsize
+define dso_local range(i32 -1, 1) i32 @kfs_unlink(i32 noundef %0) local_unnamed_addr #1 {
+  %2 = alloca %struct.dirent, align 2
+  %3 = alloca %struct.dirent, align 2
+  %4 = alloca [14 x i8], align 1
+  %5 = alloca i32, align 4
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %3) #10
+  call void @llvm.lifetime.start.p0(i64 14, ptr nonnull %4) #10
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %5) #10
+  %6 = inttoptr i32 %0 to ptr
+  %7 = call ptr @nameiparent(ptr noundef %6, ptr noundef nonnull %4) #7
+  %8 = icmp eq ptr %7, null
+  br i1 %8, label %64, label %9
+
+9:                                                ; preds = %1
+  call void @ilock(ptr noundef nonnull %7) #7
+  %10 = call i32 @namecmp(ptr noundef nonnull %4, ptr noundef nonnull @.str.5) #7
+  %11 = icmp eq i32 %10, 0
+  br i1 %11, label %61, label %12
+
+12:                                               ; preds = %9
+  %13 = call i32 @namecmp(ptr noundef nonnull %4, ptr noundef nonnull @.str.6) #7
+  %14 = icmp eq i32 %13, 0
+  br i1 %14, label %61, label %15
+
+15:                                               ; preds = %12
+  %16 = call ptr @dirlookup(ptr noundef nonnull %7, ptr noundef nonnull %4, ptr noundef nonnull %5) #7
+  %17 = icmp eq ptr %16, null
+  br i1 %17, label %61, label %18
+
+18:                                               ; preds = %15
+  call void @ilock(ptr noundef nonnull %16) #7
+  %19 = getelementptr inbounds nuw i8, ptr %16, i32 26
+  %20 = load i16, ptr %19, align 2, !tbaa !44
+  %21 = icmp slt i16 %20, 1
+  br i1 %21, label %22, label %23
+
+22:                                               ; preds = %18
+  call void @panic(ptr noundef nonnull @.str.7) #8
+  unreachable
+
+23:                                               ; preds = %18
+  %24 = getelementptr inbounds nuw i8, ptr %16, i32 20
+  %25 = load i16, ptr %24, align 4, !tbaa !37
+  %26 = icmp eq i16 %25, 1
+  br i1 %26, label %27, label %44
+
+27:                                               ; preds = %23
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %2) #10
+  %28 = getelementptr inbounds nuw i8, ptr %16, i32 28
+  %29 = ptrtoint ptr %2 to i32
+  br label %30
+
+30:                                               ; preds = %38, %27
+  %31 = phi i32 [ 32, %27 ], [ %41, %38 ]
+  %32 = load i32, ptr %28, align 4, !tbaa !46
+  %33 = icmp ult i32 %31, %32
+  br i1 %33, label %34, label %42
+
+34:                                               ; preds = %30
+  %35 = call i32 @readi(ptr noundef nonnull %16, i32 noundef 0, i32 noundef %29, i32 noundef %31, i32 noundef 16) #7
+  %36 = icmp eq i32 %35, 16
+  br i1 %36, label %38, label %37
+
+37:                                               ; preds = %34
+  call void @panic(ptr noundef nonnull @.str.11) #8
+  unreachable
+
+38:                                               ; preds = %34
+  %39 = load i16, ptr %2, align 2, !tbaa !47
+  %40 = icmp eq i16 %39, 0
+  %41 = add i32 %31, 16
+  br i1 %40, label %30, label %43, !llvm.loop !49
+
+42:                                               ; preds = %30
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %2) #10
+  br label %44
+
+43:                                               ; preds = %38
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %2) #10
+  call void @iunlockput(ptr noundef nonnull %16) #7
+  br label %61
+
+44:                                               ; preds = %42, %23
+  %45 = call ptr @memset(ptr noundef nonnull %3, i32 noundef 0, i32 noundef 16) #7
+  %46 = ptrtoint ptr %3 to i32
+  %47 = load i32, ptr %5, align 4, !tbaa !11
+  %48 = call i32 @writei(ptr noundef nonnull %7, i32 noundef 0, i32 noundef %46, i32 noundef %47, i32 noundef 16) #7
+  %49 = icmp eq i32 %48, 16
+  br i1 %49, label %51, label %50
+
+50:                                               ; preds = %44
+  call void @panic(ptr noundef nonnull @.str.8) #8
+  unreachable
+
+51:                                               ; preds = %44
+  %52 = load i16, ptr %24, align 4, !tbaa !37
+  %53 = icmp eq i16 %52, 1
+  br i1 %53, label %54, label %58
+
+54:                                               ; preds = %51
+  %55 = getelementptr inbounds nuw i8, ptr %7, i32 26
+  %56 = load i16, ptr %55, align 2, !tbaa !44
+  %57 = add i16 %56, -1
+  store i16 %57, ptr %55, align 2, !tbaa !44
+  call void @iupdate(ptr noundef nonnull %7) #7
+  br label %58
+
+58:                                               ; preds = %54, %51
+  call void @iunlockput(ptr noundef nonnull %7) #7
+  %59 = load i16, ptr %19, align 2, !tbaa !44
+  %60 = add i16 %59, -1
+  store i16 %60, ptr %19, align 2, !tbaa !44
+  call void @iupdate(ptr noundef nonnull %16) #7
+  br label %61
+
+61:                                               ; preds = %43, %12, %9, %15, %58
+  %62 = phi ptr [ %16, %58 ], [ %7, %15 ], [ %7, %9 ], [ %7, %12 ], [ %7, %43 ]
+  %63 = phi i32 [ 0, %58 ], [ -1, %15 ], [ -1, %9 ], [ -1, %12 ], [ -1, %43 ]
+  call void @iunlockput(ptr noundef nonnull %62) #7
+  br label %64
+
+64:                                               ; preds = %61, %1
+  %65 = phi i32 [ -1, %1 ], [ %63, %61 ]
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %5) #10
+  call void @llvm.lifetime.end.p0(i64 14, ptr nonnull %4) #10
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %3) #10
+  ret i32 %65
+}
+
+; Function Attrs: minsize optsize
+declare dso_local i32 @namecmp(ptr noundef, ptr noundef) local_unnamed_addr #3
+
+; Function Attrs: minsize optsize
+declare dso_local ptr @dirlookup(ptr noundef, ptr noundef, ptr noundef) local_unnamed_addr #3
+
+; Function Attrs: minsize optsize
+declare dso_local ptr @memset(ptr noundef, i32 noundef, i32 noundef) local_unnamed_addr #3
+
+; Function Attrs: minsize optsize
+declare dso_local i32 @writei(ptr noundef, i32 noundef, i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #3
+
+; Function Attrs: minsize nounwind optsize
 define dso_local i32 @kfs_iopen(ptr noundef %0) local_unnamed_addr #1 {
   %2 = tail call ptr @namei(ptr noundef %0) #7
   %3 = icmp eq ptr %2, null
@@ -814,7 +1051,7 @@ define dso_local i32 @kfs_iopen(ptr noundef %0) local_unnamed_addr #1 {
 4:                                                ; preds = %1
   tail call void @ilock(ptr noundef nonnull %2) #7
   %5 = getelementptr inbounds nuw i8, ptr %2, i32 20
-  %6 = load i16, ptr %5, align 4, !tbaa !36
+  %6 = load i16, ptr %5, align 4, !tbaa !37
   %7 = icmp eq i16 %6, 2
   br i1 %7, label %9, label %8
 
@@ -852,19 +1089,7 @@ define dso_local void @kfs_iclose(i32 noundef %0) local_unnamed_addr #1 {
 declare dso_local i32 @kconsread(i32 noundef, i32 noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize optsize
-declare dso_local ptr @nameiparent(ptr noundef, ptr noundef) local_unnamed_addr #3
-
-; Function Attrs: minsize optsize
-declare dso_local ptr @dirlookup(ptr noundef, ptr noundef, ptr noundef) local_unnamed_addr #3
-
-; Function Attrs: minsize optsize
 declare dso_local ptr @ialloc(i32 noundef, i16 noundef signext) local_unnamed_addr #3
-
-; Function Attrs: minsize optsize
-declare dso_local void @iupdate(ptr noundef) local_unnamed_addr #3
-
-; Function Attrs: minsize optsize
-declare dso_local i32 @dirlink(ptr noundef, ptr noundef, i32 noundef) local_unnamed_addr #3
 
 attributes #0 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
@@ -874,9 +1099,9 @@ attributes #4 = { minsize noreturn nounwind optsize "no-builtins" "no-trapping-m
 attributes #5 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #6 = { minsize nofree norecurse nosync nounwind optsize memory(readwrite, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #7 = { minsize nobuiltin nounwind optsize "no-builtins" }
-attributes #8 = { minsize nobuiltin optsize "no-builtins" }
-attributes #9 = { nounwind }
-attributes #10 = { minsize nobuiltin noreturn optsize "no-builtins" }
+attributes #8 = { minsize nobuiltin noreturn optsize "no-builtins" }
+attributes #9 = { minsize nobuiltin optsize "no-builtins" }
+attributes #10 = { nounwind }
 
 !llvm.module.flags = !{!0, !1}
 !llvm.ident = !{!2}
@@ -911,19 +1136,23 @@ attributes #10 = { minsize nobuiltin noreturn optsize "no-builtins" }
 !27 = !{!24, !26, i64 24}
 !28 = !{!24, !4, i64 8}
 !29 = !{!24, !4, i64 9}
-!30 = !{!31, !31, i64 0}
-!31 = !{!"p1 _ZTS4file", !15, i64 0}
-!32 = distinct !{!32, !7, !8}
+!30 = !{!24, !20, i64 16}
+!31 = !{!32, !32, i64 0}
+!32 = !{!"p1 _ZTS4file", !15, i64 0}
 !33 = distinct !{!33, !7, !8}
 !34 = distinct !{!34, !7, !8}
 !35 = distinct !{!35, !7, !8}
-!36 = !{!37, !26, i64 20}
-!37 = !{!"inode", !12, i64 0, !12, i64 4, !12, i64 8, !38, i64 12, !12, i64 16, !26, i64 20, !26, i64 22, !26, i64 24, !26, i64 26, !12, i64 28, !4, i64 32}
-!38 = !{!"sleeplock", !4, i64 0}
-!39 = !{!37, !26, i64 22}
-!40 = !{!24, !12, i64 20}
-!41 = !{!24, !20, i64 16}
-!42 = !{!37, !12, i64 0}
-!43 = !{!37, !26, i64 24}
-!44 = !{!37, !26, i64 26}
-!45 = !{!37, !12, i64 4}
+!36 = distinct !{!36, !7, !8}
+!37 = !{!38, !26, i64 20}
+!38 = !{!"inode", !12, i64 0, !12, i64 4, !12, i64 8, !39, i64 12, !12, i64 16, !26, i64 20, !26, i64 22, !26, i64 24, !26, i64 26, !12, i64 28, !4, i64 32}
+!39 = !{!"sleeplock", !4, i64 0}
+!40 = !{!38, !26, i64 22}
+!41 = !{!24, !12, i64 20}
+!42 = !{!38, !12, i64 0}
+!43 = !{!38, !26, i64 24}
+!44 = !{!38, !26, i64 26}
+!45 = !{!38, !12, i64 4}
+!46 = !{!38, !12, i64 28}
+!47 = !{!48, !26, i64 0}
+!48 = !{!"dirent", !26, i64 0, !4, i64 2}
+!49 = distinct !{!49, !7, !8}

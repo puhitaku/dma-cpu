@@ -28,6 +28,8 @@ type funcCtx struct {
 	directPhi map[string]bool // blocks whose phis are written directly on edges
 	tail      map[*llir.Instr]bool // calls emitted as tail jumps
 	tailRet   map[*llir.Instr]bool // rets consumed by a preceding tail call
+	pair64    map[*llir.Instr]*llir.Instr // i64 store -> its feeding i64 load (8-byte copy idiom)
+	pair64Ld  map[*llir.Instr]bool        // the loads consumed by pair64
 	hasCalls  bool
 	curBlock  int
 	cat       string // size-report attribution for emitted code
@@ -46,6 +48,8 @@ func (g *gen) emitFunc(f *llir.Func) error {
 		fwd:       map[string]string{},
 		tail:      map[*llir.Instr]bool{},
 		tailRet:   map[*llir.Instr]bool{},
+		pair64:    map[*llir.Instr]*llir.Instr{},
+		pair64Ld:  map[*llir.Instr]bool{},
 		blockIdx:  map[string]int{},
 		directPhi: map[string]bool{},
 	}
@@ -141,6 +145,26 @@ func (fc *funcCtx) prepass() error {
 				fc.defs[ins.Res] = ins
 				fc.defBlock[ins.Res] = i
 			}
+		}
+	}
+	// 8-byte copy idiom: clang -Oz coalesces small aggregate copies
+	// (a two-pointer argv array, a pair of ints) into an i64 load whose
+	// only use is an i64 store. Lower the pair to two word moves.
+	for _, b := range f.Blocks {
+		for _, ins := range b.Instrs {
+			if ins.Op != "store" || ins.Typ == nil || ins.Typ.Kind != llir.TInt || ins.Typ.Bits != 64 {
+				continue
+			}
+			v := ins.Args[0]
+			if v.Kind != llir.VLocal || fc.uses[v.Name] != 1 {
+				continue
+			}
+			ld := fc.defs[v.Name]
+			if ld == nil || ld.Op != "load" || ld.Typ.Kind != llir.TInt || ld.Typ.Bits != 64 {
+				continue
+			}
+			fc.pair64[ins] = ld
+			fc.pair64Ld[ld] = true
 		}
 	}
 	// Tail calls: a call immediately followed by a ret of its (sole-use)
@@ -547,6 +571,9 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 		return nil
 
 	case "load":
+		if fc.pair64Ld[ins] {
+			return nil // emitted as a two-word copy at the paired store
+		}
 		// i64 loads exist only to consume 8-byte varargs (%lld skip):
 		// keep the low word — correct for every trunc-to-32 use, and any
 		// other use of the value fails width() with a clear error.
@@ -576,6 +603,18 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 		return nil
 
 	case "store":
+		if ld, ok := fc.pair64[ins]; ok {
+			tmp := fc.word(ld.Res) // declared word doubles as the ferry
+			for _, off := range []uint32{0, 4} {
+				if err := fc.loadWordAt(ld.Args[0], off, tmp); err != nil {
+					return err
+				}
+				if err := fc.storeWordAt(ins.Args[1], off, tmp); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
 		w, err := width(ins.Typ)
 		if err != nil {
 			return err
@@ -1046,6 +1085,57 @@ func (fc *funcCtx) emitIndirectCall(ins *llir.Instr) error {
 	if ins.Res != "" && ins.Typ.Kind != llir.TVoid {
 		fc.ins("move r0, %s", fc.word(ins.Res))
 	}
+	return nil
+}
+
+// loadWordAt reads the 32-bit word at pointer p plus a byte offset
+// into dst; storeWordAt is its mirror. Both fold the offset into
+// direct addresses and otherwise compute through at2.
+func (fc *funcCtx) loadWordAt(p *llir.Value, off uint32, dst string) error {
+	if addr, ok := fc.directAddr(p); ok {
+		if off != 0 {
+			addr = fmt.Sprintf("%s+%d", addr, off)
+		}
+		fc.ins("move %s, %s", addr, dst)
+		return nil
+	}
+	pv, err := fc.op(p)
+	if err != nil {
+		return err
+	}
+	ld := fc.stub("Lw")
+	if off != 0 {
+		fc.ins("add %s, $%d, at2", pv, off)
+		fc.ins("move at2, %s.read", ld)
+	} else {
+		fc.ins("move %s, %s.read", pv, ld)
+	}
+	fc.label(ld)
+	fc.ins("move @0, %s", dst)
+	return nil
+}
+
+func (fc *funcCtx) storeWordAt(p *llir.Value, off uint32, src string) error {
+	if addr, ok := fc.directAddr(p); ok {
+		if off != 0 {
+			addr = fmt.Sprintf("%s+%d", addr, off)
+		}
+		fc.ins("move %s, %s", src, addr)
+		return nil
+	}
+	pv, err := fc.op(p)
+	if err != nil {
+		return err
+	}
+	st := fc.stub("Sw")
+	if off != 0 {
+		fc.ins("add %s, $%d, at2", pv, off)
+		fc.ins("move at2, %s.write", st)
+	} else {
+		fc.ins("move %s, %s.write", pv, st)
+	}
+	fc.label(st)
+	fc.ins("move %s, @0", src)
 	return nil
 }
 

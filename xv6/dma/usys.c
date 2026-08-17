@@ -172,6 +172,20 @@ fstat(int fd, struct stat *st)
 }
 
 int
+link(const char *old, const char *new)
+{
+  fill(SYS_link, (uint)old, (uint)new, 0);
+  return dma_trap();
+}
+
+int
+unlink(const char *path)
+{
+  fill(SYS_unlink, (uint)path, 0, 0);
+  return dma_trap();
+}
+
+int
 mkdir(const char *path)
 {
   fill(SYS_mkdir, (uint)path, 0, 0);

@@ -155,6 +155,12 @@ kfs_start(void)
   fileinit();
   devsw[CONSOLE].read = consoleread;
   devsw[CONSOLE].write = consolewrite;
+  /* fds 0/1/2 come from the disk's console device inode, exactly as
+   * upstream init does with open("console") — so fileclose's iput has
+   * a real inode to release. */
+  struct inode *cons = namei("/console");
+  if (cons == 0)
+    panic("kfs_start: no console");
   for (int i = 0; i < KNPROC; i++) {
     struct proc *p = &fsproc[i];
     p->sz = (uint64)-1;
@@ -165,9 +171,11 @@ kfs_start(void)
       f->major = CONSOLE;
       f->readable = 1;
       f->writable = 1;
+      f->ip = idup(cons);
       p->ofile[fd] = f;
     }
   }
+  iput(cons);
   fsready = 1;
 }
 
@@ -401,6 +409,91 @@ kfs_mkdir(uint pathaddr)
     return -1;
   iunlockput(ip);
   return 0;
+}
+
+/* sysfile.c's sys_link/sys_unlink, reshaped (paths arrive as flat
+ * pointers instead of argstr copies). */
+int
+kfs_link(uint oldaddr, uint newaddr)
+{
+  char name[DIRSIZ];
+  struct inode *ip = namei((char *)oldaddr);
+  if (ip == 0)
+    return -1;
+  ilock(ip);
+  if (ip->type == T_DIR) {
+    iunlockput(ip);
+    return -1;
+  }
+  ip->nlink++;
+  iupdate(ip);
+  iunlock(ip);
+  struct inode *dp = nameiparent((char *)newaddr, name);
+  if (dp) {
+    ilock(dp);
+    if (dp->dev == ip->dev && dirlink(dp, name, ip->inum) >= 0) {
+      iunlockput(dp);
+      iput(ip);
+      return 0;
+    }
+    iunlockput(dp);
+  }
+  ilock(ip);
+  ip->nlink--;
+  iupdate(ip);
+  iunlockput(ip);
+  return -1;
+}
+
+static int
+isdirempty(struct inode *dp)
+{
+  struct dirent de;
+  for (uint off = 2 * sizeof(de); off < dp->size; off += sizeof(de)) {
+    if (readi(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
+      panic("isdirempty: readi");
+    if (de.inum != 0)
+      return 0;
+  }
+  return 1;
+}
+
+int
+kfs_unlink(uint pathaddr)
+{
+  struct inode *ip, *dp;
+  struct dirent de;
+  char name[DIRSIZ];
+  uint off;
+  if ((dp = nameiparent((char *)pathaddr, name)) == 0)
+    return -1;
+  ilock(dp);
+  if (namecmp(name, ".") == 0 || namecmp(name, "..") == 0)
+    goto bad;
+  if ((ip = dirlookup(dp, name, &off)) == 0)
+    goto bad;
+  ilock(ip);
+  if (ip->nlink < 1)
+    panic("unlink: nlink < 1");
+  if (ip->type == T_DIR && !isdirempty(ip)) {
+    iunlockput(ip);
+    goto bad;
+  }
+  memset(&de, 0, sizeof(de));
+  if (writei(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
+    panic("unlink: writei");
+  if (ip->type == T_DIR) {
+    dp->nlink--;
+    iupdate(dp);
+  }
+  iunlockput(dp);
+  ip->nlink--;
+  iupdate(ip);
+  iunlockput(ip);
+  return 0;
+bad:
+  iunlockput(dp);
+  return -1;
 }
 
 /* --- executable files: exec's inode-backed loader interface --- */
