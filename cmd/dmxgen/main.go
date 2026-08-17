@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/puhitaku/dma-cpu/dmaasm"
@@ -220,42 +221,414 @@ func buildCC(spec hilSpec, v *emu.Variant, lay layout) (*dmaasm.Result, error) {
 	return res, nil
 }
 
-// --- Phase 5a: the preemptive-scheduler bundle (prompts/012) ---
-// Three images at fixed offsets in the machine region: the kernel
-// (prog/hil/kernel.dasm) and two relocated instances of the compiled
-// proc.c. Kernel cross-image pointers are patched at generation time;
-// the firmware only loads, arms the injector chain, and starts A.
-type schedBundle struct {
-	kernel, procA, procB []byte
-	entryA               uint32
-	counterA, counterB   uint32
-	ticks, vecA, vecB    uint32
-	dispA, dispB         uint32
-	inj1Ctrl, inj2Ctrl   uint32
+// --- Phase 5d kernel bundles (prompts/015) ---
+// Every bundle is the same four-image shape: kernel.dasm (entry
+// stubs), the C kernel core (xv6/dma/kproc.c: proc table, scheduler,
+// syscalls), and process images. All cross-image pointers and the
+// proc table are patched at generation time; the firmware only loads
+// the images, starts slot 0, and arms the single one-shot tick
+// injector (ABI ch3, no chain).
+
+// struct proc field word offsets (kproc.c all-uint layout).
+const (
+	pfState = iota
+	pfPid
+	pfPpid
+	pfChan
+	pfWakeTick
+	pfXstate
+	pfPdispatch
+	pfPirqresume
+	pfPlr
+	pfThunk
+	pfResume
+	pfPmail
+	procWords
+)
+
+const (
+	stRunnable = 3
+	stRunning  = 4
+)
+
+type kprocSpec struct {
+	res       *dmaasm.Result
+	data      uint32 // image data base (for patchData)
+	entry     uint32
+	pid, ppid uint32
+	syscall   bool // image links usys (mailbox + syscall vector)
 }
 
-func buildSched(v *emu.Variant, lay layout) (*schedBundle, error) {
-	kText, kData := lay.text, lay.text+0x2000
-	aText, aData := lay.text+0x4000, lay.text+0x6000
-	bText, bData := lay.text+0x8000, lay.text+0xA000
-
+// buildKernelPair assembles kernel.dasm and the compiled kproc.c.
+func buildKernelPair(v *emu.Variant, kText, kData, cText, cData uint32) (*dmaasm.Result, *dmaasm.Result, error) {
 	ksrc, err := prog.HIL("kernel")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	kern, err := dmaasm.Assemble(ksrc, dmaasm.Options{Variant: v, TextBase: kText, DataBase: kData})
 	if err != nil {
-		return nil, fmt.Errorf("kernel: %w", err)
+		return nil, nil, fmt.Errorf("kernel: %w", err)
 	}
-	psrc, err := os.ReadFile("dmacc/testdata/proc.ll")
+	src, err := os.ReadFile("xv6/ll/kproc.ll")
+	if err != nil {
+		return nil, nil, fmt.Errorf("kproc golden missing (make xv6-ll): %w", err)
+	}
+	mod, err := llir.Parse(string(src))
+	if err != nil {
+		return nil, nil, err
+	}
+	dasm, err := dmacc.Compile(mod, dmacc.Options{Entry: "kmain", NoSafepoints: true})
+	if err != nil {
+		return nil, nil, err
+	}
+	kernC, err := dmaasm.Assemble(dasm, dmaasm.Options{Variant: v, TextBase: cText, DataBase: cData})
+	if err != nil {
+		return nil, nil, fmt.Errorf("kproc: %w", err)
+	}
+	return kern, kernC, nil
+}
+
+// wireKernel patches (at generation time) the kernel.dasm words, the
+// kproc.c proc table and each syscalling process's vector. Slot 0 is
+// the machine's entry and must be always-runnable.
+func wireKernel(kern *dmaasm.Result, kData uint32, kernC *dmaasm.Result, cData uint32, procs []kprocSpec) error {
+	type patch struct {
+		img     *img.Image
+		imgData uint32
+		addr    uint32
+		val     uint32
+	}
+	var ps []patch
+	var err error
+	sy := func(r *dmaasm.Result, n string) uint32 {
+		if err != nil {
+			return 0
+		}
+		var a uint32
+		a, err = r.Symbol(n)
+		return a
+	}
+	// kernel.dasm -> kernel-C entries.
+	ps = append(ps,
+		patch{kern.Image, kData, sy(kern, "pKlr"), sy(kernC, "lr")},
+		patch{kern.Image, kData, sy(kern, "ktickv"), sy(kernC, "f_dma_ktick")},
+		patch{kern.Image, kData, sy(kern, "ksysv"), sy(kernC, "f_dma_ksyscall")},
+		// cur* seeds for slot 0.
+		patch{kern.Image, kData, sy(kern, "pCurDisp"), sy(procs[0].res, "dispatch")},
+		patch{kern.Image, kData, sy(kern, "curThunk"), sy(procs[0].res, "crtthunk")},
+		patch{kern.Image, kData, sy(kern, "pCurResume"), sy(procs[0].res, "irqresume")},
+		// kernel-C -> kernel.dasm words.
+		patch{kernC.Image, cData, sy(kernC, "g_kw_pcurdisp"), sy(kern, "pCurDisp")},
+		patch{kernC.Image, cData, sy(kernC, "g_kw_curthunk"), sy(kern, "curThunk")},
+		patch{kernC.Image, cData, sy(kernC, "g_kw_pcurresume"), sy(kern, "pCurResume")},
+		patch{kernC.Image, cData, sy(kernC, "g_kw_curresume"), sy(kern, "curResume")},
+		patch{kernC.Image, cData, sy(kernC, "g_kw_nextresume"), sy(kern, "nextResume")},
+		patch{kernC.Image, cData, sy(kernC, "g_kw_khalt"), sy(kern, "khalt")},
+	)
+	base := sy(kernC, "g_proc")
+	pf := func(slot, field int, val uint32) {
+		ps = append(ps, patch{kernC.Image, cData,
+			base + uint32(slot*procWords+field)*4, val})
+	}
+	for i, p := range procs {
+		state := uint32(stRunnable)
+		if i == 0 {
+			state = stRunning
+		}
+		pf(i, pfState, state)
+		pf(i, pfPid, p.pid)
+		pf(i, pfPpid, p.ppid)
+		pf(i, pfPdispatch, sy(p.res, "dispatch"))
+		pf(i, pfPirqresume, sy(p.res, "irqresume"))
+		pf(i, pfPlr, sy(p.res, "lr"))
+		pf(i, pfThunk, sy(p.res, "crtthunk"))
+		pf(i, pfResume, p.entry)
+		if p.syscall {
+			pf(i, pfPmail, sy(p.res, "g___dma_sysmail"))
+			ps = append(ps, patch{p.res.Image, p.data,
+				sy(p.res, "g___dma_syscall_entry"), sy(kern, "sys_entry")})
+		}
+	}
+	if err != nil {
+		return err
+	}
+	for _, p := range ps {
+		if err := patchData(p.img, p.imgData, p.addr, p.val); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func kernInjCtrl(v *emu.Variant) uint32 {
+	const inj = 3
+	return emu.CtrlEN | emu.CtrlHighPriority | emu.CtrlSize32 |
+		v.CtrlTreq(emu.TreqTimer1) | v.CtrlChainTo(inj) | v.CtrlIRQQuiet
+}
+
+// armKernel pokes the runtime tick setup into an emulator machine for
+// bundle verification (mirrors what the firmware does).
+func armKernel(m *emu.Machine, v *emu.Variant, kern *dmaasm.Result, disp0 uint32) error {
+	vec, err := kern.Symbol("vecSched")
+	if err != nil {
+		return err
+	}
+	const inj = 3
+	m.Poke32(v.TimerAddr(1), 1<<16|15000)
+	m.Poke32(emu.ChanRegAddr(inj, emu.OffAl1ReadAddr), vec)
+	m.Poke32(emu.ChanRegAddr(inj, emu.OffAl1WriteAddr), disp0)
+	m.Poke32(emu.ChanRegAddr(inj, emu.OffTransCount), 1)
+	m.Poke32(emu.ChanRegAddr(inj, emu.OffCtrlTrig), kernInjCtrl(v))
+	return nil
+}
+
+// kernBundle is the common emitted form of every Phase 5d bundle.
+type kernBundle struct {
+	images [][]byte // kernel, kernC, then the processes
+	names  []string
+	entry0 uint32 // slot 0's crt0 (the machine entry)
+	vec    uint32 // kernel.dasm vecSched (injector READ source)
+	disp0  uint32 // slot 0's dispatch (initial injector target)
+	inj    uint32 // injector CTRL value
+	ticks  uint32 // &kernC.ticks
+	sym    map[string]uint32
+}
+
+// finishBundle verifies nothing (callers verify first), bakes the
+// relocations and encodes the images.
+func finishBundle(b *kernBundle, results []*dmaasm.Result) error {
+	for _, r := range results {
+		r.Image.Relocs = nil // fixed placement: bake
+		raw, err := r.Image.Encode()
+		if err != nil {
+			return err
+		}
+		b.images = append(b.images, raw)
+	}
+	return nil
+}
+
+func compileLL(paths []string, opts dmacc.Options) (string, error) {
+	var mods []*llir.Module
+	for _, path := range paths {
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return "", err
+		}
+		mod, err := llir.Parse(string(src))
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", path, err)
+		}
+		mods = append(mods, mod)
+	}
+	mod, err := llir.Merge(mods...)
+	if err != nil {
+		return "", err
+	}
+	return dmacc.Compile(mod, opts)
+}
+
+func libcPaths(first ...string) ([]string, error) {
+	entries, err := os.ReadDir("libc/ll")
+	if err != nil {
+		return nil, fmt.Errorf("libc goldens missing (make libc): %w", err)
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".ll") {
+			first = append(first, "libc/ll/"+e.Name())
+		}
+	}
+	return first, nil
+}
+
+// buildSched: the scheduler-only bundle (two counter processes, no
+// syscalls). Fits the narrow rp2040 layout.
+func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
+	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x6000)
 	if err != nil {
 		return nil, err
 	}
-	pmod, err := llir.Parse(string(psrc))
+	pdasm, err := compileLL([]string{"dmacc/testdata/proc.ll"}, dmacc.Options{})
 	if err != nil {
 		return nil, err
 	}
-	pdasm, err := dmacc.Compile(pmod, dmacc.Options{})
+	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x7000, DataBase: lay.text + 0x9000})
+	if err != nil {
+		return nil, err
+	}
+	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0xB000, DataBase: lay.text + 0xD000})
+	if err != nil {
+		return nil, err
+	}
+	b := &kernBundle{names: []string{"kernel", "kernc", "proca", "procb"}, sym: map[string]uint32{}}
+	b.entry0 = lay.text + 0x7000 + procA.Image.EntryOff
+	entryB := lay.text + 0xB000 + procB.Image.EntryOff
+	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x6000, []kprocSpec{
+		{procA, lay.text + 0x9000, b.entry0, 1, 0, false},
+		{procB, lay.text + 0xD000, entryB, 2, 0, false},
+	}); err != nil {
+		return nil, err
+	}
+	var errs error
+	sy := func(r *dmaasm.Result, n string) uint32 {
+		a, e := r.Symbol(n)
+		if e != nil && errs == nil {
+			errs = e
+		}
+		return a
+	}
+	b.vec, b.disp0, b.inj = sy(kern, "vecSched"), sy(procA, "dispatch"), kernInjCtrl(v)
+	b.ticks = sy(kernC, "g_ticks")
+	b.sym["COUNTER_A"] = sy(procA, "g_counter")
+	b.sym["COUNTER_B"] = sy(procB, "g_counter")
+	if errs != nil {
+		return nil, errs
+	}
+
+	// Emulator verification before shipping.
+	m := emu.NewMachine(v)
+	results := []*dmaasm.Result{kern, kernC, procA, procB}
+	for _, r := range results {
+		if _, err := r.Image.Load(m, nil); err != nil {
+			return nil, err
+		}
+	}
+	if err := armKernel(m, v, kern, b.disp0); err != nil {
+		return nil, err
+	}
+	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
+		Fetch: 0, Exec: 1, Fix: 2, Entry: b.entry0, Scratch: lay.scratch,
+	}); err != nil {
+		return nil, err
+	}
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 500_000}); err != nil {
+		return nil, err
+	}
+	a, bb, tk := m.Peek32(b.sym["COUNTER_A"]), m.Peek32(b.sym["COUNTER_B"]), m.Peek32(b.ticks)
+	if tk < 2 || a == 0 || bb == 0 {
+		return nil, fmt.Errorf("sched: emulator verification failed: ticks=%d a=%d b=%d", tk, a, bb)
+	}
+	if err := finishBundle(b, results); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+// buildShell: dma-sh (slot 0, always runnable) + the counter process.
+// Needs the wide rp2350 layout.
+func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
+	kText, kData := lay.text, lay.text+0x2000
+	cText, cData := lay.text+0x4000, lay.text+0xA000
+	sText, sData := lay.text+0xC000, lay.text+0x24000
+	pText, pData := lay.text+0x2A000, lay.text+0x2C000
+	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
+	if err != nil {
+		return nil, err
+	}
+	paths, err := libcPaths("dmacc/testdata/shell.ll")
+	if err != nil {
+		return nil, err
+	}
+	sdasm, err := compileLL(paths, dmacc.Options{})
+	if err != nil {
+		return nil, err
+	}
+	shell, err := dmaasm.Assemble(sdasm, dmaasm.Options{Variant: v, TextBase: sText, DataBase: sData})
+	if err != nil {
+		return nil, fmt.Errorf("shell: %w", err)
+	}
+	pdasm, err := compileLL([]string{"dmacc/testdata/proc.ll"}, dmacc.Options{})
+	if err != nil {
+		return nil, err
+	}
+	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: pText, DataBase: pData})
+	if err != nil {
+		return nil, err
+	}
+	b := &kernBundle{names: []string{"kernel", "kernc", "sh", "procb"}, sym: map[string]uint32{}}
+	b.entry0 = sText + shell.Image.EntryOff
+	entryB := pText + procB.Image.EntryOff
+	if err := wireKernel(kern, kData, kernC, cData, []kprocSpec{
+		{shell, sData, b.entry0, 1, 0, false},
+		{procB, pData, entryB, 2, 0, false},
+	}); err != nil {
+		return nil, err
+	}
+	var errs error
+	sy := func(r *dmaasm.Result, n string) uint32 {
+		a, e := r.Symbol(n)
+		if e != nil && errs == nil {
+			errs = e
+		}
+		return a
+	}
+	// The shell's live stat pointers.
+	for _, w := range []struct {
+		symName string
+		val     uint32
+	}{
+		{"g_stat_ticks", sy(kernC, "g_ticks")},
+		{"g_stat_counter", sy(procB, "g_counter")},
+	} {
+		if errs == nil {
+			if err := patchData(shell.Image, sData, sy(shell, w.symName), w.val); err != nil {
+				return nil, err
+			}
+		}
+	}
+	b.vec, b.disp0, b.inj = sy(kern, "vecSched"), sy(shell, "dispatch"), kernInjCtrl(v)
+	b.ticks = sy(kernC, "g_ticks")
+	b.sym["COUNTER_B"] = sy(procB, "g_counter")
+	if errs != nil {
+		return nil, errs
+	}
+
+	// Emulator session verification.
+	m := emu.NewMachine(v)
+	results := []*dmaasm.Result{kern, kernC, shell, procB}
+	for _, r := range results {
+		if _, err := r.Image.Load(m, nil); err != nil {
+			return nil, err
+		}
+	}
+	if err := armKernel(m, v, kern, b.disp0); err != nil {
+		return nil, err
+	}
+	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
+		Fetch: 0, Exec: 1, Fix: 2, Entry: b.entry0, Scratch: lay.scratch,
+	}); err != nil {
+		return nil, err
+	}
+	m.FeedConsole("stat\rstat\r")
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 60_000_000}); err != nil {
+		return nil, err
+	}
+	out := string(m.ConsoleOut)
+	if !strings.Contains(out, "dma-sh") || strings.Count(out, "ticks=") != 2 {
+		return nil, fmt.Errorf("shell bundle: emulator session unexpected:\n%s", out)
+	}
+	if err := finishBundle(b, results); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+const sysWantConsole = "hello from pid 1 via SYS_write\n" +
+	"pid 1 saw the clock advance\n" +
+	"pid 1 exiting\n"
+
+// buildSyscall: two instances of the xv6 syscall exerciser
+// (dmacc/testdata/xv6sys.c + xv6/dma/usys.c). Wide layout.
+func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
+	kText, kData := lay.text, lay.text+0x2000
+	cText, cData := lay.text+0x4000, lay.text+0xA000
+	aText, aData := lay.text+0xC000, lay.text+0x10000
+	bText, bData := lay.text+0x14000, lay.text+0x18000
+	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
+	if err != nil {
+		return nil, err
+	}
+	pdasm, err := compileLL([]string{"dmacc/testdata/xv6sys.ll", "xv6/ll/usys.ll"}, dmacc.Options{})
 	if err != nil {
 		return nil, err
 	}
@@ -267,518 +640,68 @@ func buildSched(v *emu.Variant, lay layout) (*schedBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	sym := func(r *dmaasm.Result, n string) (uint32, error) { return r.Symbol(n) }
-	entryA := aText + procA.Image.EntryOff
-
-	// Patch the kernel's cross-image pointers at generation time.
-	type wire struct {
-		kernSym string
-		res     *dmaasm.Result
-		procSym string
-	}
-	for _, w := range []wire{
-		{"pAdisp", procA, "dispatch"}, {"pBdisp", procB, "dispatch"},
-		{"pAresume", procA, "irqresume"}, {"pBresume", procB, "irqresume"},
-		{"thunkA", procA, "crtthunk"}, {"thunkB", procB, "crtthunk"},
-	} {
-		kaddr, err := sym(kern, w.kernSym)
-		if err != nil {
-			return nil, err
-		}
-		val, err := sym(w.res, w.procSym)
-		if err != nil {
-			return nil, err
-		}
-		if err := patchData(kern.Image, kData, kaddr, val); err != nil {
-			return nil, err
-		}
-	}
-	kaddr, err := sym(kern, "savedB")
-	if err != nil {
-		return nil, err
-	}
-	if err := patchData(kern.Image, kData, kaddr, bText+procB.Image.EntryOff); err != nil {
-		return nil, err
-	}
-
-	b := &schedBundle{entryA: entryA}
-	get := func(dst *uint32, r *dmaasm.Result, n string) {
-		if err == nil {
-			*dst, err = sym(r, n)
-		}
-	}
-	get(&b.counterA, procA, "g_counter")
-	get(&b.counterB, procB, "g_counter")
-	get(&b.ticks, kern, "ticks")
-	get(&b.vecA, kern, "vecA")
-	get(&b.vecB, kern, "vecB")
-	get(&b.dispA, procA, "dispatch")
-	get(&b.dispB, procB, "dispatch")
-	if err != nil {
-		return nil, err
-	}
-	const inj1, inj2 = 3, 4
-	b.inj1Ctrl = emu.CtrlEN | emu.CtrlHighPriority | emu.CtrlSize32 |
-		v.CtrlTreq(emu.TreqTimer1) | v.CtrlChainTo(inj2) | v.CtrlIRQQuiet
-	b.inj2Ctrl = emu.CtrlEN | emu.CtrlHighPriority | emu.CtrlSize32 |
-		v.CtrlTreq(emu.TreqPermanent) | v.CtrlChainTo(inj2) | v.CtrlIRQQuiet
-
-	// Emulator verification of the whole scenario before it ships.
-	if err := verifySched(v, lay, kern, procA, procB, b); err != nil {
-		return nil, err
-	}
-
-	for _, im := range []*img.Image{kern.Image, procA.Image, procB.Image} {
-		im.Relocs = nil // fixed placement: bake
-	}
-	if b.kernel, err = kern.Image.Encode(); err != nil {
-		return nil, err
-	}
-	if b.procA, err = procA.Image.Encode(); err != nil {
-		return nil, err
-	}
-	if b.procB, err = procB.Image.Encode(); err != nil {
-		return nil, err
-	}
-	return b, nil
-}
-
-func verifySched(v *emu.Variant, lay layout, kern, procA, procB *dmaasm.Result, b *schedBundle) error {
-	m := emu.NewMachine(v)
-	for _, r := range []*dmaasm.Result{kern, procA, procB} {
-		if _, err := r.Image.Load(m, nil); err != nil {
-			return err
-		}
-	}
-	const inj1, inj2 = 3, 4
-	m.Poke32(v.TimerAddr(1), 1<<16|15000)
-	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1ReadAddr), b.vecB)
-	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1WriteAddr), b.dispB)
-	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl2TransCount), 1)
-	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1Ctrl), b.inj2Ctrl)
-	m.Poke32(emu.ChanRegAddr(inj1, emu.OffAl1ReadAddr), b.vecA)
-	m.Poke32(emu.ChanRegAddr(inj1, emu.OffAl1WriteAddr), b.dispA)
-	m.Poke32(emu.ChanRegAddr(inj1, emu.OffTransCount), 1)
-	m.Poke32(emu.ChanRegAddr(inj1, emu.OffCtrlTrig), b.inj1Ctrl)
-	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
-		Fetch: 0, Exec: 1, Fix: 2, Entry: b.entryA, Scratch: lay.scratch,
+	b := &kernBundle{names: []string{"kernel", "kernc", "proca", "procb"}, sym: map[string]uint32{}}
+	b.entry0 = aText + procA.Image.EntryOff
+	entryB := bText + procB.Image.EntryOff
+	if err := wireKernel(kern, kData, kernC, cData, []kprocSpec{
+		{procA, aData, b.entry0, 1, 0, true},
+		{procB, bData, entryB, 2, 0, true},
 	}); err != nil {
-		return err
-	}
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 500_000}); err != nil {
-		return err
-	}
-	a, bb, tk := m.Peek32(b.counterA), m.Peek32(b.counterB), m.Peek32(b.ticks)
-	if tk < 2 || a == 0 || bb == 0 {
-		return fmt.Errorf("sched: emulator verification failed: ticks=%d a=%d b=%d", tk, a, bb)
-	}
-	return nil
-}
-
-// --- Phase 5b: the interactive-shell bundle (prompts/013) ---
-// kernel + dma-sh (with libc, as process A) + the counter program (as
-// process B). Needs the wide rp2350 layout; pointers pre-patched,
-// scripted session verified in the emulator before shipping.
-type shellBundle struct {
-	kernel, shell, procB []byte
-	entryShell           uint32
-	vecA, vecB           uint32
-	dispShell, dispB     uint32
-	inj1Ctrl, inj2Ctrl   uint32
-	ticks, counterB      uint32
-}
-
-func buildShell(v *emu.Variant, lay layout) (*shellBundle, error) {
-	kText, kData := lay.text, lay.text+0x2000
-	sText, sData := lay.text+0x4000, lay.text+0x1C000
-	pText, pData := lay.text+0x20000, lay.text+0x22000
-
-	ksrc, err := prog.HIL("kernel")
-	if err != nil {
 		return nil, err
 	}
-	kern, err := dmaasm.Assemble(ksrc, dmaasm.Options{Variant: v, TextBase: kText, DataBase: kData})
-	if err != nil {
-		return nil, err
-	}
-	// Shell: testdata/shell.ll linked against the libc goldens.
-	paths := []string{"dmacc/testdata/shell.ll"}
-	entries, err := os.ReadDir("libc/ll")
-	if err != nil {
-		return nil, fmt.Errorf("libc goldens missing (make libc): %w", err)
-	}
-	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".ll") {
-			paths = append(paths, "libc/ll/"+e.Name())
+	var errs error
+	sy := func(r *dmaasm.Result, n string) uint32 {
+		a, e := r.Symbol(n)
+		if e != nil && errs == nil {
+			errs = e
 		}
+		return a
 	}
-	var mods []*llir.Module
-	for _, path := range paths {
-		src, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		mod, err := llir.Parse(string(src))
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-		mods = append(mods, mod)
-	}
-	smod, err := llir.Merge(mods...)
-	if err != nil {
-		return nil, err
-	}
-	sdasm, err := dmacc.Compile(smod, dmacc.Options{})
-	if err != nil {
-		return nil, err
-	}
-	shell, err := dmaasm.Assemble(sdasm, dmaasm.Options{Variant: v, TextBase: sText, DataBase: sData})
-	if err != nil {
-		return nil, fmt.Errorf("shell: %w", err)
-	}
-	psrc, err := os.ReadFile("dmacc/testdata/proc.ll")
-	if err != nil {
-		return nil, err
-	}
-	pmod, err := llir.Parse(string(psrc))
-	if err != nil {
-		return nil, err
-	}
-	pdasm, err := dmacc.Compile(pmod, dmacc.Options{})
-	if err != nil {
-		return nil, err
-	}
-	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: pText, DataBase: pData})
-	if err != nil {
-		return nil, err
+	b.vec, b.disp0, b.inj = sy(kern, "vecSched"), sy(procA, "dispatch"), kernInjCtrl(v)
+	b.ticks = sy(kernC, "g_ticks")
+	b.sym["BGCOUNT_B"] = sy(procB, "g_bgcount")
+	b.sym["DONETICK_A"] = sy(procA, "g_donetick")
+	b.sym["EXITSTATUS_A"] = sy(kernC, "g_proc") + pfXstate*4 // slot 0
+	if errs != nil {
+		return nil, errs
 	}
 
-	b := &shellBundle{entryShell: sText + shell.Image.EntryOff}
-	get := func(dst *uint32, r *dmaasm.Result, n string) {
-		if err == nil {
-			*dst, err = r.Symbol(n)
-		}
-	}
-	get(&b.vecA, kern, "vecA")
-	get(&b.vecB, kern, "vecB")
-	get(&b.dispShell, shell, "dispatch")
-	get(&b.dispB, procB, "dispatch")
-	get(&b.ticks, kern, "ticks")
-	get(&b.counterB, procB, "g_counter")
-	if err != nil {
-		return nil, err
-	}
-	// Kernel cross-image pointers (shell plays the A role) + the
-	// shell's stat pointers.
-	type patch struct {
-		img     *img.Image
-		imgData uint32
-		res     *dmaasm.Result
-		sym     string
-		valRes  *dmaasm.Result
-		valSym  string
-	}
-	for _, p := range []patch{
-		{kern.Image, kData, kern, "pAdisp", shell, "dispatch"},
-		{kern.Image, kData, kern, "pBdisp", procB, "dispatch"},
-		{kern.Image, kData, kern, "pAresume", shell, "irqresume"},
-		{kern.Image, kData, kern, "pBresume", procB, "irqresume"},
-		{kern.Image, kData, kern, "thunkA", shell, "crtthunk"},
-		{kern.Image, kData, kern, "thunkB", procB, "crtthunk"},
-		{shell.Image, sData, shell, "g_stat_ticks", kern, "ticks"},
-		{shell.Image, sData, shell, "g_stat_counter", procB, "g_counter"},
-	} {
-		addr, err := p.res.Symbol(p.sym)
-		if err != nil {
-			return nil, err
-		}
-		val, err := p.valRes.Symbol(p.valSym)
-		if err != nil {
-			return nil, err
-		}
-		if err := patchData(p.img, p.imgData, addr, val); err != nil {
-			return nil, fmt.Errorf("%s: %w", p.sym, err)
-		}
-	}
-	kaddr, err := kern.Symbol("savedB")
-	if err != nil {
-		return nil, err
-	}
-	if err := patchData(kern.Image, kData, kaddr, pText+procB.Image.EntryOff); err != nil {
-		return nil, err
-	}
-
-	const inj2 = 4
-	b.inj1Ctrl = emu.CtrlEN | emu.CtrlHighPriority | emu.CtrlSize32 |
-		v.CtrlTreq(emu.TreqTimer1) | v.CtrlChainTo(inj2) | v.CtrlIRQQuiet
-	b.inj2Ctrl = emu.CtrlEN | emu.CtrlHighPriority | emu.CtrlSize32 |
-		v.CtrlTreq(emu.TreqPermanent) | v.CtrlChainTo(inj2) | v.CtrlIRQQuiet
-
-	if err := verifyShell(v, lay, kern, shell, procB, b); err != nil {
-		return nil, err
-	}
-	for _, im := range []*img.Image{kern.Image, shell.Image, procB.Image} {
-		im.Relocs = nil // fixed placement: bake
-	}
-	if b.kernel, err = kern.Image.Encode(); err != nil {
-		return nil, err
-	}
-	if b.shell, err = shell.Image.Encode(); err != nil {
-		return nil, err
-	}
-	if b.procB, err = procB.Image.Encode(); err != nil {
-		return nil, err
-	}
-	return b, nil
-}
-
-func verifyShell(v *emu.Variant, lay layout, kern, shell, procB *dmaasm.Result, b *shellBundle) error {
+	// Emulator verification: the full pid-1 lifecycle plus survivor.
 	m := emu.NewMachine(v)
-	for _, r := range []*dmaasm.Result{kern, shell, procB} {
+	results := []*dmaasm.Result{kern, kernC, procA, procB}
+	for _, r := range results {
 		if _, err := r.Image.Load(m, nil); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	const inj1, inj2 = 3, 4
-	m.Poke32(v.TimerAddr(1), 1<<16|15000)
-	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1ReadAddr), b.vecB)
-	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1WriteAddr), b.dispB)
-	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl2TransCount), 1)
-	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1Ctrl), b.inj2Ctrl)
-	m.Poke32(emu.ChanRegAddr(inj1, emu.OffAl1ReadAddr), b.vecA)
-	m.Poke32(emu.ChanRegAddr(inj1, emu.OffAl1WriteAddr), b.dispShell)
-	m.Poke32(emu.ChanRegAddr(inj1, emu.OffTransCount), 1)
-	m.Poke32(emu.ChanRegAddr(inj1, emu.OffCtrlTrig), b.inj1Ctrl)
+	if err := armKernel(m, v, kern, b.disp0); err != nil {
+		return nil, err
+	}
 	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
-		Fetch: 0, Exec: 1, Fix: 2, Entry: b.entryShell, Scratch: lay.scratch,
+		Fetch: 0, Exec: 1, Fix: 2, Entry: b.entry0, Scratch: lay.scratch,
 	}); err != nil {
-		return err
-	}
-	m.FeedConsole("stat\rstat\r")
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 60_000_000}); err != nil {
-		return err
-	}
-	out := string(m.ConsoleOut)
-	if !strings.Contains(out, "dma-sh") || strings.Count(out, "ticks=") != 2 {
-		return fmt.Errorf("shell bundle: emulator session unexpected:\n%s", out)
-	}
-	return nil
-}
-
-// Phase 5c syscall bundle (xv6/PORT.md): kernel.dasm + the C kernel
-// core (xv6/dma/ksyscall.c, no safepoints) + two relocated instances of
-// dmacc/testdata/xv6sys.c linked with the xv6/dma/usys.c call-shaped
-// syscall stubs. Reuses the shell bundle's address window — the two
-// never run at the same time.
-type sysBundle struct {
-	kernel, kernC, procA, procB []byte
-	entryA                      uint32
-	vecA, vecB                  uint32
-	dispA, dispB                uint32
-	inj1Ctrl, inj2Ctrl          uint32
-	ticks, bgcountB, donetickA  uint32
-	exitStatusA                 uint32
-}
-
-func buildSyscall(v *emu.Variant, lay layout) (*sysBundle, error) {
-	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x8000
-	aText, aData := lay.text+0xC000, lay.text+0x10000
-	bText, bData := lay.text+0x14000, lay.text+0x18000
-
-	ksrc, err := prog.HIL("kernel")
-	if err != nil {
 		return nil, err
-	}
-	kern, err := dmaasm.Assemble(ksrc, dmaasm.Options{Variant: v, TextBase: kText, DataBase: kData})
-	if err != nil {
-		return nil, err
-	}
-	parse := func(path string) (*llir.Module, error) {
-		src, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		mod, err := llir.Parse(string(src))
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-		return mod, nil
-	}
-	kcMod, err := parse("xv6/ll/ksyscall.ll")
-	if err != nil {
-		return nil, err
-	}
-	kcDasm, err := dmacc.Compile(kcMod, dmacc.Options{Entry: "dma_ksyscall", NoSafepoints: true})
-	if err != nil {
-		return nil, err
-	}
-	kernC, err := dmaasm.Assemble(kcDasm, dmaasm.Options{Variant: v, TextBase: cText, DataBase: cData})
-	if err != nil {
-		return nil, err
-	}
-	sysMod, err := parse("dmacc/testdata/xv6sys.ll")
-	if err != nil {
-		return nil, err
-	}
-	usysMod, err := parse("xv6/ll/usys.ll")
-	if err != nil {
-		return nil, err
-	}
-	pMod, err := llir.Merge(sysMod, usysMod)
-	if err != nil {
-		return nil, err
-	}
-	pDasm, err := dmacc.Compile(pMod, dmacc.Options{})
-	if err != nil {
-		return nil, err
-	}
-	procA, err := dmaasm.Assemble(pDasm, dmaasm.Options{Variant: v, TextBase: aText, DataBase: aData})
-	if err != nil {
-		return nil, err
-	}
-	procB, err := dmaasm.Assemble(pDasm, dmaasm.Options{Variant: v, TextBase: bText, DataBase: bData})
-	if err != nil {
-		return nil, err
-	}
-
-	b := &sysBundle{entryA: aText + procA.Image.EntryOff}
-	get := func(dst *uint32, r *dmaasm.Result, n string) {
-		if err == nil {
-			*dst, err = r.Symbol(n)
-		}
-	}
-	get(&b.vecA, kern, "vecA")
-	get(&b.vecB, kern, "vecB")
-	get(&b.dispA, procA, "dispatch")
-	get(&b.dispB, procB, "dispatch")
-	get(&b.ticks, kern, "ticks")
-	get(&b.bgcountB, procB, "g_bgcount")
-	get(&b.donetickA, procA, "g_donetick")
-	get(&b.exitStatusA, kernC, "g_dma_exit_status")
-	if err != nil {
-		return nil, err
-	}
-
-	type patch struct {
-		img     *img.Image
-		imgData uint32
-		res     *dmaasm.Result
-		sym     string
-		off     uint32
-		valRes  *dmaasm.Result
-		valSym  string
-	}
-	for _, p := range []patch{
-		{kern.Image, kData, kern, "pAdisp", 0, procA, "dispatch"},
-		{kern.Image, kData, kern, "pBdisp", 0, procB, "dispatch"},
-		{kern.Image, kData, kern, "pAresume", 0, procA, "irqresume"},
-		{kern.Image, kData, kern, "pBresume", 0, procB, "irqresume"},
-		{kern.Image, kData, kern, "thunkA", 0, procA, "crtthunk"},
-		{kern.Image, kData, kern, "thunkB", 0, procB, "crtthunk"},
-		{kern.Image, kData, kern, "kentry", 0, kernC, "f_dma_ksyscall"},
-		{kern.Image, kData, kern, "pKr0", 0, kernC, "r0"},
-		{kern.Image, kData, kern, "pKlr", 0, kernC, "lr"},
-		{kern.Image, kData, kern, "pAlr", 0, procA, "lr"},
-		{kern.Image, kData, kern, "pBlr", 0, procB, "lr"},
-		{kernC.Image, cData, kernC, "g_dma_mail", 0, procA, "g___dma_sysmail"},
-		{kernC.Image, cData, kernC, "g_dma_mail", 4, procB, "g___dma_sysmail"},
-		{kernC.Image, cData, kernC, "g_dma_wsw", 0, kern, "wsw"},
-		{kernC.Image, cData, kernC, "g_dma_ticks", 0, kern, "ticks"},
-		{procA.Image, aData, procA, "g___dma_syscall_entry", 0, kern, "sys_from_a"},
-		{procB.Image, bData, procB, "g___dma_syscall_entry", 0, kern, "sys_from_b"},
-	} {
-		addr, err := p.res.Symbol(p.sym)
-		if err != nil {
-			return nil, err
-		}
-		val, err := p.valRes.Symbol(p.valSym)
-		if err != nil {
-			return nil, err
-		}
-		if err := patchData(p.img, p.imgData, addr+p.off, val); err != nil {
-			return nil, fmt.Errorf("%s+%d: %w", p.sym, p.off, err)
-		}
-	}
-	kaddr, err := kern.Symbol("savedB")
-	if err != nil {
-		return nil, err
-	}
-	if err := patchData(kern.Image, kData, kaddr, bText+procB.Image.EntryOff); err != nil {
-		return nil, err
-	}
-
-	const inj2 = 4
-	b.inj1Ctrl = emu.CtrlEN | emu.CtrlHighPriority | emu.CtrlSize32 |
-		v.CtrlTreq(emu.TreqTimer1) | v.CtrlChainTo(inj2) | v.CtrlIRQQuiet
-	b.inj2Ctrl = emu.CtrlEN | emu.CtrlHighPriority | emu.CtrlSize32 |
-		v.CtrlTreq(emu.TreqPermanent) | v.CtrlChainTo(inj2) | v.CtrlIRQQuiet
-
-	if err := verifySyscall(v, lay, kern, kernC, procA, procB, b); err != nil {
-		return nil, err
-	}
-	for _, im := range []*img.Image{kern.Image, kernC.Image, procA.Image, procB.Image} {
-		im.Relocs = nil // fixed placement: bake
-	}
-	if b.kernel, err = kern.Image.Encode(); err != nil {
-		return nil, err
-	}
-	if b.kernC, err = kernC.Image.Encode(); err != nil {
-		return nil, err
-	}
-	if b.procA, err = procA.Image.Encode(); err != nil {
-		return nil, err
-	}
-	if b.procB, err = procB.Image.Encode(); err != nil {
-		return nil, err
-	}
-	return b, nil
-}
-
-const sysWantConsole = "hello from pid 1 via SYS_write\n" +
-	"pid 1 saw the clock advance\n" +
-	"pid 1 exiting\n"
-
-func verifySyscall(v *emu.Variant, lay layout, kern, kernC, procA, procB *dmaasm.Result, b *sysBundle) error {
-	m := emu.NewMachine(v)
-	for _, r := range []*dmaasm.Result{kern, kernC, procA, procB} {
-		if _, err := r.Image.Load(m, nil); err != nil {
-			return err
-		}
-	}
-	const inj1, inj2 = 3, 4
-	m.Poke32(v.TimerAddr(1), 1<<16|15000)
-	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1ReadAddr), b.vecB)
-	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1WriteAddr), b.dispB)
-	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl2TransCount), 1)
-	m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1Ctrl), b.inj2Ctrl)
-	m.Poke32(emu.ChanRegAddr(inj1, emu.OffAl1ReadAddr), b.vecA)
-	m.Poke32(emu.ChanRegAddr(inj1, emu.OffAl1WriteAddr), b.dispA)
-	m.Poke32(emu.ChanRegAddr(inj1, emu.OffTransCount), 1)
-	m.Poke32(emu.ChanRegAddr(inj1, emu.OffCtrlTrig), b.inj1Ctrl)
-	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
-		Fetch: 0, Exec: 1, Fix: 2, Entry: b.entryA, Scratch: lay.scratch,
-	}); err != nil {
-		return err
 	}
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 20_000_000}); err != nil {
-		return err
+		return nil, err
 	}
 	if got := string(m.ConsoleOut); got != sysWantConsole {
-		return fmt.Errorf("syscall bundle: console mismatch:\n got %q\nwant %q", got, sysWantConsole)
+		return nil, fmt.Errorf("syscall bundle: console mismatch:\n got %q\nwant %q", got, sysWantConsole)
 	}
-	bg1 := m.Peek32(b.bgcountB)
+	bg1 := m.Peek32(b.sym["BGCOUNT_B"])
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 400_000}); err != nil {
-		return err
+		return nil, err
 	}
-	if bg2 := m.Peek32(b.bgcountB); bg2 <= bg1 {
-		return fmt.Errorf("syscall bundle: pid 2 stalled after pid 1 exit (%d -> %d)", bg1, bg2)
+	if bg2 := m.Peek32(b.sym["BGCOUNT_B"]); bg2 <= bg1 {
+		return nil, fmt.Errorf("syscall bundle: pid 2 stalled after pid 1 exit (%d -> %d)", bg1, bg2)
 	}
-	if st := m.Peek32(b.exitStatusA); st != 0 {
-		return fmt.Errorf("syscall bundle: pid 1 exit status %d", st)
+	if st := m.Peek32(b.sym["EXITSTATUS_A"]); st != 0 {
+		return nil, fmt.Errorf("syscall bundle: pid 1 exit status %d", st)
 	}
-	return nil
+	if err := finishBundle(b, results); err != nil {
+		return nil, err
+	}
+	return b, nil
 }
 
 // build assembles a spec's program for the SKU and applies patches.
@@ -945,7 +868,7 @@ func calExpect(v *emu.Variant, sniffCtrl, seed, word uint32) uint32 {
 
 // --- C header emission ---
 
-func emitHeader(v *emu.Variant, lay layout, tests []*test, sched *schedBundle, shl *shellBundle, sys *sysBundle) string {
+func emitHeader(v *emu.Variant, lay layout, tests []*test, sched, shl, sys *kernBundle) string {
 	var b strings.Builder
 	p := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 
@@ -1071,10 +994,6 @@ func emitHeader(v *emu.Variant, lay layout, tests []*test, sched *schedBundle, s
 	p("};")
 	p("#define HIL_N_TESTS %d", len(tests))
 	p("")
-	p("/* Phase 5a scheduler bundle (prompts/012): kernel + two relocated")
-	p(" * process instances, cross-image pointers pre-patched, emulator-")
-	p(" * verified. The firmware loads all three, arms the injector chain,")
-	p(" * and starts process A. */")
 	dump := func(name string, raw []byte) {
 		p("static const uint8_t %s[] = {", name)
 		for i := 0; i < len(raw); i += 16 {
@@ -1087,59 +1006,46 @@ func emitHeader(v *emu.Variant, lay layout, tests []*test, sched *schedBundle, s
 		}
 		p("};")
 	}
-	dump("hil_sched_kernel_dmx", sched.kernel)
-	dump("hil_sched_proca_dmx", sched.procA)
-	dump("hil_sched_procb_dmx", sched.procB)
-	p("#define HIL_SCHED_ENTRY_A 0x%08Xu", sched.entryA)
-	p("#define HIL_SCHED_COUNTER_A 0x%08Xu", sched.counterA)
-	p("#define HIL_SCHED_COUNTER_B 0x%08Xu", sched.counterB)
-	p("#define HIL_SCHED_TICKS 0x%08Xu", sched.ticks)
-	p("#define HIL_SCHED_VEC_A 0x%08Xu", sched.vecA)
-	p("#define HIL_SCHED_VEC_B 0x%08Xu", sched.vecB)
-	p("#define HIL_SCHED_DISP_A 0x%08Xu", sched.dispA)
-	p("#define HIL_SCHED_DISP_B 0x%08Xu", sched.dispB)
-	p("#define HIL_SCHED_INJ1_CTRL 0x%08Xu", sched.inj1Ctrl)
-	p("#define HIL_SCHED_INJ2_CTRL 0x%08Xu", sched.inj2Ctrl)
+	// Phase 5d bundles share one emitted shape: the images plus the
+	// entry/vec/disp0/injCtrl/ticks quintet and per-bundle symbols.
+	emitBundle := func(prefix string, b *kernBundle) {
+		for i, im := range b.images {
+			dump(fmt.Sprintf("hil_%s_%s_dmx", strings.ToLower(prefix), b.names[i]), im)
+		}
+		up := strings.ToUpper(prefix)
+		p("#define HIL_%s_ENTRY 0x%08Xu", up, b.entry0)
+		p("#define HIL_%s_VEC 0x%08Xu", up, b.vec)
+		p("#define HIL_%s_DISP0 0x%08Xu", up, b.disp0)
+		p("#define HIL_%s_INJ_CTRL 0x%08Xu", up, b.inj)
+		p("#define HIL_%s_TICKS 0x%08Xu", up, b.ticks)
+		syms := make([]string, 0, len(b.sym))
+		for n := range b.sym {
+			syms = append(syms, n)
+		}
+		sort.Strings(syms)
+		for _, n := range syms {
+			p("#define HIL_%s_%s 0x%08Xu", up, n, b.sym[n])
+		}
+	}
+	p("/* Phase 5d scheduler bundle (prompts/012/015): kernel stubs + C")
+	p(" * kernel core + two relocated counter processes, fully pre-wired")
+	p(" * and emulator-verified. The firmware loads the images, starts")
+	p(" * slot 0 and arms the single one-shot tick injector (ch3). */")
+	emitBundle("sched", sched)
 	if shl != nil {
 		p("")
-		p("/* Phase 5b shell bundle (prompts/013): kernel + dma-sh (+libc) +")
-		p(" * counter process, pre-wired, emulator session verified. */")
+		p("/* Phase 5b/5d shell bundle (prompts/013): dma-sh as slot 0 +")
+		p(" * counter process, emulator session verified. */")
 		p("#define HIL_HAS_SHELL 1")
-		dump("hil_shell_kernel_dmx", shl.kernel)
-		dump("hil_shell_sh_dmx", shl.shell)
-		dump("hil_shell_procb_dmx", shl.procB)
-		p("#define HIL_SHELL_ENTRY 0x%08Xu", shl.entryShell)
-		p("#define HIL_SHELL_VEC_A 0x%08Xu", shl.vecA)
-		p("#define HIL_SHELL_VEC_B 0x%08Xu", shl.vecB)
-		p("#define HIL_SHELL_DISP_A 0x%08Xu", shl.dispShell)
-		p("#define HIL_SHELL_DISP_B 0x%08Xu", shl.dispB)
-		p("#define HIL_SHELL_INJ1_CTRL 0x%08Xu", shl.inj1Ctrl)
-		p("#define HIL_SHELL_INJ2_CTRL 0x%08Xu", shl.inj2Ctrl)
-		p("#define HIL_SHELL_TICKS 0x%08Xu", shl.ticks)
-		p("#define HIL_SHELL_COUNTER_B 0x%08Xu", shl.counterB)
+		emitBundle("shell", shl)
 	}
 	if sys != nil {
 		p("")
-		p("/* Phase 5c syscall bundle (xv6/PORT.md): kernel + C kernel core")
-		p(" * (xv6/dma/ksyscall.c) + two instances of the xv6 syscall")
-		p(" * exerciser using the call-shaped usys stubs. pid 1's SYS_write")
-		p(" * output appears directly on the UART. */")
+		p("/* Phase 5c/5d syscall bundle (xv6/PORT.md): two instances of")
+		p(" * the xv6 syscall exerciser on the proc-table kernel. pid 1's")
+		p(" * SYS_write output appears directly on the UART. */")
 		p("#define HIL_HAS_SYSCALL 1")
-		dump("hil_sys_kernel_dmx", sys.kernel)
-		dump("hil_sys_kernc_dmx", sys.kernC)
-		dump("hil_sys_proca_dmx", sys.procA)
-		dump("hil_sys_procb_dmx", sys.procB)
-		p("#define HIL_SYS_ENTRY_A 0x%08Xu", sys.entryA)
-		p("#define HIL_SYS_VEC_A 0x%08Xu", sys.vecA)
-		p("#define HIL_SYS_VEC_B 0x%08Xu", sys.vecB)
-		p("#define HIL_SYS_DISP_A 0x%08Xu", sys.dispA)
-		p("#define HIL_SYS_DISP_B 0x%08Xu", sys.dispB)
-		p("#define HIL_SYS_INJ1_CTRL 0x%08Xu", sys.inj1Ctrl)
-		p("#define HIL_SYS_INJ2_CTRL 0x%08Xu", sys.inj2Ctrl)
-		p("#define HIL_SYS_TICKS 0x%08Xu", sys.ticks)
-		p("#define HIL_SYS_BGCOUNT_B 0x%08Xu", sys.bgcountB)
-		p("#define HIL_SYS_DONETICK_A 0x%08Xu", sys.donetickA)
-		p("#define HIL_SYS_EXITSTATUS_A 0x%08Xu", sys.exitStatusA)
+		emitBundle("sys", sys)
 	}
 	p("")
 	p("#endif /* DMX_HIL_IMAGES_H */")
@@ -1222,8 +1128,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("sched bundle: %w", err)
 	}
-	var shl *shellBundle
-	var sys *sysBundle
+	var shl, sys *kernBundle
 	if v.Name == "rp2350" { // needs the wide layout
 		if shl, err = buildShell(v, lay); err != nil {
 			return fmt.Errorf("shell bundle: %w", err)

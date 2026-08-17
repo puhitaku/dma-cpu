@@ -28,7 +28,8 @@ every DMA-specific change lives in commits after that one, so
 |---|---|
 | string.c | KEEP (32-bit clean; first file through the pipeline) |
 | fs.c, log.c, bio.c, file.c, pipe.c | KEEP/ADAPT (portable; needs a block device — planned: flash region or RAM disk via `xv6/dma/`) |
-| proc.c, syscall.c, sysproc.c, sysfile.c | ADAPT (proc table & dispatch survive; context switch becomes the one-word irqresume swap; syscalls via self-patched dispatch) |
+| proc.c, syscall.c, sysproc.c | REPLACED by `xv6/dma/kproc.c` (upstream's are built around kernel stacks/swtch/paging; the shapes survive — struct proc, the state enum, sleep/wakeup, exit/wait, round-robin scheduler(), upstream syscall numbers) |
+| sysfile.c | ADAPT (with the file layer) |
 | console.c, printf.c | ADAPT (backed by the `__dma_uart_*` path) |
 | spinlock.c, sleeplock.c | ADAPT (single hart: no-op locks with intact API) |
 | exec.c | ADAPT (loads DMX images via Tier-2 relocation instead of ELF+paging) |
@@ -46,10 +47,13 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
   on the machine (self-checking allocator exercise,
   `TestXv6Malloc`); `xv6/dma/sbrk.c` provides the heap.
 - [x] Syscall mechanism: call-shaped kernel entry (`xv6/dma/usys.c`
-  stubs → per-process vectors in kernel.dasm → C kernel core
-  `xv6/dma/ksyscall.c`). write/getpid/uptime/pause/exit live under
-  preemption (`TestXv6Syscalls`, prompts/014). Upstream
-  `kernel/syscall.h` numbering.
-- [ ] proc.c adaptation onto the Phase 5a scheduler.
+  stubs → kernel.dasm vectors → C kernel core). write/getpid/uptime/
+  pause/exit live under preemption (`TestXv6Syscalls`, prompts/014).
+  Upstream `kernel/syscall.h` numbering.
+- [x] proc.c adaptation (`xv6/dma/kproc.c`, prompts/015): N-slot proc
+  table with the upstream state enum, sleep/wakeup channels, real
+  pause(n)/exit/wait with ZOMBIE reaping and deposit-at-exit, the
+  scheduler in C, kernel.dasm reduced to two entry stubs, a single
+  one-shot tick injector. Silicon-validated.
 - [ ] Console (console.c) on `__dma_uart_*`; sh.c as the shell.
 - [ ] Block device + fs.c stack; mkfs image in flash.

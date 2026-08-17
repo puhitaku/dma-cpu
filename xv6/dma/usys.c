@@ -53,16 +53,24 @@ uptime(void)
   return dma_syscall(SYS_uptime, 0, 0, 0);
 }
 
-/* Interim semantics (real proc states arrive with the proc.c port):
- * pause(n) yields the processor once regardless of n. */
+/* Sleeps n ticks (upstream sys_sleep semantics; n=0 yields). */
 int
 pause(int n)
 {
   return dma_syscall(SYS_pause, (uint)n, 0, 0);
 }
 
-/* Interim: an exited process is switched away from but stays in the
- * round-robin, parked in a safepointed spin. */
+/* Blocks until a child exits; the exiting child deposits its pid (the
+ * return value) and status into this process's mailbox (kproc.c). */
+int
+wait(int *status)
+{
+  return dma_syscall(SYS_wait, (uint)status, 0, 0);
+}
+
+/* Never returns: the kernel marks the process ZOMBIE (or reaps it
+ * straight into a waiting parent) and never schedules it again. The
+ * trailing loop is unreachable-by-construction safety. */
 void
 exit(int status)
 {

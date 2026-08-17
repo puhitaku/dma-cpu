@@ -67,6 +67,7 @@ func TestShellSystem(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			kernC := buildKernelC(t, v, 0x20038000, 0x2003C000)
 			shell, err := dmaasm.Assemble(shellDasm, dmaasm.Options{
 				Variant: v, TextBase: 0x20008000, DataBase: 0x20028000})
 			if err != nil {
@@ -79,8 +80,10 @@ func TestShellSystem(t *testing.T) {
 			}
 
 			m := emu.NewMachine(v)
-			if _, err := kern.Image.Load(m, nil); err != nil {
-				t.Fatal(err)
+			for _, r := range []*dmaasm.Result{kern, kernC} {
+				if _, err := r.Image.Load(m, nil); err != nil {
+					t.Fatal(err)
+				}
 			}
 			entryA, err := shell.Image.Load(m, nil)
 			if err != nil {
@@ -98,33 +101,15 @@ func TestShellSystem(t *testing.T) {
 				}
 				return a
 			}
-			// Kernel cross-image wiring (shell plays the A role).
-			m.Poke32(sym(kern, "pAdisp"), sym(shell, "dispatch"))
-			m.Poke32(sym(kern, "pBdisp"), sym(procB, "dispatch"))
-			m.Poke32(sym(kern, "pAresume"), sym(shell, "irqresume"))
-			m.Poke32(sym(kern, "pBresume"), sym(procB, "irqresume"))
-			m.Poke32(sym(kern, "thunkA"), sym(shell, "crtthunk"))
-			m.Poke32(sym(kern, "thunkB"), sym(procB, "crtthunk"))
-			m.Poke32(sym(kern, "savedB"), entryB)
-			// Shell stat pointers.
-			m.Poke32(sym(shell, "g_stat_ticks"), sym(kern, "ticks"))
+			// Phase 5d proc-table wiring: shell is slot 0 (always
+			// runnable — it never syscalls), counter is slot 1.
+			wireKernel(t, m, v, kern, kernC, []kproc{
+				{shell, entryA, 1, 0, false},
+				{procB, entryB, 2, 0, false},
+			})
+			// Shell stat pointers (ticks live in the C kernel now).
+			m.Poke32(sym(shell, "g_stat_ticks"), sym(kernC, "g_ticks"))
 			m.Poke32(sym(shell, "g_stat_counter"), sym(procB, "g_counter"))
-
-			// Injector chain + tick timer (as in TestPreemptiveScheduler).
-			const inj1, inj2 = 3, 4
-			m.Poke32(v.TimerAddr(1), 1<<16|15000)
-			m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1ReadAddr), sym(kern, "vecB"))
-			m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1WriteAddr), sym(procB, "dispatch"))
-			m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl2TransCount), 1)
-			m.Poke32(emu.ChanRegAddr(inj2, emu.OffAl1Ctrl),
-				emu.CtrlEN|emu.CtrlHighPriority|emu.CtrlSize32|
-					v.CtrlTreq(emu.TreqPermanent)|v.CtrlChainTo(inj2)|v.CtrlIRQQuiet)
-			m.Poke32(emu.ChanRegAddr(inj1, emu.OffAl1ReadAddr), sym(kern, "vecA"))
-			m.Poke32(emu.ChanRegAddr(inj1, emu.OffAl1WriteAddr), sym(shell, "dispatch"))
-			m.Poke32(emu.ChanRegAddr(inj1, emu.OffTransCount), 1)
-			m.Poke32(emu.ChanRegAddr(inj1, emu.OffCtrlTrig),
-				emu.CtrlEN|emu.CtrlHighPriority|emu.CtrlSize32|
-					v.CtrlTreq(emu.TreqTimer1)|v.CtrlChainTo(inj2)|v.CtrlIRQQuiet)
 
 			if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
 				Fetch: 0, Exec: 1, Fix: 2, Entry: entryA, Scratch: 0x2003FF00,

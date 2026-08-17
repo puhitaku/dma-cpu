@@ -1,133 +1,67 @@
-; kernel.dasm — the Phase 5a proto-kernel: a timer-preemptive
-; round-robin scheduler for two processes (prompts/012).
+; kernel.dasm — the Phase 5d proto-kernel entry stubs (prompts/015).
 ;
-; Delivery is approach B (doc/abi.md): a two-injector chain patches BOTH
-; processes' dispatch words with their sched_from_* vector on every
-; pacing-timer tick; whichever process is running detours here at its
-; next safepoint. Context switch is one word: at a safepoint every piece
-; of shared scratch (at/at2, sc*, millicode and runtime words, %sniff)
-; is dead by construction, and each process instance owns a private
-; register bank and frame (same program, relocated twice), so only the
-; resume address needs saving.
+; All scheduling POLICY lives in compiled C now (xv6/dma/kproc.c: the
+; proc table, states, sleep/wakeup, exit/wait, the round-robin pick).
+; This file is only the MECHANISM: two kernel entries and the
+; indirection words the C side maintains to say who is current.
 ;
-; The loader patches the pointer words below with addresses from the two
-; process images, and arms the injectors:
-;   inj1 (ABI ch3): TREQ = pacing timer, vecA -> *pAdisp, chain -> inj2
-;   inj2 (ch4):     permanent,           vecB -> *pBdisp, no chain
-; The scheduler's EOI restores both dispatches and re-arms inj1.
+; Tick delivery is approach B (doc/abi.md) with a single injector
+; (ABI ch3, timer TREQ, one-shot): it patches the RUNNING process's
+; dispatch word with vecSched; the process detours here at its next
+; safepoint. The C scheduler retargets the injector's WRITE_ADDR at
+; every context switch and re-arms it at kernel exit only (single-fire
+; discipline; fires that land while the kernel runs are absorbed by a
+; kernel-owned word — see kproc.c).
+;
+; A syscall is a voluntary CALL (prompts/014): the process's usys stub
+; indirect-calls sys_entry, leaving its return address in its own lr.
+;
+; Loader-patched: pKlr (&kernelC.lr), ktickv (&f_dma_ktick), ksysv
+; (&f_dma_ksyscall), and the cur* seeds for the first process.
+; C-maintained at every switch: pCurDisp, curThunk, pCurResume,
+; nextResume.
 
 .data
 .regs
-curr:     .word 0          ; 0: A running, 1: B running
-savedA:   .word 0          ; resume address of the process not running
-savedB:   .word 0          ; (loader seeds savedB with B's entry)
-ticks:    .word 0
-; Loader-patched cross-image pointers:
-pAdisp:   .word 0          ; &A.dispatch
-pBdisp:   .word 0
-pAresume: .word 0          ; &A.irqresume
-pBresume: .word 0
-thunkA:   .word 0          ; A's resume-thunk address (the EOI value)
-thunkB:   .word 0
-; Injector source words (the values the injectors write over dispatch):
-vecA:     .word sched_from_a
-vecB:     .word sched_from_b
-; --- Syscalls (Phase 5c, xv6/PORT.md) ---
-; A syscall is a voluntary kernel entry, so it is a CALL, not a trap:
-; the process writes its mailbox (xv6/dma/usys.c) and indirect-calls
-; its per-process vector sys_from_<self>, which leaves the caller's
-; return address in the caller's lr. The stub forwards to the C kernel
-; core (xv6/dma/ksyscall.c) with the caller id, then returns through
-; the caller's lr — or, when the core sets wsw (yield/exit), saves
-; that lr as the resume point and switches away without counting a
-; tick or re-arming the timer. The dispatch words are never touched:
-; pending tick patches deliver at the caller's next safepoint.
-kentry:   .word 0           ; loader-patched: &f_dma_ksyscall (kernel-C image)
-pKr0:     .word 0           ; loader-patched: &kernel-C r0
-pKlr:     .word 0           ; loader-patched: &kernel-C lr
-pAlr:     .word 0           ; loader-patched: &A.lr (syscall return address)
-pBlr:     .word 0
-wsw:      .word 0           ; kernel-C writes 0 (resume) or 1 (switch) here
-retA:     .word sys_ret_a   ; return-trampoline values for kernel-C's lr
-retB:     .word sys_ret_b
+pCurDisp:   .word 0        ; &curr.dispatch (EOI target)
+curThunk:   .word 0        ; curr's resume-thunk address (EOI value)
+pCurResume: .word 0        ; &curr.irqresume (safepoint resume word)
+curResume:  .word 0        ; saved *pCurResume (read by the C tick handler)
+nextResume: .word 0        ; where to jump on kernel exit (written by C)
+pKlr:       .word 0        ; &kernel-C lr
+ktickv:     .word 0        ; &f_dma_ktick
+ksysv:      .word 0        ; &f_dma_ksyscall
+retT:       .word sched_ret
+retS:       .word sys_ret
+vecSched:   .word sched_entry  ; injector READ source
 
 .text
-.entry sched_from_a
+.entry sched_entry
 
-sched_from_a:              ; tick landed while A was running
-    ; EOI: both dispatches back to their thunks
-    move pAdisp, eoiA1.write
-eoiA1:
-    move thunkA, @0
-    move pBdisp, eoiA2.write
-eoiA2:
-    move thunkB, @0
-    ; save A's resume point
-    move pAresume, ldA.read
-ldA:
-    move @0, savedA
-    add ticks, $1, ticks
-    move $1, curr
-    ; re-arm injector 1 (ch3 AL1_TRANS_COUNT_TRIG)
-    move $1, @0x500000DC
-    jumpr savedB           ; resume B
+sched_entry:               ; tick delivered: curr's dispatch was patched
+    ; EOI: restore curr's dispatch to its thunk
+    move pCurDisp, se1.write
+se1:
+    move curThunk, @0
+    ; save curr's resume point for the C tick handler
+    move pCurResume, se2.read
+se2:
+    move @0, curResume
+    ; call the C tick handler; its return lands at sched_ret
+    move pKlr, se3.write
+se3:
+    move retT, @0
+    jumpr ktickv
+sched_ret:
+    jumpr nextResume
 
-sched_from_b:              ; tick landed while B was running
-    move pAdisp, eoiB1.write
-eoiB1:
-    move thunkA, @0
-    move pBdisp, eoiB2.write
-eoiB2:
-    move thunkB, @0
-    move pBresume, ldB.read
-ldB:
-    move @0, savedB
-    add ticks, $1, ticks
-    move $0, curr
-    move $1, @0x500000DC
-    jumpr savedA           ; resume A
+sys_entry:                 ; the running process called its syscall vector
+    move pKlr, sy1.write
+sy1:
+    move retS, @0
+    jumpr ksysv
+sys_ret:
+    jumpr nextResume
 
-sys_from_a:                ; A called its syscall vector
-    ; call the C kernel core: r0 = caller id, lr = our trampoline
-    move pKr0, sr0A.write
-sr0A:
-    move $0, @0
-    move pKlr, slrA.write
-slrA:
-    move retA, @0
-    jumpr kentry
-sys_ret_a:
-    jbool wsw, sres_a, syld_a
-sres_a:                    ; return to the caller through its lr
-    move pAlr, srsA.read
-srsA:
-    move @0, at
-    jumpr at
-syld_a:                    ; switch away (yield/exit); no tick, no re-arm
-    move pAlr, sryA.read
-sryA:
-    move @0, savedA
-    move $1, curr
-    jumpr savedB
-
-sys_from_b:                ; B called its syscall vector
-    move pKr0, sr0B.write
-sr0B:
-    move $1, @0
-    move pKlr, slrB.write
-slrB:
-    move retB, @0
-    jumpr kentry
-sys_ret_b:
-    jbool wsw, sres_b, syld_b
-sres_b:
-    move pBlr, srsB.read
-srsB:
-    move @0, at
-    jumpr at
-syld_b:
-    move pBlr, sryB.read
-sryB:
-    move @0, savedB
-    move $0, curr
-    jumpr savedA
+khalt:                     ; C parks here when no process is runnable
+    halt

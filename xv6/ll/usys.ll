@@ -65,6 +65,21 @@ define dso_local i32 @pause(i32 noundef %0) local_unnamed_addr #0 {
   ret i32 %4
 }
 
+; Function Attrs: minsize nounwind optsize
+define dso_local i32 @wait(ptr noundef %0) local_unnamed_addr #0 {
+  %2 = ptrtoint ptr %0 to i32
+  store volatile i32 3, ptr @__dma_sysmail, align 4, !tbaa !3
+  store volatile i32 %2, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 4), align 4, !tbaa !8
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 8), align 4, !tbaa !9
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 12), align 4, !tbaa !10
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 20), align 4, !tbaa !11
+  %3 = load i32, ptr @__dma_syscall_entry, align 4, !tbaa !12
+  %4 = inttoptr i32 %3 to ptr
+  tail call void %4() #2
+  %5 = load volatile i32, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 16), align 4, !tbaa !13
+  ret i32 %5
+}
+
 ; Function Attrs: minsize noreturn nounwind optsize
 define dso_local void @exit(i32 noundef %0) local_unnamed_addr #1 {
   store volatile i32 2, ptr @__dma_sysmail, align 4, !tbaa !3

@@ -240,33 +240,32 @@ static inline uint32_t chreg(int ch, uint32_t off)
  * every pacing-timer tick, and the running process detours into the
  * scheduler at its next safepoint. The images arrive pre-wired from
  * dmxgen; this only loads, arms, starts A, and samples the counters. */
+static void arm_tick(uint32_t vec, uint32_t disp0, uint32_t ctrl)
+{
+    reg_wr(HIL_TIMER0_ADDR + 4, (1u << 16) | 15000u); /* TIMER1 tick */
+    reg_wr(chreg(3, CH_AL1_READ_ADDR), vec);
+    reg_wr(chreg(3, CH_AL1_WRITE_ADDR), disp0);
+    reg_wr(chreg(3, CH_TRANS_COUNT), 1);
+    reg_wr(chreg(3, CH_CTRL_TRIG), ctrl);
+}
+
 static void exp_sched(void)
 {
     machine_reset();
-    uint32_t entry_k, entry_a, entry_b;
-    if (dmx_load(hil_sched_kernel_dmx, sizeof hil_sched_kernel_dmx, NULL, &entry_k) != DMX_OK ||
-        dmx_load(hil_sched_proca_dmx, sizeof hil_sched_proca_dmx, NULL, &entry_a) != DMX_OK ||
-        dmx_load(hil_sched_procb_dmx, sizeof hil_sched_procb_dmx, NULL, &entry_b) != DMX_OK) {
+    uint32_t e;
+    if (dmx_load(hil_sched_kernel_dmx, sizeof hil_sched_kernel_dmx, NULL, &e) != DMX_OK ||
+        dmx_load(hil_sched_kernc_dmx, sizeof hil_sched_kernc_dmx, NULL, &e) != DMX_OK ||
+        dmx_load(hil_sched_proca_dmx, sizeof hil_sched_proca_dmx, NULL, &e) != DMX_OK ||
+        dmx_load(hil_sched_procb_dmx, sizeof hil_sched_procb_dmx, NULL, &e) != DMX_OK) {
         printf("EXP sched: FAIL load\n");
         return;
     }
-    reg_wr(HIL_TIMER0_ADDR + 4, (1u << 16) | 15000u); /* TIMER1 tick */
-    /* inj2 (ch4): armed, waits for inj1's chain. */
-    reg_wr(chreg(4, CH_AL1_READ_ADDR), HIL_SCHED_VEC_B);
-    reg_wr(chreg(4, CH_AL1_WRITE_ADDR), HIL_SCHED_DISP_B);
-    reg_wr(chreg(4, CH_AL2_TRANS_COUNT), 1);
-    reg_wr(chreg(4, CH_AL1_CTRL), HIL_SCHED_INJ2_CTRL);
-    /* inj1 (ch3): timer-paced, chains to inj2. */
-    reg_wr(chreg(3, CH_AL1_READ_ADDR), HIL_SCHED_VEC_A);
-    reg_wr(chreg(3, CH_AL1_WRITE_ADDR), HIL_SCHED_DISP_A);
-    reg_wr(chreg(3, CH_TRANS_COUNT), 1);
-    reg_wr(chreg(3, CH_CTRL_TRIG), HIL_SCHED_INJ1_CTRL);
-
     dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 0};
-    if (dmx_start(&cfg, HIL_SCHED_ENTRY_A) != DMX_OK) {
+    if (dmx_start(&cfg, HIL_SCHED_ENTRY) != DMX_OK) {
         printf("EXP sched: FAIL start\n");
         return;
     }
+    arm_tick(HIL_SCHED_VEC, HIL_SCHED_DISP0, HIL_SCHED_INJ_CTRL);
     sleep_ms(20);
     uint32_t a1 = reg_rd(HIL_SCHED_COUNTER_A), b1 = reg_rd(HIL_SCHED_COUNTER_B);
     uint32_t t1 = reg_rd(HIL_SCHED_TICKS);
@@ -649,19 +648,11 @@ static void exp_syscall(void)
     }
     printf("EXP syscall: start (pid 1 speaks via SYS_write)\n");
     dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 0};
-    if (dmx_start(&cfg, HIL_SYS_ENTRY_A) != DMX_OK) {
+    if (dmx_start(&cfg, HIL_SYS_ENTRY) != DMX_OK) {
         printf("EXP syscall: FAIL start\n");
         return;
     }
-    reg_wr(HIL_TIMER0_ADDR + 4, (1u << 16) | 15000u); /* TIMER1 tick */
-    reg_wr(chreg(4, CH_AL1_READ_ADDR), HIL_SYS_VEC_B);
-    reg_wr(chreg(4, CH_AL1_WRITE_ADDR), HIL_SYS_DISP_B);
-    reg_wr(chreg(4, CH_AL2_TRANS_COUNT), 1);
-    reg_wr(chreg(4, CH_AL1_CTRL), HIL_SYS_INJ2_CTRL);
-    reg_wr(chreg(3, CH_AL1_READ_ADDR), HIL_SYS_VEC_A);
-    reg_wr(chreg(3, CH_AL1_WRITE_ADDR), HIL_SYS_DISP_A);
-    reg_wr(chreg(3, CH_TRANS_COUNT), 1);
-    reg_wr(chreg(3, CH_CTRL_TRIG), HIL_SYS_INJ1_CTRL);
+    arm_tick(HIL_SYS_VEC, HIL_SYS_DISP0, HIL_SYS_INJ_CTRL);
 
     /* Wait for pid 1's exit (donetick goes nonzero right before it). */
     uint32_t waited = 0;
@@ -695,6 +686,7 @@ static void shell_start(void)
     machine_reset();
     uint32_t e;
     if (dmx_load(hil_shell_kernel_dmx, sizeof hil_shell_kernel_dmx, NULL, &e) != DMX_OK ||
+        dmx_load(hil_shell_kernc_dmx, sizeof hil_shell_kernc_dmx, NULL, &e) != DMX_OK ||
         dmx_load(hil_shell_sh_dmx, sizeof hil_shell_sh_dmx, NULL, &e) != DMX_OK ||
         dmx_load(hil_shell_procb_dmx, sizeof hil_shell_procb_dmx, NULL, &e) != DMX_OK) {
         printf("SHELL: FAIL load\n");
@@ -713,15 +705,7 @@ static void shell_start(void)
         printf("SHELL: FAIL start\n");
         return;
     }
-    reg_wr(HIL_TIMER0_ADDR + 4, (1u << 16) | 15000u); /* TIMER1 tick */
-    reg_wr(chreg(4, CH_AL1_READ_ADDR), HIL_SHELL_VEC_B);
-    reg_wr(chreg(4, CH_AL1_WRITE_ADDR), HIL_SHELL_DISP_B);
-    reg_wr(chreg(4, CH_AL2_TRANS_COUNT), 1);
-    reg_wr(chreg(4, CH_AL1_CTRL), HIL_SHELL_INJ2_CTRL);
-    reg_wr(chreg(3, CH_AL1_READ_ADDR), HIL_SHELL_VEC_A);
-    reg_wr(chreg(3, CH_AL1_WRITE_ADDR), HIL_SHELL_DISP_A);
-    reg_wr(chreg(3, CH_TRANS_COUNT), 1);
-    reg_wr(chreg(3, CH_CTRL_TRIG), HIL_SHELL_INJ1_CTRL);
+    arm_tick(HIL_SHELL_VEC, HIL_SHELL_DISP0, HIL_SHELL_INJ_CTRL);
     for (;;) {
         tight_loop_contents();
     }
