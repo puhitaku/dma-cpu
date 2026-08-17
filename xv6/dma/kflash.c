@@ -61,6 +61,7 @@ struct flashreq {
   uint seq, ack;
 };
 uint kflash_arm; /* loader-patched: &flashreq in SRAM, or 0 for QMI */
+uint kflash_phase; /* diagnostic: fine-grained progress marker */
 
 static uint fs_gen; /* generation we last saw/wrote in the slot */
 
@@ -124,6 +125,66 @@ qmi_end(void)
 #define PAD_PDE (1u << 2)
 #define QMI_M0_RFMT 0x400D0010u
 #define RFMT_PREFIX_LEN (1u << 12)
+#define TIMER_RAWL 0x400B0028u /* free-running us counter (readable) */
+
+/* Machine-only flash writing is BLIND: the RP2350 DMA engine cannot
+ * READ the QMI registers (a bare read of DIRECT_CSR stalls the DMA
+ * channel — characterized in prompts/023), so the driver never polls
+ * status or reads back. It issues command/address/data purely through
+ * DIRECT_TX writes with NOPUSH (nothing enters the RX FIFO), paces
+ * itself with the microsecond timer (a normal peripheral the machine
+ * CAN read), and waits fixed times for erase/program to finish
+ * instead of polling WIP. Verification is the caller's job, via XIP
+ * after the QMI leaves direct mode. */
+#define CSR_ASSERT (CSR_EN | CSR_CS0N | (4u << 22)) /* clkdiv=4 */
+
+static void
+flash_delay_us(uint us)
+{
+  uint start = W32(TIMER_RAWL);
+  while (W32(TIMER_RAWL) - start < us)
+    ;
+}
+
+static void
+qmi_begin(void)
+{
+  W32(QMI_DIRECT_CSR) = CSR_ASSERT;
+}
+
+/* Fixed SRAM-only spin — NO peripheral reads. While DIRECT_CSR.EN is
+ * set the DMA engine's peripheral reads all return 0 (the timer
+ * included; characterized in prompts/023), so pacing inside a
+ * transaction must not touch the timer. */
+static void
+spin(uint n)
+{
+  for (volatile uint i = 0; i < n; i++)
+    ;
+}
+
+static void
+qmi_tx(uint b)
+{
+  W32(QMI_DIRECT_TX) = (b & 0xFFu) | TX_NOPUSH;
+  spin(40); /* a machine write is already slow; the FIFO never fills */
+}
+
+static void
+qmi_finish(void)
+{
+  spin(200);               /* drain the last byte (CS still asserted) */
+  W32(QMI_DIRECT_CSR) = 0; /* deassert CS, leave direct mode */
+  spin(40);                /* let the QMI settle before timer reads */
+}
+
+static void
+bwren(void)
+{
+  qmi_begin();
+  qmi_tx(0x06);
+  qmi_finish();
+}
 
 static void
 qspi_clocks(int n)
@@ -146,28 +207,29 @@ qspi_sd_pulls(uint pull)
 static void
 flash_exit_xip(void)
 {
+  kflash_phase = 10;
   uint sd0pad = W32(PADQ_SD0), sd1pad = W32(PADQ_SD1);
   uint sd2pad = W32(PADQ_SD2), sd3pad = W32(PADQ_SD3);
-  /* Float the data lines (pulled, not driven). */
+  kflash_phase = 11; /* PADQ reads returned */
   W32(IOQ_CTRL_SD0) = OEOVER_DISABLE;
   W32(IOQ_CTRL_SD1) = OEOVER_DISABLE;
   W32(IOQ_CTRL_SD2) = OEOVER_DISABLE;
   W32(IOQ_CTRL_SD3) = OEOVER_DISABLE;
-  /* 1: CS high, IOs pulled low, 32 clocks. */
+  kflash_phase = 12; /* IO_QSPI SD overrides written */
   W32(IOQ_CTRL_SS) = OUTOVER_HIGH | OEOVER_ENABLE;
   qspi_sd_pulls(PAD_PDE);
+  kflash_phase = 13; /* pads pulled low, about to clock */
   qspi_clocks(32);
-  /* 2: CS low, IOs pulled high, 32 clocks. */
+  kflash_phase = 14; /* first 32 clocks done */
   W32(IOQ_CTRL_SS) = OUTOVER_LOW | OEOVER_ENABLE;
   qspi_sd_pulls(PAD_PUE);
   qspi_clocks(32);
-  /* 3: CS high. */
+  kflash_phase = 15;
   W32(IOQ_CTRL_SS) = OUTOVER_HIGH | OEOVER_ENABLE;
-  /* 4: CS low, SD0 driven high, 16 clocks (FFh FFh). */
   W32(IOQ_CTRL_SS) = OUTOVER_LOW | OEOVER_ENABLE;
   W32(IOQ_CTRL_SD0) = OUTOVER_HIGH | OEOVER_ENABLE;
   qspi_clocks(16);
-  /* 5: CS high; hand the pins back to the QMI. */
+  kflash_phase = 16;
   W32(IOQ_CTRL_SS) = 0;
   W32(IOQ_CTRL_SCLK) = 0;
   W32(IOQ_CTRL_SD0) = 0;
@@ -178,8 +240,9 @@ flash_exit_xip(void)
   W32(PADQ_SD1) = sd1pad;
   W32(PADQ_SD2) = sd2pad;
   W32(PADQ_SD3) = sd3pad;
-  /* XIP insurance: re-send the command prefix on every burst. */
-  W32(QMI_M0_RFMT) = W32(QMI_M0_RFMT) | RFMT_PREFIX_LEN;
+  kflash_phase = 18; /* dance complete (RFMT insurance dropped — its
+                      * read-modify-write stalled the DMA read of the
+                      * QMI register; prompts/023 diagnostic) */
 }
 
 static void
@@ -222,6 +285,9 @@ flash_erase4k(uint off)
     arm_request(1, off, 0);
     return;
   }
+  /* Read-based reference driver (emulator NOR model; on silicon the
+   * ARM executor is always selected — the machine cannot poll WIP,
+   * prompts/023). */
   flash_wren();
   qmi_cs(1);
   qmi_xfer(0x20);
@@ -296,60 +362,25 @@ kflash_init(void)
 void
 kflash_cal(volatile uint *r)
 {
-  const uint scratch = 0x130000u;
-  r[0] = 1;
-  flash_exit_xip();
-  r[0] = 2;
-  qmi_cs(1);
-  qmi_xfer(0x9F);
-  r[1] = qmi_xfer(0) << 16 | qmi_xfer(0) << 8 | qmi_xfer(0);
-  qmi_end();
-  r[0] = 3;
-  qmi_cs(1);
-  qmi_xfer(0x05);
-  r[2] = qmi_xfer(0);
-  qmi_end();
+  /* The definitive characterization (prompts/023) of why the DMA
+   * machine cannot autonomously write RP2350 flash. All three probes
+   * are reads the machine performs itself:
+   *   r[9]  timer read, normal state           -> works
+   *   r[10] timer read while DIRECT_CSR.EN=1    -> 0 (frozen)
+   *   r[11] timer read after EN cleared + spin  -> still 0 (no recovery)
+   * Writes work throughout; the pad-bit-banged exit-XIP dance
+   * (flash_exit_xip) completes. But entering QMI direct mode — the
+   * only way to issue a flash command — permanently freezes the
+   * machine's peripheral reads, so it can neither poll status, time
+   * its own delays, nor verify. Only the ARM executor (SDK XIP-safe
+   * routines) can restore the bus. */
+  r[9] = W32(TIMER_RAWL);
+  W32(QMI_DIRECT_CSR) = CSR_ASSERT;
+  r[10] = W32(TIMER_RAWL);
+  W32(QMI_DIRECT_CSR) = 0;
+  spin(1000);
+  r[11] = W32(TIMER_RAWL);
   r[0] = 4;
-  flash_wren();
-  qmi_cs(1);
-  qmi_xfer(0x05);
-  r[3] = qmi_xfer(0);
-  qmi_end();
-  r[0] = 5;
-  uint rd;
-  qmi_cs(1);
-  qmi_xfer(0x03);
-  qmi_xfer(scratch >> 16);
-  qmi_xfer(scratch >> 8);
-  qmi_xfer(scratch);
-  rd = qmi_xfer(0) | qmi_xfer(0) << 8 | qmi_xfer(0) << 16 | qmi_xfer(0) << 24;
-  qmi_end();
-  r[4] = rd;
-  r[0] = 6;
-  flash_erase4k(scratch);
-  qmi_cs(1);
-  qmi_xfer(0x03);
-  qmi_xfer(scratch >> 16);
-  qmi_xfer(scratch >> 8);
-  qmi_xfer(scratch);
-  rd = qmi_xfer(0) | qmi_xfer(0) << 8 | qmi_xfer(0) << 16 | qmi_xfer(0) << 24;
-  qmi_end();
-  r[5] = rd;
-  r[0] = 7;
-  uchar page[FLASH_PAGE];
-  for (uint i = 0; i < FLASH_PAGE; i++)
-    page[i] = (uchar)(0xC0 + i);
-  flash_prog_page(scratch, page);
-  qmi_cs(1);
-  qmi_xfer(0x03);
-  qmi_xfer(scratch >> 16);
-  qmi_xfer(scratch >> 8);
-  qmi_xfer(scratch);
-  rd = qmi_xfer(0) | qmi_xfer(0) << 8 | qmi_xfer(0) << 16 | qmi_xfer(0) << 24;
-  qmi_end();
-  r[6] = rd;
-  r[0] = 8;
-  r[7] = W32(0x10000000u + scratch); /* XIP must still work */
   r[8] = 1;
 }
 

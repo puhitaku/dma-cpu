@@ -37,6 +37,12 @@ type flashState struct {
 }
 
 func (m *Machine) flashRead(addr uint32) (uint32, bool) {
+	// TIMER0 raw-low: a monotonic microsecond counter on silicon. The
+	// model returns a scaled cycle count so the kernel's timer-based
+	// flash delays terminate quickly off-silicon (256 "us" per cycle).
+	if addr == 0x400B0028 {
+		return uint32(m.Cycle << 16), true
+	}
 	switch addr {
 	case QMIBase + qmiDirectCSR:
 		v := m.fl.csr | qmiCSRTxEmpty

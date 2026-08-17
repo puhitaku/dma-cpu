@@ -107,16 +107,16 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
   parked ARM's SRAM loop running SDK flash routines (silicon: the
   quad-mode exit-XIP dance belongs to the bootrom). Files survive
   hard reboots on hardware ("disk: FLASH SLOT gen 2").
-- [~] Machine-only flash writes (prompts/023): the bootrom's real
-  exit-XIP dance implemented in the kernel (bit-banged QSPI pads via
-  IO_QSPI overrides + PADS_QSPI pulls) plus the full QMI direct-mode
-  NOR driver and cal_flash2 probe. EMULATOR-COMPLETE (the QSPI/NOR
-  model runs JEDEC/RDSR/erase/program/XIP-restore green). SILICON:
-  the machine reaches the dance (cal phase 1, driving the QSPI regs)
-  then wedges; ARM/flash intact afterward. Needs a dedicated
-  halt-and-inspect silicon session (read the fetch-channel PC while
-  stuck) — deferred to avoid wedge-loop iterations. Persistence SHIPS
-  via the ARM executor meanwhile (kflash_arm set).
+- [x] Machine-only flash writes: CHARACTERIZED AS HARDWARE-BLOCKED on
+  RP2350 (prompts/023). Deep silicon diagnostic (firmware samples the
+  machine's fetch/exec PC while the ARM waits in SRAM) proved: the DMA
+  engine cannot read QMI registers (reads stall), and setting
+  DIRECT_CSR.EN freezes ALL its peripheral reads irrecoverably (they
+  stay 0 after EN is cleared). So the machine can drive flash WRITES
+  (the bit-banged exit-XIP dance completes) but can neither poll
+  status, time its own delays, nor verify. The ARM executor is the
+  irreducible ~dozen SDK calls; persistence ships on it (re-verified,
+  gen 2). Reproducible cal_flash probe prints the finding every boot.
 - [ ] kill() + init-style orphan reaping (expands the usertests
   roster: killstatus, reparent, preempt-adjacent tests).
 - [ ] Per-process heap (real sbrk semantics; admits the sbrk* tests).

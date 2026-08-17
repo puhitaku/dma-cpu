@@ -863,14 +863,42 @@ static void xsh_start(void)
  * that happens, so the wait loop lives in SRAM. If the machine fails
  * to restore XIP, the ARM crashes on return (observable silence) and
  * the calres words remain readable over SWD. */
+/* Samples the machine's fetch/exec channel PCs (DMA MMIO, NOT flash)
+ * while it drives the dance, so a wedge is caught in the act without
+ * the ARM ever touching flash. */
+struct calsample {
+    uint32_t fetch_first, fetch_last, fetch_min, fetch_max;
+    uint32_t exec_last, phase_last;
+    uint32_t moved; /* fetch PC changed at least once */
+};
+static struct calsample g_cs;
 static uint32_t __attribute__((noinline, section(".time_critical.calwait")))
-calwait(volatile uint32_t *done)
+calwait(volatile uint32_t *done, volatile uint32_t *phase)
 {
-    for (uint32_t i = 0; i < 400000000u; i++) {
+    volatile uint32_t *fetch = (volatile uint32_t *)0x50000000; /* ch0 READ_ADDR */
+    volatile uint32_t *exec = (volatile uint32_t *)0x50000040;  /* ch1 READ_ADDR */
+    volatile uint32_t *rawl = (volatile uint32_t *)0x400b0028;  /* us timer */
+    g_cs.fetch_first = *fetch;
+    g_cs.fetch_min = 0xFFFFFFFFu;
+    g_cs.fetch_max = 0;
+    g_cs.moved = 0;
+    uint32_t start = *rawl;
+    for (;;) {
+        uint32_t f = *fetch;
+        if (f != g_cs.fetch_first)
+            g_cs.moved = 1;
+        if (f < g_cs.fetch_min)
+            g_cs.fetch_min = f;
+        if (f > g_cs.fetch_max)
+            g_cs.fetch_max = f;
+        g_cs.fetch_last = f;
+        g_cs.exec_last = *exec;
+        g_cs.phase_last = *phase;
         if (*done)
             return 1;
+        if (*rawl - start > 8000000u) /* 8 s real-time cap */
+            return 0;
     }
-    return 0;
 }
 
 static void exp_calflash(void)
@@ -898,17 +926,25 @@ static void exp_calflash(void)
         printf("CAL flash2: FAIL start\n");
         return;
     }
-    uint32_t ok = calwait((volatile uint32_t *)(HIL_SYM_cal_flash_g_calres + 32));
-    machine_reset();
+    uint32_t ok = calwait((volatile uint32_t *)(HIL_SYM_cal_flash_g_calres + 32),
+                          (volatile uint32_t *)(HIL_SYM_cal_flash_g_calres));
+    /* Read the machine state BEFORE reset wipes it. */
     uint32_t ca = HIL_SYM_cal_flash_g_calres;
-    printf("CAL flash2: %s phase=%lu jedec=%06lx sr=%02lx wel=%02lx base=%08lx "
-           "erased=%08lx prog=%08lx xip=%08lx "
-           "(want jedec!=ffffff/000000, wel=02, erased=ffffffff, prog=xip=c3c2c1c0)\n",
-           ok ? "done" : "TIMEOUT",
-           (unsigned long)reg_rd(ca), (unsigned long)reg_rd(ca + 4),
-           (unsigned long)reg_rd(ca + 8), (unsigned long)reg_rd(ca + 12),
-           (unsigned long)reg_rd(ca + 16), (unsigned long)reg_rd(ca + 20),
-           (unsigned long)reg_rd(ca + 24), (unsigned long)reg_rd(ca + 28));
+    uint32_t phase = reg_rd(ca);
+    uint32_t micro = g_cs.phase_last;
+    uint32_t jedec = reg_rd(ca + 4);
+    uint32_t t0 = reg_rd(ca + 36), t1 = reg_rd(ca + 40), t2 = reg_rd(ca + 44);
+    machine_reset();
+    (void)ok; (void)phase; (void)micro; (void)jedec;
+    /* The finding: the machine reads the us-timer fine, but sees 0
+     * while QMI direct mode (EN) is set, and it stays 0 after EN is
+     * cleared — so the DMA engine cannot autonomously drive flash
+     * (no status polling, no self-timed delays). The ARM executor
+     * does the writes; see prompts/023. */
+    printf("CAL flash2: peripheral read normal=%08lx under_EN=%08lx after_EN=%08lx "
+           "-> machine-only flash %s (EN freezes the DMA read path)\n",
+           (unsigned long)t0, (unsigned long)t1, (unsigned long)t2,
+           (t1 == 0 && t2 == 0) ? "BLOCKED" : "possible?!");
 }
 #endif
 
