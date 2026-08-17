@@ -126,6 +126,10 @@ func (g *gen) run() error {
 	w.WriteString(g.data.String())
 	fmt.Fprintf(w, "\n.text\n.entry __start\n__start:\n")
 	fmt.Fprintf(w, "    move $crtthunk, dispatch\n")
+	// warmstart: entry for loaders that preset dispatch themselves
+	// (kernel exec, xv6/dma/kproc.c) — skipping the write above closes
+	// the race where it would overwrite a just-landed tick patch.
+	fmt.Fprintf(w, "warmstart:\n")
 	fmt.Fprintf(w, "    call %s\n", funcSym(g.opts.Entry))
 	fmt.Fprintf(w, "    move r0, exitcode\n")
 	fmt.Fprintf(w, "    move $1, done\n")

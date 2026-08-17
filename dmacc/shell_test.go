@@ -67,14 +67,14 @@ func TestShellSystem(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x20038000, 0x2003C000)
+			kernC := buildKernelC(t, v, 0x20034000, 0x2003B000)
 			shell, err := dmaasm.Assemble(shellDasm, dmaasm.Options{
 				Variant: v, TextBase: 0x20008000, DataBase: 0x20028000})
 			if err != nil {
 				t.Fatal(err)
 			}
 			procB, err := dmaasm.Assemble(procDasm, dmaasm.Options{
-				Variant: v, TextBase: 0x20030000, DataBase: 0x20034000})
+				Variant: v, TextBase: 0x20030000, DataBase: 0x20032000})
 			if err != nil {
 				t.Fatal(err)
 			}

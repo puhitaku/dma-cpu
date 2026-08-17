@@ -98,9 +98,10 @@ llgen:
 	  dmacc/testdata/proc.c -o dmacc/testdata/proc.ll
 	(cd dmacc/testdata && $(LIBC_CLANG) shell.c -o shell.ll)
 	clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding -I$(CURDIR)/xv6 \
-	  -S -emit-llvm dmacc/testdata/xv6sys.c -o dmacc/testdata/xv6sys.ll
-	clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding -I$(CURDIR)/xv6 \
 	  -S -emit-llvm dmacc/testdata/xv6malloc.c -o dmacc/testdata/xv6malloc.ll
+	@for f in xv6sys xv6proc xv6spawn xv6hello; do \
+	  clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding -I$(CURDIR)/xv6 \
+	    -S -emit-llvm dmacc/testdata/$$f.c -o dmacc/testdata/$$f.ll || exit 1; done
 
 # --- Hardware-in-the-loop (see prompts/004-hw-calibration.md) ---
 # Environment (adjust to your install):

@@ -55,5 +55,13 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
   pause(n)/exit/wait with ZOMBIE reaping and deposit-at-exit, the
   scheduler in C, kernel.dasm reduced to two entry stubs, a single
   one-shot tick injector. Silicon-validated.
+- [x] fork/exec (prompts/016): the loader lives IN the kernel — an
+  image registry (pre-parsed segments + packed relocs), a bump
+  allocator, and exec() that places, relocates and runs a fresh
+  image. fork() has vfork semantics (no MMU: child shares the image,
+  parent suspended until exec/exit; exec and exit use private syscall
+  stubs so the shared frames survive). The fork() return value is
+  deposited by the child's exec/exit. Silicon-validated
+  (fork→exec→wait→exit end to end).
 - [ ] Console (console.c) on `__dma_uart_*`; sh.c as the shell.
 - [ ] Block device + fs.c stack; mkfs image in flash.

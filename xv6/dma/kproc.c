@@ -87,6 +87,82 @@ uint *volatile kw_khalt; /* &kernel.dasm khalt: park when nothing runnable */
 /* Absorbs injector fires that land while the kernel is running. */
 uint tickpending;
 
+/* --- Process creation (Phase 5e): image registry + region allocator.
+ * The registry rows are pre-parsed DMX images (segments + a packed
+ * relocation table + the symbol offsets the kernel needs), poked by
+ * the loader/dmxgen at generation time; exec() places a fresh copy
+ * with the bump allocator and applies the relocations — the loader
+ * now lives in the kernel. Packed reloc word: bit31 = target segment
+ * (0 text, 1 data), bit30 = referenced segment, low 30 bits = byte
+ * offset within the target segment. */
+#define NIMG 4
+
+struct kimg {
+  char name[12];
+  uint text, textlen; /* blob source (flash or RAM) + byte length */
+  uint data, datalen;
+  uint textlink, datalink;
+  uint relocs, nreloc;
+  uint entryoff;  /* text-rel: crt0's warmstart (dispatch preset here) */
+  uint thunkoff;  /* text-rel */
+  uint dispoff, irqoff, lroff, mailoff, sysoff; /* data-rel */
+};
+
+struct kimg kimages[NIMG];
+uint k_sysentry;        /* loader-patched: &kernel.dasm sys_entry */
+uint nextpid;           /* loader-patched: first unused pid */
+uint arena, arena_end;  /* loader-patched: exec placement region */
+
+static uint
+kalloc(uint n)
+{
+  n = (n + 0xFFu) & ~0xFFu;
+  if (arena + n > arena_end)
+    return 0;
+  uint a = arena;
+  arena += n;
+  return a; /* bump only; exec'd images are never freed yet */
+}
+
+static struct kimg *
+lookup(const char *name)
+{
+  for (int i = 0; i < NIMG; i++) {
+    struct kimg *im = &kimages[i];
+    if (!im->name[0])
+      break;
+    int ok = 1;
+    for (int j = 0; j < 12; j++) {
+      if (im->name[j] != name[j]) {
+        ok = 0;
+        break;
+      }
+      if (!im->name[j])
+        break;
+    }
+    if (ok)
+      return im;
+  }
+  return 0;
+}
+
+/* Releases a vfork parent (sleeping on the child's proc struct) when
+ * the child execs or exits, depositing the child pid — the parent's
+ * fork() return value — into its mailbox. */
+static void
+vfork_release(struct proc *p)
+{
+  for (int i = 0; i < NPROC; i++) {
+    struct proc *q = &proc[i];
+    if (q->state == SLEEPING && q->chan == (uint)p) {
+      volatile struct dma_sysmail *qm = (volatile struct dma_sysmail *)q->pmail;
+      qm->ret = p->pid;
+      q->chan = 0;
+      q->state = RUNNABLE;
+    }
+  }
+}
+
 /* Tick injector: ABI channel 3, family-common register addresses. */
 #define INJ_WRITE_ADDR (*(volatile uint *)0x500000C4u)  /* CH3 WRITE_ADDR */
 #define INJ_COUNT_TRIG (*(volatile uint *)0x500000DCu)  /* CH3 AL1_TRANS_COUNT_TRIG */
@@ -265,8 +341,75 @@ dma_ksyscall(void)
     }
     break;
   }
+  case SYS_fork: { /* vfork semantics: shared image, parent suspended
+                    * until the child execs or exits. The shared
+                    * mailbox works because the child runs first and
+                    * reads 0 before the release deposits the pid. */
+    int ci = -1;
+    for (int i = 0; i < NPROC; i++) {
+      if (proc[i].state == UNUSED) {
+        ci = i;
+        break;
+      }
+    }
+    if (ci < 0) {
+      ret = (uint)-1;
+      break;
+    }
+    struct proc *c = &proc[ci];
+    *c = *p;
+    c->pid = nextpid++;
+    c->ppid = p->pid;
+    c->chan = 0;
+    c->state = RUNNABLE;
+    c->resume = W(p->plr);
+    p->resume = W(p->plr);
+    p->chan = (uint)c;
+    p->state = SLEEPING;
+    ret = 0;
+    block = 1;
+    break;
+  }
+  case SYS_exec: { /* a0: image name (argv not passed yet) */
+    struct kimg *im = lookup((const char *)m->a0);
+    if (!im) {
+      ret = (uint)-1;
+      break;
+    }
+    uint tb = kalloc(im->textlen), db = kalloc(im->datalen);
+    if (!tb || !db) {
+      ret = (uint)-1;
+      break;
+    }
+    uint *src = (uint *)im->text, *dst = (uint *)tb;
+    for (uint n = 0; n < im->textlen; n += 4)
+      *dst++ = *src++;
+    src = (uint *)im->data, dst = (uint *)db;
+    for (uint n = 0; n < im->datalen; n += 4)
+      *dst++ = *src++;
+    uint tD = tb - im->textlink, dD = db - im->datalink;
+    uint *rl = (uint *)im->relocs;
+    for (uint n = 0; n < im->nreloc; n++) {
+      uint r = rl[n];
+      uint tgt = ((r & 0x80000000u) ? db : tb) + (r & 0x3FFFFFFFu);
+      W(tgt) += (r & 0x40000000u) ? dD : tD;
+    }
+    p->pdispatch = db + im->dispoff;
+    p->pirqresume = db + im->irqoff;
+    p->plr = db + im->lroff;
+    p->thunk = tb + im->thunkoff;
+    p->pmail = db + im->mailoff;
+    W(db + im->sysoff) = k_sysentry;
+    W(p->pdispatch) = p->thunk; /* preset; entryoff skips crt0's write */
+    vfork_release(p);
+    /* exec does not return: continue at the fresh image's crt0. */
+    p->state = RUNNING;
+    kexit(curr, tb + im->entryoff);
+    return;
+  }
   case SYS_exit: {
     p->xstate = m->a0;
+    vfork_release(p); /* exit also ends a pre-exec vfork suspension */
     /* If the parent is blocked in wait() on us, deposit and wake:
      * this IS the reap (the parent cannot re-run its scan). */
     int reaped = 0;

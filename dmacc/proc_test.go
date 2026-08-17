@@ -69,7 +69,7 @@ func TestXv6Proc(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x20004000, 0x20008000)
+			kernC := buildKernelC(t, v, 0x20004000, 0x2000C000)
 			asm := func(text, data uint32) *dmaasm.Result {
 				res, err := dmaasm.Assemble(pdasm, dmaasm.Options{
 					Variant: v, TextBase: text, DataBase: data})
@@ -78,8 +78,8 @@ func TestXv6Proc(t *testing.T) {
 				}
 				return res
 			}
-			idle := asm(0x2000C000, 0x20010000)
-			parent := asm(0x20014000, 0x20018000)
+			idle := asm(0x20010000, 0x20014000)
+			parent := asm(0x20016000, 0x2001A000)
 			child := asm(0x2001C000, 0x20020000)
 
 			m := emu.NewMachine(v)

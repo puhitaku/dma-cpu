@@ -392,6 +392,10 @@ type kernBundle struct {
 	inj    uint32 // injector CTRL value
 	ticks  uint32 // &kernC.ticks
 	sym    map[string]uint32
+	// Raw payloads the firmware stages into fixed RAM homes before
+	// starting (exec-image blobs); homes are in sym as <NAME>_HOME.
+	blobs     [][]byte
+	blobNames []string
 }
 
 // finishBundle verifies nothing (callers verify first), bakes the
@@ -444,7 +448,7 @@ func libcPaths(first ...string) ([]string, error) {
 // buildSched: the scheduler-only bundle (two counter processes, no
 // syscalls). Fits the narrow rp2040 layout.
 func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
-	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x6000)
+	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x7800)
 	if err != nil {
 		return nil, err
 	}
@@ -452,20 +456,20 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x7000, DataBase: lay.text + 0x9000})
+	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x8800, DataBase: lay.text + 0xA000})
 	if err != nil {
 		return nil, err
 	}
-	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0xB000, DataBase: lay.text + 0xD000})
+	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0xB000, DataBase: lay.text + 0xC800})
 	if err != nil {
 		return nil, err
 	}
 	b := &kernBundle{names: []string{"kernel", "kernc", "proca", "procb"}, sym: map[string]uint32{}}
-	b.entry0 = lay.text + 0x7000 + procA.Image.EntryOff
+	b.entry0 = lay.text + 0x8800 + procA.Image.EntryOff
 	entryB := lay.text + 0xB000 + procB.Image.EntryOff
-	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x6000, []kprocSpec{
-		{procA, lay.text + 0x9000, b.entry0, 1, 0, false},
-		{procB, lay.text + 0xD000, entryB, 2, 0, false},
+	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x7800, []kprocSpec{
+		{procA, lay.text + 0xA000, b.entry0, 1, 0, false},
+		{procB, lay.text + 0xC800, entryB, 2, 0, false},
 	}); err != nil {
 		return nil, err
 	}
@@ -518,7 +522,7 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 // Needs the wide rp2350 layout.
 func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0xA000
+	cText, cData := lay.text+0x4000, lay.text+0xB000
 	sText, sData := lay.text+0xC000, lay.text+0x24000
 	pText, pData := lay.text+0x2A000, lay.text+0x2C000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
@@ -621,7 +625,7 @@ const sysWantConsole = "hello from pid 1 via SYS_write\n" +
 // (dmacc/testdata/xv6sys.c + xv6/dma/usys.c). Wide layout.
 func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0xA000
+	cText, cData := lay.text+0x4000, lay.text+0xB000
 	aText, aData := lay.text+0xC000, lay.text+0x10000
 	bText, bData := lay.text+0x14000, lay.text+0x18000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
@@ -697,6 +701,190 @@ func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 	}
 	if st := m.Peek32(b.sym["EXITSTATUS_A"]); st != 0 {
 		return nil, fmt.Errorf("syscall bundle: pid 1 exit status %d", st)
+	}
+	if err := finishBundle(b, results); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+// packReloc encodes an img.Reloc for the kernel loader: bit31 target
+// segment (0 text, 1 data), bit30 referenced segment, low 30 bits off.
+func packReloc(r img.Reloc) uint32 {
+	w := r.Off & 0x3FFFFFFF
+	if r.Seg == 1 {
+		w |= 1 << 31
+	}
+	if r.Ref == 1 {
+		w |= 1 << 30
+	}
+	return w
+}
+
+func pad4(b []byte) []byte {
+	for len(b)%4 != 0 {
+		b = append(b, 0)
+	}
+	return b
+}
+
+// buildExec: Phase 5e — the kernel's own loader. Two instances of the
+// spawner (fork/exec/wait) plus the "hello" image as a REGISTRY row:
+// its segments and packed relocs are staged to fixed RAM homes and the
+// kernel places, relocates and runs it at exec() time.
+func buildExec(v *emu.Variant, lay layout) (*kernBundle, error) {
+	kText, kData := lay.text, lay.text+0x2000
+	cText, cData := lay.text+0x4000, lay.text+0xB000
+	aText, aData := lay.text+0xC000, lay.text+0x10000
+	bText, bData := lay.text+0x14000, lay.text+0x18000
+	blobHome := lay.text + 0x1A000
+	arena, arenaEnd := lay.text+0x20000, lay.text+0x2F000
+
+	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
+	if err != nil {
+		return nil, err
+	}
+	sdasm, err := compileLL([]string{"dmacc/testdata/xv6spawn.ll", "xv6/ll/usys.ll"}, dmacc.Options{})
+	if err != nil {
+		return nil, err
+	}
+	idle, err := dmaasm.Assemble(sdasm, dmaasm.Options{Variant: v, TextBase: aText, DataBase: aData})
+	if err != nil {
+		return nil, err
+	}
+	parent, err := dmaasm.Assemble(sdasm, dmaasm.Options{Variant: v, TextBase: bText, DataBase: bData})
+	if err != nil {
+		return nil, err
+	}
+	hdasm, err := compileLL([]string{"dmacc/testdata/xv6hello.ll", "xv6/ll/usys.ll"}, dmacc.Options{})
+	if err != nil {
+		return nil, err
+	}
+	// hello keeps its relocs: the kernel places it. Link bases are
+	// arbitrary; only the deltas matter.
+	hello, err := dmaasm.Assemble(hdasm, dmaasm.Options{Variant: v, TextBase: 0x10000000, DataBase: 0x10020000})
+	if err != nil {
+		return nil, err
+	}
+
+	b := &kernBundle{names: []string{"kernel", "kernc", "idle", "parent"}, sym: map[string]uint32{}}
+	b.entry0 = aText + idle.Image.EntryOff
+	entryP := bText + parent.Image.EntryOff
+	if err := wireKernel(kern, kData, kernC, cData, []kprocSpec{
+		{idle, aData, b.entry0, 1, 0, true},
+		{parent, bData, entryP, 2, 0, true},
+	}); err != nil {
+		return nil, err
+	}
+
+	var errs error
+	sy := func(r *dmaasm.Result, n string) uint32 {
+		a, e := r.Symbol(n)
+		if e != nil && errs == nil {
+			errs = e
+		}
+		return a
+	}
+	// The hello blob: text, data, packed relocs at fixed homes.
+	hText := pad4(hello.Image.Segments[0].Data)
+	hData := pad4(hello.Image.Segments[1].Data)
+	var hRel []byte
+	for _, r := range hello.Image.Relocs {
+		var w [4]byte
+		binary.LittleEndian.PutUint32(w[:], packReloc(r))
+		hRel = append(hRel, w[:]...)
+	}
+	textHome := blobHome
+	dataHome := textHome + uint32(len(hText))
+	relHome := dataHome + uint32(len(hData))
+	if relHome+uint32(len(hRel)) > arena {
+		return nil, fmt.Errorf("exec bundle: blob overflows its home window")
+	}
+	b.blobs = [][]byte{hText, hData, hRel}
+	b.blobNames = []string{"text", "data", "relocs"}
+	b.sym["BLOB_TEXT_HOME"] = textHome
+	b.sym["BLOB_DATA_HOME"] = dataHome
+	b.sym["BLOB_RELOCS_HOME"] = relHome
+
+	// Registry row 0 + loader globals, patched into kernC's data.
+	hoff := func(n string, base uint32) uint32 { return sy(hello, n) - base }
+	tl, dl := hello.Image.Segments[0].LinkAddr, hello.Image.Segments[1].LinkAddr
+	row := sy(kernC, "g_kimages")
+	name := [12]byte{'h', 'e', 'l', 'l', 'o'}
+	rowVals := []uint32{
+		binary.LittleEndian.Uint32(name[0:]), binary.LittleEndian.Uint32(name[4:]),
+		binary.LittleEndian.Uint32(name[8:]),
+		textHome, uint32(len(hText)),
+		dataHome, uint32(len(hData)),
+		tl, dl,
+		relHome, uint32(len(hello.Image.Relocs)),
+		hoff("warmstart", tl), hoff("crtthunk", tl),
+		hoff("dispatch", dl), hoff("irqresume", dl), hoff("lr", dl),
+		hoff("g___dma_sysmail", dl), hoff("g___dma_syscall_entry", dl),
+	}
+	if errs != nil {
+		return nil, errs
+	}
+	for i, val := range rowVals {
+		if err := patchData(kernC.Image, cData, row+uint32(i)*4, val); err != nil {
+			return nil, err
+		}
+	}
+	for _, g := range []struct {
+		name string
+		val  uint32
+	}{
+		{"g_arena", arena}, {"g_arena_end", arenaEnd},
+		{"g_nextpid", 3}, {"g_k_sysentry", sy(kern, "sys_entry")},
+	} {
+		if err := patchData(kernC.Image, cData, sy(kernC, g.name), g.val); err != nil {
+			return nil, err
+		}
+	}
+	b.vec, b.disp0, b.inj = sy(kern, "vecSched"), sy(idle, "dispatch"), kernInjCtrl(v)
+	b.ticks = sy(kernC, "g_ticks")
+	b.sym["SPAWN_PID"] = sy(parent, "g_spawn_pid")
+	b.sym["REAP_PID"] = sy(parent, "g_reap_pid")
+	b.sym["REAP_STATUS"] = sy(parent, "g_reap_status")
+	b.sym["IDLECOUNT"] = sy(idle, "g_idlecount")
+	if errs != nil {
+		return nil, errs
+	}
+
+	// Emulator verification of the full spawn.
+	m := emu.NewMachine(v)
+	results := []*dmaasm.Result{kern, kernC, idle, parent}
+	for _, r := range results {
+		if _, err := r.Image.Load(m, nil); err != nil {
+			return nil, err
+		}
+	}
+	for i, blob := range b.blobs {
+		home := []uint32{textHome, dataHome, relHome}[i]
+		for o := 0; o < len(blob); o += 4 {
+			m.Poke32(home+uint32(o), binary.LittleEndian.Uint32(blob[o:]))
+		}
+	}
+	if err := armKernel(m, v, kern, b.disp0); err != nil {
+		return nil, err
+	}
+	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
+		Fetch: 0, Exec: 1, Fix: 2, Entry: b.entry0, Scratch: lay.scratch,
+	}); err != nil {
+		return nil, err
+	}
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 20_000_000}); err != nil {
+		return nil, err
+	}
+	const want = "parent: spawning\nhello from exec\nparent: reaped\n"
+	if got := string(m.ConsoleOut); got != want {
+		return nil, fmt.Errorf("exec bundle: console mismatch:\n got %q\nwant %q", got, want)
+	}
+	if sp, rp := m.Peek32(b.sym["SPAWN_PID"]), m.Peek32(b.sym["REAP_PID"]); sp != 3 || rp != 3 {
+		return nil, fmt.Errorf("exec bundle: spawn=%d reap=%d, want 3/3", sp, rp)
+	}
+	if st := int32(m.Peek32(b.sym["REAP_STATUS"])); st != 7 {
+		return nil, fmt.Errorf("exec bundle: status %d, want 7", st)
 	}
 	if err := finishBundle(b, results); err != nil {
 		return nil, err
@@ -868,7 +1056,7 @@ func calExpect(v *emu.Variant, sniffCtrl, seed, word uint32) uint32 {
 
 // --- C header emission ---
 
-func emitHeader(v *emu.Variant, lay layout, tests []*test, sched, shl, sys *kernBundle) string {
+func emitHeader(v *emu.Variant, lay layout, tests []*test, sched, shl, sys, exe *kernBundle) string {
 	var b strings.Builder
 	p := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 
@@ -1047,6 +1235,18 @@ func emitHeader(v *emu.Variant, lay layout, tests []*test, sched, shl, sys *kern
 		p("#define HIL_HAS_SYSCALL 1")
 		emitBundle("sys", sys)
 	}
+	if exe != nil {
+		p("")
+		p("/* Phase 5e exec bundle (xv6/PORT.md): fork/exec/wait with the")
+		p(" * loader IN the kernel. The firmware stages the hello blob at")
+		p(" * its registered RAM homes, then the kernel places, relocates")
+		p(" * and runs it at exec() time. */")
+		p("#define HIL_HAS_EXEC 1")
+		emitBundle("exec", exe)
+		for i, blob := range exe.blobs {
+			dump(fmt.Sprintf("hil_exec_blob_%s", exe.blobNames[i]), blob)
+		}
+	}
 	p("")
 	p("#endif /* DMX_HIL_IMAGES_H */")
 	return b.String()
@@ -1128,7 +1328,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("sched bundle: %w", err)
 	}
-	var shl, sys *kernBundle
+	var shl, sys, exe *kernBundle
 	if v.Name == "rp2350" { // needs the wide layout
 		if shl, err = buildShell(v, lay); err != nil {
 			return fmt.Errorf("shell bundle: %w", err)
@@ -1136,11 +1336,14 @@ func run() error {
 		if sys, err = buildSyscall(v, lay); err != nil {
 			return fmt.Errorf("syscall bundle: %w", err)
 		}
+		if exe, err = buildExec(v, lay); err != nil {
+			return fmt.Errorf("exec bundle: %w", err)
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(*out), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(*out, []byte(emitHeader(v, lay, tests, sched, shl, sys)), 0o644); err != nil {
+	if err := os.WriteFile(*out, []byte(emitHeader(v, lay, tests, sched, shl, sys, exe)), 0o644); err != nil {
 		return err
 	}
 	for _, t := range tests {

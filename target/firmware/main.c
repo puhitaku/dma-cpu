@@ -675,6 +675,60 @@ static void exp_syscall(void)
 }
 #endif
 
+#ifdef HIL_HAS_EXEC
+/* Phase 5e (xv6/PORT.md): fork/exec/wait with the image loader IN the
+ * kernel. Stages the hello blob at its registered RAM homes; pid 2
+ * vforks, the child execs "hello" (the kernel places and relocates
+ * it), the parent waits and reaps exit(7). The three lines between
+ * the markers are written by SYS_write. */
+static void stage_blob(uint32_t home, const uint8_t *src, size_t len)
+{
+    for (size_t i = 0; i < len; i += 4) {
+        uint32_t w = (uint32_t)src[i] | ((uint32_t)src[i + 1] << 8) |
+                     ((uint32_t)src[i + 2] << 16) | ((uint32_t)src[i + 3] << 24);
+        reg_wr(home + i, w);
+    }
+}
+
+static void exp_exec(void)
+{
+    machine_reset();
+    uint32_t e;
+    if (dmx_load(hil_exec_kernel_dmx, sizeof hil_exec_kernel_dmx, NULL, &e) != DMX_OK ||
+        dmx_load(hil_exec_kernc_dmx, sizeof hil_exec_kernc_dmx, NULL, &e) != DMX_OK ||
+        dmx_load(hil_exec_idle_dmx, sizeof hil_exec_idle_dmx, NULL, &e) != DMX_OK ||
+        dmx_load(hil_exec_parent_dmx, sizeof hil_exec_parent_dmx, NULL, &e) != DMX_OK) {
+        printf("EXP exec: FAIL load\n");
+        return;
+    }
+    stage_blob(HIL_EXEC_BLOB_TEXT_HOME, hil_exec_blob_text, sizeof hil_exec_blob_text);
+    stage_blob(HIL_EXEC_BLOB_DATA_HOME, hil_exec_blob_data, sizeof hil_exec_blob_data);
+    stage_blob(HIL_EXEC_BLOB_RELOCS_HOME, hil_exec_blob_relocs, sizeof hil_exec_blob_relocs);
+    printf("EXP exec: start (the kernel loads \"hello\" itself)\n");
+    dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 0};
+    if (dmx_start(&cfg, HIL_EXEC_ENTRY) != DMX_OK) {
+        printf("EXP exec: FAIL start\n");
+        return;
+    }
+    arm_tick(HIL_EXEC_VEC, HIL_EXEC_DISP0, HIL_EXEC_INJ_CTRL);
+    uint32_t waited = 0;
+    while (reg_rd(HIL_EXEC_REAP_PID) == 0 && waited < 2000) {
+        sleep_ms(1);
+        waited++;
+    }
+    uint32_t sp = reg_rd(HIL_EXEC_SPAWN_PID), rp = reg_rd(HIL_EXEC_REAP_PID);
+    uint32_t st = reg_rd(HIL_EXEC_REAP_STATUS);
+    uint32_t id1 = reg_rd(HIL_EXEC_IDLECOUNT);
+    sleep_ms(50);
+    uint32_t id2 = reg_rd(HIL_EXEC_IDLECOUNT);
+    machine_reset();
+    int ok = sp == 3 && rp == 3 && st == 7 && id2 > id1;
+    printf("\nEXP exec: %s spawn=%lu reap=%lu status=%lu idle=%lu->%lu\n",
+           ok ? "PASS" : "FAIL", (unsigned long)sp, (unsigned long)rp,
+           (unsigned long)st, (unsigned long)id1, (unsigned long)id2);
+}
+#endif
+
 #ifdef HIL_HAS_SHELL
 /* Phase 5b (prompts/013): hand the console to dma-sh. Loads the
  * pre-wired bundle (kernel + shell as process A + counter as process
@@ -753,6 +807,9 @@ int main(void)
         exp_abort();
 #ifdef HIL_HAS_SYSCALL
         exp_syscall();
+#endif
+#ifdef HIL_HAS_EXEC
+        exp_exec();
 #endif
         printf("=== END iter=%u\n", iter);
 #ifdef HIL_HAS_SHELL

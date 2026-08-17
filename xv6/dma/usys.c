@@ -68,13 +68,48 @@ wait(int *status)
   return dma_syscall(SYS_wait, (uint)status, 0, 0);
 }
 
+/* vfork semantics (xv6/PORT.md): the child shares the parent's image
+ * and frames; the parent is suspended until the child calls exec() or
+ * exit(). Between fork() and exec() the child must touch nothing else
+ * — in particular it must not make other syscalls (see below). */
+int
+fork(void)
+{
+  return dma_syscall(SYS_fork, 0, 0, 0);
+}
+
+/* exec and exit do NOT go through dma_syscall: a vforked child shares
+ * the parent's static frames, and re-entering dma_syscall would
+ * overwrite the saved return address the suspended parent resumes
+ * through. Each gets a private invocation with its own frame. */
+
+/* argv is accepted for the upstream signature but not passed yet. */
+int
+exec(const char *path, char **argv)
+{
+  volatile struct dma_sysmail *m = &__dma_sysmail;
+  m->num = SYS_exec;
+  m->a0 = (uint)path;
+  m->a1 = (uint)argv;
+  m->a2 = 0;
+  m->done = 0;
+  ((void (*)(void))__dma_syscall_entry)();
+  return (int)m->ret; /* reached only on failure */
+}
+
 /* Never returns: the kernel marks the process ZOMBIE (or reaps it
  * straight into a waiting parent) and never schedules it again. The
  * trailing loop is unreachable-by-construction safety. */
 void
 exit(int status)
 {
-  dma_syscall(SYS_exit, (uint)status, 0, 0);
+  volatile struct dma_sysmail *m = &__dma_sysmail;
+  m->num = SYS_exit;
+  m->a0 = (uint)status;
+  m->a1 = 0;
+  m->a2 = 0;
+  m->done = 0;
+  ((void (*)(void))__dma_syscall_entry)();
   for (;;)
     ;
 }

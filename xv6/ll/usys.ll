@@ -80,6 +80,36 @@ define dso_local i32 @wait(ptr noundef %0) local_unnamed_addr #0 {
   ret i32 %5
 }
 
+; Function Attrs: minsize nounwind optsize
+define dso_local i32 @fork() local_unnamed_addr #0 {
+  store volatile i32 1, ptr @__dma_sysmail, align 4, !tbaa !3
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 4), align 4, !tbaa !8
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 8), align 4, !tbaa !9
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 12), align 4, !tbaa !10
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 20), align 4, !tbaa !11
+  %1 = load i32, ptr @__dma_syscall_entry, align 4, !tbaa !12
+  %2 = inttoptr i32 %1 to ptr
+  tail call void %2() #2
+  %3 = load volatile i32, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 16), align 4, !tbaa !13
+  ret i32 %3
+}
+
+; Function Attrs: minsize nounwind optsize
+define dso_local i32 @exec(ptr noundef %0, ptr noundef %1) local_unnamed_addr #0 {
+  store volatile i32 7, ptr @__dma_sysmail, align 4, !tbaa !3
+  %3 = ptrtoint ptr %0 to i32
+  store volatile i32 %3, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 4), align 4, !tbaa !8
+  %4 = ptrtoint ptr %1 to i32
+  store volatile i32 %4, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 8), align 4, !tbaa !9
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 12), align 4, !tbaa !10
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 20), align 4, !tbaa !11
+  %5 = load i32, ptr @__dma_syscall_entry, align 4, !tbaa !12
+  %6 = inttoptr i32 %5 to ptr
+  tail call void %6() #2
+  %7 = load volatile i32, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 16), align 4, !tbaa !13
+  ret i32 %7
+}
+
 ; Function Attrs: minsize noreturn nounwind optsize
 define dso_local void @exit(i32 noundef %0) local_unnamed_addr #1 {
   store volatile i32 2, ptr @__dma_sysmail, align 4, !tbaa !3
@@ -90,11 +120,10 @@ define dso_local void @exit(i32 noundef %0) local_unnamed_addr #1 {
   %2 = load i32, ptr @__dma_syscall_entry, align 4, !tbaa !12
   %3 = inttoptr i32 %2 to ptr
   tail call void %3() #2
-  %4 = load volatile i32, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 16), align 4, !tbaa !13
-  br label %5
+  br label %4
 
-5:                                                ; preds = %5, %1
-  br label %5, !llvm.loop !14
+4:                                                ; preds = %4, %1
+  br label %4, !llvm.loop !14
 }
 
 attributes #0 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
