@@ -23,11 +23,12 @@ import (
 
 // Options configures one compilation.
 type Options struct {
-	Entry           string // entry function, default "main"
-	NoSafepoints    bool   // omit safepoints at backward branches
-	InlineCompares  bool   // inline comparison sequences (faster, much larger)
-	Stats           *Stats // when non-nil, collect size attribution
-	RecursionDepth  int    // max recursion depth (frame clones); default 12
+	Entry          string // entry function, default "main"
+	NoSafepoints   bool   // omit safepoints at backward branches
+	InlineCompares bool   // inline comparison sequences (faster, much larger)
+	Stats          *Stats // when non-nil, collect size attribution
+	RecursionDepth int    // OBSOLETE: recursion now uses the frame stack
+	FrameStack     int    // frame-stack bytes for recursive calls; default 4096
 }
 
 // Compile translates a parsed module into dmaasm source. The generated
@@ -54,6 +55,8 @@ type gen struct {
 	text strings.Builder // .text lines (after crt0)
 
 	rt      map[string]bool // runtime routines needed
+	recSet  map[string]bool // functions using the recursion frame stack
+	frameSz map[string]int  // measured frame bytes per recSet function
 	cmpUsed map[string]bool // comparison millicode helpers needed
 	stubN   int             // generated label counter
 	funcIdx map[string]*llir.Func
@@ -85,7 +88,7 @@ func (g *gen) run() error {
 		return fmt.Errorf("dmacc: entry function %q must return an integer", g.opts.Entry)
 	}
 	g.collectGarbage(entry)
-	if err := g.expandRecursion(); err != nil {
+	if err := g.computeRecursion(); err != nil {
 		return err
 	}
 	// Variadic frames are static too: size each callee's vararg area to
@@ -109,6 +112,9 @@ func (g *gen) run() error {
 		if uartMMIO(gl.Name) != "" {
 			continue // hardware register, not storage
 		}
+		if gl.Name == "__dmacc_fsp" || gl.Name == "__dmacc_fstack" {
+			continue // the frame-stack cells are compiler-emitted
+		}
 		if err := g.emitGlobal(gl); err != nil {
 			return err
 		}
@@ -117,6 +123,40 @@ func (g *gen) run() error {
 		if err := g.emitFunc(f); err != nil {
 			return err
 		}
+	}
+	// Frame sizes are known only after emission: patch the prologue/
+	// epilogue placeholders, then emit the frame stack itself.
+	if len(g.recSet) > 0 {
+		text := g.text.String()
+		for name, sz := range g.frameSz {
+			text = strings.ReplaceAll(text,
+				"@FR_"+sanitize(name)+"@", fmt.Sprintf("0x%x", sz))
+			text = strings.ReplaceAll(text,
+				"@FRH_"+sanitize(name)+"@", fmt.Sprintf("0x%x", sz+8))
+		}
+		g.text.Reset()
+		g.text.WriteString(text)
+		stack := g.frameStackSize()
+		fmt.Fprintf(&g.data, "\n; recursion frame stack (push/pop per recSet function)\n")
+		fmt.Fprintf(&g.data, "g___dmacc_fsp: .word g___dmacc_fstack\n")
+		fmt.Fprintf(&g.data, "fs_lr: .word 0\nfs_r0: .word 0\n")
+		fmt.Fprintf(&g.data, "fs_a0: .word 0\nfs_a1: .word 0\nfs_a2: .word 0\nfs_a3: .word 0\n")
+		fmt.Fprintf(&g.data, "g___dmacc_fstack: .space %d\n", stack)
+		// The overflow sink: a program-defined handler dies as a
+		// process; otherwise HALT at a well-defined point.
+		fmt.Fprintf(&g.text, "\n__fovf:\n")
+		// Reclaim the whole stack before the sink runs: the dying
+		// process owns every live push (see computeRecursion).
+		fmt.Fprintf(&g.text, "    move $g___dmacc_fstack, g___dmacc_fsp\n")
+		if _, ok := g.funcIdx[recOverflowName]; ok {
+			fmt.Fprintf(&g.text, "    jump %s\n", funcSym(recOverflowName))
+		} else {
+			fmt.Fprintf(&g.text, "    halt\n")
+		}
+	} else {
+		// usys links the stack cells unconditionally (fork's reset):
+		// give non-recursive images inert ones.
+		fmt.Fprintf(&g.data, "g___dmacc_fsp: .word 0\ng___dmacc_fstack: .word 0\n")
 	}
 
 	// Assemble the file: header, data, crt0, functions, runtime.
@@ -230,22 +270,26 @@ func (g *gen) collectGarbage(entry *llir.Func) {
 	g.m.Globals = globals
 }
 
-// expandRecursion makes recursion work with static frames by cloning:
-// every function on a call-graph cycle is copied RecursionDepth times
-// (F, F__r2, ..., F__rK), each clone owning its own frame words, and
-// intra-cycle calls at depth d are rewritten to the depth-d+1 clones.
-// Depth-K intra-cycle calls go to the reserved overflow name, which
-// emitCall lowers to HALT — bounded recursion, honestly enforced.
-// Each nesting level owning distinct words also makes recursive code
-// safe under vfork (a child re-entering at a deeper level cannot
-// clobber the suspended parent's frames; see prompts/018).
-func (g *gen) expandRecursion() error {
-	depth := g.opts.RecursionDepth
-	if depth <= 0 {
-		depth = 12
-	}
-	// Find the members of call-graph cycles (plain DFS: a function is
-	// cyclic if it can reach itself through direct calls).
+// computeRecursion splits recursive code between two mechanisms:
+//
+//   - THE FRAME STACK (g.recSet): call-graph cycle members that cannot
+//     reach fork(). One copy of the code; each activation saves its
+//     whole frame to a software stack on entry and restores on return
+//     (emitFramePush/Pop). Depth is bounded only by Options.FrameStack.
+//     sh's entire parser lands here.
+//   - DEPTH CLONES (the old scheme) for everything that CAN span a
+//     fork: cycle members reaching fork(), plus the vfork-reentrancy
+//     extras (non-cyclic fork-reachers reachable from a cycle). A
+//     vfork child RETURNS THROUGH the suspended parent's activations;
+//     with a stateful stack those returns would pop frames the parent
+//     still owns and the child's next pushes would destroy the saved
+//     content — clones have no such state. The split is safe by
+//     construction: an activation live across a fork has fork beneath
+//     it, i.e. reaches fork, i.e. is in the clone set — so the frame
+//     stack only ever holds activations wholly owned by one process.
+//     (A child killed mid-parse can leak its pushes into the shared
+//     image's stack — bounded by one parse depth, accepted.)
+func (g *gen) computeRecursion() error {
 	callees := func(f *llir.Func) []string {
 		var out []string
 		for _, b := range f.Blocks {
@@ -267,6 +311,9 @@ func (g *gen) expandRecursion() error {
 				return false
 			}
 			seen[n] = true
+			if n == target {
+				return true
+			}
 			for _, c := range callees(g.funcIdx[n]) {
 				if c == target || walk(c) {
 					return true
@@ -274,7 +321,12 @@ func (g *gen) expandRecursion() error {
 			}
 			return false
 		}
-		return walk(from)
+		for _, c := range callees(g.funcIdx[from]) {
+			if c == target || walk(c) {
+				return true
+			}
+		}
+		return false
 	}
 	cyclic := map[string]bool{}
 	names := make([]string, 0, len(g.funcIdx))
@@ -283,23 +335,13 @@ func (g *gen) expandRecursion() error {
 	}
 	sort.Strings(names)
 	for _, n := range names {
-		for _, c := range callees(g.funcIdx[n]) {
-			if c == n || reaches(c, n) {
-				cyclic[n] = true
-				break
-			}
+		if reaches(n, n) {
+			cyclic[n] = true
 		}
 	}
-	// vfork reentrancy (xv6/PORT.md): fork() suspends its caller chain
-	// MID-FUNCTION while the child runs the same image; if the child can
-	// re-enter a suspended function (sh's runcmd calling fork1 again for
-	// a `;` list), that function has two live activations and needs
-	// per-depth frames exactly like recursion. Re-entry can only happen
-	// through recursive code, so the exact clone set addition is:
-	// functions that transitively reach fork() AND are reachable from a
-	// cycle member. (A fork-caller used only from straight-line code —
-	// dma-sh's run command — keeps its single frame.)
-	if _, hasFork := g.funcIdx["fork"]; hasFork && len(cyclic) > 0 {
+	clone := map[string]bool{}
+	_, hasFork := g.funcIdx["fork"]
+	if hasFork && len(cyclic) > 0 {
 		fromCyclic := map[string]bool{}
 		var mark func(n string)
 		mark = func(n string) {
@@ -315,18 +357,39 @@ func (g *gen) expandRecursion() error {
 			mark(n)
 		}
 		for _, n := range names {
+			if cyclic[n] && reaches(n, "fork") {
+				clone[n] = true
+			}
 			if !cyclic[n] && fromCyclic[n] && reaches(n, "fork") {
-				cyclic[n] = true
+				clone[n] = true
 			}
 		}
 	}
-	if len(cyclic) == 0 {
+	g.recSet = map[string]bool{}
+	for n := range cyclic {
+		if !clone[n] {
+			g.recSet[n] = true
+		}
+	}
+	g.frameSz = map[string]int{}
+	if len(clone) == 0 {
 		return nil
 	}
-	// Address-taken cycle members would escape the depth routing.
+	return g.expandClones(clone)
+}
+
+// expandClones is the depth-cloning mechanism, now applied only to the
+// fork-spanning set (see computeRecursion): each member is copied
+// RecursionDepth times, intra-set calls at depth d route to depth d+1,
+// and depth-K calls go to the overflow sink.
+func (g *gen) expandClones(clone map[string]bool) error {
+	depth := g.opts.RecursionDepth
+	if depth <= 0 {
+		depth = 12
+	}
 	taken := map[string]bool{}
 	seeVal := func(v *llir.Value) {
-		if v != nil && (v.Kind == llir.VFunc || v.Kind == llir.VGlobal) && cyclic[v.Name] {
+		if v != nil && (v.Kind == llir.VFunc || v.Kind == llir.VGlobal) && clone[v.Name] {
 			taken[v.Name] = true
 		}
 	}
@@ -344,15 +407,14 @@ func (g *gen) expandRecursion() error {
 		}
 	}
 	for n := range taken {
-		return fmt.Errorf("dmacc: recursive function %q has its address taken (depth cloning cannot route it)", n)
+		return fmt.Errorf("dmacc: fork-spanning recursive function %q has its address taken (depth cloning cannot route it)", n)
 	}
-	// Rewrite intra-cycle calls in the originals (depth 1) and clones.
 	rewrite := func(f *llir.Func, d int) {
 		for _, b := range f.Blocks {
 			for i, ins := range b.Instrs {
-				if ins.Op == "call" && cyclic[strings.TrimSuffix(ins.Callee, recSuffix(d))] {
+				if ins.Op == "call" && clone[strings.TrimSuffix(ins.Callee, recSuffix(d))] {
 					base := ins.Callee
-					ni := *ins // instrs may be shared with nothing, but stay safe
+					ni := *ins
 					if d >= depth {
 						ni.Callee = recOverflowName
 						ni.Args = nil // the sink takes no params (and never returns)
@@ -364,14 +426,12 @@ func (g *gen) expandRecursion() error {
 			}
 		}
 	}
-	// Clone each cyclic function for depths 2..K. Blocks and Instrs are
-	// copied (Callee is mutated per depth); Values/Types are shared.
-	cyclicNames := make([]string, 0, len(cyclic))
-	for n := range cyclic {
-		cyclicNames = append(cyclicNames, n)
+	cloneNames := make([]string, 0, len(clone))
+	for n := range clone {
+		cloneNames = append(cloneNames, n)
 	}
-	sort.Strings(cyclicNames)
-	for _, n := range cyclicNames {
+	sort.Strings(cloneNames)
+	for _, n := range cloneNames {
 		orig := g.funcIdx[n]
 		for d := 2; d <= depth; d++ {
 			nf := &llir.Func{
@@ -393,9 +453,7 @@ func (g *gen) expandRecursion() error {
 			g.funcIdx[nf.Name] = nf
 		}
 	}
-	// Route calls: depth-1 originals call __r2; clone d calls d+1. The
-	// clone rewrite must look up the ORIGINAL callee name.
-	for _, n := range cyclicNames {
+	for _, n := range cloneNames {
 		rewrite(g.funcIdx[n], 1)
 		for d := 2; d <= depth; d++ {
 			rewrite(g.funcIdx[n+recSuffix(d)], d)
@@ -475,7 +533,14 @@ func sanitize(s string) string {
 	return b.String()
 }
 
-func funcSym(name string) string   { return "f_" + sanitize(name) }
+func funcSym(name string) string { return "f_" + sanitize(name) }
+
+func (g *gen) frameStackSize() int {
+	if g.opts.FrameStack > 0 {
+		return g.opts.FrameStack
+	}
+	return 4096
+}
 func globalSym(name string) string { return "g_" + sanitize(name) }
 
 // --- Globals ---

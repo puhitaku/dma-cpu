@@ -1,0 +1,47 @@
+package dmacc_test
+
+import (
+	"testing"
+
+	"github.com/puhitaku/dma-cpu/dmaasm"
+	"github.com/puhitaku/dma-cpu/dmacc"
+	"github.com/puhitaku/dma-cpu/emu"
+	"github.com/puhitaku/dma-cpu/llir"
+)
+
+func TestZZAllSizes(t *testing.T) {
+	v, _ := emu.VariantByName("rp2350")
+	meas := func(name, dasm string, compact bool) {
+		res, err := dmaasm.Assemble(dasm, dmaasm.Options{
+			Variant: v, Compact: compact, CompactScratch: 0x2007FE00,
+			TextBase: 0x40000000, DataBase: 0x50000000})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		tl, dl := len(res.Image.Segments[0].Data), len(res.Image.Segments[1].Data)
+		t.Logf("%-12s text %6d (%3d KB)  data %6d (%2d KB)", name, tl, tl/1024, dl, dl/1024)
+	}
+	meas("lean", compileKernel(t, false), false)
+	meas("fs-kernel", compileKernel(t, true), true)
+	shMod, err := llir.Merge(
+		parseLL(t, "../xv6/ll/sh.ll"), parseLL(t, "../xv6/ll/ulib.ll"),
+		parseLL(t, "../xv6/ll/umalloc.ll"), parseLL(t, "../xv6/ll/usys.ll"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 12})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meas("sh(K12)", shDasm, true)
+	lsMod, err := llir.Merge(parseLL(t, "../xv6/ll/ls.ll"),
+		parseLL(t, "../xv6/ll/ulib.ll"), parseLL(t, "../xv6/ll/usys.ll"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lsDasm, err := dmacc.Compile(lsMod, dmacc.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meas("ls", lsDasm, true)
+}

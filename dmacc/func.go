@@ -16,28 +16,30 @@ type funcCtx struct {
 	g *gen
 	f *llir.Func
 
-	declared  map[string]bool  // value words already declared
-	allocas   map[string]string // alloca result -> data symbol
-	constAddr map[string]addrC  // GEP result folded to a static address
-	uses      map[string]int
-	defs      map[string]*llir.Instr
-	defBlock  map[string]int
-	fused     map[string]bool   // icmp results emitted at their branch
-	fwd       map[string]string // pure-copy results forwarded to their source operand
-	blockIdx  map[string]int
-	directPhi map[string]bool // blocks whose phis are written directly on edges
-	tail      map[*llir.Instr]bool // calls emitted as tail jumps
-	tailRet   map[*llir.Instr]bool // rets consumed by a preceding tail call
-	pair64    map[*llir.Instr]*llir.Instr // i64 store -> its feeding i64 load (8-byte copy idiom)
-	pair64Ld  map[*llir.Instr]bool        // the loads consumed by pair64
-	hasCalls  bool
-	curBlock  int
-	cat       string // size-report attribution for emitted code
+	declared   map[string]bool   // value words already declared
+	allocas    map[string]string // alloca result -> data symbol
+	constAddr  map[string]addrC  // GEP result folded to a static address
+	uses       map[string]int
+	defs       map[string]*llir.Instr
+	defBlock   map[string]int
+	fused      map[string]bool   // icmp results emitted at their branch
+	fwd        map[string]string // pure-copy results forwarded to their source operand
+	blockIdx   map[string]int
+	directPhi  map[string]bool             // blocks whose phis are written directly on edges
+	tail       map[*llir.Instr]bool        // calls emitted as tail jumps
+	tailRet    map[*llir.Instr]bool        // rets consumed by a preceding tail call
+	pair64     map[*llir.Instr]*llir.Instr // i64 store -> its feeding i64 load (8-byte copy idiom)
+	pair64Ld   map[*llir.Instr]bool        // the loads consumed by pair64
+	hasCalls   bool
+	rec        bool // uses the recursion frame stack (push/pop)
+	frameBytes int  // data bytes emitted for this function's frame
+	curBlock   int
+	cat        string // size-report attribution for emitted code
 }
 
 func (g *gen) emitFunc(f *llir.Func) error {
 	fc := &funcCtx{
-		g: g, f: f,
+		g: g, f: f, rec: g.recSet[f.Name],
 		declared:  map[string]bool{},
 		allocas:   map[string]string{},
 		constAddr: map[string]addrC{},
@@ -53,10 +55,21 @@ func (g *gen) emitFunc(f *llir.Func) error {
 		blockIdx:  map[string]int{},
 		directPhi: map[string]bool{},
 	}
+	if fc.rec {
+		// The whole frame must be contiguous for push/pop: label it and
+		// measure every data byte emitted while this function compiles.
+		fmt.Fprintf(&g.data, "fr_%s:\n", sanitize(f.Name))
+	}
 	if err := fc.prepass(); err != nil {
 		return err
 	}
-	return fc.emit()
+	if err := fc.emit(); err != nil {
+		return err
+	}
+	if fc.rec {
+		g.frameSz[f.Name] = fc.frameBytes
+	}
+	return nil
 }
 
 func (fc *funcCtx) word(local string) string {
@@ -73,6 +86,7 @@ func (fc *funcCtx) lrsWord() string { return "lrs_" + sanitize(fc.f.Name) }
 func (fc *funcCtx) declWord(sym string) {
 	if !fc.declared[sym] {
 		fc.declared[sym] = true
+		fc.frameBytes += 4
 		fmt.Fprintf(&fc.g.data, "%s: .word 0\n", sym)
 	}
 }
@@ -173,6 +187,9 @@ func (fc *funcCtx) prepass() error {
 	// This makes single-call wrappers frameless, which the vfork
 	// discipline relies on (xv6/dma/usys.c).
 	for _, b := range f.Blocks {
+		if fc.rec {
+			break // frame-stack functions must pop before returning
+		}
 		for j := 0; j+1 < len(b.Instrs); j++ {
 			ins, ret := b.Instrs[j], b.Instrs[j+1]
 			if ins.Op != "call" || ret.Op != "ret" {
@@ -240,6 +257,7 @@ func (fc *funcCtx) prepass() error {
 				size = (size+3)&^3 + 4
 				sym := "a_" + sanitize(f.Name) + "_" + sanitize(ins.Res)
 				fc.allocas[ins.Res] = sym
+				fc.frameBytes += int(size)
 				fmt.Fprintf(&fc.g.data, "%s: .space %d\n", sym, size)
 				continue
 			}
@@ -259,6 +277,7 @@ func (fc *funcCtx) prepass() error {
 		if n < 1 {
 			n = 1
 		}
+		fc.frameBytes += 4 * n
 		fmt.Fprintf(&fc.g.data, "%s: .space %d\n", fc.vaArea(), 4*n)
 	}
 	return nil
@@ -393,12 +412,16 @@ func (fc *funcCtx) emit() error {
 	fmt.Fprintf(&fc.g.text, "\n; --- %s ---\n", f.Name)
 	fc.label(funcSym(f.Name))
 	fc.cat = "prologue"
-	if fc.hasCalls {
-		fc.ins("move lr, %s", fc.lrsWord())
-	}
-	for i, p := range f.Params {
-		if i < 4 {
-			fc.ins("move r%d, %s", i, fc.word(p.Name))
+	if fc.rec {
+		fc.emitFramePush()
+	} else {
+		if fc.hasCalls {
+			fc.ins("move lr, %s", fc.lrsWord())
+		}
+		for i, p := range f.Params {
+			if i < 4 {
+				fc.ins("move r%d, %s", i, fc.word(p.Name))
+			}
 		}
 	}
 	for bi, b := range f.Blocks {
@@ -710,6 +733,9 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 	case "ret":
 		if fc.tailRet[ins] {
 			return nil // the preceding tail call already left
+		}
+		if fc.rec {
+			return fc.emitFramePop(ins)
 		}
 		if len(ins.Args) > 0 {
 			v, err := fc.op(ins.Args[0])
@@ -1296,6 +1322,96 @@ func (fc *funcCtx) emitMemRT(rt string, dst, src, n *llir.Value) error {
 	fc.ins("move %s, r1", sv)
 	fc.ins("move %s, r2", nv)
 	fc.ins("call __rt_%s", rt)
+	return nil
+}
+
+// --- Recursion frame stack (see gen.computeRecSet) ---
+//
+// A recSet function keeps ONE copy of its code; each activation saves
+// the whole frame to the software stack on entry and restores it on
+// return. Layout per push: [frame bytes][frame base][frame size],
+// with g___dmacc_fsp past the record — the trailing header lets
+// usys's __dmacc_funwind unwind pushes truncated by a vfork child's
+// exec. Entry runs BEFORE lr/args are stored: they arrive in the
+// machine cells (lr, r0..r3), get parked in the fs_* globals across
+// the memcpy (which clobbers r0-r2 and lr), and land in the fresh
+// frame afterwards.
+func (fc *funcCtx) emitFramePush() {
+	f := fc.f
+	sz := "$@FR_" + sanitize(f.Name) + "@"
+	rec := "$@FRH_" + sanitize(f.Name) + "@" // size + 8-byte header
+	frame := "$fr_" + sanitize(f.Name)
+	fc.ins("move lr, fs_lr")
+	for i := range f.Params {
+		if i < 4 {
+			fc.ins("move r%d, fs_a%d", i, i)
+		}
+	}
+	// Overflow: new sp past the stack end diverts to the sink.
+	ok := fc.stub("Fok")
+	fc.ins("add g___dmacc_fsp, %s, sc2", rec)
+	fc.ins("move $__fovf, cw_t")
+	fc.ins("move $%s, cw_f", ok)
+	fc.ins("move $g___dmacc_fstack+%d, cw_a", fc.g.frameStackSize())
+	fc.ins("move sc2, cw_b")
+	fc.ins("jump __cw_ltu")
+	fc.label(ok)
+	fc.g.cmpUsed["ltu"] = true
+	// Save the live frame.
+	fc.g.rt["memcpy"] = true
+	fc.ins("move g___dmacc_fsp, r0")
+	fc.ins("move %s, r1", frame)
+	fc.ins("move %s, r2", sz)
+	fc.ins("call __rt_memcpy")
+	// Trailing header for the unwinder, then commit the new sp.
+	hs := fc.stub("Fha")
+	fc.ins("add g___dmacc_fsp, %s, sc2", sz)
+	fc.ins("move sc2, %s.write", hs)
+	fc.label(hs)
+	fc.ins("move %s, @0", frame)
+	hs2 := fc.stub("Fhb")
+	fc.ins("add sc2, $4, sc2")
+	fc.ins("move sc2, %s.write", hs2)
+	fc.label(hs2)
+	fc.ins("move %s, @0", sz)
+	fc.ins("add sc2, $4, sc2")
+	fc.ins("move sc2, g___dmacc_fsp")
+	// The fresh activation: linkage and parameters.
+	fc.ins("move fs_lr, %s", fc.lrsWord())
+	for i, p := range f.Params {
+		if i < 4 {
+			fc.ins("move fs_a%d, %s", i, fc.word(p.Name))
+		}
+	}
+}
+
+func (fc *funcCtx) emitFramePop(ins *llir.Instr) error {
+	f := fc.f
+	sz := "$@FR_" + sanitize(f.Name) + "@"
+	rec := "$@FRH_" + sanitize(f.Name) + "@"
+	frame := "$fr_" + sanitize(f.Name)
+	// The result and this activation's lr must survive the restore
+	// (both live in the frame about to be overwritten).
+	if len(ins.Args) > 0 {
+		v, err := fc.op(ins.Args[0])
+		if err != nil {
+			return err
+		}
+		fc.ins("move %s, fs_r0", v)
+	}
+	fc.ins("move %s, fs_lr", fc.lrsWord())
+	fc.ins("sub g___dmacc_fsp, %s, sc2", rec)
+	fc.ins("move sc2, g___dmacc_fsp")
+	fc.g.rt["memcpy"] = true
+	fc.ins("move %s, r0", frame)
+	fc.ins("move sc2, r1")
+	fc.ins("move %s, r2", sz)
+	fc.ins("call __rt_memcpy")
+	if len(ins.Args) > 0 {
+		fc.ins("move fs_r0, r0")
+	}
+	fc.ins("move fs_lr, lr")
+	fc.ins("ret")
 	return nil
 }
 
