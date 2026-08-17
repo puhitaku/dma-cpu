@@ -165,6 +165,29 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
   program-defined `__dmacc_recursion_overflow` (usys reports
   "recursion too deep" and exits), so the overflowing vfork child
   dies as a process and the shell survives.
+- [x] `free` command (prompts/029): SYS_meminfo reports the exec
+  arena (total/used/free/largest), the heap and exec-image shares
+  inside it, proc-slot usage and uptime; `free` prints it. Silicon
+  shows sh's 33 KB malloc chunk and the running tool's own image.
+- [x] `mount` command and mechanism (prompts/029): SYS_mount/
+  SYS_umount, a mount table with path-prefix routing in kfsglue,
+  FAT-aware cwd (cd into and out of the mount, relative reads, exec
+  falls back to the xv6 root), read-only guards on every write path,
+  and vfs_* dispatch shims that file.c reaches via shim-header
+  renames (compiled with -DDMA_VFS_CALLS) — fs.c/file.c stay
+  unpatched. Busy mounts (open files, cwds inside) refuse umount.
+- [x] vfat / FAT32 (prompts/029): a read-only FAT32 driver
+  (xv6/dma/kfat.c) over an XIP-resident volume — BPB-driven geometry,
+  cluster-chain walks, 8.3 + VFAT long names, dirs synthesized as
+  xv6 dirents so upstream ls works — plus a Go FAT32 image builder
+  (fsimg/fatimg.go). Mountable in the emulator AND on silicon: the
+  firmware stages a golden 64 KB volume into flash at 0x10140000 and
+  `mount fat0 /mnt` reads it from real flash. This phase also ended
+  the printf tax (the no-verbatim decision): cat/ls/sh emit via tiny
+  write() helpers, the dma utilities merged into one multi-call
+  `toolbox` binary (busybox-style argv[0] dispatch, hard links from
+  fsimg.AddLink), the disk slimmed to 96 KB, and the machine RAM
+  base dropped to 0x20002000 (the firmware's unused headroom).
 - [ ] More peripherals for the machine (GPIO/PIO surface).
 
 ## Presentation goals (beyond xv6)

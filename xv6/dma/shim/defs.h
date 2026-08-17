@@ -84,3 +84,24 @@ int filestat(struct file *f, uint64 addr);
 int filewrite(struct file *f, uint64 addr, int n);
 
 #endif
+
+/* vfat dispatch (prompts/029): when compiling the VERBATIM file.c
+ * (Makefile passes -DDMA_VFS_CALLS), its inode calls are renamed to
+ * the vfs_* shims in kfsglue.c, which route FAT nodes to kfat.c and
+ * everything else to the real fs.c functions declared above. The
+ * defines sit below the declarations so those keep their real names;
+ * the shims' own prototypes match by construction. */
+#ifdef DMA_VFS_CALLS
+#define readi vfs_readi
+#define writei vfs_writei
+#define ilock vfs_ilock
+#define iunlock vfs_iunlock
+#define iput vfs_iput
+#define stati vfs_stati
+int vfs_readi(struct inode *, int, uint64, uint, uint);
+int vfs_writei(struct inode *, int, uint64, uint, uint);
+void vfs_ilock(struct inode *);
+void vfs_iunlock(struct inode *);
+void vfs_iput(struct inode *);
+void vfs_stati(struct inode *, struct stat *);
+#endif

@@ -169,6 +169,15 @@ func (b *Builder) AddFile(name string, content []byte) {
 	b.dirlink(RootIno, name, in)
 }
 
+// AddLink adds a second root-directory name for the most recently
+// added file — hard links for busybox-style multi-call binaries (the
+// toolbox program dispatches on argv[0]).
+func (b *Builder) AddLink(name string) {
+	in := b.freeInode - 1
+	b.inodes[in].nlink++
+	b.dirlink(RootIno, name, in)
+}
+
 // Bytes finalizes inodes + the free bitmap and returns the image.
 func (b *Builder) Bytes() []byte {
 	for i := uint32(1); i < b.freeInode; i++ {

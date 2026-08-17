@@ -47,8 +47,7 @@ libc:
 # committed and linked by dmacc like the libc ones.
 XV6_SRCS = kernel/string.c user/umalloc.c user/ulib.c user/printf.c user/echo.c user/sh.c \
            user/cat.c user/ls.c user/wc.c \
-           dma/usys.c dma/kproc.c dma/kfsstub.c dma/syncprog.c dma/calflash.c \
-           dma/killprog.c dma/spin.c dma/trap.c
+           dma/usys.c dma/kproc.c dma/kfsstub.c dma/calflash.c dma/toolbox.c
 XV6_CLANG = clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding \
             -I$(CURDIR)/xv6 -S -emit-llvm
 
@@ -57,7 +56,7 @@ XV6_CLANG = clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding \
 # shadow copy makes quoted includes resolve shim-first, then upstream.
 XV6_FS_SRCS = fs.c file.c
 # DMA-side fs glue, compiled against the same shim-first include order.
-XV6_FSGLUE_SRCS = kbio.c kfsglue.c kpipe.c kflash.c
+XV6_FSGLUE_SRCS = kbio.c kfsglue.c kpipe.c kflash.c kfat.c
 
 .PHONY: xv6-ll
 xv6-ll:
@@ -75,9 +74,10 @@ xv6-ll:
 	  -I. -S -emit-llvm usertests.c -o $(CURDIR)/xv6/ll/usertests.ll) && echo "  user/usertests.c (shimmed riscv/memlayout) -> xv6/ll/usertests.ll"
 	@mkdir -p bin/fsshadow
 	@for f in $(XV6_FS_SRCS); do \
+	  vfs=""; if [ $$f = file.c ]; then vfs=-DDMA_VFS_CALLS; fi; \
 	  cp xv6/kernel/$$f bin/fsshadow/ && \
 	  (cd bin/fsshadow && clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding \
-	    -I$(CURDIR)/xv6/dma/shim -I$(CURDIR)/xv6/kernel -S -emit-llvm \
+	    -I$(CURDIR)/xv6/dma/shim -I$(CURDIR)/xv6/kernel $$vfs -S -emit-llvm \
 	    $$f -o $(CURDIR)/xv6/ll/k$$(basename $$f .c).ll) || exit 1; \
 	  echo "  kernel/$$f (shimmed) -> xv6/ll/k$$(basename $$f .c).ll"; \
 	done

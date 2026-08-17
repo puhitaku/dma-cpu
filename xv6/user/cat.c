@@ -11,12 +11,12 @@ cat(int fd)
 
   while ((n = read(fd, buf, sizeof(buf))) > 0) {
     if (write(1, buf, n) != n) {
-      fprintf(2, "cat: write error\n");
+      fputstr(2, "cat: write error\n");
       exit(1);
     }
   }
   if (n < 0) {
-    fprintf(2, "cat: read error\n");
+    fputstr(2, "cat: read error\n");
     exit(1);
   }
 }
@@ -33,7 +33,9 @@ main(int argc, char *argv[])
 
   for (i = 1; i < argc; i++) {
     if ((fd = open(argv[i], O_RDONLY)) < 0) {
-      fprintf(2, "cat: cannot open %s\n", argv[i]);
+      fputstr(2, "cat: cannot open "); /* dma: no printf */
+      fputstr(2, argv[i]);
+      fputstr(2, "\n");
       exit(1);
     }
     cat(fd);

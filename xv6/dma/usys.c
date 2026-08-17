@@ -238,6 +238,27 @@ __dma_sigentry(void)
                * point with r0/r1 restored */
 }
 
+int
+meminfo(uint *out)
+{
+  fill(SYS_meminfo, (uint)out, 0, 0);
+  return dma_trap();
+}
+
+int
+mount(const char *src, const char *target)
+{
+  fill(SYS_mount, (uint)src, (uint)target, 0);
+  return dma_trap();
+}
+
+int
+umount(const char *target)
+{
+  fill(SYS_umount, (uint)target, 0, 0);
+  return dma_trap();
+}
+
 /* dmacc's bounded-recursion sink (depth-K clones exhausted): die as a
  * process instead of halting the whole machine — deeply nested sh
  * subshells overflow in the vfork child and the shell survives. Must

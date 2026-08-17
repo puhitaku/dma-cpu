@@ -31,7 +31,7 @@ func compileKernel(t *testing.T, fs bool) string {
 	t.Helper()
 	list := []string{"kproc", "kfsstub"}
 	if fs {
-		list = []string{"kproc", "kfs", "kfile", "kbio", "kfsglue", "kpipe", "kflash", "string"}
+		list = []string{"kproc", "kfs", "kfile", "kbio", "kfsglue", "kpipe", "kflash", "kfat", "string"}
 	}
 	var mods []*llir.Module
 	for _, p := range list {
@@ -88,7 +88,7 @@ func TestXv6Proc(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x20004000, 0x20018000)
+			kernC := buildKernelC(t, v, 0x20004000, 0x2001A000)
 			asm := func(text, data uint32) *dmaasm.Result {
 				res, err := dmaasm.Assemble(pdasm, dmaasm.Options{
 					Variant: v, TextBase: text, DataBase: data})
@@ -97,9 +97,9 @@ func TestXv6Proc(t *testing.T) {
 				}
 				return res
 			}
-			idle := asm(0x2001C000, 0x20020000)
-			parent := asm(0x20022000, 0x20026000)
-			child := asm(0x20028000, 0x2002C000)
+			idle := asm(0x20020000, 0x20024000)
+			parent := asm(0x20026000, 0x2002A000)
+			child := asm(0x2002C000, 0x20030000)
 
 			m := emu.NewMachine(v)
 			var entries [3]uint32

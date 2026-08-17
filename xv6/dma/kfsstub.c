@@ -27,3 +27,18 @@ uint kflash_arm;
 uint kfs_iopen(const char *path) { (void)path; return 0; }
 int kfs_iread(uint ipu, uint off, uint dst, uint n) { (void)ipu; (void)off; (void)dst; (void)n; return -1; }
 void kfs_iclose(uint ipu) { (void)ipu; }
+
+int
+kfs_mount(uint srcaddr, uint tgtaddr)
+{
+  (void)srcaddr;
+  (void)tgtaddr;
+  return -1;
+}
+
+int
+kfs_umount(uint tgtaddr)
+{
+  (void)tgtaddr;
+  return -1;
+}

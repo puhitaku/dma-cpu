@@ -104,7 +104,7 @@ func TestXv6Exec(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x20004000, 0x20018000)
+			kernC := buildKernelC(t, v, 0x20004000, 0x2001A000)
 			asm := func(text, data uint32) *dmaasm.Result {
 				res, err := dmaasm.Assemble(spawnDasm, dmaasm.Options{
 					Variant: v, TextBase: text, DataBase: data})
@@ -113,11 +113,11 @@ func TestXv6Exec(t *testing.T) {
 				}
 				return res
 			}
-			idle := asm(0x2001C000, 0x20020000)
-			parent := asm(0x20022000, 0x20026000)
+			idle := asm(0x20020000, 0x20024000)
+			parent := asm(0x20026000, 0x2002A000)
 			// hello is linked at arbitrary bases: the kernel places it.
 			hello, err := dmaasm.Assemble(helloDasm, dmaasm.Options{
-				Variant: v, TextBase: 0x20038000, DataBase: 0x2003C000})
+				Variant: v, TextBase: 0x2003C000, DataBase: 0x2003C000})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -141,11 +141,11 @@ func TestXv6Exec(t *testing.T) {
 				{parent, entries[1], 2, 0, true},
 			})
 			// Registry ("flash"), allocator arena, pid counter, vector.
-			end := registerImage(t, m, kernC, 0, "hello", hello, 0x20028000)
-			if end > 0x20030000 {
+			end := registerImage(t, m, kernC, 0, "hello", hello, 0x2002C000)
+			if end > 0x20034000 {
 				t.Fatalf("blob storage overflow: %#x", end)
 			}
-			m.Poke32(mustSym(t, kernC, "g_arena"), 0x20030000)
+			m.Poke32(mustSym(t, kernC, "g_arena"), 0x20034000)
 			m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2003F000)
 			m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 			m.Poke32(mustSym(t, kernC, "g_k_sysentry"), mustSym(t, kern, "sys_entry"))
@@ -201,7 +201,7 @@ func TestXv6Exec(t *testing.T) {
 				t.Errorf("idle stalled after the spawn: %d -> %d", id1, id2)
 			}
 			t.Logf("ticks=%d arena_used=%#x", m.Peek32(mustSym(t, kernC, "g_ticks")),
-				m.Peek32(mustSym(t, kernC, "g_arena"))-0x2002C000)
+				m.Peek32(mustSym(t, kernC, "g_arena"))-0x20030000)
 		})
 	}
 }

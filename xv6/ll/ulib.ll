@@ -5,8 +5,8 @@ target triple = "thumbv6m-unknown-none-eabi"
 
 ; Function Attrs: minsize noreturn nounwind optsize
 define dso_local void @start(i32 noundef %0, ptr noundef %1) local_unnamed_addr #0 {
-  %3 = tail call i32 @main(i32 noundef %0, ptr noundef %1) #8
-  %4 = tail call i32 @exit(i32 noundef %3) #9
+  %3 = tail call i32 @main(i32 noundef %0, ptr noundef %1) #9
+  %4 = tail call i32 @exit(i32 noundef %3) #10
   unreachable
 }
 
@@ -128,7 +128,7 @@ define dso_local noundef ptr @strchr(ptr noundef readonly captures(ret: address,
 ; Function Attrs: minsize nounwind optsize
 define dso_local noundef ptr @gets(ptr noundef returned writeonly captures(ret: address, provenance) %0, i32 noundef %1) local_unnamed_addr #7 {
   %3 = alloca i8, align 1
-  call void @llvm.lifetime.start.p0(i64 1, ptr nonnull %3) #10
+  call void @llvm.lifetime.start.p0(i64 1, ptr nonnull %3) #11
   br label %4
 
 4:                                                ; preds = %11, %2
@@ -138,7 +138,7 @@ define dso_local noundef ptr @gets(ptr noundef returned writeonly captures(ret: 
   br i1 %7, label %8, label %14
 
 8:                                                ; preds = %4
-  %9 = call i32 @read(i32 noundef 0, ptr noundef nonnull %3, i32 noundef 1) #8
+  %9 = call i32 @read(i32 noundef 0, ptr noundef nonnull %3, i32 noundef 1) #9
   %10 = icmp slt i32 %9, 1
   br i1 %10, label %14, label %11
 
@@ -155,7 +155,7 @@ define dso_local noundef ptr @gets(ptr noundef returned writeonly captures(ret: 
   %15 = phi i32 [ %5, %8 ], [ %6, %11 ], [ %5, %4 ], [ %6, %11 ]
   %16 = getelementptr inbounds i8, ptr %0, i32 %15
   store i8 0, ptr %16, align 1, !tbaa !3
-  call void @llvm.lifetime.end.p0(i64 1, ptr nonnull %3) #10
+  call void @llvm.lifetime.end.p0(i64 1, ptr nonnull %3) #11
   ret ptr %0
 }
 
@@ -164,13 +164,13 @@ declare dso_local i32 @read(i32 noundef, ptr noundef, i32 noundef) local_unnamed
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local i32 @stat(ptr noundef %0, ptr noundef %1) local_unnamed_addr #7 {
-  %3 = tail call i32 @open(ptr noundef %0, i32 noundef 0) #8
+  %3 = tail call i32 @open(ptr noundef %0, i32 noundef 0) #9
   %4 = icmp slt i32 %3, 0
   br i1 %4, label %8, label %5
 
 5:                                                ; preds = %2
-  %6 = tail call i32 @fstat(i32 noundef %3, ptr noundef %1) #8
-  %7 = tail call i32 @close(i32 noundef %3) #8
+  %6 = tail call i32 @fstat(i32 noundef %3, ptr noundef %1) #9
+  %7 = tail call i32 @close(i32 noundef %3) #9
   br label %8
 
 8:                                                ; preds = %2, %5
@@ -291,13 +291,13 @@ define dso_local range(i32 -255, 256) i32 @memcmp(ptr noundef readonly captures(
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: readwrite)
 define dso_local noundef ptr @memcpy(ptr noundef returned captures(address, ret: address, provenance) %0, ptr noundef readonly captures(address) %1, i32 noundef %2) local_unnamed_addr #4 {
-  %4 = tail call ptr @memmove(ptr noundef %0, ptr noundef %1, i32 noundef %2) #11
+  %4 = tail call ptr @memmove(ptr noundef %0, ptr noundef %1, i32 noundef %2) #12
   ret ptr %0
 }
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local ptr @sbrk(i32 noundef %0) local_unnamed_addr #7 {
-  %2 = tail call ptr @sys_sbrk(i32 noundef %0, i32 noundef 1) #8
+  %2 = tail call ptr @sys_sbrk(i32 noundef %0, i32 noundef 1) #9
   ret ptr %2
 }
 
@@ -306,9 +306,73 @@ declare dso_local ptr @sys_sbrk(i32 noundef, i32 noundef) local_unnamed_addr #2
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local ptr @sbrklazy(i32 noundef %0) local_unnamed_addr #7 {
-  %2 = tail call ptr @sys_sbrk(i32 noundef %0, i32 noundef 2) #8
+  %2 = tail call ptr @sys_sbrk(i32 noundef %0, i32 noundef 2) #9
   ret ptr %2
 }
+
+; Function Attrs: minsize nounwind optsize
+define dso_local void @fputstr(i32 noundef %0, ptr noundef %1) local_unnamed_addr #7 {
+  br label %3
+
+3:                                                ; preds = %3, %2
+  %4 = phi i32 [ 0, %2 ], [ %8, %3 ]
+  %5 = getelementptr inbounds nuw i8, ptr %1, i32 %4
+  %6 = load i8, ptr %5, align 1, !tbaa !3
+  %7 = icmp eq i8 %6, 0
+  %8 = add nuw nsw i32 %4, 1
+  br i1 %7, label %9, label %3, !llvm.loop !17
+
+9:                                                ; preds = %3
+  %10 = tail call i32 @write(i32 noundef %0, ptr noundef nonnull %1, i32 noundef %4) #9
+  ret void
+}
+
+; Function Attrs: minsize optsize
+declare dso_local i32 @write(i32 noundef, ptr noundef, i32 noundef) local_unnamed_addr #2
+
+; Function Attrs: minsize nounwind optsize
+define dso_local void @fputnum(i32 noundef %0, i32 noundef %1) local_unnamed_addr #7 {
+  %3 = alloca [12 x i8], align 1
+  call void @llvm.lifetime.start.p0(i64 12, ptr nonnull %3) #11
+  %4 = tail call i32 @llvm.abs.i32(i32 %1, i1 true)
+  br label %5
+
+5:                                                ; preds = %5, %2
+  %6 = phi i32 [ 12, %2 ], [ %14, %5 ]
+  %7 = phi i32 [ %4, %2 ], [ %9, %5 ]
+  %8 = freeze i32 %7
+  %9 = udiv i32 %8, 10
+  %10 = mul i32 %9, 10
+  %11 = sub i32 %8, %10
+  %12 = trunc nuw nsw i32 %11 to i8
+  %13 = or disjoint i8 %12, 48
+  %14 = add nsw i32 %6, -1
+  %15 = getelementptr inbounds [12 x i8], ptr %3, i32 0, i32 %14
+  store i8 %13, ptr %15, align 1, !tbaa !3
+  %16 = icmp samesign ult i32 %7, 10
+  br i1 %16, label %17, label %5, !llvm.loop !18
+
+17:                                               ; preds = %5
+  %18 = icmp slt i32 %1, 0
+  br i1 %18, label %19, label %22
+
+19:                                               ; preds = %17
+  %20 = add nsw i32 %6, -2
+  %21 = getelementptr inbounds [12 x i8], ptr %3, i32 0, i32 %20
+  store i8 45, ptr %21, align 1, !tbaa !3
+  br label %22
+
+22:                                               ; preds = %19, %17
+  %23 = phi i32 [ %20, %19 ], [ %14, %17 ]
+  %24 = getelementptr inbounds i8, ptr %3, i32 %23
+  %25 = sub nsw i32 12, %23
+  %26 = call i32 @write(i32 noundef %0, ptr noundef nonnull %24, i32 noundef %25) #9
+  call void @llvm.lifetime.end.p0(i64 12, ptr nonnull %3) #11
+  ret void
+}
+
+; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+declare i32 @llvm.abs.i32(i32, i1 immarg) #8
 
 attributes #0 = { minsize noreturn nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
@@ -318,10 +382,11 @@ attributes #4 = { minsize nofree norecurse nosync nounwind optsize memory(argmem
 attributes #5 = { minsize nofree norecurse nosync nounwind optsize memory(argmem: read) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #6 = { minsize nofree norecurse nosync nounwind optsize memory(argmem: write) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #7 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #8 = { minsize nobuiltin nounwind optsize "no-builtins" }
-attributes #9 = { minsize nobuiltin noreturn nounwind optsize "no-builtins" }
-attributes #10 = { nounwind }
-attributes #11 = { minsize nobuiltin optsize "no-builtins" }
+attributes #8 = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
+attributes #9 = { minsize nobuiltin nounwind optsize "no-builtins" }
+attributes #10 = { minsize nobuiltin noreturn nounwind optsize "no-builtins" }
+attributes #11 = { nounwind }
+attributes #12 = { minsize nobuiltin optsize "no-builtins" }
 
 !llvm.module.flags = !{!0, !1}
 !llvm.ident = !{!2}
@@ -343,3 +408,5 @@ attributes #11 = { minsize nobuiltin optsize "no-builtins" }
 !14 = distinct !{!14, !7, !8}
 !15 = distinct !{!15, !7, !8}
 !16 = distinct !{!16, !7, !8}
+!17 = distinct !{!17, !7, !8}
+!18 = distinct !{!18, !7, !8}

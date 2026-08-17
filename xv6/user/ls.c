@@ -33,12 +33,16 @@ ls(char *path)
   struct stat st;
 
   if ((fd = open(path, O_RDONLY)) < 0) {
-    fprintf(2, "ls: cannot open %s\n", path);
+    fputstr(2, "ls: cannot open "); /* dma: no printf */
+    fputstr(2, path);
+    fputstr(2, "\n");
     return;
   }
 
   if (fstat(fd, &st) < 0) {
-    fprintf(2, "ls: cannot stat %s\n", path);
+    fputstr(2, "ls: cannot stat ");
+    fputstr(2, path);
+    fputstr(2, "\n");
     close(fd);
     return;
   }
@@ -46,12 +50,19 @@ ls(char *path)
   switch (st.type) {
   case T_DEVICE:
   case T_FILE:
-    printf("%s %d %d %d\n", fmtname(path), st.type, st.ino, (int)st.size);
+    fputstr(1, fmtname(path)); /* dma: no printf, same bytes */
+    fputstr(1, " ");
+    fputnum(1, st.type);
+    fputstr(1, " ");
+    fputnum(1, (int)st.ino);
+    fputstr(1, " ");
+    fputnum(1, (int)st.size);
+    fputstr(1, "\n");
     break;
 
   case T_DIR:
     if (strlen(path) + 1 + DIRSIZ + 1 > sizeof buf) {
-      printf("ls: path too long\n");
+      fputstr(1, "ls: path too long\n");
       break;
     }
     strcpy(buf, path);
@@ -63,10 +74,19 @@ ls(char *path)
       memmove(p, de.name, DIRSIZ);
       p[DIRSIZ] = 0;
       if (stat(buf, &st) < 0) {
-        printf("ls: cannot stat %s\n", buf);
+        fputstr(1, "ls: cannot stat ");
+        fputstr(1, buf);
+        fputstr(1, "\n");
         continue;
       }
-      printf("%s %d %d %d\n", fmtname(buf), st.type, st.ino, (int)st.size);
+      fputstr(1, fmtname(buf));
+      fputstr(1, " ");
+      fputnum(1, st.type);
+      fputstr(1, " ");
+      fputnum(1, (int)st.ino);
+      fputstr(1, " ");
+      fputnum(1, (int)st.size);
+      fputstr(1, "\n");
     }
     break;
   }

@@ -13,6 +13,11 @@ int close(int);
 int kill(int);
 #define SIGINT 2
 int signal(int, void (*)(int));
+int meminfo(uint *);
+int mount(const char *, const char *);
+int umount(const char *);
+void fputstr(int, const char *);
+void fputnum(int, int);
 int exec(const char *, char **);
 int open(const char *, int);
 int mknod(const char *, short, short);

@@ -37,7 +37,7 @@ func TestXv6Signal(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x20004000, 0x20018000)
+			kernC := buildKernelC(t, v, 0x20004000, 0x2001A000)
 			asm := func(text, data uint32) *dmaasm.Result {
 				res, err := dmaasm.Assemble(dasm, dmaasm.Options{
 					Variant: v, TextBase: text, DataBase: data})
@@ -46,8 +46,8 @@ func TestXv6Signal(t *testing.T) {
 				}
 				return res
 			}
-			driver := asm(0x2001C000, 0x20020000)
-			idle := asm(0x20022000, 0x20026000)
+			driver := asm(0x20020000, 0x20024000)
+			idle := asm(0x20026000, 0x2002A000)
 
 			m := emu.NewMachine(v)
 			var entries [2]uint32

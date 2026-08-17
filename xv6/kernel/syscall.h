@@ -23,3 +23,6 @@
 #define SYS_sync   22
 #define SYS_signal 23
 #define SYS_sigreturn 24
+#define SYS_meminfo 25
+#define SYS_mount  26
+#define SYS_umount 27

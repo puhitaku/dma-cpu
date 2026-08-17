@@ -116,6 +116,8 @@ extern int kfs_chdir(uint pathaddr);
 extern int kfs_mkdir(uint pathaddr);
 extern int kfs_link(uint oldaddr, uint newaddr);
 extern int kfs_unlink(uint pathaddr);
+extern int kfs_mount(uint srcaddr, uint tgtaddr);
+extern int kfs_umount(uint tgtaddr);
 extern int kflash_sync(void);
 extern void kflash_init(void);
 extern uint kfs_iopen(const char *path);
@@ -478,7 +480,12 @@ static void deliver_sigint(void);
 static void
 cons_poll(void)
 {
-  while (!(__dma_uart_fr & (1u << 4))) { /* RXFE clear: a byte waits */
+  /* Stop draining when the cooked buffer is full: popping the DR
+   * would DROP the byte, and the every-tick drain (fgpid systems)
+   * outruns readers on scripted input. Backpressure keeps the rest
+   * in the RX FIFO until a reader makes room. */
+  while (cons_e - cons_r < INPUT_BUF &&
+         !(__dma_uart_fr & (1u << 4))) { /* RXFE clear: a byte waits */
     uint c = __dma_uart_dr & 0xFFu;
     if (c == 3) { /* Ctrl-C: never buffered, interrupts the fg job */
       deliver_sigint();
@@ -1204,6 +1211,49 @@ dma_ksyscall(void)
   case SYS_exit: {
     terminate(p, (int)m->a0);
     block = 1;
+    break;
+  }
+  case SYS_mount: /* a0: source ("fat0"; 0 = list into a1) */
+    ret = fsready ? (uint)kfs_mount(m->a0, m->a1) : (uint)-1;
+    break;
+  case SYS_umount:
+    ret = fsready ? (uint)kfs_umount(m->a0) : (uint)-1;
+    break;
+  case SYS_meminfo: { /* a0: uint[8] out — real memory consumption:
+                       * [0] arena total  [1] arena free
+                       * [2] largest free block
+                       * [3] heap bytes (live sbrk chunks, w/ headers)
+                       * [4] exec bytes (live images + argv areas)
+                       * [5] proc slots used  [6] NPROC  [7] ticks */
+    if (badbuf(p, m->a0, 32))
+      break;
+    uint *o = (uint *)m->a0;
+    o[0] = arena_end - arena;
+    o[1] = 0;
+    o[2] = 0;
+    if (!kheap_init) {
+      o[1] = o[2] = o[0];
+    } else {
+      for (struct khdr *h = kfreelist; h; h = h->next) {
+        o[1] += h->size;
+        if (h->size > o[2])
+          o[2] = h->size;
+      }
+    }
+    o[3] = o[4] = o[5] = 0;
+    for (int i = 0; i < NPROC; i++) {
+      if (heapmem[i])
+        o[3] += W(heapmem[i] - 0x100); /* the kalloc size header */
+      for (int j = 0; j < 3; j++) {
+        if (execmem[i][j])
+          o[4] += W(execmem[i][j] - 0x100);
+      }
+      if (proc[i].state != UNUSED)
+        o[5]++;
+    }
+    o[6] = NPROC;
+    o[7] = ticks;
+    ret = 0;
     break;
   }
   case SYS_signal: /* a0: signum (SIGINT only); a2: &usys sigctx

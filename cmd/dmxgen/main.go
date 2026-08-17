@@ -42,8 +42,10 @@ var layouts = map[string]layout{
 	// rp2350: nearly all of main SRAM (firmware .data/.bss end low,
 	// core stacks live in the scratch banks above 0x20080000) — the
 	// xv6 sh image with its recursion clones needs the room.
-	"rp2350": {text: 0x20008000, data: 0x20050000, scratch: 0x2007FE00},
-	"rp2040": {text: 0x20008000, data: 0x20030000, scratch: 0x2003FE00},
+	// text starts just above the firmware's own RAM (bss ends near
+	// 0x20000DD0; the boot check FATALs if it ever grows past this).
+	"rp2350": {text: 0x20002000, data: 0x20050000, scratch: 0x2007FE00},
+	"rp2040": {text: 0x20002000, data: 0x20030000, scratch: 0x2003FE00},
 }
 
 const calCh = 8 // channel used by the C-side calibration experiments
@@ -476,7 +478,7 @@ func libcPaths(first ...string) ([]string, error) {
 // buildSched: the scheduler-only bundle (two counter processes, no
 // syscalls). Fits the narrow rp2040 layout.
 func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
-	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x15000)
+	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x17000)
 	if err != nil {
 		return nil, err
 	}
@@ -484,20 +486,20 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x19000, DataBase: lay.text + 0x1A000})
+	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1A000, DataBase: lay.text + 0x1B000})
 	if err != nil {
 		return nil, err
 	}
-	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1B000, DataBase: lay.text + 0x1C000})
+	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1C000, DataBase: lay.text + 0x1D000})
 	if err != nil {
 		return nil, err
 	}
 	b := &kernBundle{names: []string{"kernel", "kernc", "proca", "procb"}, sym: map[string]uint32{}}
-	b.entry0 = lay.text + 0x19000 + procA.Image.EntryOff
-	entryB := lay.text + 0x1B000 + procB.Image.EntryOff
-	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x15000, []kprocSpec{
-		{procA, lay.text + 0x1A000, b.entry0, 1, 0, false},
-		{procB, lay.text + 0x1C000, entryB, 2, 0, false},
+	b.entry0 = lay.text + 0x1A000 + procA.Image.EntryOff
+	entryB := lay.text + 0x1C000 + procB.Image.EntryOff
+	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x17000, []kprocSpec{
+		{procA, lay.text + 0x1B000, b.entry0, 1, 0, false},
+		{procB, lay.text + 0x1D000, entryB, 2, 0, false},
 	}); err != nil {
 		return nil, err
 	}
@@ -551,11 +553,11 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 // Needs the wide rp2350 layout.
 func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x18000
-	sText, sData := lay.text+0x1C000, lay.text+0x34000
+	cText, cData := lay.text+0x4000, lay.text+0x1A000
+	sText, sData := lay.text+0x1E000, lay.text+0x36000
 	pText, pData := lay.text+0x32000, lay.text+0x33000
-	blobHome := lay.text + 0x3C000
-	arena, arenaEnd := lay.text+0x3E000, lay.text+0x54000
+	blobHome := lay.text + 0x3E000
+	arena, arenaEnd := lay.text+0x40000, lay.text+0x56000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {
 		return nil, err
@@ -687,13 +689,14 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 // scratch (dmaasm CompactScratch). The RAM disk carries upstream
 // echo, cat, wc AND ls as DMX-exec files.
 func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
+	const fatVolXIP = 0x10140000 // vfat volume: above the fs slot
 	kText, kData := lay.text, lay.text+0x1000
-	cText, cData := lay.text+0x2000, lay.text+0x1F000
-	sText, sData := lay.text+0x27000, lay.text+0x40000
-	iText, iData := lay.text+0x45000, lay.text+0x46000
-	diskHome := lay.text + 0x47000
-	diskMax := uint32(0x20000) // 128 KiB
-	arena, arenaEnd := lay.text+0x67000, lay.text+0x77E00
+	cText, cData := lay.text+0x2000, lay.text+0x29000
+	sText, sData := lay.text+0x33000, lay.text+0x4C000
+	iText, iData := lay.text+0x51000, lay.text+0x52000
+	diskHome := lay.text + 0x53000
+	diskMax := uint32(0x18000) // 96 KiB
+	arena, arenaEnd := lay.text+0x6B000, lay.text+0x7DE00
 
 	casm := func(src string, text, data uint32) (*dmaasm.Result, error) {
 		return dmaasm.Assemble(src, dmaasm.Options{
@@ -709,7 +712,8 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		return nil, err
 	}
 	kcDasm, err := compileLL([]string{"xv6/ll/kproc.ll", "xv6/ll/kfs.ll", "xv6/ll/kfile.ll",
-		"xv6/ll/kbio.ll", "xv6/ll/kfsglue.ll", "xv6/ll/kpipe.ll", "xv6/ll/kflash.ll", "xv6/ll/string.ll"},
+		"xv6/ll/kbio.ll", "xv6/ll/kfsglue.ll", "xv6/ll/kpipe.ll", "xv6/ll/kflash.ll",
+		"xv6/ll/kfat.ll", "xv6/ll/string.ll"},
 		dmacc.Options{Entry: "kmain", NoSafepoints: true})
 	if err != nil {
 		return nil, err
@@ -718,7 +722,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fs kernel: %w", err)
 	}
-	shDasm, err := compileLL([]string{"xv6/ll/sh.ll", "xv6/ll/ulib.ll", "xv6/ll/printf.ll",
+	shDasm, err := compileLL([]string{"xv6/ll/sh.ll", "xv6/ll/ulib.ll",
 		"xv6/ll/umalloc.ll", "xv6/ll/usys.ll"},
 		dmacc.Options{RecursionDepth: 12})
 	if err != nil {
@@ -738,16 +742,13 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	}
 
 	// The disk: upstream user programs as compact DMX-exec files.
-	fb := fsimg.New(128, 64)
+	fb := fsimg.New(96, 64)
 	fb.AddDevice("console", 1, 0)
 	fb.AddFile("README", []byte("the DMA machine runs upstream xv6.\n"))
 	for _, up := range []struct {
 		name  string
 		extra []string
-	}{{"echo", nil}, {"cat", []string{"xv6/ll/printf.ll"}},
-		{"wc", []string{"xv6/ll/printf.ll"}}, {"ls", []string{"xv6/ll/printf.ll"}},
-		{"syncprog", nil},
-		{"killprog", nil}, {"spin", nil}, {"trap", nil}} {
+	}{{"echo", nil}, {"cat", nil}, {"ls", nil}, {"toolbox", nil}} {
 		paths := append([]string{"xv6/ll/" + up.name + ".ll", "xv6/ll/ulib.ll", "xv6/ll/usys.ll"}, up.extra...)
 		udasm, err := compileLL(paths, dmacc.Options{})
 		if err != nil {
@@ -761,8 +762,14 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		if err != nil {
 			return nil, err
 		}
-		fname := strings.TrimSuffix(up.name, "prog") /* syncprog, killprog */
-		fb.AddFile(fname, blob)
+		fb.AddFile(up.name, blob)
+		if up.name == "toolbox" {
+			/* the multi-call names: hard links onto the one blob */
+			for _, l := range []string{"kill", "spin", "trap", "free",
+				"sync", "mount", "umount", "wc", "mkdir"} {
+				fb.AddLink(l)
+			}
+		}
 	}
 	disk := fb.Bytes()
 	if uint32(len(disk)) > diskMax {
@@ -799,6 +806,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		{"g_fsslot", fsSlotXIP},
 		{"g_initpid", 2}, /* idle adopts orphans (prompts/024) */
 		{"g_fgpid", 1},   /* Ctrl-C interrupts sh's foreground job */
+		{"g_fatvol", fatVolXIP}, /* the vfat volume (prompts/029) */
 		{"g_kflash_arm", 0}, /* 0: the MACHINE drives the QMI itself
 		 * (prompts/028); the parked ARM's mailbox loop stays as a
 		 * dormant fallback — repoint this at scratch+0x10 to use it */
@@ -809,8 +817,18 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 			}
 		}
 	}
-	b.blobs = [][]byte{pad4(disk)}
-	b.blobNames = []string{"disk"}
+	// Golden vfat volume (prompts/029): the firmware stages it into
+	// flash at fatVolXIP when no valid BPB is present, so `mount fat0`
+	// works on silicon out of the box.
+	fatb := fsimg.NewFAT32(128) // 64 KiB
+	fatb.AddFile("HELLO.TXT", []byte("hello from vfat on real flash\n"))
+	fatb.AddFile("presentation-notes.txt",
+		[]byte("the DMA CPU mounts FAT32 now\n"))
+	fatb.AddDir("SUB")
+	fatb.AddFile("SUB/NESTED.TXT", []byte("nested vfat read\n"))
+	b.blobs = [][]byte{pad4(disk), fatb.Bytes()}
+	b.blobNames = []string{"disk", "fat"}
+	b.sym["FATVOL"] = fatVolXIP
 	b.sym["BLOB_DISK_HOME"] = diskHome
 	b.sym["INJ_CH"] = uint32(inj)
 	b.sym["FSSLOT"] = fsSlotXIP
@@ -875,9 +893,9 @@ const sysWantConsole = "hello from pid 1 via SYS_write\n" +
 // (dmacc/testdata/xv6sys.c + xv6/dma/usys.c). Wide layout.
 func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x18000
-	aText, aData := lay.text+0x1C000, lay.text+0x20000
-	bText, bData := lay.text+0x24000, lay.text+0x28000
+	cText, cData := lay.text+0x4000, lay.text+0x1A000
+	aText, aData := lay.text+0x1E000, lay.text+0x22000
+	bText, bData := lay.text+0x26000, lay.text+0x2A000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {
 		return nil, err
@@ -1096,11 +1114,11 @@ func stageBlobsEmu(m *emu.Machine, blobs [][]byte, names []string, syms map[stri
 // kernel places, relocates and runs it at exec() time.
 func buildExec(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x18000
-	aText, aData := lay.text+0x1C000, lay.text+0x20000
-	bText, bData := lay.text+0x24000, lay.text+0x28000
-	blobHome := lay.text + 0x2A000
-	arena, arenaEnd := lay.text+0x2E000, lay.text+0x37000
+	cText, cData := lay.text+0x4000, lay.text+0x1A000
+	aText, aData := lay.text+0x1E000, lay.text+0x22000
+	bText, bData := lay.text+0x26000, lay.text+0x2A000
+	blobHome := lay.text + 0x2C000
+	arena, arenaEnd := lay.text+0x30000, lay.text+0x3B000
 
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {

@@ -43,7 +43,7 @@ func buildUser(t *testing.T, v *emu.Variant, name string, extra ...string) *dmaa
 // them (plus README) into an xv6 filesystem image.
 func buildDisk(t *testing.T, v *emu.Variant) []byte {
 	t.Helper()
-	b := fsimg.New(128, 64)
+	b := fsimg.New(96, 64)
 	b.AddDevice("console", 1, 0)
 	b.AddFile("README", []byte("the DMA machine runs upstream xv6.\n"))
 	for _, prog := range []struct {
@@ -51,19 +51,22 @@ func buildDisk(t *testing.T, v *emu.Variant) []byte {
 		extra []string
 	}{
 		{"echo", nil},
-		{"cat", []string{"printf"}},
-		{"wc", []string{"printf"}},
-		{"ls", []string{"printf"}},
-		{"syncprog", nil},
-		{"trap", nil},
+		{"cat", nil},
+		{"ls", nil},
+		{"toolbox", nil},
 	} {
 		res := buildUser(t, v, prog.name, prog.extra...)
 		blob, err := fsimg.DMXExec(res.Image, res.Symbol)
 		if err != nil {
 			t.Fatal(err)
 		}
-		name := strings.TrimSuffix(prog.name, "prog") /* syncprog */
-		b.AddFile(name, blob)
+		b.AddFile(prog.name, blob)
+		if prog.name == "toolbox" {
+			for _, l := range []string{"kill", "spin", "trap", "free",
+				"sync", "mount", "umount", "wc", "mkdir"} {
+				b.AddLink(l)
+			}
+		}
 	}
 	return b.Bytes()
 }
@@ -116,8 +119,7 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	}
 	shMod, err := llir.Merge(
 		parseLL(t, "../xv6/ll/sh.ll"), parseLL(t, "../xv6/ll/ulib.ll"),
-		parseLL(t, "../xv6/ll/printf.ll"), parseLL(t, "../xv6/ll/umalloc.ll"),
-		parseLL(t, "../xv6/ll/usys.ll"))
+		parseLL(t, "../xv6/ll/umalloc.ll"), parseLL(t, "../xv6/ll/usys.ll"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,19 +142,19 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 			Variant: v, Compact: true, CompactScratch: 0x2007FE00,
 			TextBase: text, DataBase: data})
 	}
-	kern, err := casm(ksrc, 0x20008000, 0x20009000)
+	kern, err := casm(ksrc, 0x20002000, 0x20003000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernC, err := casm(kcDasm, 0x2000A000, 0x20027000)
+	kernC, err := casm(kcDasm, 0x20004000, 0x2002B000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sh, err := casm(shDasm, 0x2002F000, 0x20048000)
+	sh, err := casm(shDasm, 0x20035000, 0x2004E000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idle, err := casm(idleDasm, 0x2004D000, 0x2004E000)
+	idle, err := casm(idleDasm, 0x20053000, 0x20054000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,6 +197,7 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 			}
 		}
 		m.Poke32(mustSym(t, kernC, "g_fsslot"), slotXIP)
+		m.Poke32(mustSym(t, kernC, "g_fatvol"), 0x10140000)
 		// The kernel posts erase/program requests to the ARM-executor
 		// mailbox; emulator tests service it via serviceFlashMailbox,
 		// playing the parked ARM (kflash.c explains why).
@@ -202,8 +205,8 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 		 * NOR model itself (prompts/028). serviceFlashMailbox remains
 		 * for the dormant ARM-executor fallback. */
 	}
-	const diskBase = 0x2004F000
-	if diskBase+len(disk) > 0x2006F000 {
+	const diskBase = 0x20055000
+	if diskBase+len(disk) > 0x2006D000 {
 		t.Fatalf("disk too large: %d", len(disk))
 	}
 	for i := 0; i < len(disk); i += 4 {
@@ -212,7 +215,7 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	m.Poke32(mustSym(t, kernC, "g_dma_disk"), diskBase)
 	m.Poke32(mustSym(t, kernC, "g_dma_disksize"), uint32(len(disk)))
 	// exec arena.
-	m.Poke32(mustSym(t, kernC, "g_arena"), 0x2006F000)
+	m.Poke32(mustSym(t, kernC, "g_arena"), 0x2006D000)
 	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007FE00)
 	m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 	m.Poke32(mustSym(t, kernC, "g_initpid"), 2)

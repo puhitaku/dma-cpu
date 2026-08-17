@@ -13,6 +13,7 @@
  *   CAL <name>: <observations>
  */
 #include <stdio.h>
+#include <string.h>
 
 #include "pico/stdlib.h"
 #include "hardware/flash.h"
@@ -897,6 +898,27 @@ static void xsh_start(void)
         printf("XSH: FAIL load\n");
         return;
     }
+#ifdef HIL_XSH_FATVOL
+    /* Golden vfat volume for `mount fat0` (prompts/029): staged once
+     * into flash when no valid boot-sector signature is present. Must
+     * run BEFORE dmx_start — flash ops disable XIP, and the running
+     * machine reads the fs slot header through it. The blob lives in
+     * rodata (flash), and flash_range_program must read its source
+     * with XIP disabled — bounce each sector through RAM. */
+    if (*(volatile uint16_t *)(HIL_XSH_FATVOL + 510) != 0xAA55u) {
+        static uint8_t sect[4096];
+        uint32_t off = HIL_XSH_FATVOL - 0x10000000u;
+        uint32_t len = (uint32_t)sizeof hil_xsh_blob_fat;
+        for (uint32_t o = 0; o < len; o += 4096) {
+            uint32_t n = len - o > 4096 ? 4096 : len - o;
+            memcpy(sect, hil_xsh_blob_fat + o, n);
+            memset(sect + n, 0xFF, 4096 - n);
+            flash_range_erase(off + o, 4096);
+            flash_range_program(off + o, sect, 4096);
+        }
+        printf("XSH: staged the vfat volume (%u bytes)\n", (unsigned)len);
+    }
+#endif
     /* Stage the disk: a valid persistent slot (magic, size, word-sum
      * checksum, header written last by the kernel's sync) wins over
      * the golden image. */

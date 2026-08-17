@@ -6,7 +6,8 @@ target triple = "thumbv6m-unknown-none-eabi"
 @buf = dso_local global [512 x i8] zeroinitializer, align 1
 @.str = private unnamed_addr constant [18 x i8] c"cat: write error\0A\00", align 1
 @.str.1 = private unnamed_addr constant [17 x i8] c"cat: read error\0A\00", align 1
-@.str.2 = private unnamed_addr constant [21 x i8] c"cat: cannot open %s\0A\00", align 1
+@.str.2 = private unnamed_addr constant [18 x i8] c"cat: cannot open \00", align 1
+@.str.3 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @cat(i32 noundef %0) local_unnamed_addr #0 {
@@ -23,7 +24,7 @@ define dso_local void @cat(i32 noundef %0) local_unnamed_addr #0 {
   br i1 %7, label %2, label %8, !llvm.loop !3
 
 8:                                                ; preds = %5
-  tail call void (i32, ptr, ...) @fprintf(i32 noundef 2, ptr noundef nonnull @.str) #4
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str) #4
   %9 = tail call i32 @exit(i32 noundef 1) #5
   unreachable
 
@@ -32,7 +33,7 @@ define dso_local void @cat(i32 noundef %0) local_unnamed_addr #0 {
   br i1 %11, label %12, label %14
 
 12:                                               ; preds = %10
-  tail call void (i32, ptr, ...) @fprintf(i32 noundef 2, ptr noundef nonnull @.str.1) #4
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.1) #4
   %13 = tail call i32 @exit(i32 noundef 1) #5
   unreachable
 
@@ -47,7 +48,7 @@ declare dso_local i32 @read(i32 noundef, ptr noundef, i32 noundef) local_unnamed
 declare dso_local i32 @write(i32 noundef, ptr noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
-declare dso_local void @fprintf(i32 noundef, ptr noundef, ...) local_unnamed_addr #1
+declare dso_local void @fputstr(i32 noundef, ptr noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize noreturn optsize
 declare dso_local i32 @exit(i32 noundef) local_unnamed_addr #2
@@ -75,8 +76,10 @@ define dso_local noundef i32 @main(i32 noundef %0, ptr noundef readonly captures
   br i1 %13, label %14, label %17
 
 14:                                               ; preds = %9
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.2) #4
   %15 = load ptr, ptr %10, align 4, !tbaa !6
-  tail call void (i32, ptr, ...) @fprintf(i32 noundef 2, ptr noundef nonnull @.str.2, ptr noundef %15) #4
+  tail call void @fputstr(i32 noundef 2, ptr noundef %15) #4
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.3) #4
   %16 = tail call i32 @exit(i32 noundef 1) #5
   unreachable
 

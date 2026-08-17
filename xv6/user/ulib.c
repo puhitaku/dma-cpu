@@ -160,3 +160,30 @@ sbrklazy(int n)
 {
   return sys_sbrk(n, SBRK_LAZY);
 }
+
+// DMA port (prompts/029, no-verbatim policy): printf replacements —
+// write()-based string/decimal output. Programs that only need these
+// avoid printf's ~20 KB static footprint on the disk.
+void
+fputstr(int fd, const char *s)
+{
+  int n = 0;
+  while (s[n])
+    n++;
+  write(fd, s, n);
+}
+
+void
+fputnum(int fd, int v)
+{
+  char b[12];
+  int i = 12;
+  unsigned int u = v < 0 ? (unsigned int)-v : (unsigned int)v;
+  do {
+    b[--i] = '0' + u % 10;
+    u /= 10;
+  } while (u);
+  if (v < 0)
+    b[--i] = '-';
+  write(fd, b + i, 12 - i);
+}

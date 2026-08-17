@@ -7,11 +7,12 @@ target triple = "thumbv6m-unknown-none-eabi"
 %struct.stat = type { i32, i32, i16, i16, i32 }
 
 @fmtname.buf = internal global [15 x i8] zeroinitializer, align 1
-@.str = private unnamed_addr constant [20 x i8] c"ls: cannot open %s\0A\00", align 1
-@.str.1 = private unnamed_addr constant [20 x i8] c"ls: cannot stat %s\0A\00", align 1
-@.str.2 = private unnamed_addr constant [13 x i8] c"%s %d %d %d\0A\00", align 1
-@.str.3 = private unnamed_addr constant [19 x i8] c"ls: path too long\0A\00", align 1
-@.str.4 = private unnamed_addr constant [2 x i8] c".\00", align 1
+@.str = private unnamed_addr constant [17 x i8] c"ls: cannot open \00", align 1
+@.str.1 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
+@.str.2 = private unnamed_addr constant [17 x i8] c"ls: cannot stat \00", align 1
+@.str.3 = private unnamed_addr constant [2 x i8] c" \00", align 1
+@.str.4 = private unnamed_addr constant [19 x i8] c"ls: path too long\0A\00", align 1
+@.str.5 = private unnamed_addr constant [2 x i8] c".\00", align 1
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local noundef nonnull ptr @fmtname(ptr noundef %0) local_unnamed_addr #0 {
@@ -83,8 +84,10 @@ define dso_local void @ls(ptr noundef %0) local_unnamed_addr #0 {
   br i1 %6, label %7, label %8
 
 7:                                                ; preds = %1
-  tail call void (i32, ptr, ...) @fprintf(i32 noundef 2, ptr noundef nonnull @.str, ptr noundef %0) #5
-  br label %58
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str) #5
+  tail call void @fputstr(i32 noundef 2, ptr noundef %0) #5
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.1) #5
+  br label %60
 
 8:                                                ; preds = %1
   %9 = call i32 @fstat(i32 noundef %5, ptr noundef nonnull %4) #5
@@ -92,14 +95,16 @@ define dso_local void @ls(ptr noundef %0) local_unnamed_addr #0 {
   br i1 %10, label %11, label %13
 
 11:                                               ; preds = %8
-  call void (i32, ptr, ...) @fprintf(i32 noundef 2, ptr noundef nonnull @.str.1, ptr noundef %0) #5
+  call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.2) #5
+  call void @fputstr(i32 noundef 2, ptr noundef %0) #5
+  call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.1) #5
   %12 = call i32 @close(i32 noundef %5) #5
-  br label %58
+  br label %60
 
 13:                                               ; preds = %8
   %14 = getelementptr inbounds nuw i8, ptr %4, i32 8
   %15 = load i16, ptr %14, align 4, !tbaa !9
-  switch i16 %15, label %56 [
+  switch i16 %15, label %58 [
     i16 3, label %16
     i16 2, label %16
     i16 1, label %24
@@ -107,75 +112,93 @@ define dso_local void @ls(ptr noundef %0) local_unnamed_addr #0 {
 
 16:                                               ; preds = %13, %13
   %17 = call ptr @fmtname(ptr noundef %0) #7
+  call void @fputstr(i32 noundef 1, ptr noundef nonnull %17) #5
+  call void @fputstr(i32 noundef 1, ptr noundef nonnull @.str.3) #5
   %18 = load i16, ptr %14, align 4, !tbaa !9
   %19 = sext i16 %18 to i32
+  call void @fputnum(i32 noundef 1, i32 noundef %19) #5
+  call void @fputstr(i32 noundef 1, ptr noundef nonnull @.str.3) #5
   %20 = getelementptr inbounds nuw i8, ptr %4, i32 4
   %21 = load i32, ptr %20, align 4, !tbaa !14
+  call void @fputnum(i32 noundef 1, i32 noundef %21) #5
+  call void @fputstr(i32 noundef 1, ptr noundef nonnull @.str.3) #5
   %22 = getelementptr inbounds nuw i8, ptr %4, i32 12
   %23 = load i32, ptr %22, align 4, !tbaa !15
-  call void (ptr, ...) @printf(ptr noundef nonnull @.str.2, ptr noundef nonnull %17, i32 noundef %19, i32 noundef %21, i32 noundef %23) #5
+  call void @fputnum(i32 noundef 1, i32 noundef %23) #5
   br label %56
 
 24:                                               ; preds = %13
   %25 = call i32 @strlen(ptr noundef %0) #5
   %26 = add i32 %25, -497
   %27 = icmp ult i32 %26, -513
-  br i1 %27, label %28, label %29
+  br i1 %27, label %56, label %28
 
 28:                                               ; preds = %24
-  call void (ptr, ...) @printf(ptr noundef nonnull @.str.3) #5
-  br label %56
+  %29 = call ptr @strcpy(ptr noundef nonnull %2, ptr noundef %0) #5
+  %30 = call i32 @strlen(ptr noundef nonnull %2) #5
+  %31 = getelementptr inbounds nuw i8, ptr %2, i32 %30
+  %32 = getelementptr inbounds nuw i8, ptr %31, i32 1
+  store i8 47, ptr %31, align 1, !tbaa !3
+  %33 = getelementptr inbounds nuw i8, ptr %3, i32 2
+  %34 = getelementptr inbounds nuw i8, ptr %31, i32 15
+  %35 = getelementptr inbounds nuw i8, ptr %4, i32 4
+  %36 = getelementptr inbounds nuw i8, ptr %4, i32 12
+  br label %37
 
-29:                                               ; preds = %24
-  %30 = call ptr @strcpy(ptr noundef nonnull %2, ptr noundef %0) #5
-  %31 = call i32 @strlen(ptr noundef nonnull %2) #5
-  %32 = getelementptr inbounds nuw i8, ptr %2, i32 %31
-  %33 = getelementptr inbounds nuw i8, ptr %32, i32 1
-  store i8 47, ptr %32, align 1, !tbaa !3
-  %34 = getelementptr inbounds nuw i8, ptr %3, i32 2
-  %35 = getelementptr inbounds nuw i8, ptr %32, i32 15
-  %36 = getelementptr inbounds nuw i8, ptr %4, i32 4
-  %37 = getelementptr inbounds nuw i8, ptr %4, i32 12
-  br label %38
+37:                                               ; preds = %49, %28
+  %38 = call i32 @read(i32 noundef %5, ptr noundef nonnull %3, i32 noundef 16) #5
+  %39 = icmp eq i32 %38, 16
+  br i1 %39, label %40, label %58
 
-38:                                               ; preds = %49, %29
-  %39 = call i32 @read(i32 noundef %5, ptr noundef nonnull %3, i32 noundef 16) #5
-  %40 = icmp eq i32 %39, 16
-  br i1 %40, label %41, label %56
+40:                                               ; preds = %37
+  %41 = load i16, ptr %3, align 2, !tbaa !16
+  %42 = icmp eq i16 %41, 0
+  br i1 %42, label %49, label %43
 
-41:                                               ; preds = %38
-  %42 = load i16, ptr %3, align 2, !tbaa !16
-  %43 = icmp eq i16 %42, 0
-  br i1 %43, label %49, label %44
+43:                                               ; preds = %40
+  %44 = call ptr @memmove(ptr noundef nonnull %32, ptr noundef nonnull %33, i32 noundef 14) #5
+  store i8 0, ptr %34, align 1, !tbaa !3
+  %45 = call i32 @stat(ptr noundef nonnull %2, ptr noundef nonnull %4) #5
+  %46 = icmp slt i32 %45, 0
+  br i1 %46, label %47, label %50
 
-44:                                               ; preds = %41
-  %45 = call ptr @memmove(ptr noundef nonnull %33, ptr noundef nonnull %34, i32 noundef 14) #5
-  store i8 0, ptr %35, align 1, !tbaa !3
-  %46 = call i32 @stat(ptr noundef nonnull %2, ptr noundef nonnull %4) #5
-  %47 = icmp slt i32 %46, 0
-  br i1 %47, label %48, label %50
+47:                                               ; preds = %43
+  call void @fputstr(i32 noundef 1, ptr noundef nonnull @.str.2) #5
+  call void @fputstr(i32 noundef 1, ptr noundef nonnull %2) #5
+  br label %48
 
-48:                                               ; preds = %44
-  call void (ptr, ...) @printf(ptr noundef nonnull @.str.1, ptr noundef nonnull %2) #5
+48:                                               ; preds = %50, %47
+  call void @fputstr(i32 noundef 1, ptr noundef nonnull @.str.1) #5
   br label %49
 
-49:                                               ; preds = %48, %50, %41
-  br label %38, !llvm.loop !18
+49:                                               ; preds = %48, %40
+  br label %37, !llvm.loop !18
 
-50:                                               ; preds = %44
+50:                                               ; preds = %43
   %51 = call ptr @fmtname(ptr noundef nonnull %2) #7
+  call void @fputstr(i32 noundef 1, ptr noundef nonnull %51) #5
+  call void @fputstr(i32 noundef 1, ptr noundef nonnull @.str.3) #5
   %52 = load i16, ptr %14, align 4, !tbaa !9
   %53 = sext i16 %52 to i32
-  %54 = load i32, ptr %36, align 4, !tbaa !14
-  %55 = load i32, ptr %37, align 4, !tbaa !15
-  call void (ptr, ...) @printf(ptr noundef nonnull @.str.2, ptr noundef nonnull %51, i32 noundef %53, i32 noundef %54, i32 noundef %55) #5
-  br label %49
+  call void @fputnum(i32 noundef 1, i32 noundef %53) #5
+  call void @fputstr(i32 noundef 1, ptr noundef nonnull @.str.3) #5
+  %54 = load i32, ptr %35, align 4, !tbaa !14
+  call void @fputnum(i32 noundef 1, i32 noundef %54) #5
+  call void @fputstr(i32 noundef 1, ptr noundef nonnull @.str.3) #5
+  %55 = load i32, ptr %36, align 4, !tbaa !15
+  call void @fputnum(i32 noundef 1, i32 noundef %55) #5
+  br label %48
 
-56:                                               ; preds = %38, %13, %28, %16
-  %57 = call i32 @close(i32 noundef %5) #5
+56:                                               ; preds = %24, %16
+  %57 = phi ptr [ @.str.1, %16 ], [ @.str.4, %24 ]
+  call void @fputstr(i32 noundef 1, ptr noundef nonnull %57) #5
   br label %58
 
-58:                                               ; preds = %56, %11, %7
+58:                                               ; preds = %37, %56, %13
+  %59 = call i32 @close(i32 noundef %5) #5
+  br label %60
+
+60:                                               ; preds = %58, %11, %7
   call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #6
   call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %3) #6
   call void @llvm.lifetime.end.p0(i64 512, ptr nonnull %2) #6
@@ -186,7 +209,7 @@ define dso_local void @ls(ptr noundef %0) local_unnamed_addr #0 {
 declare dso_local i32 @open(ptr noundef, i32 noundef) local_unnamed_addr #2
 
 ; Function Attrs: minsize optsize
-declare dso_local void @fprintf(i32 noundef, ptr noundef, ...) local_unnamed_addr #2
+declare dso_local void @fputstr(i32 noundef, ptr noundef) local_unnamed_addr #2
 
 ; Function Attrs: minsize optsize
 declare dso_local i32 @fstat(i32 noundef, ptr noundef) local_unnamed_addr #2
@@ -195,7 +218,7 @@ declare dso_local i32 @fstat(i32 noundef, ptr noundef) local_unnamed_addr #2
 declare dso_local i32 @close(i32 noundef) local_unnamed_addr #2
 
 ; Function Attrs: minsize optsize
-declare dso_local void @printf(ptr noundef, ...) local_unnamed_addr #2
+declare dso_local void @fputnum(i32 noundef, i32 noundef) local_unnamed_addr #2
 
 ; Function Attrs: minsize optsize
 declare dso_local ptr @strcpy(ptr noundef, ptr noundef) local_unnamed_addr #2
@@ -212,7 +235,7 @@ define dso_local noundef i32 @main(i32 noundef %0, ptr noundef readonly captures
   br i1 %3, label %4, label %6
 
 4:                                                ; preds = %2
-  tail call void @ls(ptr noundef nonnull @.str.4) #7
+  tail call void @ls(ptr noundef nonnull @.str.5) #7
   %5 = tail call i32 @exit(i32 noundef 0) #8
   unreachable
 

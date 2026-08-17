@@ -137,7 +137,7 @@ define dso_local void @fileclose(ptr noundef captures(none) %0) local_unnamed_ad
 
 20:                                               ; preds = %10, %10
   tail call void @begin_op() #5
-  tail call void @iput(ptr noundef %17) #5
+  tail call void @vfs_iput(ptr noundef %17) #5
   tail call void @end_op() #5
   br label %21
 
@@ -152,7 +152,7 @@ declare dso_local void @pipeclose(ptr noundef, i32 noundef) local_unnamed_addr #
 declare dso_local void @begin_op() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
-declare dso_local void @iput(ptr noundef) local_unnamed_addr #1
+declare dso_local void @vfs_iput(ptr noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @end_op() local_unnamed_addr #1
@@ -170,11 +170,11 @@ define dso_local range(i32 -1, 1) i32 @filestat(ptr noundef readonly captures(no
 8:                                                ; preds = %2
   %9 = getelementptr inbounds nuw i8, ptr %0, i32 16
   %10 = load ptr, ptr %9, align 4, !tbaa !20
-  tail call void @ilock(ptr noundef %10) #5
+  tail call void @vfs_ilock(ptr noundef %10) #5
   %11 = load ptr, ptr %9, align 4, !tbaa !20
-  call void @stati(ptr noundef %11, ptr noundef nonnull %3) #5
+  call void @vfs_stati(ptr noundef %11, ptr noundef nonnull %3) #5
   %12 = load ptr, ptr %9, align 4, !tbaa !20
-  call void @iunlock(ptr noundef %12) #5
+  call void @vfs_iunlock(ptr noundef %12) #5
   %13 = load i32, ptr %4, align 4, !tbaa !21
   %14 = getelementptr inbounds nuw i8, ptr %4, i32 4
   %15 = load i32, ptr %14, align 4, !tbaa !24
@@ -192,13 +192,13 @@ define dso_local range(i32 -1, 1) i32 @filestat(ptr noundef readonly captures(no
 declare dso_local ptr @myproc() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
-declare dso_local void @ilock(ptr noundef) local_unnamed_addr #1
+declare dso_local void @vfs_ilock(ptr noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
-declare dso_local void @stati(ptr noundef, ptr noundef) local_unnamed_addr #1
+declare dso_local void @vfs_stati(ptr noundef, ptr noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
-declare dso_local void @iunlock(ptr noundef) local_unnamed_addr #1
+declare dso_local void @vfs_iunlock(ptr noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local i32 @copyout(i32 noundef, i32 noundef, i32 noundef, ptr noundef, i32 noundef) local_unnamed_addr #1
@@ -248,11 +248,11 @@ define dso_local i32 @fileread(ptr noundef captures(none) %0, i32 noundef %1, i3
 26:                                               ; preds = %7
   %27 = getelementptr inbounds nuw i8, ptr %0, i32 16
   %28 = load ptr, ptr %27, align 4, !tbaa !20
-  tail call void @ilock(ptr noundef %28) #5
+  tail call void @vfs_ilock(ptr noundef %28) #5
   %29 = load ptr, ptr %27, align 4, !tbaa !20
   %30 = getelementptr inbounds nuw i8, ptr %0, i32 20
   %31 = load i32, ptr %30, align 4, !tbaa !30
-  %32 = tail call i32 @readi(ptr noundef %29, i32 noundef 1, i32 noundef %1, i32 noundef %31, i32 noundef %2) #5
+  %32 = tail call i32 @vfs_readi(ptr noundef %29, i32 noundef 1, i32 noundef %1, i32 noundef %31, i32 noundef %2) #5
   %33 = icmp sgt i32 %32, 0
   br i1 %33, label %34, label %37
 
@@ -264,7 +264,7 @@ define dso_local i32 @fileread(ptr noundef captures(none) %0, i32 noundef %1, i3
 
 37:                                               ; preds = %34, %26
   %38 = load ptr, ptr %27, align 4, !tbaa !20
-  tail call void @iunlock(ptr noundef %38) #5
+  tail call void @vfs_iunlock(ptr noundef %38) #5
   br label %40
 
 39:                                               ; preds = %7
@@ -280,7 +280,7 @@ define dso_local i32 @fileread(ptr noundef captures(none) %0, i32 noundef %1, i3
 declare dso_local i32 @piperead(ptr noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @readi(ptr noundef, i32 noundef, i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
+declare dso_local i32 @vfs_readi(ptr noundef, i32 noundef, i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local i32 @filewrite(ptr noundef captures(none) %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #0 {
@@ -339,11 +339,11 @@ define dso_local i32 @filewrite(ptr noundef captures(none) %0, i32 noundef %1, i
   %34 = tail call i32 @llvm.smin.i32(i32 %33, i32 3072)
   tail call void @begin_op() #5
   %35 = load ptr, ptr %10, align 4, !tbaa !20
-  tail call void @ilock(ptr noundef %35) #5
+  tail call void @vfs_ilock(ptr noundef %35) #5
   %36 = load ptr, ptr %10, align 4, !tbaa !20
   %37 = add i32 %30, %1
   %38 = load i32, ptr %11, align 4, !tbaa !30
-  %39 = tail call i32 @writei(ptr noundef %36, i32 noundef 1, i32 noundef %37, i32 noundef %38, i32 noundef %34) #5
+  %39 = tail call i32 @vfs_writei(ptr noundef %36, i32 noundef 1, i32 noundef %37, i32 noundef %38, i32 noundef %34) #5
   %40 = icmp sgt i32 %39, 0
   br i1 %40, label %41, label %44
 
@@ -355,7 +355,7 @@ define dso_local i32 @filewrite(ptr noundef captures(none) %0, i32 noundef %1, i
 
 44:                                               ; preds = %41, %32
   %45 = load ptr, ptr %10, align 4, !tbaa !20
-  tail call void @iunlock(ptr noundef %45) #5
+  tail call void @vfs_iunlock(ptr noundef %45) #5
   tail call void @end_op() #5
   %46 = icmp eq i32 %39, %34
   %47 = add nsw i32 %39, %30
@@ -379,7 +379,7 @@ define dso_local i32 @filewrite(ptr noundef captures(none) %0, i32 noundef %1, i
 declare dso_local i32 @pipewrite(ptr noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @writei(ptr noundef, i32 noundef, i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
+declare dso_local i32 @vfs_writei(ptr noundef, i32 noundef, i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
 declare i32 @llvm.smin.i32(i32, i32) #4

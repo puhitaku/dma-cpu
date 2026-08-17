@@ -48,14 +48,14 @@ func TestXv6Read(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x20004000, 0x20018000)
+			kernC := buildKernelC(t, v, 0x20004000, 0x2001A000)
 			idle, err := dmaasm.Assemble(idasm, dmaasm.Options{
-				Variant: v, TextBase: 0x2001C000, DataBase: 0x20020000})
+				Variant: v, TextBase: 0x20020000, DataBase: 0x20024000})
 			if err != nil {
 				t.Fatal(err)
 			}
 			reader, err := dmaasm.Assemble(rdasm, dmaasm.Options{
-				Variant: v, TextBase: 0x20022000, DataBase: 0x20028000})
+				Variant: v, TextBase: 0x20026000, DataBase: 0x2002C000})
 			if err != nil {
 				t.Fatal(err)
 			}

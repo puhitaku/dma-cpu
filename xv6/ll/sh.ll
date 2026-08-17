@@ -4,31 +4,32 @@ target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
 @.str = private unnamed_addr constant [7 x i8] c"runcmd\00", align 1
-@.str.1 = private unnamed_addr constant [16 x i8] c"exec %s failed\0A\00", align 1
-@.str.2 = private unnamed_addr constant [16 x i8] c"open %s failed\0A\00", align 1
-@.str.3 = private unnamed_addr constant [5 x i8] c"pipe\00", align 1
-@.str.4 = private unnamed_addr constant [3 x i8] c"$ \00", align 1
+@.str.1 = private unnamed_addr constant [6 x i8] c"exec \00", align 1
+@.str.2 = private unnamed_addr constant [9 x i8] c" failed\0A\00", align 1
+@.str.3 = private unnamed_addr constant [6 x i8] c"open \00", align 1
+@.str.4 = private unnamed_addr constant [5 x i8] c"pipe\00", align 1
+@.str.5 = private unnamed_addr constant [3 x i8] c"$ \00", align 1
 @main.buf = internal global [100 x i8] zeroinitializer, align 1
-@.str.5 = private unnamed_addr constant [8 x i8] c"console\00", align 1
-@.str.6 = private unnamed_addr constant [14 x i8] c"cannot cd %s\0A\00", align 1
-@.str.7 = private unnamed_addr constant [4 x i8] c"%s\0A\00", align 1
-@.str.8 = private unnamed_addr constant [5 x i8] c"fork\00", align 1
+@.str.6 = private unnamed_addr constant [8 x i8] c"console\00", align 1
+@.str.7 = private unnamed_addr constant [11 x i8] c"cannot cd \00", align 1
+@.str.8 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
+@.str.9 = private unnamed_addr constant [5 x i8] c"fork\00", align 1
 @whitespace = dso_local global [6 x i8] c" \09\0D\0A\0B\00", align 1
 @symbols = dso_local global [8 x i8] c"<|>&;()\00", align 1
-@.str.9 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.10 = private unnamed_addr constant [15 x i8] c"leftovers: %s\0A\00", align 1
-@.str.11 = private unnamed_addr constant [7 x i8] c"syntax\00", align 1
-@.str.12 = private unnamed_addr constant [2 x i8] c"&\00", align 1
-@.str.13 = private unnamed_addr constant [2 x i8] c";\00", align 1
-@.str.14 = private unnamed_addr constant [2 x i8] c"|\00", align 1
-@.str.15 = private unnamed_addr constant [3 x i8] c"<>\00", align 1
-@.str.16 = private unnamed_addr constant [29 x i8] c"missing file for redirection\00", align 1
-@.str.17 = private unnamed_addr constant [2 x i8] c"(\00", align 1
-@.str.18 = private unnamed_addr constant [11 x i8] c"parseblock\00", align 1
-@.str.19 = private unnamed_addr constant [2 x i8] c")\00", align 1
-@.str.20 = private unnamed_addr constant [19 x i8] c"syntax - missing )\00", align 1
-@.str.21 = private unnamed_addr constant [5 x i8] c"|)&;\00", align 1
-@.str.22 = private unnamed_addr constant [14 x i8] c"too many args\00", align 1
+@.str.10 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.11 = private unnamed_addr constant [12 x i8] c"leftovers: \00", align 1
+@.str.12 = private unnamed_addr constant [7 x i8] c"syntax\00", align 1
+@.str.13 = private unnamed_addr constant [2 x i8] c"&\00", align 1
+@.str.14 = private unnamed_addr constant [2 x i8] c";\00", align 1
+@.str.15 = private unnamed_addr constant [2 x i8] c"|\00", align 1
+@.str.16 = private unnamed_addr constant [3 x i8] c"<>\00", align 1
+@.str.17 = private unnamed_addr constant [29 x i8] c"missing file for redirection\00", align 1
+@.str.18 = private unnamed_addr constant [2 x i8] c"(\00", align 1
+@.str.19 = private unnamed_addr constant [11 x i8] c"parseblock\00", align 1
+@.str.20 = private unnamed_addr constant [2 x i8] c")\00", align 1
+@.str.21 = private unnamed_addr constant [19 x i8] c"syntax - missing )\00", align 1
+@.str.22 = private unnamed_addr constant [5 x i8] c"|)&;\00", align 1
+@.str.23 = private unnamed_addr constant [14 x i8] c"too many args\00", align 1
 
 ; Function Attrs: minsize noreturn nounwind optsize
 define dso_local void @runcmd(ptr noundef %0) local_unnamed_addr #0 {
@@ -67,8 +68,10 @@ define dso_local void @runcmd(ptr noundef %0) local_unnamed_addr #0 {
 
 15:                                               ; preds = %9
   %16 = tail call i32 @exec(ptr noundef nonnull %11, ptr noundef nonnull %10) #9
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.1) #9
   %17 = load ptr, ptr %10, align 4, !tbaa !8
-  tail call void (i32, ptr, ...) @fprintf(i32 noundef 2, ptr noundef nonnull @.str.1, ptr noundef %17) #9
+  tail call void @fputstr(i32 noundef 2, ptr noundef %17) #9
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.2) #9
   br label %90
 
 18:                                               ; preds = %6
@@ -84,8 +87,10 @@ define dso_local void @runcmd(ptr noundef %0) local_unnamed_addr #0 {
   br i1 %27, label %28, label %31
 
 28:                                               ; preds = %18
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.3) #9
   %29 = load ptr, ptr %22, align 4, !tbaa !14
-  tail call void (i32, ptr, ...) @fprintf(i32 noundef 2, ptr noundef nonnull @.str.2, ptr noundef %29) #9
+  tail call void @fputstr(i32 noundef 2, ptr noundef %29) #9
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.2) #9
   %30 = tail call i32 @exit(i32 noundef 1) #7
   unreachable
 
@@ -119,7 +124,7 @@ define dso_local void @runcmd(ptr noundef %0) local_unnamed_addr #0 {
   br i1 %46, label %47, label %48
 
 47:                                               ; preds = %44
-  call void @panic(ptr noundef nonnull @.str.3) #8
+  call void @panic(ptr noundef nonnull @.str.4) #8
   unreachable
 
 48:                                               ; preds = %44
@@ -194,7 +199,8 @@ declare dso_local i32 @exit(i32 noundef) local_unnamed_addr #2
 
 ; Function Attrs: minsize noreturn nounwind optsize
 define dso_local void @panic(ptr noundef %0) local_unnamed_addr #0 {
-  tail call void (i32, ptr, ...) @fprintf(i32 noundef 2, ptr noundef nonnull @.str.7, ptr noundef %0) #9
+  tail call void @fputstr(i32 noundef 2, ptr noundef %0) #9
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.8) #9
   %2 = tail call i32 @exit(i32 noundef 1) #7
   unreachable
 }
@@ -203,7 +209,7 @@ define dso_local void @panic(ptr noundef %0) local_unnamed_addr #0 {
 declare dso_local i32 @exec(ptr noundef, ptr noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize optsize
-declare dso_local void @fprintf(i32 noundef, ptr noundef, ...) local_unnamed_addr #3
+declare dso_local void @fputstr(i32 noundef, ptr noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize optsize
 declare dso_local i32 @close(i32 noundef) local_unnamed_addr #3
@@ -218,7 +224,7 @@ define dso_local range(i32 0, -1) i32 @fork1() local_unnamed_addr #4 {
   br i1 %2, label %3, label %4
 
 3:                                                ; preds = %0
-  tail call void @panic(ptr noundef nonnull @.str.8) #8
+  tail call void @panic(ptr noundef nonnull @.str.9) #8
   unreachable
 
 4:                                                ; preds = %0
@@ -236,7 +242,7 @@ declare dso_local i32 @dup(i32 noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local range(i32 -1, 1) i32 @getcmd(ptr noundef %0, i32 noundef %1) local_unnamed_addr #4 {
-  %3 = tail call i32 @write(i32 noundef 2, ptr noundef nonnull @.str.4, i32 noundef 2) #9
+  %3 = tail call i32 @write(i32 noundef 2, ptr noundef nonnull @.str.5, i32 noundef 2) #9
   %4 = tail call ptr @memset(ptr noundef %0, i32 noundef 0, i32 noundef %1) #9
   %5 = tail call ptr @gets(ptr noundef %0, i32 noundef %1) #9
   %6 = load i8, ptr %0, align 1, !tbaa !26
@@ -259,7 +265,7 @@ define dso_local noundef i32 @main() local_unnamed_addr #0 {
   br label %1
 
 1:                                                ; preds = %4, %0
-  %2 = tail call i32 @open(ptr noundef nonnull @.str.5, i32 noundef 2) #9
+  %2 = tail call i32 @open(ptr noundef nonnull @.str.6, i32 noundef 2) #9
   %3 = icmp sgt i32 %2, -1
   br i1 %3, label %4, label %8
 
@@ -316,7 +322,9 @@ define dso_local noundef i32 @main() local_unnamed_addr #0 {
   br i1 %31, label %32, label %40
 
 32:                                               ; preds = %25
-  tail call void (i32, ptr, ...) @fprintf(i32 noundef 2, ptr noundef nonnull @.str.6, ptr noundef nonnull %29) #9
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.7) #9
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull %29) #9
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.8) #9
   br label %40
 
 33:                                               ; preds = %12, %21, %17
@@ -354,14 +362,16 @@ define dso_local ptr @parsecmd(ptr noundef %0) local_unnamed_addr #4 {
   %3 = tail call i32 @strlen(ptr noundef %0) #9
   %4 = getelementptr inbounds nuw i8, ptr %0, i32 %3
   %5 = call ptr @parseline(ptr noundef nonnull %2, ptr noundef %4) #8
-  %6 = call i32 @peek(ptr noundef nonnull %2, ptr noundef %4, ptr noundef nonnull @.str.9) #8
+  %6 = call i32 @peek(ptr noundef nonnull %2, ptr noundef %4, ptr noundef nonnull @.str.10) #8
   %7 = load ptr, ptr %2, align 4, !tbaa !8
   %8 = icmp eq ptr %7, %4
   br i1 %8, label %10, label %9
 
 9:                                                ; preds = %1
-  tail call void (i32, ptr, ...) @fprintf(i32 noundef 2, ptr noundef nonnull @.str.10, ptr noundef %7) #9
-  tail call void @panic(ptr noundef nonnull @.str.11) #8
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.11) #9
+  tail call void @fputstr(i32 noundef 2, ptr noundef %7) #9
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.8) #9
+  tail call void @panic(ptr noundef nonnull @.str.12) #8
   unreachable
 
 10:                                               ; preds = %1
@@ -595,7 +605,7 @@ define dso_local ptr @parseline(ptr noundef captures(none) %0, ptr noundef readn
 
 4:                                                ; preds = %8, %2
   %5 = phi ptr [ %3, %2 ], [ %10, %8 ]
-  %6 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.12) #8
+  %6 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.13) #8
   %7 = icmp eq i32 %6, 0
   br i1 %7, label %11, label %8
 
@@ -605,7 +615,7 @@ define dso_local ptr @parseline(ptr noundef captures(none) %0, ptr noundef readn
   br label %4, !llvm.loop !42
 
 11:                                               ; preds = %4
-  %12 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.13) #8
+  %12 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.14) #8
   %13 = icmp eq i32 %12, 0
   br i1 %13, label %14, label %16
 
@@ -687,7 +697,7 @@ define dso_local noundef ptr @nulterminate(ptr noundef readonly returned capture
 ; Function Attrs: minsize nounwind optsize
 define dso_local ptr @parsepipe(ptr noundef captures(none) %0, ptr noundef readnone captures(address) %1) local_unnamed_addr #4 {
   %3 = tail call ptr @parseexec(ptr noundef %0, ptr noundef %1) #8
-  %4 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.14) #8
+  %4 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.15) #8
   %5 = icmp eq i32 %4, 0
   br i1 %5, label %6, label %8
 
@@ -708,7 +718,7 @@ define dso_local ptr @parseexec(ptr noundef captures(none) %0, ptr noundef readn
   %4 = alloca ptr, align 4
   call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %3) #6
   call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %4) #6
-  %5 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.17) #8
+  %5 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.18) #8
   %6 = icmp eq i32 %5, 0
   br i1 %6, label %9, label %7
 
@@ -726,7 +736,7 @@ define dso_local ptr @parseexec(ptr noundef captures(none) %0, ptr noundef readn
 14:                                               ; preds = %29, %9
   %15 = phi i32 [ 0, %9 ], [ %30, %29 ]
   %16 = phi ptr [ %11, %9 ], [ %31, %29 ]
-  %17 = call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.21) #8
+  %17 = call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.22) #8
   %18 = icmp eq i32 %17, 0
   br i1 %18, label %19, label %32
 
@@ -738,7 +748,7 @@ define dso_local ptr @parseexec(ptr noundef captures(none) %0, ptr noundef readn
   ]
 
 21:                                               ; preds = %19
-  call void @panic(ptr noundef nonnull @.str.11) #8
+  call void @panic(ptr noundef nonnull @.str.12) #8
   unreachable
 
 22:                                               ; preds = %19
@@ -752,7 +762,7 @@ define dso_local ptr @parseexec(ptr noundef captures(none) %0, ptr noundef readn
   br i1 %27, label %28, label %29
 
 28:                                               ; preds = %22
-  call void @panic(ptr noundef nonnull @.str.22) #8
+  call void @panic(ptr noundef nonnull @.str.23) #8
   unreachable
 
 29:                                               ; preds = %22
@@ -787,7 +797,7 @@ define dso_local ptr @parseredirs(ptr noundef %0, ptr noundef captures(none) %1,
   br label %8
 
 8:                                                ; preds = %6, %16
-  %9 = call i32 @peek(ptr noundef %1, ptr noundef %2, ptr noundef nonnull @.str.15) #8
+  %9 = call i32 @peek(ptr noundef %1, ptr noundef %2, ptr noundef nonnull @.str.16) #8
   %10 = icmp eq i32 %9, 0
   br i1 %10, label %31, label %11
 
@@ -798,7 +808,7 @@ define dso_local ptr @parseredirs(ptr noundef %0, ptr noundef captures(none) %1,
   br i1 %14, label %16, label %15
 
 15:                                               ; preds = %11
-  call void @panic(ptr noundef nonnull @.str.16) #8
+  call void @panic(ptr noundef nonnull @.str.17) #8
   unreachable
 
 16:                                               ; preds = %11
@@ -838,23 +848,23 @@ define dso_local ptr @parseredirs(ptr noundef %0, ptr noundef captures(none) %1,
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local ptr @parseblock(ptr noundef captures(none) %0, ptr noundef readnone captures(address) %1) local_unnamed_addr #4 {
-  %3 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.17) #8
+  %3 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.18) #8
   %4 = icmp eq i32 %3, 0
   br i1 %4, label %5, label %6
 
 5:                                                ; preds = %2
-  tail call void @panic(ptr noundef nonnull @.str.18) #8
+  tail call void @panic(ptr noundef nonnull @.str.19) #8
   unreachable
 
 6:                                                ; preds = %2
   %7 = tail call i32 @gettoken(ptr noundef %0, ptr noundef %1, ptr noundef null, ptr noundef null) #8
   %8 = tail call ptr @parseline(ptr noundef %0, ptr noundef %1) #8
-  %9 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.19) #8
+  %9 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.20) #8
   %10 = icmp eq i32 %9, 0
   br i1 %10, label %11, label %12
 
 11:                                               ; preds = %6
-  tail call void @panic(ptr noundef nonnull @.str.20) #8
+  tail call void @panic(ptr noundef nonnull @.str.21) #8
   unreachable
 
 12:                                               ; preds = %6

@@ -18,6 +18,7 @@
 
 /* kproc.c scheduler fence. */
 extern uint curr;
+void vfs_iput(struct inode *ip); /* defined with the vfat block below */
 extern void kconswrite(const char *s, int n);
 extern int kconsread(uint dst, int n); /* -2 when no cooked line yet */
 
@@ -200,9 +201,186 @@ kfs_exit(int slot)
     }
   }
   if (p->cwd) {
-    iput(p->cwd);
+    vfs_iput(p->cwd);
     p->cwd = 0;
   }
+}
+
+/* --- vfat mount (prompts/029) ---
+ * One mount point. Paths under it (and relative paths while the cwd
+ * is a FAT directory) route to kfat.c instead of namei; file.c's
+ * verbatim fd operations reach FAT nodes through the vfs_* shims
+ * below (shim defs.h renames its calls when compiling file.c with
+ * DMA_VFS_CALLS). Read-only: create/link/unlink/mkdir and write
+ * opens under the mount are refused. */
+extern int fat_is(struct inode *ip);
+extern int fat_active(void);
+extern int fat_mount(uint xipbase);
+extern int fat_busy(void);
+extern void fat_unmount(void);
+extern struct inode *fat_root(void);
+extern struct inode *fat_walk(struct inode *from, const char *path);
+extern int fat_readi(struct inode *ip, uint dst, uint off, uint n);
+extern void fat_stati(struct inode *ip, struct stat *st);
+extern void fat_put(struct inode *ip);
+
+uint fatvol; /* loader-patched: XIP address of the vfat volume; 0 = none */
+static char fatmnt[28]; /* mount point path ("" = not mounted) */
+
+int
+vfs_readi(struct inode *ip, int u, uint64 dst, uint off, uint n)
+{
+  return fat_is(ip) ? fat_readi(ip, (uint)dst, off, n)
+                    : readi(ip, u, dst, off, n);
+}
+int
+vfs_writei(struct inode *ip, int u, uint64 src, uint off, uint n)
+{
+  return fat_is(ip) ? -1 : writei(ip, u, src, off, n);
+}
+void
+vfs_ilock(struct inode *ip)
+{
+  if (!fat_is(ip))
+    ilock(ip);
+}
+void
+vfs_iunlock(struct inode *ip)
+{
+  if (!fat_is(ip))
+    iunlock(ip);
+}
+void
+vfs_iput(struct inode *ip)
+{
+  if (fat_is(ip))
+    fat_put(ip);
+  else
+    iput(ip);
+}
+void
+vfs_stati(struct inode *ip, struct stat *st)
+{
+  if (fat_is(ip))
+    fat_stati(ip, st);
+  else
+    stati(ip, st);
+}
+
+/* Does path fall under the mount point? Returns the remainder ("" for
+ * the mount point itself), or 0. */
+static const char *
+fat_prefix(const char *path)
+{
+  if (fatmnt[0] == 0 || path[0] != '/')
+    return 0;
+  int i = 0;
+  while (fatmnt[i] && path[i] == fatmnt[i])
+    i++;
+  if (fatmnt[i] != 0)
+    return 0;
+  if (path[i] == 0)
+    return path + i;
+  if (path[i] == '/')
+    return path + i + 1;
+  return 0;
+}
+
+/* Path resolution honoring the mount: FAT nodes for paths under the
+ * mount point and for relative paths from a FAT cwd; namei else. */
+static struct inode *
+vfs_resolve(char *path)
+{
+  const char *rest = fat_prefix(path);
+  if (rest) {
+    struct inode *r = fat_root();
+    if (r == 0)
+      return 0;
+    struct inode *ip = fat_walk(r, rest);
+    fat_put(r);
+    return ip;
+  }
+  struct proc *p = myproc();
+  if (path[0] != '/' && p->cwd && fat_is(p->cwd))
+    return fat_walk(p->cwd, path);
+  return namei(path);
+}
+
+/* Refuse writes anywhere a path would land in the FAT world. */
+static int
+fat_writepath(const char *path)
+{
+  if (fat_prefix(path))
+    return 1;
+  struct proc *p = myproc();
+  return path[0] != '/' && p->cwd && fat_is(p->cwd);
+}
+
+int
+kfs_mount(uint srcaddr, uint tgtaddr)
+{
+  if (srcaddr == 0) { /* list: write the table into tgtaddr */
+    char *o = (char *)tgtaddr;
+    int n = 0;
+    if (fatmnt[0]) {
+      const char *a = "fat0 on ";
+      while (*a)
+        o[n++] = *a++;
+      for (int i = 0; fatmnt[i]; i++)
+        o[n++] = fatmnt[i];
+      const char *b = " type vfat (ro)\n";
+      while (*b)
+        o[n++] = *b++;
+    }
+    o[n] = 0;
+    return n;
+  }
+  const char *src = (const char *)srcaddr;
+  char *tgt = (char *)tgtaddr;
+  if (fatvol == 0 || fatmnt[0] != 0)
+    return -1;
+  if (!(src[0] == 'f' && src[1] == 'a' && src[2] == 't' && src[3] == '0' &&
+        src[4] == 0))
+    return -1;
+  if (tgt[0] != '/' || tgt[1] == 0)
+    return -1;
+  struct inode *mp = namei(tgt); /* the mount point must exist */
+  if (mp == 0)
+    return -1;
+  ilock(mp);
+  int isdir = mp->type == T_DIR;
+  iunlockput(mp);
+  if (!isdir)
+    return -1;
+  if (fat_mount(fatvol) < 0)
+    return -1;
+  int i = 0;
+  while (tgt[i] && tgt[i] != ' ' && i < 26) {
+    fatmnt[i] = tgt[i];
+    i++;
+  }
+  while (i > 1 && fatmnt[i - 1] == '/')
+    i--; /* strip trailing slash */
+  fatmnt[i] = 0;
+  return 0;
+}
+
+int
+kfs_umount(uint tgtaddr)
+{
+  const char *tgt = (const char *)tgtaddr;
+  if (fatmnt[0] == 0)
+    return -1;
+  int i = 0;
+  while (fatmnt[i] && tgt[i] == fatmnt[i])
+    i++;
+  if (fatmnt[i] != 0 || (tgt[i] != 0 && !(tgt[i] == '/' && tgt[i + 1] == 0)))
+    return -1;
+  if (fat_busy())
+    return -1; /* open files or cwds still inside */
+  fat_unmount();
+  fatmnt[0] = 0;
+  return 0;
 }
 
 /* --- fd-level syscall bodies (sysfile.c reshaped) --- */
@@ -346,12 +524,32 @@ kfs_open(uint pathaddr, int omode)
   char *path = (char *)pathaddr;
   struct inode *ip;
   if (omode & O_CREATE) {
+    if (fat_writepath(path))
+      return -1; /* the FAT mount is read-only */
     ip = create(path, T_FILE, 0, 0);
     if (ip == 0)
       return -1;
+  } else if (fat_writepath(path) && omode != O_RDONLY) {
+    return -1;
   } else {
-    if ((ip = namei(path)) == 0)
+    if ((ip = vfs_resolve(path)) == 0)
       return -1;
+    if (fat_is(ip)) {
+      struct file *ff = filealloc();
+      int ffd = ff ? fdalloc(ff) : -1;
+      if (ff == 0 || ffd < 0) {
+        if (ff)
+          fileclose(ff);
+        fat_put(ip);
+        return -1;
+      }
+      ff->type = FD_INODE;
+      ff->off = 0;
+      ff->ip = ip;
+      ff->readable = 1;
+      ff->writable = 0;
+      return ffd;
+    }
     ilock(ip);
     if (ip->type == T_DIR && omode != O_RDONLY) {
       iunlockput(ip);
@@ -386,17 +584,24 @@ int
 kfs_chdir(uint pathaddr)
 {
   struct proc *p = myproc();
-  struct inode *ip = namei((char *)pathaddr);
+  struct inode *ip = vfs_resolve((char *)pathaddr);
   if (ip == 0)
     return -1;
-  ilock(ip);
-  if (ip->type != T_DIR) {
-    iunlockput(ip);
-    return -1;
+  if (fat_is(ip)) {
+    if (ip->type != T_DIR) {
+      fat_put(ip);
+      return -1;
+    }
+  } else {
+    ilock(ip);
+    if (ip->type != T_DIR) {
+      iunlockput(ip);
+      return -1;
+    }
+    iunlock(ip);
   }
-  iunlock(ip);
   if (p->cwd)
-    iput(p->cwd);
+    vfs_iput(p->cwd);
   p->cwd = ip;
   return 0;
 }
@@ -404,6 +609,8 @@ kfs_chdir(uint pathaddr)
 int
 kfs_mkdir(uint pathaddr)
 {
+  if (fat_writepath((const char *)pathaddr))
+    return -1;
   struct inode *ip = create((char *)pathaddr, T_DIR, 0, 0);
   if (ip == 0)
     return -1;
@@ -416,6 +623,9 @@ kfs_mkdir(uint pathaddr)
 int
 kfs_link(uint oldaddr, uint newaddr)
 {
+  if (fat_writepath((const char *)oldaddr) ||
+      fat_writepath((const char *)newaddr))
+    return -1;
   char name[DIRSIZ];
   struct inode *ip = namei((char *)oldaddr);
   if (ip == 0)
@@ -461,6 +671,8 @@ isdirempty(struct inode *dp)
 int
 kfs_unlink(uint pathaddr)
 {
+  if (fat_writepath((const char *)pathaddr))
+    return -1;
   struct inode *ip, *dp;
   struct dirent de;
   char name[DIRSIZ];
@@ -500,6 +712,21 @@ bad:
 uint
 kfs_iopen(const char *path)
 {
+  /* exec's image lookup. A FAT cwd cannot hold DMX executables and
+   * must not leak into namei (its inodes aren't disk-backed): resolve
+   * relative program names from the xv6 root instead. */
+  struct proc *p = myproc();
+  char rooted[64];
+  if (path[0] != '/' && p->cwd && fat_is(p->cwd)) {
+    int n = 0;
+    rooted[n++] = '/';
+    while (path[n - 1] && n < 63) {
+      rooted[n] = path[n - 1];
+      n++;
+    }
+    rooted[n] = 0;
+    path = rooted;
+  }
   struct inode *ip = namei((char *)path);
   if (ip == 0)
     return 0;

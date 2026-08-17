@@ -298,6 +298,46 @@ define dso_local ptr @sys_sbrk(i32 noundef %0, i32 noundef %1) local_unnamed_add
   ret ptr %6
 }
 
+; Function Attrs: minsize nounwind optsize
+define dso_local i32 @meminfo(ptr noundef %0) local_unnamed_addr #0 {
+  %2 = ptrtoint ptr %0 to i32
+  store volatile i32 25, ptr @__dma_sysmail, align 4, !tbaa !3
+  store volatile i32 %2, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 4), align 4, !tbaa !8
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 8), align 4, !tbaa !9
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 12), align 4, !tbaa !10
+  %3 = load i32, ptr @__dma_syscall_entry, align 4, !tbaa !11
+  %4 = inttoptr i32 %3 to ptr
+  %5 = tail call i32 %4() #2
+  ret i32 %5
+}
+
+; Function Attrs: minsize nounwind optsize
+define dso_local i32 @mount(ptr noundef %0, ptr noundef %1) local_unnamed_addr #0 {
+  %3 = ptrtoint ptr %0 to i32
+  %4 = ptrtoint ptr %1 to i32
+  store volatile i32 26, ptr @__dma_sysmail, align 4, !tbaa !3
+  store volatile i32 %3, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 4), align 4, !tbaa !8
+  store volatile i32 %4, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 8), align 4, !tbaa !9
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 12), align 4, !tbaa !10
+  %5 = load i32, ptr @__dma_syscall_entry, align 4, !tbaa !11
+  %6 = inttoptr i32 %5 to ptr
+  %7 = tail call i32 %6() #2
+  ret i32 %7
+}
+
+; Function Attrs: minsize nounwind optsize
+define dso_local i32 @umount(ptr noundef %0) local_unnamed_addr #0 {
+  %2 = ptrtoint ptr %0 to i32
+  store volatile i32 27, ptr @__dma_sysmail, align 4, !tbaa !3
+  store volatile i32 %2, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 4), align 4, !tbaa !8
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 8), align 4, !tbaa !9
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 12), align 4, !tbaa !10
+  %3 = load i32, ptr @__dma_syscall_entry, align 4, !tbaa !11
+  %4 = inttoptr i32 %3 to ptr
+  %5 = tail call i32 %4() #2
+  ret i32 %5
+}
+
 ; Function Attrs: minsize noreturn nounwind optsize
 define dso_local void @__dmacc_recursion_overflow() local_unnamed_addr #1 {
   store volatile i32 16, ptr @__dma_sysmail, align 4, !tbaa !3
