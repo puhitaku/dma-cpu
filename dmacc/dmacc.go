@@ -55,7 +55,91 @@ func Compile(m *llir.Module, opts Options) (string, error) {
 	if err := g.run(); err != nil {
 		return "", err
 	}
-	return g.out.String(), nil
+	return foldCopies(g.out.String()), nil
+}
+
+// foldCopies is a text-level peephole over the finished program:
+//
+//	move A, T        (T a compiler value word, referenced nowhere else)
+//	move T, B
+//
+// becomes `move A, B`. The pattern is the tail of nearly every
+// load-then-pass-as-argument sequence; the temp exists only because
+// emission is local. Safety comes from three checks: the lines are
+// adjacent with no label between (no branch can observe T), both are
+// plain two-operand moves (no size/incr flags), and T's whole-program
+// reference count is exactly the def and the use. The then-dead
+// `T: .word 0` declaration is dropped with it.
+func foldCopies(src string) string {
+	lines := strings.Split(src, "\n")
+	refs := map[string]int{}
+	for _, l := range lines {
+		for _, tok := range identTokens(l) {
+			refs[tok]++
+		}
+	}
+	plainMove := func(l string) (string, string, bool) {
+		t := strings.TrimSpace(l)
+		if !strings.HasPrefix(t, "move ") {
+			return "", "", false
+		}
+		parts := strings.Split(t[len("move "):], ", ")
+		if len(parts) != 2 || strings.ContainsAny(parts[0]+parts[1], " \t") {
+			return "", "", false
+		}
+		return parts[0], parts[1], true
+	}
+	out := lines[:0]
+	for i := 0; i < len(lines); i++ {
+		l := lines[i]
+		// A reference count of 3 is the declaration, the def, and the
+		// single use — nothing else in the program can observe T.
+		if a, t, ok := plainMove(l); ok && i+1 < len(lines) &&
+			strings.HasPrefix(t, "v_") && refs[t] == 3 && a != t {
+			if t2, b, ok2 := plainMove(lines[i+1]); ok2 && t2 == t && b != t && a != b {
+				out = append(out, "    move "+a+", "+b)
+				i++
+				continue
+			}
+		}
+		// T's declaration stays: value words inside a recursion frame
+		// are counted into the patched @FR_ sizes, and dropping one
+		// would shift unrelated data into the pushed/popped range.
+		out = append(out, l)
+	}
+	return strings.Join(out, "\n")
+}
+
+// identTokens yields the identifier-shaped tokens of one line, comments
+// excluded.
+func identTokens(l string) []string {
+	if i := strings.IndexByte(l, ';'); i >= 0 {
+		l = l[:i]
+	}
+	var toks []string
+	start := -1
+	isIdent := func(c byte, first bool) bool {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c == '_':
+			return true
+		case c >= '0' && c <= '9':
+			return !first
+		}
+		return false
+	}
+	for i := 0; i <= len(l); i++ {
+		if i < len(l) && isIdent(l[i], start < 0) {
+			if start < 0 {
+				start = i
+			}
+			continue
+		}
+		if start >= 0 {
+			toks = append(toks, l[start:i])
+			start = -1
+		}
+	}
+	return toks
 }
 
 type gen struct {
