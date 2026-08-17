@@ -3,7 +3,7 @@ source_filename = "dma/calflash.c"
 target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
-@calres = dso_local global [12 x i32] zeroinitializer, align 4
+@calres = dso_local global [16 x i32] zeroinitializer, align 4
 @dma_disk = dso_local local_unnamed_addr global i32 0, align 4
 @dma_disksize = dso_local local_unnamed_addr global i32 0, align 4
 @fs_dirty = dso_local local_unnamed_addr global i32 0, align 4

@@ -48,10 +48,11 @@ type Machine struct {
 	TXPace uint64
 	lastTX uint64
 
-	// Flash, when non-nil, is the QSPI flash content, served read-only
-	// through the XIP window (flash.go explains why writes are the ARM
-	// executor's job).
+	// Flash, when non-nil, is the QSPI flash content: reads of the XIP
+	// window (0x10000000+) are served from it, and the QMI direct-mode
+	// model (flash.go) lets the machine erase/program it.
 	Flash []byte
+	fl    flashState
 
 	// TraceW, when non-nil, receives one line per DMA transfer.
 	TraceW io.Writer
@@ -136,8 +137,12 @@ func (m *Machine) Read(addr uint32, size int) (uint32, error) {
 	case addr >= DMABase && addr < DMABase+0x4000:
 		norm, _ := aliasOp(addr - DMABase)
 		return m.dma.regRead(norm), nil
-	case m.Flash != nil && addr >= XIPBase && addr+uint32(size) <= XIPBase+uint32(len(m.Flash)):
-		off := addr - XIPBase
+	case m.Flash != nil && addr >= XIPBase && addr+uint32(size) <= XIPBase+uint32(len(m.Flash)),
+		m.Flash != nil && addr >= XIPBase+0x04000000 &&
+			addr+uint32(size) <= XIPBase+0x04000000+uint32(len(m.Flash)):
+		// The second range is the uncached alias (0x14000000); the
+		// emulator has no cache, so both windows read the same bytes.
+		off := (addr - XIPBase) & 0x03FFFFFF
 		switch size {
 		case 1:
 			return uint32(m.Flash[off]), nil
@@ -147,6 +152,9 @@ func (m *Machine) Read(addr uint32, size int) (uint32, error) {
 			return binary.LittleEndian.Uint32(m.Flash[off:]), nil
 		}
 	case addr >= 0x40000000 && addr < 0x60000000:
+		if v, ok := m.flashRead(addr); ok {
+			return v, nil
+		}
 		norm, _ := aliasOp(addr)
 		switch norm {
 		case m.v.UARTDRAddr():
@@ -204,6 +212,9 @@ func (m *Machine) Write(addr uint32, val uint32, size int) error {
 		m.dma.regWrite(norm, final, val != 0)
 		return nil
 	case addr >= 0x40000000 && addr < 0x60000000:
+		if m.flashWrite(addr, val) {
+			return nil
+		}
 		norm, op := aliasOp(addr)
 		final := applyAlias(m.mmio[norm], val, op)
 		m.mmio[norm] = final

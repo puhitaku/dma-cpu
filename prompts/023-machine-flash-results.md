@@ -1,5 +1,12 @@
 # Phase 11 results: can the machine write flash unaided? — a definitive characterization
 
+> **RETRACTED (prompts/028).** The conclusion below is wrong: the
+> stalls and frozen reads were ACCESSCTRL bus faults — XIP_QMI and
+> XIP_CTRL reset with DMA access forbidden (RP2350 datasheet
+> §10.6.2.1). With the firmware opening them, the machine drives
+> flash entirely by itself. This file stays as the historical record.
+
+
 The question from the persistence rung: does machine-only flash writing
 require the ARM, or is it possible? A deep silicon diagnostic session
 answered it precisely. **On the RP2350, the DMA machine cannot

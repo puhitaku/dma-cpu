@@ -145,6 +145,15 @@ var hilSpecs = []hilSpec{
 	// 8-byte records, silicon-checked against the same host truth.
 	{name: "ccc_memory", ll: "memory", compactEnc: true},
 	{name: "ccc_collatz", ll: "collatz", compactEnc: true},
+	// The machine-only flash probe (prompts/028; ACCESSCTRL opened by
+	// the firmware): the full bit-banged exit-XIP dance + JEDEC/RDSR/
+	// erase/program/XIP checks. The emulator's NOR model verifies the
+	// driver logic; the numbers that matter come from the silicon
+	// printout (the firmware dumps the calres words after the pass).
+	{name: "cal_flash", ll: "xv6/ll/calflash.ll", extrall: []string{"xv6/ll/kflash.ll"},
+		skus:   []string{"rp2350"},
+		mem:    map[string]uint32{"exitcode": 0},
+		export: []string{"g_calres"}},
 	{name: "ccc_stdio", ll: "stdio", libc: true, compactEnc: true,
 		console: "dmacc/testdata/stdio.console", skus: []string{"rp2350"}},
 }
@@ -679,12 +688,12 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 // echo, cat, wc AND ls as DMX-exec files.
 func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x1000
-	cText, cData := lay.text+0x2000, lay.text+0x1E000
-	sText, sData := lay.text+0x26000, lay.text+0x3F000
-	iText, iData := lay.text+0x44000, lay.text+0x45000
-	diskHome := lay.text + 0x46000
+	cText, cData := lay.text+0x2000, lay.text+0x1F000
+	sText, sData := lay.text+0x27000, lay.text+0x40000
+	iText, iData := lay.text+0x45000, lay.text+0x46000
+	diskHome := lay.text + 0x47000
 	diskMax := uint32(0x20000) // 128 KiB
-	arena, arenaEnd := lay.text+0x66000, lay.text+0x77E00
+	arena, arenaEnd := lay.text+0x67000, lay.text+0x77E00
 
 	casm := func(src string, text, data uint32) (*dmaasm.Result, error) {
 		return dmaasm.Assemble(src, dmaasm.Options{
@@ -790,7 +799,9 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		{"g_fsslot", fsSlotXIP},
 		{"g_initpid", 2}, /* idle adopts orphans (prompts/024) */
 		{"g_fgpid", 1},   /* Ctrl-C interrupts sh's foreground job */
-		{"g_kflash_arm", lay.scratch + 0x10},
+		{"g_kflash_arm", 0}, /* 0: the MACHINE drives the QMI itself
+		 * (prompts/028); the parked ARM's mailbox loop stays as a
+		 * dormant fallback — repoint this at scratch+0x10 to use it */
 	} {
 		if errs == nil {
 			if err := patchData(kernC.Image, cData, sy(kernC, g.name), g.val); err != nil {
@@ -1291,6 +1302,13 @@ func verify(v *emu.Variant, lay layout, t *test) error {
 	}
 	if err := t.Image.LoadAndStart(m, nil, cfg); err != nil {
 		return fmt.Errorf("%s: %w", t.Name, err)
+	}
+	for _, e := range t.Exports {
+		if e.Name == "g_calres" {
+			// The emulator has no parked ARM: grant the machine's
+			// take-the-flash handshake immediately (calres[12]).
+			m.Poke32(e.Addr+48, 0x600D600D)
+		}
 	}
 	if t.Done == 0 { // perf: just prove it keeps running
 		res, err := m.Run(emu.RunConfig{MaxCycles: 10_000})

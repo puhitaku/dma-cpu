@@ -144,15 +144,15 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernC, err := casm(kcDasm, 0x2000A000, 0x20026000)
+	kernC, err := casm(kcDasm, 0x2000A000, 0x20027000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sh, err := casm(shDasm, 0x2002E000, 0x20047000)
+	sh, err := casm(shDasm, 0x2002F000, 0x20048000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idle, err := casm(idleDasm, 0x2004C000, 0x2004D000)
+	idle, err := casm(idleDasm, 0x2004D000, 0x2004E000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,10 +198,12 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 		// The kernel posts erase/program requests to the ARM-executor
 		// mailbox; emulator tests service it via serviceFlashMailbox,
 		// playing the parked ARM (kflash.c explains why).
-		m.Poke32(mustSym(t, kernC, "g_kflash_arm"), flashMailbox)
+		/* g_kflash_arm stays 0: the machine drives the emulator's QMI
+		 * NOR model itself (prompts/028). serviceFlashMailbox remains
+		 * for the dormant ARM-executor fallback. */
 	}
-	const diskBase = 0x2004E000
-	if diskBase+len(disk) > 0x2006E000 {
+	const diskBase = 0x2004F000
+	if diskBase+len(disk) > 0x2006F000 {
 		t.Fatalf("disk too large: %d", len(disk))
 	}
 	for i := 0; i < len(disk); i += 4 {
@@ -210,7 +212,7 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	m.Poke32(mustSym(t, kernC, "g_dma_disk"), diskBase)
 	m.Poke32(mustSym(t, kernC, "g_dma_disksize"), uint32(len(disk)))
 	// exec arena.
-	m.Poke32(mustSym(t, kernC, "g_arena"), 0x2006E000)
+	m.Poke32(mustSym(t, kernC, "g_arena"), 0x2006F000)
 	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007FE00)
 	m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 	m.Poke32(mustSym(t, kernC, "g_initpid"), 2)

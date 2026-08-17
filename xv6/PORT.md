@@ -107,16 +107,19 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
   parked ARM's SRAM loop running SDK flash routines (silicon: the
   quad-mode exit-XIP dance belongs to the bootrom). Files survive
   hard reboots on hardware ("disk: FLASH SLOT gen 2").
-- [x] Machine-only flash writes: CHARACTERIZED AS HARDWARE-BLOCKED on
-  RP2350 (prompts/023). Deep silicon diagnostic (firmware samples the
-  machine's fetch/exec PC while the ARM waits in SRAM) proved: the DMA
-  engine cannot read QMI registers (reads stall), and setting
-  DIRECT_CSR.EN freezes ALL its peripheral reads irrecoverably (they
-  stay 0 after EN is cleared). So the machine can drive flash WRITES
-  (the bit-banged exit-XIP dance completes) but can neither poll
-  status, time its own delays, nor verify. The ARM executor is the
-  irreducible ~dozen SDK calls; persistence ships on it (re-verified,
-  gen 2). Reproducible cal_flash probe prints the finding every boot.
+- [x] Machine-only flash writes: WORK (prompts/028, retracting
+  prompts/023's "hardware-blocked"). The prompts/023 stalls were
+  ACCESSCTRL bus faults: XIP_QMI and XIP_CTRL reset with DMA access
+  FORBIDDEN (0xB8, datasheet §10.6.2.1) while everything else the
+  machine touches resets open (0xFC). Two password-carrying writes in
+  the firmware's main() open them, and the reinstated QMI direct-mode
+  driver runs entirely on the machine: exit-XIP dance, WREN, real
+  RDSR/WIP polling, erase/program, then a serial-read XIP config so
+  metadata reads keep working. kflash_arm defaults to 0 — SYS_sync is
+  machine-only on silicon (verified: sync with the ARM in wfi, hard
+  reset, "disk: FLASH SLOT gen 1", file intact); the ARM mailbox
+  executor remains as a dormant fallback. The ARM's only remaining
+  job is boot: load, unlock, park.
 - [x] kill() + init-style orphan reaping (prompts/024): a `killed`
   flag enforced at kernel entry, one shared terminate() path for
   exit/kill, orphans adopted by a loader-named init pid (the idle

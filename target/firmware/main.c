@@ -16,6 +16,8 @@
 
 #include "pico/stdlib.h"
 #include "hardware/flash.h"
+#include "hardware/structs/accessctrl.h"
+#include "hardware/sync.h"
 #include "hardware/gpio.h"
 #include "hardware/pio.h"
 
@@ -641,6 +643,79 @@ extern char __bss_end__;
  * SYS_write lines appear directly on the UART between the markers.
  * Same start-then-arm ordering as shell_start (the tick-arming race
  * was diagnosed on silicon in prompts/013). */
+#ifdef HIL_SYM_cal_flash_g_calres
+/* cal_flash (prompts/028): the MACHINE bit-bangs the QSPI pads and
+ * drives QMI direct mode — the ARM must not fetch from flash while
+ * that happens, so the wait loop lives in SRAM. If the machine fails
+ * to restore XIP, the ARM crashes on return (observable silence) and
+ * the calres words remain readable over SWD. */
+static uint32_t __attribute__((noinline, section(".time_critical.calwait")))
+calwait(volatile uint32_t *done, volatile uint32_t *go)
+{
+    volatile uint32_t *rawl = (volatile uint32_t *)0x400b0028; /* us timer */
+    *go = 0x600D600Du; /* written from SRAM: the machine may now take
+                        * the flash away */
+    uint32_t start = *rawl;
+    for (;;) {
+        if (*done)
+            return 1;
+        if (*rawl - start > 8000000u) /* 8 s real-time cap */
+            return 0;
+    }
+}
+
+static void exp_calflash(void)
+{
+    const hil_test *t = 0;
+    for (int i = 0; i < HIL_N_TESTS; i++) {
+        if (hil_tests[i].name[0] == 'c' && hil_tests[i].name[1] == 'a' &&
+            hil_tests[i].name[2] == 'l' && hil_tests[i].name[3] == '_') {
+            t = &hil_tests[i];
+        }
+    }
+    if (!t) {
+        printf("CAL flash: no image\n");
+        return;
+    }
+    machine_reset();
+    uint32_t entry = 0;
+    if (dmx_load(t->dmx, t->dmx_len, NULL, &entry) != DMX_OK) {
+        printf("CAL flash: FAIL load\n");
+        return;
+    }
+    printf("CAL flash: machine takes the flash (ARM -> SRAM wait)\n");
+    dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 0};
+    if (dmx_start(&cfg, entry) != DMX_OK) {
+        printf("CAL flash: FAIL start\n");
+        return;
+    }
+    uint32_t ca = HIL_SYM_cal_flash_g_calres;
+    /* No interrupts while the flash is out of XIP: a vector fetch
+     * from flash during the machine's direct-mode session is an
+     * instruction bus error straight into lockup. */
+    uint32_t irqs = save_and_disable_interrupts();
+    uint32_t ok = calwait((volatile uint32_t *)(ca + 32),
+                          (volatile uint32_t *)(ca + 48));
+    restore_interrupts(irqs);
+    uint32_t phase = reg_rd(ca), csr = reg_rd(ca + 4);
+    uint32_t jedec = reg_rd(ca + 8), sr = reg_rd(ca + 12), wel = reg_rd(ca + 16);
+    uint32_t erased = reg_rd(ca + 20), prog = reg_rd(ca + 24), xip = reg_rd(ca + 28);
+    uint32_t t0 = reg_rd(ca + 36), t1 = reg_rd(ca + 40), t2 = reg_rd(ca + 44);
+    machine_reset();
+    printf("CAL flash: %s phase=%lu csr=%08lx timer n/EN/after=%08lx/%08lx/%08lx\n",
+           ok ? "done" : "TIMEOUT", (unsigned long)phase, (unsigned long)csr,
+           (unsigned long)t0, (unsigned long)t1, (unsigned long)t2);
+    printf("CAL flash: jedec=%06lx sr=%02lx wel=%02lx erased=%08lx prog=%08lx xip=%08lx"
+           " -> machine-only flash %s\n",
+           (unsigned long)jedec, (unsigned long)sr, (unsigned long)wel,
+           (unsigned long)erased, (unsigned long)prog, (unsigned long)xip,
+           (erased == 0xFFFFFFFFu && prog == 0x0DA0CE11u && xip == 0x0DA0CE11u)
+               ? "WORKS" : "still blocked?");
+    /* Leave the flash consistent for the rest of the suite. */
+    flash_flush_cache();
+}
+#endif
+
 static void exp_syscall(void)
 {
     machine_reset();
@@ -862,6 +937,15 @@ int main(void)
     stdio_init_all();
     sleep_ms(3000);
 
+    /* ACCESSCTRL: XIP_QMI and XIP_CTRL reset to 0xB8 — DMA access
+     * FORBIDDEN (RP2350 datasheet section 10.6.2.1). Every machine
+     * access to the QMI bus-faulted, which prompts/023 misread as a
+     * hardware limitation. Open them like the other machine-visible
+     * peripherals (0xFC: DBG|DMA|CORE1|CORE0|SP|SU) before the DMA
+     * CPU runs, so it can drive flash itself (prompts/028). */
+    accessctrl_hw->xip_qmi = ACCESSCTRL_PASSWORD_BITS | 0xFC;
+    accessctrl_hw->xip_ctrl = ACCESSCTRL_PASSWORD_BITS | 0xFC;
+
     /* GPIO2: input from the firmware's view; the DMA machine drives it
      * via IO_BANK0 overrides. gpio_init also clears RP2350 pad isolation. */
     gpio_init(2);
@@ -886,6 +970,10 @@ int main(void)
             continue;
         }
         for (int i = 0; i < HIL_N_TESTS; i++) {
+            if (hil_tests[i].name[0] == 'c' && hil_tests[i].name[1] == 'a' &&
+                hil_tests[i].name[2] == 'l' && hil_tests[i].name[3] == '_') {
+                continue; /* cal_flash: needs the SRAM-wait exp below */
+            }
             run_test(&hil_tests[i]);
         }
         cal_trig_while_disabled();
@@ -904,6 +992,9 @@ int main(void)
         exp_poll_latency();
         exp_freeze();
         exp_abort();
+#ifdef HIL_SYM_cal_flash_g_calres
+        exp_calflash();
+#endif
 #ifdef HIL_HAS_SYSCALL
         exp_syscall();
 #endif
