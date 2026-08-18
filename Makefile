@@ -47,7 +47,8 @@ libc:
 # committed and linked by dmacc like the libc ones.
 XV6_SRCS = kernel/string.c user/umalloc.c user/ulib.c user/printf.c user/echo.c user/sh.c \
            user/cat.c user/ls.c user/wc.c user/vi.c \
-           dma/usys.c dma/kproc.c dma/kgpio.c dma/kfsstub.c dma/calflash.c dma/toolbox.c
+           dma/usys.c dma/kproc.c dma/kgpio.c dma/kfb.c dma/kfbcon.c \
+           dma/kfbstub.c dma/kfsstub.c dma/calflash.c dma/toolbox.c
 XV6_CLANG = clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding \
             -I$(CURDIR)/xv6 -S -emit-llvm
 
@@ -143,8 +144,12 @@ PICO_TOOLS ?= $(HOME)/.pico-sdk/toolchain/15_2_Rel1/bin:$(HOME)/.pico-sdk/cmake/
 #   make firmware HIL_BOARD=pico2   (RP2350; the default)
 #   make firmware HIL_BOARD=pico    (RP2040)
 HIL_BOARD ?= pico2
-# The pico-sdk board name happens to match our board names today.
+# The pico-sdk board name matches our board names except where a
+# vendor board carries a longer SDK identifier (boards.Board.PicoBoard).
 PICO_BOARD = $(HIL_BOARD)
+ifeq ($(HIL_BOARD),feather)
+PICO_BOARD = adafruit_feather_rp2350
+endif
 BUILD_DIR = target/firmware/build-$(HIL_BOARD)
 OPENOCD_TARGET_pico2 = target/rp2350.cfg
 OPENOCD_TARGET_pico = target/rp2040.cfg

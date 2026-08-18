@@ -403,6 +403,46 @@ t_blink(int argc, char **argv)
   return 1;
 }
 
+/* fbtest: exercise the framebuffer API end to end — acquire, draw a
+ * deterministic pattern straight into PSRAM, verify it, release. */
+static int
+t_fbtest(void)
+{
+  struct fbinfo fi;
+  if (fbctl(FB_INFO, &fi) < 0) {
+    write(2, "fbtest: no fb\n", 14);
+    return 1;
+  }
+  if (fbctl(FB_ACQUIRE, 0) < 0) {
+    write(2, "fbtest: busy\n", 13);
+    return 1;
+  }
+  volatile uint *fb = (volatile uint *)fi.base;
+  uint words = fi.h * fi.pitch / 4;
+  for (uint i = 0; i < words; i += 64)
+    fb[i] = 0xA5C3A5C3u + i;
+  int ok = 1;
+  for (uint i = 0; i < words; i += 64) {
+    if (fb[i] != 0xA5C3A5C3u + i) {
+      ok = 0;
+      break;
+    }
+  }
+  fbctl(FB_RELEASE, 0);
+  if (!ok) {
+    write(2, "fbtest: verify FAIL\n", 20);
+    return 1;
+  }
+  fputstr(1, "fb ok ");
+  fputnum(1, (int)fi.w);
+  fputstr(1, "x");
+  fputnum(1, (int)fi.h);
+  fputstr(1, "x");
+  fputnum(1, (int)fi.bpp);
+  fputstr(1, "\n");
+  return 0;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -439,7 +479,9 @@ main(int argc, char **argv)
     exit(t_mux(argc, argv));
   if (streq(base, "blink"))
     exit(t_blink(argc, argv));
+  if (streq(base, "fbtest"))
+    exit(t_fbtest());
   write(2, "toolbox: kill spin trap free sync mount umount wc mkdir rm "
-           "gpio mux blink\n", 75);
+           "gpio mux blink fbtest\n", 82);
   exit(1);
 }

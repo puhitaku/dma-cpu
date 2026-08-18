@@ -56,6 +56,11 @@ type Variant struct {
 	DreqPIO0RX0  uint32
 	DreqPWMWrap0 uint32
 	DreqADC      uint32
+
+	// HSTX (RP2350 only; zero on SKUs without it): the FIFO the video
+	// scanout channel streams into, and its pacing DREQ.
+	HSTXFifoBase uint32
+	DreqHSTX     uint32
 }
 
 // RP2040: datasheet §2.5 (doc/rp2040-datasheet.pdf).
@@ -137,6 +142,14 @@ var RP2350 = &Variant{
 	DreqPIO0RX0:  4,
 	DreqPWMWrap0: 32,
 	DreqADC:      48,
+
+	// The FIFO's WRITE port (base 0x50600000 is the read-only STAT
+	// register; the data port sits at +4 — RP2350 datasheet §12.11).
+	// Streaming at +0 discards every word, so the FIFO never fills
+	// and its DREQ never deasserts: the scanout free-runs and
+	// saturates the bus (a real silicon episode, prompts/036).
+	HSTXFifoBase: 0x50600004,
+	DreqHSTX:     52,
 }
 
 // Variants lists all supported SKUs.

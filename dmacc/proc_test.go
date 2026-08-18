@@ -35,18 +35,31 @@ func compileKernel(t *testing.T, fs bool) string {
 // measured so the speed/size gap of Options.OptSize stays visible.
 func compileKernelSized(t *testing.T) string {
 	t.Helper()
-	return compileKernelFull(t, true, true, true)
+	return compileKernelFull(t, true, true, true, false)
 }
 
 func compileKernelOpts(t *testing.T, fs, xip bool) string {
-	return compileKernelFull(t, fs, xip, false)
+	return compileKernelFull(t, fs, xip, false, false)
 }
 
-func compileKernelFull(t *testing.T, fs, xip, size bool) string {
+// compileKernelXsh is the deployable XIP configuration; fb picks the
+// real display driver (PSRAM boards) or the no-op stub.
+func compileKernelXsh(t *testing.T, fb bool) string {
+	return compileKernelFull(t, true, true, false, fb)
+}
+
+func compileKernelFull(t *testing.T, fs, xip, size, fb bool) string {
 	t.Helper()
-	list := []string{"kproc", "kgpio", "kfsstub"}
+	// Only PSRAM boards carry the real fb driver (~25 KiB of machine
+	// text); everything else takes the no-display stub, kfsstub-style.
+	fbmods := []string{"kfbstub"}
+	if fb {
+		fbmods = []string{"kfb", "kfbcon"}
+	}
+	list := append([]string{"kproc", "kgpio"}, append(fbmods, "kfsstub")...)
 	if fs {
-		list = []string{"kproc", "kgpio", "kfs", "kfile", "kbio", "kfsglue", "kpipe", "kflash", "kfat", "kdev", "string"}
+		list = append([]string{"kproc", "kgpio"}, append(fbmods,
+			"kfs", "kfile", "kbio", "kfsglue", "kpipe", "kflash", "kfat", "kdev", "string")...)
 	}
 	var mods []*llir.Module
 	for _, p := range list {
@@ -109,7 +122,7 @@ func TestXv6Proc(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x20004000, 0x2001C000)
+			kernC := buildKernelC(t, v, 0x20004000, 0x2001D000)
 			asm := func(text, data uint32) *dmaasm.Result {
 				res, err := dmaasm.Assemble(pdasm, dmaasm.Options{
 					Variant: v, TextBase: text, DataBase: data})

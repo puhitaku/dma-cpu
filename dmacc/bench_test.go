@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/puhitaku/dma-cpu/boards"
 	"github.com/puhitaku/dma-cpu/emu"
 )
 
@@ -83,4 +84,78 @@ func tail(b []byte, n int) string {
 		b = b[len(b)-n:]
 	}
 	return string(b)
+}
+
+// TestZZBenchFbcon prices the framebuffer console (prompts/036): the
+// same command set runs on Feather (fbcon rendering every byte) and
+// on Pico 2 (identical kernel, fb dormant), TXPace off, so the delta
+// is pure fbcon cost — glyph rendering, escape parsing, and the
+// pan-based scroll. The scroll row runs twelve /dev listings so the
+// screen wraps several times.
+//
+//	DMACC_BENCH=1 go test ./dmacc/ -run TestZZBenchFbcon -v
+func TestZZBenchFbcon(t *testing.T) {
+	if os.Getenv("DMACC_BENCH") == "" {
+		t.Skip("set DMACC_BENCH=1 to run the cycle benchmark")
+	}
+	session := func(bd *boards.Board) map[string]uint64 {
+		m, _ := bootXshBoard(t, nil, bd)
+		m.TXPace = 0
+		dr := m.Variant().UARTDRAddr()
+		waitPrompt := func(budget uint64) (uint64, bool) {
+			var spent uint64
+			mark := len(m.ConsoleOut)
+			for spent < budget {
+				rr, err := m.Run(emu.RunConfig{MaxCycles: 500_000, WatchWrites: []uint32{dr}})
+				if err != nil {
+					t.Fatalf("run: %v (console %q)", err, m.ConsoleOut[mark:])
+				}
+				spent += rr.Cycles
+				if rr.Reason == emu.StopWatch {
+					if len(m.ConsoleOut) > mark && strings.HasSuffix(string(m.ConsoleOut), "$ ") {
+						return spent, true
+					}
+					continue
+				}
+				if rr.Reason == emu.StopIdle || rr.Reason == emu.StopStalled {
+					return spent, false
+				}
+			}
+			return spent, false
+		}
+		if _, ok := waitPrompt(2_000_000_000); !ok {
+			t.Fatalf("%s: no boot prompt; console %q", bd.Name, tail(m.ConsoleOut, 200))
+		}
+		res := map[string]uint64{}
+		for _, c := range []string{"echo 0123456789012345678901234567890123456789", "ls /dev", "cat README"} {
+			for i := 0; i < 2; i++ { // warm the exec path, keep run 2
+				m.FeedConsole(c + "\r")
+				n, ok := waitPrompt(3_000_000_000)
+				if !ok {
+					t.Fatalf("%s %q: no prompt; console tail %q", bd.Name, c, tail(m.ConsoleOut, 200))
+				}
+				res[c] = n
+			}
+		}
+		var scroll uint64
+		for i := 0; i < 12; i++ {
+			m.FeedConsole("ls /dev\r")
+			n, ok := waitPrompt(3_000_000_000)
+			if !ok {
+				t.Fatalf("%s scroll: no prompt; console tail %q", bd.Name, tail(m.ConsoleOut, 200))
+			}
+			scroll += n
+		}
+		res["scroll (12x ls /dev)"] = scroll
+		return res
+	}
+	feather := session(boards.Feather)
+	pico2 := session(boards.Pico2)
+	fmt.Printf("%-44s %12s %12s %12s\n", "workload", "feather", "pico2", "fbcon cost")
+	for _, k := range []string{
+		"echo 0123456789012345678901234567890123456789",
+		"ls /dev", "cat README", "scroll (12x ls /dev)",
+	} {
+		fmt.Printf("%-44s %12d %12d %+12d\n", k, feather[k], pico2[k], int64(feather[k])-int64(pico2[k]))
+	}
 }

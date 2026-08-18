@@ -24,6 +24,14 @@
 #include "hardware/gpio.h"
 #include "hardware/pio.h"
 
+#if defined(ADAFRUIT_FEATHER_RP2350)
+#include "hardware/clocks.h"
+#include "hardware/pll.h"
+#include "hardware/psram.h"
+#include "hardware/structs/hstx_ctrl.h"
+#include "hardware/structs/qmi.h"
+#endif
+
 #include "dmx.h"
 #include "images.h"
 
@@ -878,6 +886,11 @@ static void __attribute__((noinline, section(".time_critical.park"))) park_forev
                 flash_range_erase(off, 4096);
             else if (op == 2)
                 flash_range_program(off, (const uint8_t *)src, 256);
+            /* flash_range_* leaves XIP in the bootrom's slow serial
+             * command mode; restore full-speed XIP (and, via the SDK
+             * hook, the PSRAM CS1 setup) BEFORE acking — the machine
+             * resumes XIP fetches the moment the ack lands. */
+            flash_start_xip();
             req[4] = req[3];
         }
     }
@@ -1008,6 +1021,79 @@ static void xsh_start(void)
 }
 #endif
 
+#if defined(ADAFRUIT_FEATHER_RP2350)
+/* Feather RP2350 video stage-setting (prompts/036). The DMA machine
+ * scans the PSRAM framebuffer out through HSTX entirely by itself;
+ * the ARM only prepares the fixed-function hardware:
+ *  - clk_hstx = 126 MHz from the otherwise-unused USB PLL (VCO
+ *    1260 MHz / 5 / 2): 640x480@60 wants a 25.2 MHz pixel clock and
+ *    HSTX shifts 2 TMDS bits per cycle, 5 shifts per pixel. clk_sys
+ *    stays at the machine's calibrated 150 MHz and clk_peri stays on
+ *    clk_sys, so the UART is unaffected (clk_usb/clk_adc die: unused).
+ *  - HSTX TMDS encoder in RGB332, 4 pixels per FIFO word (the
+ *    pico-examples dvi_out_hstx_encoder configuration).
+ *  - Board pin map: HSTX bit N = GPIO 12+N; clock pair GPIO14/15,
+ *    lane0 GPIO18/19, lane1 GPIO16/17, lane2 GPIO12/13.
+ * PSRAM (QMI CS1, GPIO8) is brought up by the SDK runtime init
+ * (hardware_psram), including XIP_CTRL.WRITABLE_M1 for writes. */
+static void feather_video_init(void)
+{
+    /* The SDK's PSRAM bring-up probes the chip over QMI direct mode
+     * and leaves one residual word in the direct-RX FIFO. The DMA
+     * machine's flash driver assumes the FIFO starts empty: with the
+     * residue every read of its session comes back shifted by one and
+     * the session wedges (observed on silicon: DIRECT_CSR RXLEVEL=1
+     * at the CAL flash hang). Drain it and shut direct mode before
+     * the machine ever runs. */
+    while (!(qmi_hw->direct_csr & QMI_DIRECT_CSR_RXEMPTY_BITS))
+        (void)qmi_hw->direct_rx;
+    hw_clear_bits(&qmi_hw->direct_csr, QMI_DIRECT_CSR_EN_BITS);
+
+    pll_init(pll_usb, 1, 1260 * MHZ, 5, 2);
+    clock_configure_undivided(clk_hstx, 0,
+        CLOCKS_CLK_HSTX_CTRL_AUXSRC_VALUE_CLKSRC_PLL_USB, 126 * MHZ);
+
+    hstx_ctrl_hw->expand_tmds =
+        2u << HSTX_CTRL_EXPAND_TMDS_L2_NBITS_LSB |
+        0u << HSTX_CTRL_EXPAND_TMDS_L2_ROT_LSB |
+        2u << HSTX_CTRL_EXPAND_TMDS_L1_NBITS_LSB |
+        29u << HSTX_CTRL_EXPAND_TMDS_L1_ROT_LSB |
+        1u << HSTX_CTRL_EXPAND_TMDS_L0_NBITS_LSB |
+        26u << HSTX_CTRL_EXPAND_TMDS_L0_ROT_LSB;
+    hstx_ctrl_hw->expand_shift = /* 4 RGB332 pixels per FIFO word */
+        4u << HSTX_CTRL_EXPAND_SHIFT_ENC_N_SHIFTS_LSB |
+        8u << HSTX_CTRL_EXPAND_SHIFT_ENC_SHIFT_LSB |
+        1u << HSTX_CTRL_EXPAND_SHIFT_RAW_N_SHIFTS_LSB |
+        0u << HSTX_CTRL_EXPAND_SHIFT_RAW_SHIFT_LSB;
+    hstx_ctrl_hw->csr = 0;
+    hstx_ctrl_hw->csr =
+        HSTX_CTRL_CSR_EXPAND_EN_BITS |
+        5u << HSTX_CTRL_CSR_CLKDIV_LSB |
+        5u << HSTX_CTRL_CSR_N_SHIFTS_LSB |
+        2u << HSTX_CTRL_CSR_SHIFT_LSB |
+        HSTX_CTRL_CSR_EN_BITS;
+
+    /* Clock pair on HSTX bits 2/3 (GPIO14/15). */
+    hstx_ctrl_hw->bit[2] = HSTX_CTRL_BIT0_CLK_BITS;
+    hstx_ctrl_hw->bit[3] = HSTX_CTRL_BIT0_CLK_BITS | HSTX_CTRL_BIT0_INV_BITS;
+    /* TMDS lane -> HSTX bit of its positive pin: D0=GPIO18, D1=GPIO16,
+     * D2=GPIO12. Even shifter bits leave in the first half-cycle. */
+    static const int lane_bit[3] = {6, 4, 0};
+    for (int lane = 0; lane < 3; lane++) {
+        int bit = lane_bit[lane];
+        uint32_t sel = (uint32_t)(lane * 10) << HSTX_CTRL_BIT0_SEL_P_LSB |
+                       (uint32_t)(lane * 10 + 1) << HSTX_CTRL_BIT0_SEL_N_LSB;
+        hstx_ctrl_hw->bit[bit] = sel;
+        hstx_ctrl_hw->bit[bit + 1] = sel | HSTX_CTRL_BIT0_INV_BITS;
+    }
+    for (int pin = 12; pin <= 19; pin++)
+        gpio_set_function((uint)pin, GPIO_FUNC_HSTX);
+
+    printf("feather: psram %u KiB, clk_hstx 126 MHz, hstx dvi ready\n",
+           (unsigned)(psram_get_size() / 1024));
+}
+#endif
+
 int main(void)
 {
     stdio_init_all();
@@ -1023,6 +1109,10 @@ int main(void)
      * has no ACCESSCTRL — its DMA already reaches everything. */
     accessctrl_hw->xip_qmi = ACCESSCTRL_PASSWORD_BITS | 0xFC;
     accessctrl_hw->xip_ctrl = ACCESSCTRL_PASSWORD_BITS | 0xFC;
+#endif
+
+#if defined(ADAFRUIT_FEATHER_RP2350)
+    feather_video_init();
 #endif
 
     /* GPIO2: input from the firmware's view; the DMA machine drives it

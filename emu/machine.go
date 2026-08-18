@@ -56,6 +56,17 @@ type Machine struct {
 	Flash []byte
 	fl    flashState
 
+	// PSRAM, when non-nil, backs the QMI CS1 sub-window of the XIP
+	// space (offset 0x01000000: 0x11000000 cached, 0x15000000 uncached
+	// alias — RP2350 datasheet §4.4). Unlike flash it accepts plain
+	// bus writes; like flash it is unreachable during a QMI
+	// direct-mode session.
+	PSRAM []byte
+
+	// HSTXOut collects words written to the HSTX FIFO (RP2350 only) —
+	// the video scanout stream, captured for tests.
+	HSTXOut []uint32
+
 	// TraceW, when non-nil, receives one line per DMA transfer.
 	TraceW io.Writer
 
@@ -95,6 +106,20 @@ func NewMachine(v *Variant) *Machine {
 func (m *Machine) Variant() *Variant { return m.v }
 
 // --- Bus ---
+
+// inPSRAM reports whether the access falls inside the QMI CS1 PSRAM
+// sub-window, in either the cached (0x11000000) or the uncached-alias
+// (0x15000000) view of the XIP space.
+const psramWinOff = 0x01000000
+
+func (m *Machine) inPSRAM(addr uint32, size int) bool {
+	if m.PSRAM == nil || addr < XIPBase || addr >= XIPBase+0x08000000 {
+		return false
+	}
+	off := (addr - XIPBase) & 0x03FFFFFF
+	return off >= psramWinOff && off-psramWinOff+uint32(size) <= uint32(len(m.PSRAM)) &&
+		off-psramWinOff <= off-psramWinOff+uint32(size)
+}
 
 func (m *Machine) inSRAM(addr uint32, size int) bool {
 	// addr+size can wrap at the top of the address space (a stray
@@ -165,6 +190,19 @@ func (m *Machine) Read(addr uint32, size int) (uint32, error) {
 			return uint32(binary.LittleEndian.Uint16(m.Flash[off:])), nil
 		default:
 			return binary.LittleEndian.Uint32(m.Flash[off:]), nil
+		}
+	case m.inPSRAM(addr, size):
+		if m.fl.csr&qmiCSREn != 0 {
+			return 0, fmt.Errorf("PSRAM read at %#08x during a QMI direct-mode session", addr)
+		}
+		off := (addr-XIPBase)&0x03FFFFFF - psramWinOff
+		switch size {
+		case 1:
+			return uint32(m.PSRAM[off]), nil
+		case 2:
+			return uint32(binary.LittleEndian.Uint16(m.PSRAM[off:])), nil
+		default:
+			return binary.LittleEndian.Uint32(m.PSRAM[off:]), nil
 		}
 	case addr >= 0x40000000 && addr < 0x60000000:
 		if v, ok := m.flashRead(addr); ok {
@@ -238,8 +276,26 @@ func (m *Machine) Write(addr uint32, val uint32, size int) error {
 		final := applyAlias(m.dma.regRead(norm), val, op)
 		m.dma.regWrite(norm, final, val != 0)
 		return nil
+	case m.inPSRAM(addr, size):
+		if m.fl.csr&qmiCSREn != 0 {
+			return fmt.Errorf("PSRAM write at %#08x during a QMI direct-mode session", addr)
+		}
+		off := (addr-XIPBase)&0x03FFFFFF - psramWinOff
+		switch size {
+		case 1:
+			m.PSRAM[off] = byte(val)
+		case 2:
+			binary.LittleEndian.PutUint16(m.PSRAM[off:], uint16(val))
+		default:
+			binary.LittleEndian.PutUint32(m.PSRAM[off:], val)
+		}
+		return nil
 	case addr >= 0x40000000 && addr < 0x60000000:
 		if m.flashWrite(addr, val) {
+			return nil
+		}
+		if m.v.HSTXFifoBase != 0 && addr == m.v.HSTXFifoBase {
+			m.HSTXOut = append(m.HSTXOut, val)
 			return nil
 		}
 		norm, op := aliasOp(addr)

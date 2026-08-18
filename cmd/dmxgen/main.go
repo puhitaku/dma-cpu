@@ -295,7 +295,8 @@ func buildKernelPair(v *emu.Variant, kText, kData, cText, cData uint32) (*dmaasm
 	if err != nil {
 		return nil, nil, fmt.Errorf("kernel: %w", err)
 	}
-	dasm, err := compileLL([]string{"xv6/ll/kproc.ll", "xv6/ll/kgpio.ll", "xv6/ll/kfsstub.ll"},
+	dasm, err := compileLL([]string{"xv6/ll/kproc.ll", "xv6/ll/kgpio.ll",
+		"xv6/ll/kfbstub.ll", "xv6/ll/kfsstub.ll"},
 		dmacc.Options{Entry: "kmain", NoSafepoints: true})
 	if err != nil {
 		return nil, nil, err
@@ -479,7 +480,7 @@ func libcPaths(first ...string) ([]string, error) {
 // buildSched: the scheduler-only bundle (two counter processes, no
 // syscalls). Fits the narrow rp2040 layout.
 func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
-	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x19000)
+	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x1A000)
 	if err != nil {
 		return nil, err
 	}
@@ -487,20 +488,20 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1B800, DataBase: lay.text + 0x1C800})
+	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1D000, DataBase: lay.text + 0x1E000})
 	if err != nil {
 		return nil, err
 	}
-	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1D800, DataBase: lay.text + 0x1E800})
+	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1F000, DataBase: lay.text + 0x20000})
 	if err != nil {
 		return nil, err
 	}
 	b := &kernBundle{names: []string{"kernel", "kernc", "proca", "procb"}, sym: map[string]uint32{}}
-	b.entry0 = lay.text + 0x1B800 + procA.Image.EntryOff
-	entryB := lay.text + 0x1D800 + procB.Image.EntryOff
-	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x19000, []kprocSpec{
-		{procA, lay.text + 0x1C800, b.entry0, 1, 0, false},
-		{procB, lay.text + 0x1E800, entryB, 2, 0, false},
+	b.entry0 = lay.text + 0x1D000 + procA.Image.EntryOff
+	entryB := lay.text + 0x1F000 + procB.Image.EntryOff
+	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x1A000, []kprocSpec{
+		{procA, lay.text + 0x1E000, b.entry0, 1, 0, false},
+		{procB, lay.text + 0x20000, entryB, 2, 0, false},
 	}); err != nil {
 		return nil, err
 	}
@@ -554,7 +555,7 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 // Needs the wide rp2350 layout.
 func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x1C000
+	cText, cData := lay.text+0x4000, lay.text+0x1D000
 	sText, sData := lay.text+0x21000, lay.text+0x36000
 	pText, pData := lay.text+0x2E000, lay.text+0x2F000
 	blobHome := lay.text + 0x3E000
@@ -716,9 +717,17 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	kcDasm, err := compileLL([]string{"xv6/ll/kproc.ll", "xv6/ll/kgpio.ll", "xv6/ll/kfs.ll", "xv6/ll/kfile.ll",
+	// Boards without PSRAM can never light the display: they take the
+	// no-op fb stub, keeping ~25 KiB of fbcon machine text out of
+	// their kernels (and the RP2040 has no HSTX at all).
+	fbMods := []string{"xv6/ll/kfbstub.ll"}
+	if bd.PSRAMSize != 0 {
+		fbMods = []string{"xv6/ll/kfb.ll", "xv6/ll/kfbcon.ll"}
+	}
+	kcDasm, err := compileLL(append(append([]string{"xv6/ll/kproc.ll", "xv6/ll/kgpio.ll"},
+		fbMods...), "xv6/ll/kfs.ll", "xv6/ll/kfile.ll",
 		"xv6/ll/kbio.ll", "xv6/ll/kfsglue.ll", "xv6/ll/kpipe.ll", "xv6/ll/kflash.ll",
-		"xv6/ll/kfat.ll", "xv6/ll/kdev.ll", "xv6/ll/string.ll"},
+		"xv6/ll/kfat.ll", "xv6/ll/kdev.ll", "xv6/ll/string.ll"),
 		dmacc.Options{Entry: "kmain", NoSafepoints: true, XIPText: true,
 			/* the QMI sync session tears down XIP: it must run from SRAM */
 			RAMTextFuncs: []string{"kflash_sync"}})
@@ -881,6 +890,33 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			}
 		}
 	}
+	// HDMI framebuffer driver globals (kfb.c, prompts/036) — only on
+	// boards with PSRAM; the others link the stub, which has none.
+	var fbGlobals []struct {
+		name string
+		val  uint32
+	}
+	if bd.PSRAMSize != 0 {
+		fbWalk, fbKick, fbStrm, fbVbl, fbTail, fbCopy := boards.FbCtrls(v)
+		fbGlobals = []struct {
+			name string
+			val  uint32
+		}{
+			{"g_fb_psram", bd.PSRAMBase}, {"g_fb_psram_sz", bd.PSRAMSize},
+			{"g_fb_sram", bd.FbHome}, {"g_fb_hstx", v.HSTXFifoBase},
+			{"g_fb_dmabase", emu.DMABase}, {"g_fb_abort", v.ChanAbortAddr()},
+			{"g_fb_ctrl_walk", fbWalk}, {"g_fb_ctrl_kick", fbKick},
+			{"g_fb_ctrl_strm", fbStrm}, {"g_fb_ctrl_vbl", fbVbl},
+			{"g_fb_ctrl_tail", fbTail}, {"g_fb_ctrl_copy", fbCopy},
+		}
+	}
+	for _, g := range fbGlobals {
+		if errs == nil {
+			if err := patchData(kernC.Image, cData, sy(kernC, g.name), g.val); err != nil {
+				return nil, err
+			}
+		}
+	}
 	// Registry rows: exec's by-name fallback for flash-resident
 	// images (kproc.c lookup()) — vi when installed, and the whole
 	// app set on flash-apps boards (aliases share one blob).
@@ -1004,6 +1040,11 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	for i := range m.Flash {
 		m.Flash[i] = 0xFF
 	}
+	if bd.PSRAMSize != 0 {
+		// The fb driver comes up during this boot and renders into
+		// PSRAM; give the verification machine the board's part.
+		m.PSRAM = make([]byte, bd.PSRAMSize)
+	}
 	results := []*dmaasm.Result{kern, kernC, sh, idle}
 	for _, r := range results {
 		if _, err := r.Image.Load(m, nil); err != nil {
@@ -1074,7 +1115,7 @@ const sysWantConsole = "hello from pid 1 via SYS_write\n" +
 // (dmacc/testdata/xv6sys.c + xv6/dma/usys.c). Wide layout.
 func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x1C000
+	cText, cData := lay.text+0x4000, lay.text+0x1D000
 	aText, aData := lay.text+0x21000, lay.text+0x25000
 	bText, bData := lay.text+0x29000, lay.text+0x2D000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
@@ -1312,7 +1353,7 @@ func stageBlobsEmu(m *emu.Machine, blobs [][]byte, names []string, syms map[stri
 // kernel places, relocates and runs it at exec() time.
 func buildExec(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x1C000
+	cText, cData := lay.text+0x4000, lay.text+0x1D000
 	aText, aData := lay.text+0x21000, lay.text+0x25000
 	bText, bData := lay.text+0x29000, lay.text+0x2D000
 	blobHome := lay.text + 0x2F000
@@ -1827,6 +1868,12 @@ func run() error {
 	lay, ok := layouts[v.Name]
 	if !ok {
 		return fmt.Errorf("no HIL layout for %s", v.Name)
+	}
+	// Boards whose firmware carries extra SDK runtime (the Feather
+	// links hardware_psram) grow .bss past the family floor: their
+	// machine RAM starts where boards.Board places the kernel.
+	if bd.KernText > lay.text {
+		lay.text = bd.KernText
 	}
 
 	ccExp, err := ccExpected()

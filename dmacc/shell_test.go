@@ -88,7 +88,7 @@ func TestShellSystem(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x2001E000, 0x20036000)
+			kernC := buildKernelC(t, v, 0x2001E000, 0x20036800)
 			shell, err := dmaasm.Assemble(shellDasm, dmaasm.Options{
 				Variant: v, TextBase: 0x20006000, DataBase: 0x20016000})
 			if err != nil {

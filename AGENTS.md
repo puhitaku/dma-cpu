@@ -107,6 +107,16 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   at link addresses only). When touching lowering, keep the
   differential suite bit-exact — it caught the phase's only miscompile.
 
+- The HDMI display (prompts/036, Feather board): the scanout is a
+  pure-DMA ring on channels 13-15 (`boards.FbChan*`; the compact
+  machine owns 0-10). kfb.c/kfbcon.c ride only PSRAM boards' kernels;
+  every other build links the no-op `kfbstub.c` (kfsstub-style) — a
+  kernel list that links kproc must include one of the two. The HSTX
+  FIFO write port is base+4 (base+0 is STAT; +0 silently discards and
+  the unpaced ring saturates the bus). Boards with PSRAM sync flash
+  through the ARM mailbox executor, never QMI direct mode: serial-XIP
+  interleaved with QPI PSRAM scanout corrupts machine fetches.
+
 ## Build, test, hardware
 
 - `make test` = `go vet` + all golden tests. Run it before committing.

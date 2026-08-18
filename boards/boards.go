@@ -6,10 +6,20 @@
 // exactly one place.
 package boards
 
+// Video scanout DMA channels (kfb.c mirrors these): the compact
+// machine owns channels 0-10, so the display engine rides the top of
+// the RP2350's 16.
+const (
+	FbChanWalk = 13 // ring walker: control blocks -> executor's alias0
+	FbChanExec = 14 // executor: streams to the HSTX FIFO / kicks the copier
+	FbChanCopy = 15 // line copier: PSRAM -> SRAM line buffers
+)
+
 // Board describes one deployable target.
 type Board struct {
-	Name string
-	SKU  string // emu.Variant name: "rp2350" or "rp2040"
+	Name      string
+	SKU       string // emu.Variant name: "rp2350" or "rp2040"
+	PicoBoard string // pico-sdk board name when it differs from Name
 
 	// --- machine RAM partition (absolute addresses) ---
 	// The xsh bundle's resident pieces. Kernel and sh text execute
@@ -33,6 +43,17 @@ type Board struct {
 	ViEnd       uint32
 	AppsHome    uint32 // user-app registry blobs; 0 = apps live on the
 	AppsEnd     uint32 // RAM disk instead (small-RAM boards free ~80 KiB)
+
+	// --- video (0 = the board has no display) ---
+	// PSRAM holds the framebuffer; FbHome..FbEnd is the SRAM slice the
+	// scanout engine builds its ring, kick table and line buffers in
+	// (prompts/036). PSRAMBase is the *uncached* CS1 alias: both the
+	// scanout channels and the renderer use it, so there is no cache
+	// to keep coherent.
+	PSRAMBase uint32
+	PSRAMSize uint32
+	FbHome    uint32
+	FbEnd     uint32
 
 	// --- behavior and apps ---
 	// MachineFlashExec: the DMA machine drives the flash controller
@@ -58,6 +79,7 @@ func (b *Board) HasBundle(name string) bool {
 var stdApps = []string{"echo", "cat", "ls", "toolbox"}
 var stdLinks = []string{"kill", "spin", "trap", "free", "sync", "mount",
 	"umount", "wc", "mkdir", "rm", "gpio", "mux", "blink"}
+var fbLinks = append(append([]string{}, stdLinks...), "fbtest")
 
 // Pico2: RP2350, 520 KiB SRAM, 4 MiB flash. The full experience —
 // everything including vi and the machine-driven flash executor.
@@ -67,7 +89,7 @@ var Pico2 = &Board{
 
 	KernText: 0x20002000, KernData: 0x20003000,
 	KernCRText: 0x20004000, KernCData: 0x2000C000,
-	ShRText: 0x20018000, ShData: 0x2001C000,
+	ShRText: 0x20019800, ShData: 0x2001C000,
 	IdleText: 0x20024000, IdleData: 0x20025000,
 	DiskHome: 0x20026000, DiskMax: 0x18000, // 96 KiB
 	Arena: 0x20040000, ArenaEnd: 0x2007FC00,
@@ -97,10 +119,10 @@ var Pico = &Board{
 
 	KernText: 0x20002000, KernData: 0x20003000,
 	KernCRText: 0x20004000, KernCData: 0x2000B800,
-	ShRText: 0x20017000, ShData: 0x20019000,
-	IdleText: 0x2001D800, IdleData: 0x2001E800,
-	DiskHome: 0x2001F800, DiskMax: 0x6000, // 24 KiB: data files only
-	Arena: 0x20025800, ArenaEnd: 0x2003FC00, // ~105 KiB
+	ShRText: 0x20018800, ShData: 0x2001A800,
+	IdleText: 0x2001F000, IdleData: 0x20020000,
+	DiskHome: 0x20021000, DiskMax: 0x6000, // 24 KiB: data files only
+	Arena: 0x20027000, ArenaEnd: 0x2003FC00, // ~99 KiB
 	Scratch: 0x2003FE00,
 
 	FlashSize:   0x200000,
@@ -118,10 +140,60 @@ var Pico = &Board{
 	Bundles:          []string{"xsh"},
 }
 
+// Feather: Adafruit Feather RP2350 with PSRAM — RP2350A, 520 KiB
+// SRAM, 8 MiB flash, 8 MiB QSPI PSRAM on QMI CS1 (GPIO8), HSTX pins
+// GPIO12-19 on the 22-pin DVI port. The Pico2 experience plus an
+// HDMI console: the framebuffer lives at the start of PSRAM and a
+// pure-DMA ring scans it out (prompts/036). The scanout working set
+// is carved off the top of the arena (24 KiB).
+var Feather = &Board{
+	Name:      "feather",
+	SKU:       "rp2350",
+	PicoBoard: "adafruit_feather_rp2350",
+
+	// KernText sits 2 KiB above the family floor: linking the SDK's
+	// hardware_psram grows the firmware's .bss past 0x20002000 (the
+	// boot check caught the overlap on silicon, prompts/036).
+	KernText: 0x20002800, KernData: 0x20003400,
+	KernCRText: 0x20004000, KernCData: 0x2000C000,
+	ShRText: 0x20019800, ShData: 0x2001C000,
+	IdleText: 0x20024000, IdleData: 0x20025000,
+	DiskHome: 0x20026000, DiskMax: 0x18000, // 96 KiB
+	Arena: 0x20040000, ArenaEnd: 0x20079C00,
+	Scratch: 0x2007FE00,
+
+	// Flash sections sit in the upper 4 MiB: the feather firmware ELF
+	// (all bundles + vi + apps + the golden disk) exceeds 2 MiB, so
+	// the pico2 map's 0x10200000 slot would sit INSIDE the program —
+	// a sync then eats the firmware (and a flash eats the slot).
+	FlashSize:   0x800000,
+	FSSlot:      0x10400000,
+	FatVol:      0x10440000,
+	KernTextXIP: 0x10460000,
+	ShTextXIP:   0x104A0000,
+	ViHome:      0x104C0000, ViEnd: 0x10510000,
+
+	PSRAMBase: 0x15000000, PSRAMSize: 0x800000,
+	FbHome: 0x20079C00, FbEnd: 0x2007FC00,
+
+	// Flash sync goes through the parked ARM's mailbox executor, NOT
+	// the machine's QMI direct-mode driver: that driver leaves XIP in
+	// plain-SPI mode, and on silicon the degraded M0 interleaved with
+	// the scanout's QPI PSRAM bursts corrupted kernel fetches within
+	// a millisecond of resuming the display (prompts/036). The SDK
+	// path restores full quad XIP and re-runs the CS1 setup hook.
+	MachineFlashExec: false,
+	DiskBlocks:       96,
+	DiskApps:         stdApps,
+	ToolboxLinks:     fbLinks,
+	Bundles:          []string{"shell", "syscall", "exec", "xsh"},
+}
+
 // All maps board names to definitions.
 var All = map[string]*Board{
-	Pico2.Name: Pico2,
-	Pico.Name:  Pico,
+	Pico2.Name:   Pico2,
+	Pico.Name:    Pico,
+	Feather.Name: Feather,
 }
 
 // Default returns the canonical board for a SKU (the -sku flag's

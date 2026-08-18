@@ -387,6 +387,19 @@ define dso_local i32 @pioctl(i32 noundef %0, i32 noundef %1, i32 noundef %2) loc
 }
 
 ; Function Attrs: minsize nounwind optsize
+define dso_local i32 @fbctl(i32 noundef %0, ptr noundef %1) local_unnamed_addr #0 {
+  %3 = ptrtoint ptr %1 to i32
+  store volatile i32 32, ptr @__dma_sysmail, align 4, !tbaa !3
+  store volatile i32 %0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 4), align 4, !tbaa !8
+  store volatile i32 %3, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 8), align 4, !tbaa !9
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 12), align 4, !tbaa !10
+  %4 = load i32, ptr @__dma_syscall_entry, align 4, !tbaa !11
+  %5 = inttoptr i32 %4 to ptr
+  %6 = tail call i32 %5() #2
+  ret i32 %6
+}
+
+; Function Attrs: minsize nounwind optsize
 define dso_local i32 @read_nb(i32 noundef %0, ptr noundef %1, i32 noundef %2) local_unnamed_addr #0 {
   %4 = ptrtoint ptr %1 to i32
   store volatile i32 5, ptr @__dma_sysmail, align 4, !tbaa !3

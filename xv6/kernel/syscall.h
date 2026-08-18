@@ -30,3 +30,4 @@
 #define SYS_gpio   29
 #define SYS_pinmux 30
 #define SYS_pio    31
+#define SYS_fb     32

@@ -8,7 +8,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 %struct.sleeplock = type { i8 }
 %struct.dirent = type { i16, [62 x i8] }
 
-@devtab = internal unnamed_addr constant [6 x %struct.anon] [%struct.anon { ptr @.str, i32 1, i32 0 }, %struct.anon { ptr @.str.1, i32 2, i32 0 }, %struct.anon { ptr @.str.2, i32 3, i32 0 }, %struct.anon { ptr @.str.3, i32 4, i32 0 }, %struct.anon { ptr @.str.4, i32 4, i32 1 }, %struct.anon { ptr @.str.5, i32 4, i32 2 }], align 4
+@devtab = internal unnamed_addr constant [7 x %struct.anon] [%struct.anon { ptr @.str, i32 1, i32 0 }, %struct.anon { ptr @.str.1, i32 2, i32 0 }, %struct.anon { ptr @.str.2, i32 3, i32 0 }, %struct.anon { ptr @.str.3, i32 4, i32 0 }, %struct.anon { ptr @.str.4, i32 4, i32 1 }, %struct.anon { ptr @.str.5, i32 4, i32 2 }, %struct.anon { ptr @.str.6, i32 5, i32 0 }], align 4
 @fatvol = external dso_local local_unnamed_addr global i32, align 4
 @devnodes = internal global [8 x %struct.inode] zeroinitializer, align 4
 @.str = private unnamed_addr constant [8 x i8] c"console\00", align 1
@@ -17,8 +17,11 @@ target triple = "thumbv6m-unknown-none-eabi"
 @.str.3 = private unnamed_addr constant [5 x i8] c"pio0\00", align 1
 @.str.4 = private unnamed_addr constant [5 x i8] c"pio1\00", align 1
 @.str.5 = private unnamed_addr constant [5 x i8] c"pio2\00", align 1
+@.str.6 = private unnamed_addr constant [4 x i8] c"fb0\00", align 1
 @gpiopins = external dso_local local_unnamed_addr global i32, align 4
-@.str.6 = private unnamed_addr constant [13 x i8] c"sm_enable=0x\00", align 1
+@.str.7 = private unnamed_addr constant [13 x i8] c"sm_enable=0x\00", align 1
+@.str.8 = private unnamed_addr constant [5 x i8] c"off\0A\00", align 1
+@.str.9 = private unnamed_addr constant [8 x i8] c" owner=\00", align 1
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(argmem: read)
 define dso_local range(i32 0, 2) i32 @dev_is(ptr noundef readonly captures(address_is_null) %0) local_unnamed_addr #0 {
@@ -43,7 +46,7 @@ define dso_local ptr @dev_root() local_unnamed_addr #1 {
 }
 
 ; Function Attrs: minsize nounwind optsize
-define internal fastcc ptr @dev_getnode(i32 noundef range(i32 -2147483647, 7) %0) unnamed_addr #1 {
+define internal fastcc ptr @dev_getnode(i32 noundef range(i32 -2147483647, 8) %0) unnamed_addr #1 {
   br label %2
 
 2:                                                ; preds = %15, %1
@@ -100,7 +103,7 @@ define internal fastcc ptr @dev_getnode(i32 noundef range(i32 -2147483647, 7) %0
   %33 = getelementptr inbounds nuw i8, ptr %3, i32 20
   store i16 1, ptr %33, align 4, !tbaa !17
   %34 = getelementptr inbounds nuw i8, ptr %3, i32 28
-  store i32 512, ptr %34, align 4, !tbaa !18
+  store i32 576, ptr %34, align 4, !tbaa !18
   br label %43
 
 35:                                               ; preds = %26
@@ -175,11 +178,11 @@ define dso_local ptr @dev_lookup(ptr noundef readonly captures(none) %0, ptr nou
 
 14:                                               ; preds = %13, %35
   %15 = phi i32 [ %36, %35 ], [ 0, %13 ]
-  %16 = icmp eq i32 %15, 6
+  %16 = icmp eq i32 %15, 7
   br i1 %16, label %40, label %17
 
 17:                                               ; preds = %14
-  %18 = getelementptr inbounds nuw [6 x %struct.anon], ptr @devtab, i32 0, i32 %15
+  %18 = getelementptr inbounds nuw [7 x %struct.anon], ptr @devtab, i32 0, i32 %15
   %19 = load ptr, ptr %18, align 4, !tbaa !20
   br label %20
 
@@ -247,7 +250,7 @@ define dso_local i32 @dev_readi(ptr noundef readonly captures(none) %0, i32 noun
 14:                                               ; preds = %41, %10
   %15 = phi i32 [ %12, %10 ], [ %23, %41 ]
   %16 = phi i32 [ 0, %10 ], [ %46, %41 ]
-  %17 = icmp samesign ult i32 %15, 6
+  %17 = icmp samesign ult i32 %15, 7
   %18 = icmp samesign ult i32 %16, %11
   %19 = select i1 %17, i1 %18, i1 false
   br i1 %19, label %22, label %20
@@ -269,7 +272,7 @@ define dso_local i32 @dev_readi(ptr noundef readonly captures(none) %0, i32 noun
   br i1 %27, label %28, label %30
 
 28:                                               ; preds = %25
-  %29 = getelementptr inbounds nuw [6 x %struct.anon], ptr @devtab, i32 0, i32 %15
+  %29 = getelementptr inbounds nuw [7 x %struct.anon], ptr @devtab, i32 0, i32 %15
   br label %33
 
 30:                                               ; preds = %25
@@ -335,7 +338,7 @@ define dso_local i32 @dev_readi(ptr noundef readonly captures(none) %0, i32 noun
 69:                                               ; preds = %66
   %70 = add i32 %3, %2
   %71 = icmp ugt i32 %70, %67
-  %72 = sub nuw nsw i32 %67, %2
+  %72 = sub nuw i32 %67, %2
   %73 = select i1 %71, i32 %72, i32 %3
   %74 = inttoptr i32 %1 to ptr
   %75 = getelementptr inbounds nuw i8, ptr %6, i32 %2
@@ -401,98 +404,249 @@ define internal fastcc range(i32 0, -511) i32 @fat0_size() unnamed_addr #5 {
 }
 
 ; Function Attrs: minsize nounwind optsize
-define internal fastcc range(i32 0, 299) i32 @dev_text(i32 noundef %0, ptr noundef nonnull writeonly captures(none) %1) unnamed_addr #1 {
-  %3 = getelementptr inbounds [6 x %struct.anon], ptr @devtab, i32 0, i32 %0
-  %4 = getelementptr inbounds nuw i8, ptr %3, i32 4
-  %5 = load i32, ptr %4, align 4, !tbaa !32
-  switch i32 %5, label %53 [
-    i32 3, label %6
-    i32 4, label %33
+define internal fastcc range(i32 -2147483647, -2147483648) i32 @dev_text(i32 noundef %0, ptr noundef nonnull writeonly captures(none) %1) unnamed_addr #1 {
+  %3 = alloca [12 x i8], align 1
+  %4 = alloca [3 x i32], align 4
+  %5 = getelementptr inbounds [7 x %struct.anon], ptr @devtab, i32 0, i32 %0
+  %6 = getelementptr inbounds nuw i8, ptr %5, i32 4
+  %7 = load i32, ptr %6, align 4, !tbaa !32
+  switch i32 %7, label %152 [
+    i32 3, label %8
+    i32 4, label %35
+    i32 5, label %55
   ]
 
-6:                                                ; preds = %2, %13
-  %7 = phi i32 [ %32, %13 ], [ 0, %2 ]
-  %8 = phi i32 [ %30, %13 ], [ 0, %2 ]
-  %9 = load i32, ptr @gpiopins, align 4, !tbaa !31
-  %10 = icmp ult i32 %7, %9
-  %11 = icmp samesign ult i32 %8, 294
-  %12 = select i1 %10, i1 %11, i1 false
-  br i1 %12, label %13, label %53
+8:                                                ; preds = %2, %15
+  %9 = phi i32 [ %34, %15 ], [ 0, %2 ]
+  %10 = phi i32 [ %32, %15 ], [ 0, %2 ]
+  %11 = load i32, ptr @gpiopins, align 4, !tbaa !31
+  %12 = icmp ult i32 %9, %11
+  %13 = icmp samesign ult i32 %10, 294
+  %14 = select i1 %12, i1 %13, i1 false
+  br i1 %14, label %15, label %152
 
-13:                                               ; preds = %6
-  %14 = freeze i32 %7
-  %15 = udiv i32 %14, 10
-  %16 = trunc i32 %15 to i8
-  %17 = add i8 %16, 48
-  %18 = getelementptr inbounds nuw i8, ptr %1, i32 %8
-  store i8 %17, ptr %18, align 1, !tbaa !19
-  %19 = mul i32 %15, 10
-  %20 = sub i32 %14, %19
-  %21 = trunc nuw nsw i32 %20 to i8
-  %22 = or disjoint i8 %21, 48
-  %23 = getelementptr i8, ptr %18, i32 1
-  store i8 %22, ptr %23, align 1, !tbaa !19
-  %24 = getelementptr i8, ptr %18, i32 2
-  store i8 61, ptr %24, align 1, !tbaa !19
-  %25 = tail call i32 @kgpio_peek(i32 noundef %7) #8
-  %26 = trunc i32 %25 to i8
-  %27 = and i8 %26, 1
-  %28 = or disjoint i8 %27, 48
-  %29 = getelementptr i8, ptr %18, i32 3
-  store i8 %28, ptr %29, align 1, !tbaa !19
-  %30 = add nuw nsw i32 %8, 5
-  %31 = getelementptr inbounds nuw i8, ptr %18, i32 4
-  store i8 10, ptr %31, align 1, !tbaa !19
-  %32 = add nuw nsw i32 %7, 1
-  br label %6, !llvm.loop !33
+15:                                               ; preds = %8
+  %16 = freeze i32 %9
+  %17 = udiv i32 %16, 10
+  %18 = trunc i32 %17 to i8
+  %19 = add i8 %18, 48
+  %20 = getelementptr inbounds nuw i8, ptr %1, i32 %10
+  store i8 %19, ptr %20, align 1, !tbaa !19
+  %21 = mul i32 %17, 10
+  %22 = sub i32 %16, %21
+  %23 = trunc nuw nsw i32 %22 to i8
+  %24 = or disjoint i8 %23, 48
+  %25 = getelementptr i8, ptr %20, i32 1
+  store i8 %24, ptr %25, align 1, !tbaa !19
+  %26 = getelementptr i8, ptr %20, i32 2
+  store i8 61, ptr %26, align 1, !tbaa !19
+  %27 = tail call i32 @kgpio_peek(i32 noundef %9) #8
+  %28 = trunc i32 %27 to i8
+  %29 = and i8 %28, 1
+  %30 = or disjoint i8 %29, 48
+  %31 = getelementptr i8, ptr %20, i32 3
+  store i8 %30, ptr %31, align 1, !tbaa !19
+  %32 = add nuw nsw i32 %10, 5
+  %33 = getelementptr inbounds nuw i8, ptr %20, i32 4
+  store i8 10, ptr %33, align 1, !tbaa !19
+  %34 = add nuw nsw i32 %9, 1
+  br label %8, !llvm.loop !33
 
-33:                                               ; preds = %2, %37
-  %34 = phi ptr [ %39, %37 ], [ @.str.6, %2 ]
-  %35 = phi i32 [ %40, %37 ], [ 0, %2 ]
-  %36 = icmp eq i32 %35, 12
-  br i1 %36, label %42, label %37
+35:                                               ; preds = %2, %39
+  %36 = phi ptr [ %41, %39 ], [ @.str.7, %2 ]
+  %37 = phi i32 [ %42, %39 ], [ 0, %2 ]
+  %38 = icmp eq i32 %37, 12
+  br i1 %38, label %44, label %39
 
-37:                                               ; preds = %33
-  %38 = load i8, ptr %34, align 1, !tbaa !19
-  %39 = getelementptr inbounds nuw i8, ptr %34, i32 1
-  %40 = add nuw nsw i32 %35, 1
-  %41 = getelementptr inbounds nuw i8, ptr %1, i32 %35
-  store i8 %38, ptr %41, align 1, !tbaa !19
-  br label %33, !llvm.loop !34
+39:                                               ; preds = %35
+  %40 = load i8, ptr %36, align 1, !tbaa !19
+  %41 = getelementptr inbounds nuw i8, ptr %36, i32 1
+  %42 = add nuw nsw i32 %37, 1
+  %43 = getelementptr inbounds nuw i8, ptr %1, i32 %37
+  store i8 %40, ptr %43, align 1, !tbaa !19
+  br label %35, !llvm.loop !34
 
-42:                                               ; preds = %33
-  %43 = getelementptr inbounds nuw i8, ptr %3, i32 8
-  %44 = load i32, ptr %43, align 4, !tbaa !35
-  %45 = tail call i32 @kpio_ctrl(i32 noundef %44) #8
-  %46 = icmp ult i32 %45, 10
-  %47 = or disjoint i32 %45, 48
-  %48 = add i32 %45, 87
-  %49 = select i1 %46, i32 %47, i32 %48
-  %50 = trunc i32 %49 to i8
-  %51 = getelementptr inbounds nuw i8, ptr %1, i32 12
-  store i8 %50, ptr %51, align 1, !tbaa !19
-  %52 = getelementptr inbounds nuw i8, ptr %1, i32 13
-  store i8 10, ptr %52, align 1, !tbaa !19
-  br label %53
+44:                                               ; preds = %35
+  %45 = getelementptr inbounds nuw i8, ptr %5, i32 8
+  %46 = load i32, ptr %45, align 4, !tbaa !35
+  %47 = tail call i32 @kpio_ctrl(i32 noundef %46) #8
+  %48 = icmp ult i32 %47, 10
+  %49 = or disjoint i32 %47, 48
+  %50 = add i32 %47, 87
+  %51 = select i1 %48, i32 %49, i32 %50
+  %52 = trunc i32 %51 to i8
+  %53 = getelementptr inbounds nuw i8, ptr %1, i32 12
+  store i8 %52, ptr %53, align 1, !tbaa !19
+  %54 = getelementptr inbounds nuw i8, ptr %1, i32 13
+  store i8 10, ptr %54, align 1, !tbaa !19
+  br label %152
 
-53:                                               ; preds = %6, %2, %42
-  %54 = phi i32 [ 14, %42 ], [ 0, %2 ], [ %8, %6 ]
-  ret i32 %54
+55:                                               ; preds = %2
+  %56 = tail call i32 @kfb_active() #8
+  %57 = icmp eq i32 %56, 0
+  br i1 %57, label %58, label %67
+
+58:                                               ; preds = %55, %62
+  %59 = phi ptr [ %64, %62 ], [ @.str.8, %55 ]
+  %60 = phi i32 [ %65, %62 ], [ 0, %55 ]
+  %61 = icmp eq i32 %60, 4
+  br i1 %61, label %152, label %62
+
+62:                                               ; preds = %58
+  %63 = load i8, ptr %59, align 1, !tbaa !19
+  %64 = getelementptr inbounds nuw i8, ptr %59, i32 1
+  %65 = add nuw nsw i32 %60, 1
+  %66 = getelementptr inbounds nuw i8, ptr %1, i32 %60
+  store i8 %63, ptr %66, align 1, !tbaa !19
+  br label %58, !llvm.loop !36
+
+67:                                               ; preds = %55
+  %68 = tail call i32 @kfb_w() #8
+  %69 = tail call i32 @kfb_h() #8
+  %70 = tail call i32 @kfb_owner() #8
+  call void @llvm.lifetime.start.p0(i64 12, ptr nonnull %3) #7
+  call void @llvm.lifetime.start.p0(i64 12, ptr nonnull %4) #7
+  store i32 %68, ptr %4, align 4, !tbaa !31
+  %71 = getelementptr inbounds nuw i8, ptr %4, i32 4
+  store i32 %69, ptr %71, align 4, !tbaa !31
+  %72 = getelementptr inbounds nuw i8, ptr %4, i32 8
+  store i32 8, ptr %72, align 4, !tbaa !31
+  br label %73
+
+73:                                               ; preds = %111, %67
+  %74 = phi i32 [ 0, %67 ], [ %112, %111 ]
+  %75 = phi i32 [ 0, %67 ], [ %113, %111 ]
+  %76 = icmp eq i32 %75, 3
+  br i1 %76, label %114, label %77
+
+77:                                               ; preds = %73
+  %78 = getelementptr inbounds nuw [3 x i32], ptr %4, i32 0, i32 %75
+  %79 = load i32, ptr %78, align 4, !tbaa !31
+  br label %80
+
+80:                                               ; preds = %80, %77
+  %81 = phi i32 [ 0, %77 ], [ %89, %80 ]
+  %82 = phi i32 [ %79, %77 ], [ %84, %80 ]
+  %83 = freeze i32 %82
+  %84 = sdiv i32 %83, 10
+  %85 = mul i32 %84, 10
+  %86 = sub i32 %83, %85
+  %87 = trunc nsw i32 %86 to i8
+  %88 = add nsw i8 %87, 48
+  %89 = add nuw nsw i32 %81, 1
+  %90 = getelementptr inbounds nuw [12 x i8], ptr %3, i32 0, i32 %81
+  store i8 %88, ptr %90, align 1, !tbaa !19
+  %91 = add i32 %82, 9
+  %92 = icmp ult i32 %91, 19
+  br i1 %92, label %93, label %80, !llvm.loop !37
+
+93:                                               ; preds = %80, %99
+  %94 = phi i32 [ %103, %99 ], [ %74, %80 ]
+  %95 = phi i32 [ %100, %99 ], [ %89, %80 ]
+  %96 = icmp sgt i32 %95, 0
+  %97 = icmp slt i32 %94, 300
+  %98 = select i1 %96, i1 %97, i1 false
+  br i1 %98, label %99, label %105
+
+99:                                               ; preds = %93
+  %100 = add nsw i32 %95, -1
+  %101 = getelementptr inbounds nuw [12 x i8], ptr %3, i32 0, i32 %100
+  %102 = load i8, ptr %101, align 1, !tbaa !19
+  %103 = add nsw i32 %94, 1
+  %104 = getelementptr inbounds i8, ptr %1, i32 %94
+  store i8 %102, ptr %104, align 1, !tbaa !19
+  br label %93, !llvm.loop !38
+
+105:                                              ; preds = %93
+  %106 = icmp ne i32 %75, 2
+  %107 = select i1 %106, i1 %97, i1 false
+  br i1 %107, label %108, label %111
+
+108:                                              ; preds = %105
+  %109 = add nsw i32 %94, 1
+  %110 = getelementptr inbounds i8, ptr %1, i32 %94
+  store i8 120, ptr %110, align 1, !tbaa !19
+  br label %111
+
+111:                                              ; preds = %105, %108
+  %112 = phi i32 [ %109, %108 ], [ %94, %105 ]
+  %113 = add nuw nsw i32 %75, 1
+  br label %73, !llvm.loop !39
+
+114:                                              ; preds = %73, %121
+  %115 = phi i32 [ %123, %121 ], [ %74, %73 ]
+  %116 = phi ptr [ %122, %121 ], [ @.str.9, %73 ]
+  %117 = load i8, ptr %116, align 1, !tbaa !19
+  %118 = icmp ne i8 %117, 0
+  %119 = icmp slt i32 %115, 300
+  %120 = select i1 %118, i1 %119, i1 false
+  br i1 %120, label %121, label %125
+
+121:                                              ; preds = %114
+  %122 = getelementptr inbounds nuw i8, ptr %116, i32 1
+  %123 = add nsw i32 %115, 1
+  %124 = getelementptr inbounds i8, ptr %1, i32 %115
+  store i8 %117, ptr %124, align 1, !tbaa !19
+  br label %114, !llvm.loop !40
+
+125:                                              ; preds = %114, %125
+  %126 = phi i32 [ %129, %125 ], [ %70, %114 ]
+  %127 = phi i32 [ %134, %125 ], [ 0, %114 ]
+  %128 = freeze i32 %126
+  %129 = udiv i32 %128, 10
+  %130 = mul i32 %129, 10
+  %131 = sub i32 %128, %130
+  %132 = trunc nuw nsw i32 %131 to i8
+  %133 = or disjoint i8 %132, 48
+  %134 = add nuw nsw i32 %127, 1
+  %135 = getelementptr inbounds nuw [12 x i8], ptr %3, i32 0, i32 %127
+  store i8 %133, ptr %135, align 1, !tbaa !19
+  %136 = icmp ult i32 %126, 10
+  br i1 %136, label %137, label %125, !llvm.loop !41
+
+137:                                              ; preds = %125, %143
+  %138 = phi i32 [ %147, %143 ], [ %115, %125 ]
+  %139 = phi i32 [ %144, %143 ], [ %134, %125 ]
+  %140 = icmp sgt i32 %139, 0
+  %141 = icmp slt i32 %138, 300
+  %142 = select i1 %140, i1 %141, i1 false
+  br i1 %142, label %143, label %149
+
+143:                                              ; preds = %137
+  %144 = add nsw i32 %139, -1
+  %145 = getelementptr inbounds nuw [12 x i8], ptr %3, i32 0, i32 %144
+  %146 = load i8, ptr %145, align 1, !tbaa !19
+  %147 = add nsw i32 %138, 1
+  %148 = getelementptr inbounds i8, ptr %1, i32 %138
+  store i8 %146, ptr %148, align 1, !tbaa !19
+  br label %137, !llvm.loop !42
+
+149:                                              ; preds = %137
+  %150 = add nsw i32 %138, 1
+  %151 = getelementptr inbounds i8, ptr %1, i32 %138
+  store i8 10, ptr %151, align 1, !tbaa !19
+  call void @llvm.lifetime.end.p0(i64 12, ptr nonnull %4) #7
+  call void @llvm.lifetime.end.p0(i64 12, ptr nonnull %3) #7
+  br label %152
+
+152:                                              ; preds = %58, %8, %2, %44, %149
+  %153 = phi i32 [ 14, %44 ], [ %150, %149 ], [ 0, %2 ], [ %10, %8 ], [ 4, %58 ]
+  ret i32 %153
 }
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @dev_stati(ptr noundef readonly captures(none) %0, ptr noundef writeonly captures(none) initializes((0, 16)) %1) local_unnamed_addr #1 {
-  store i32 3559, ptr %1, align 4, !tbaa !36
+  store i32 3559, ptr %1, align 4, !tbaa !43
   %3 = getelementptr inbounds nuw i8, ptr %0, i32 4
   %4 = load i32, ptr %3, align 4, !tbaa !11
   %5 = getelementptr inbounds nuw i8, ptr %1, i32 4
-  store i32 %4, ptr %5, align 4, !tbaa !39
+  store i32 %4, ptr %5, align 4, !tbaa !46
   %6 = getelementptr inbounds nuw i8, ptr %0, i32 20
   %7 = load i16, ptr %6, align 4, !tbaa !17
   %8 = getelementptr inbounds nuw i8, ptr %1, i32 8
-  store i16 %7, ptr %8, align 4, !tbaa !40
+  store i16 %7, ptr %8, align 4, !tbaa !47
   %9 = getelementptr inbounds nuw i8, ptr %1, i32 10
-  store i16 1, ptr %9, align 2, !tbaa !41
+  store i16 1, ptr %9, align 2, !tbaa !48
   %10 = icmp eq i32 %4, 0
   br i1 %10, label %11, label %14
 
@@ -509,27 +663,28 @@ define dso_local void @dev_stati(ptr noundef readonly captures(none) %0, ptr nou
 17:                                               ; preds = %14, %11
   %18 = phi i32 [ %13, %11 ], [ %16, %14 ]
   %19 = getelementptr inbounds nuw i8, ptr %1, i32 12
-  store i32 %18, ptr %19, align 4, !tbaa !42
+  store i32 %18, ptr %19, align 4, !tbaa !49
   ret void
 }
 
 ; Function Attrs: minsize nounwind optsize
-define internal fastcc range(i32 0, -511) i32 @dev_size(i32 noundef %0) unnamed_addr #1 {
+define internal fastcc i32 @dev_size(i32 noundef %0) unnamed_addr #1 {
   %2 = alloca [300 x i8], align 1
   call void @llvm.lifetime.start.p0(i64 300, ptr nonnull %2) #7
-  %3 = getelementptr inbounds [6 x %struct.anon], ptr @devtab, i32 0, i32 %0, i32 1
+  %3 = getelementptr inbounds [7 x %struct.anon], ptr @devtab, i32 0, i32 %0, i32 1
   %4 = load i32, ptr %3, align 4, !tbaa !32
   switch i32 %4, label %9 [
     i32 2, label %5
     i32 3, label %7
     i32 4, label %7
+    i32 5, label %7
   ]
 
 5:                                                ; preds = %1
   %6 = tail call fastcc i32 @fat0_size() #6
   br label %9
 
-7:                                                ; preds = %1, %1
+7:                                                ; preds = %1, %1, %1
   %8 = call fastcc i32 @dev_text(i32 noundef %0, ptr noundef %2) #6
   br label %9
 
@@ -544,6 +699,18 @@ declare dso_local i32 @kgpio_peek(i32 noundef) local_unnamed_addr #4
 
 ; Function Attrs: minsize optsize
 declare dso_local i32 @kpio_ctrl(i32 noundef) local_unnamed_addr #4
+
+; Function Attrs: minsize optsize
+declare dso_local i32 @kfb_active() local_unnamed_addr #4
+
+; Function Attrs: minsize optsize
+declare dso_local i32 @kfb_w() local_unnamed_addr #4
+
+; Function Attrs: minsize optsize
+declare dso_local i32 @kfb_h() local_unnamed_addr #4
+
+; Function Attrs: minsize optsize
+declare dso_local i32 @kfb_owner() local_unnamed_addr #4
 
 attributes #0 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(argmem: read) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
@@ -594,10 +761,17 @@ attributes #8 = { minsize nobuiltin nounwind optsize "no-builtins" }
 !33 = distinct !{!33, !13, !14}
 !34 = distinct !{!34, !13, !14}
 !35 = !{!21, !5, i64 8}
-!36 = !{!37, !5, i64 0}
-!37 = !{!"stat", !5, i64 0, !5, i64 4, !9, i64 8, !9, i64 10, !38, i64 12}
-!38 = !{!"long", !6, i64 0}
-!39 = !{!37, !5, i64 4}
-!40 = !{!37, !9, i64 8}
-!41 = !{!37, !9, i64 10}
-!42 = !{!37, !38, i64 12}
+!36 = distinct !{!36, !13, !14}
+!37 = distinct !{!37, !13, !14}
+!38 = distinct !{!38, !13, !14}
+!39 = distinct !{!39, !13, !14}
+!40 = distinct !{!40, !13, !14}
+!41 = distinct !{!41, !13, !14}
+!42 = distinct !{!42, !13, !14}
+!43 = !{!44, !5, i64 0}
+!44 = !{!"stat", !5, i64 0, !5, i64 4, !9, i64 8, !9, i64 10, !45, i64 12}
+!45 = !{!"long", !6, i64 0}
+!46 = !{!44, !5, i64 4}
+!47 = !{!44, !9, i64 8}
+!48 = !{!44, !9, i64 10}
+!49 = !{!44, !45, i64 12}

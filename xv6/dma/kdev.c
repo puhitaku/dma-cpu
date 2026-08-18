@@ -26,8 +26,12 @@ extern uint fatvol;   /* kfsglue.c */
 extern uint gpiopins; /* kgpio.c */
 uint kgpio_peek(uint pin);
 uint kpio_ctrl(uint pio);
+int kfb_active(void); /* kfb.c */
+int kfb_w(void);
+int kfb_h(void);
+uint kfb_owner(void);
 
-enum { DK_DIR, DK_CONSOLE, DK_FAT, DK_GPIO, DK_PIO };
+enum { DK_DIR, DK_CONSOLE, DK_FAT, DK_GPIO, DK_PIO, DK_FB };
 
 static const struct {
   const char *name;
@@ -36,6 +40,7 @@ static const struct {
 } devtab[] = {
     {"console", DK_CONSOLE, 0}, {"fat0", DK_FAT, 0}, {"gpio", DK_GPIO, 0},
     {"pio0", DK_PIO, 0},        {"pio1", DK_PIO, 1}, {"pio2", DK_PIO, 2},
+    {"fb0", DK_FB, 0},
 };
 #define NDEV ((int)(sizeof(devtab) / sizeof(devtab[0])))
 
@@ -81,6 +86,42 @@ dev_text(int idx, char *buf, int cap)
     uint v = kpio_ctrl((uint)devtab[idx].arg);
     buf[n++] = (char)(v < 10 ? '0' + v : 'a' + v - 10);
     buf[n++] = '\n';
+  } else if (kind == DK_FB) {
+    if (!kfb_active()) {
+      const char *p = "off\n";
+      while (*p && n < cap)
+        buf[n++] = *p++;
+    } else {
+      /* "640x480x8 owner=NN\n" */
+      int w = kfb_w(), h = kfb_h();
+      uint own = kfb_owner();
+      char tmp[12];
+      int t = 0;
+      int vals[3] = {w, h, 8};
+      for (int i = 0; i < 3; i++) {
+        int v = vals[i];
+        t = 0;
+        do {
+          tmp[t++] = (char)('0' + v % 10);
+          v /= 10;
+        } while (v);
+        while (t > 0 && n < cap)
+          buf[n++] = tmp[--t];
+        if (i < 2 && n < cap)
+          buf[n++] = 'x';
+      }
+      const char *p = " owner=";
+      while (*p && n < cap)
+        buf[n++] = *p++;
+      t = 0;
+      do {
+        tmp[t++] = (char)('0' + own % 10);
+        own /= 10;
+      } while (own);
+      while (t > 0 && n < cap)
+        buf[n++] = tmp[--t];
+      buf[n++] = '\n';
+    }
   }
   return n;
 }
@@ -94,6 +135,7 @@ dev_size(int idx)
     return fat0_size();
   case DK_GPIO:
   case DK_PIO:
+  case DK_FB:
     return (uint)dev_text(idx, tmp, sizeof(tmp));
   }
   return 0;

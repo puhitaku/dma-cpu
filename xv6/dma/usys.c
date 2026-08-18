@@ -287,6 +287,13 @@ pioctl(int op, uint a, uint b)
   return dma_trap();
 }
 
+int
+fbctl(int op, void *info)
+{
+  fill(SYS_fb, (uint)op, (uint)info, 0);
+  return dma_trap();
+}
+
 /* One non-blocking read attempt: -2 when nothing is buffered. Raw-mode
  * ESC-sequence disambiguation (ulib readline, vi) needs to peek. */
 int

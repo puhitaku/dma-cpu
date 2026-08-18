@@ -1400,6 +1400,30 @@ func (fc *funcCtx) emitIntrinsic(ins *llir.Instr) error {
 		}
 		fc.label(j)
 		return nil
+	case "llvm.usub":
+		// usub.sat(a, b): a - b clamped at 0, i.e. 0 when a < b.
+		// (usub.with.overflow stays unsupported and falls through.)
+		if !strings.HasPrefix(name, "llvm.usub.sat") {
+			break
+		}
+		a, err := fc.op(ins.Args[0])
+		if err != nil {
+			return err
+		}
+		b, err := fc.op(ins.Args[1])
+		if err != nil {
+			return err
+		}
+		res := fc.word(ins.Res)
+		lt, ge, j := fc.stub("Ult"), fc.stub("Uge"), fc.stub("Uj")
+		fc.ins("jltu %s, %s, %s, %s", a, b, lt, ge)
+		fc.label(lt)
+		fc.ins("move $0, %s", res)
+		fc.ins("jump %s", j)
+		fc.label(ge)
+		fc.ins("sub %s, %s, %s", a, b, res)
+		fc.label(j)
+		return nil
 	}
 	return fmt.Errorf("unsupported intrinsic %q", name)
 }

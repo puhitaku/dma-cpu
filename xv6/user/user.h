@@ -35,6 +35,16 @@ struct pio_smcfg {
   uint pio, sm, origin;
   uint clkdiv, execctrl, shiftctrl, pinctrl;
 };
+// Framebuffer (kernel API — prompts/036). FB_ACQUIRE detaches the
+// console renderer and hands the caller the linear framebuffer; the
+// console keeps running on the UART. Release (or death) returns it.
+#define FB_INFO 0
+#define FB_ACQUIRE 1
+#define FB_RELEASE 2
+struct fbinfo {
+  uint base, w, h, bpp, pitch;
+};
+int fbctl(int op, void *info);
 void fputstr(int, const char *);
 void fputnum(int, int);
 int exec(const char *, char **);

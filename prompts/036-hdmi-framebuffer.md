@@ -1,0 +1,160 @@
+# Phase 22: HDMI framebuffer + fbcon (Feather RP2350 HSTX)
+
+Goal: a framebuffer in PSRAM scanned out to HDMI by HSTX, a kernel
+terminal emulator (fbcon) mirroring the console onto it, and a kernel
+framebuffer API so a userspace program can take the display over —
+on a new board, the Adafruit Feather RP2350 with PSRAM.
+
+## Board facts (doc/adafruit-feather-rp2350.pdf, pinouts pp.12-22)
+
+- HSTX pins GPIO12-19 on the 22-pin port. DVI lane map (silk):
+  D2±=GPIO12/13, CK±=GPIO14/15, D1±=GPIO16/17, D0±=GPIO18/19.
+  In HSTX bit numbers (bit N = GPIO 12+N): clock on bits 2/3,
+  lane0 on bits 6/7, lane1 on bits 4/5, lane2 on bits 0/1.
+- PSRAM: 8 MB QSPI (133 MHz class), CS on GPIO8 = QMI CS1.
+  XIP CS1 window 0x11000000 (cached) / 0x15000000 (uncached alias).
+- Red LED GPIO7, NeoPixel GPIO21, UART console GPIO0/1 (unchanged),
+  RP2350A, 8 MB flash. SDK board `adafruit_feather_rp2350`
+  (PICO_PSRAM_CS_PIN 8, PICO_AUTO_DETECT_PSRAM_SIZE 1).
+
+## Display architecture: a pure-DMA scanout ring
+
+No ARM, no IRQs — the scanout is a self-running DMA descriptor
+structure, in the machine's spirit. Three channels above the compact
+machine's 0-10 (RP2350 has 16):
+
+| ch | role |
+|----|------|
+| 13 | ring walker: 4-word blocks -> ch14's alias0, write-ring 16 B |
+| 14 | executor: streams words to the HSTX FIFO (DREQ 52) or, for kick blocks, writes 3 words into ch15's alias3 |
+| 15 | line copy: PSRAM (uncached) -> SRAM line buffer, kicked one line ahead |
+
+Per active line the ring holds two blocks for ch14: a *kick* (copy 3
+words {WRITE_ADDR, TRANS_COUNT, READ_ADDR_TRIG} from the kick table
+into ch15's alias3 — primes fb line n+1 into the other line buffer)
+and a *stream* (line buffer -> FIFO: 9 command words + 160 pixel
+words, paced by DREQ_HSTX, chain back to ch13). Vblank regions are
+one block each, reading an 8-word command buffer through a 32 B read
+ring (RAW_REPEAT sync sequences, pico-examples layout). A tail block
+makes ch14 rewrite ch13's READ_ADDR_TRIG with the ring start: the
+frame loops forever with zero CPU involvement.
+
+Line buffers in SRAM decouple sync integrity from QMI contention:
+the FIFO is always fed from SRAM at AHB speed; if PSRAM is starved
+(flash XIP fetches share the QSPI bus), pixels go stale for a line
+but sync never slips. `kicktab[n] = {buf[(n)&1]+36, 160, fb+n*640}`.
+
+Mode: 640x480@60, RGB332 (8 bpp), CEA timing at 25.2 MHz pixel clock
+(pll_usb repurposed: VCO 1260 MHz /5/2 = clk_hstx 126 MHz = 5x pixel
+clock; the machine keeps its calibrated 150 MHz clk_sys, and clk_peri
+is pinned to clk_sys first so the UART is unaffected). 16 bpp at 640
+wide (37 MB/s) exceeds QSPI PSRAM bandwidth (~30-35 MB/s effective at
+75 MHz QPI) — 8 bpp (18.4 MB/s) is the sustainable default. Geometry
+and timings live in one `fbmode` struct in kfb.c — changeable in code.
+
+Scroll is a vertical pan, fbcon-style: the fb is a circular row
+buffer; scrolling rewrites the kick table's READ column (480 word
+stores in SRAM) and clears one row — never a 300 KB PSRAM memmove.
+
+QMI direct mode (machine-driven flash sync) blocks the XIP window, so
+kflash sync brackets itself with kfb_pause()/kfb_resume() (CHAN_ABORT
+the three channels, then rebuild-and-restart the ring).
+
+## fbcon
+
+kfbcon.c, a VT subset informed by references/simpleterminal (MIT/X,
+st lineage): BS/TAB/LF/CR, CSI A/B/C/D/H/J/K/m (16 ANSI colors ->
+RGB332 palette), ?1049h/l as clear. Font: the 8x8 embedded font from
+SimpleTerminal (attributed in LICENSE). 80x60 cells. Glyph rendering
+via a per-color nibble->word LUT (rebuilt on SGR change): one glyph
+row = 2 LUT loads + 2 word stores into the uncached PSRAM window.
+`cputc` tees every console byte to UART *and* fbcon; when a userspace
+owner holds the fb, fbcon skips rendering (UART unaffected).
+
+## Kernel fb API (SYS_fb)
+
+For the future presentation app and USB DisplayLink output:
+FB_INFO (base/w/h/bpp/pitch into a user struct), FB_ACQUIRE (fbcon
+detaches, pan resets to 0 so the owner sees a linear fb), FB_RELEASE
+(clear + fbcon resumes). Owner-pid tracked like raw console mode;
+death auto-releases. /dev/fb0 shows geometry, pan, owner.
+
+## Emulator
+
+- Machine.PSRAM []byte at XIP offset 0x01000000 (cached + uncached
+  windows, faulting during QMI direct mode like flash); writable.
+- HSTX FIFO writes (Variant.HSTXFifoBase, RP2350 only) captured into
+  Machine.HSTXOut for tests; DREQ 52 credits injected by tests via
+  PulseDREQ — with no credits the ring idles harmlessly, so normal
+  tests pay nothing for an enabled scanout.
+- The ring test drives credits and asserts two identical consecutive
+  frames: per-line command prefixes, pixel words matching PSRAM
+  content (validates walker + kicks + copies end to end).
+
+## Validation
+
+Emulator: fbcon glyph/scroll/SGR tests against PSRAM bytes (cell
+identity checks, no-newline discriminators for cursor state), fbtest
+(user app: FB_INFO/ACQUIRE/write/readback/RELEASE), feather boot
+suite, cycle benchmarks (DMACC_BENCH=1) for putc and scroll before/
+after optimization. Silicon: boot log prints PSRAM size + fb self
+test; the TV picture is the end-to-end check.
+
+## Results (silicon: Adafruit Feather RP2350 with PSRAM)
+
+Everything above is implemented and validated; the console renders on
+HDMI while the UART stays authoritative. Findings the hardware forced:
+
+- **HSTX FIFO write port is base+4** (base+0 is the read-only STAT).
+  Streaming at +0 discards every word, so the FIFO never fills, its
+  DREQ never deasserts, and the unpaced scanout saturates the bus —
+  the machine and even the ARM's XIP fetches starve. Variant carries
+  the corrected address.
+- **The SDK's PSRAM bring-up leaves one residual word in the QMI
+  direct-RX FIFO** (DIRECT_CSR read RXLEVEL=1 at the wedge). The
+  machine's flash driver assumes an empty FIFO: every read of its
+  session came back shifted and the session hung; the ARM then timed
+  out back into flash code with XIP still down — lockup (PC
+  0xEFFFFFFE). The firmware drains direct-RX before the machine runs.
+- **hardware_psram grows the firmware's .bss past 0x20002000**, the
+  family's machine-RAM floor. The boot check caught it; the feather's
+  KernText moved to 0x20002800 and dmxgen honors a board floor above
+  the SKU layout.
+- **The feather firmware ELF exceeds 2 MiB**, so the pico2 flash map's
+  slot at 0x10200000 would sit inside the program image. All feather
+  flash sections moved to the upper 4 MiB of the 8 MiB part.
+- **Machine-driven flash sync is incompatible with the display.** The
+  QMI driver leaves XIP in plain-SPI mode; that degraded M0 traffic
+  interleaved with the scanout's QPI CS1 bursts corrupted kernel
+  fetches within ~a millisecond of resuming (machine halted, no error
+  bits, PC mid-kernel-text). The feather syncs through the parked
+  ARM's mailbox executor instead (MachineFlashExec=false), which ends
+  every op with flash_start_xip(): full-speed quad XIP plus the CS1
+  hook, restored before the ack lands. kfb_pause()/kfb_resume() still
+  bracket the sync, and pause now polls CHAN_ABORT until the aborts
+  retire (the abort is asynchronous on silicon; the emulator's was
+  instant, which is why tests missed it).
+
+## Benchmarks (TestZZBenchFbcon, emulator cycles, feather vs pico2)
+
+The first cut cost ~63k cycles per rendered character — 5x the UART's
+13k-cycle pacing budget. Root cause: dmacc lowers right shifts through
+a per-bit runtime loop (~28 iterations), and the glyph path shifted
+every font byte. After the optimization round (byte-indexed dual
+256-word LUTs, fully unrolled glyph rows, XOR-underline cursor,
+shift-free pan/clear loops with 8x unrolling):
+
+| workload            | before      | after       |
+|---------------------|-------------|-------------|
+| echo (40 chars)     | +5.66M      | below noise |
+| scroll (12x ls /dev)| +157M       | +36M (~335k/scroll, 2-3 ms) |
+
+fbcon now costs less than the UART pacing it shadows. dmacc still
+lacks constant-shift strength reduction for lshr/ashr (shl has it) —
+an open item that would speed the whole kernel; llvm.usub.sat was
+added to the intrinsic set along the way (clang emits it for clamped
+subtraction).
+
+Open items: 320x240 double-scan mode table entry; DisplayLink USB
+output sharing the same framebuffer + FB_ACQUIRE contract; a
+presentation app on SYS_fb.

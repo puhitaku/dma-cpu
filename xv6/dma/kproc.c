@@ -124,6 +124,20 @@ extern uint kfs_iopen(const char *path);
 extern int kfs_iread(uint ipu, uint off, uint dst, uint n);
 extern void kfs_iclose(uint ipu);
 
+/* HDMI framebuffer + fbcon (kfb.c / kfbcon.c, prompts/036). */
+extern int kfb_init(void);
+extern int kfb_active(void);
+extern uint kfb_base(void);
+extern int kfb_w(void);
+extern int kfb_h(void);
+extern uint kfb_owner(void);
+extern void kfb_setowner(uint pid);
+extern void kfb_pause(void);
+extern void kfb_resume(void);
+extern int kfb_syscall(uint op, uint a1, uint pid, int badinfo);
+extern void kfbcon_putc(int c);
+extern void kfbcon_reset(void);
+
 /* Tick injector registers (family-common DMA base). Classic machines
  * use ABI channel 3; the compact machine's injector is channel 9
  * (emu/compact.go), so the loader patches these when the system runs
@@ -448,6 +462,7 @@ cputc(int c)
   while (__dma_uart_fr & (1u << 5))
     ;
   __dma_uart_dr = (uchar)c;
+  kfbcon_putc(c); /* the console tee: every byte goes to UART and fbcon */
 }
 
 /* Exported console I/O (also the devsw[CONSOLE] backend once the fs
@@ -678,6 +693,13 @@ kenter(void)
 {
   rearm = 0;
   if (!fsready && dma_disk) {
+    int fbkb = kfb_init();
+    if (fbkb > 0) {
+      kfbcon_reset();
+      kconswrite("fb: 640x480x8 on\n", 17);
+    } else if (fbkb < 0) {
+      kconswrite("fb: psram fail\n", 15);
+    }
     kfs_start();
     kflash_init();
   }
@@ -919,6 +941,10 @@ terminate(struct proc *p, int status)
     cons_raw = 0; /* a dying editor must not wedge the console */
     cons_raw_pid = 0;
   }
+  if (kfb_owner() == (uint)p->pid) {
+    kfb_setowner(0); /* a dying fb owner must not blank the console */
+    kfbcon_reset();
+  }
   p->xstate = (uint)status;
   if (fsready)
     kfs_exit(slot);
@@ -1023,7 +1049,13 @@ dma_ksyscall(void)
     ret = fsready ? (uint)kfs_unlink(m->a0) : (uint)-1;
     break;
   case SYS_sync:
+    /* The machine-executor sync runs a QMI direct-mode session that
+     * owns the XIP bus: the scanout must not touch PSRAM meanwhile
+     * (prompts/036). Bracketing here — not inside kflash_sync —
+     * keeps the fb driver out of the sync's .ramtext closure. */
+    kfb_pause();
     ret = fsready ? (uint)kflash_sync() : (uint)-1;
+    kfb_resume();
     break;
   case SYS_read: {
     int r;
@@ -1310,6 +1342,11 @@ dma_ksyscall(void)
       ret = (uint)-1;
     else
       ret = (uint)kpio(m->a0, m->a1, m->a2);
+    break;
+  case SYS_fb: /* a0: op (0 info, 1 acquire, 2 release); a1: &fbinfo.
+                * The body lives in kfb.c so lean kernels stay lean. */
+    ret = (uint)kfb_syscall(m->a0, m->a1, (uint)p->pid,
+                            m->a0 == 0 && badbuf(p, m->a1, 4 * 5));
     break;
   case SYS_signal: /* a0: signum (SIGINT only); a2: &usys sigctx
                     * (0 = revert to the default death) */

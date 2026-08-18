@@ -1,6 +1,7 @@
 package dmacc_test
 
 import (
+	"bytes"
 	"encoding/binary"
 	"strings"
 	"testing"
@@ -138,7 +139,7 @@ func bootXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, *
 	if err != nil {
 		t.Fatal(err)
 	}
-	kcDasm := compileKernelOpts(t, true, true)
+	kcDasm := compileKernelXsh(t, bd.PSRAMSize != 0)
 	idleDasm, err := dmacc.Compile(parseLL(t, "testdata/proc.ll"), dmacc.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -265,6 +266,24 @@ func bootXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, *
 	m.Poke32(mustSym(t, kernC, "g_gpiopins"), uint32(v.GPIOPins))
 	m.Poke32(mustSym(t, kernC, "g_gpio_hi"), v.GPIOOutCtrl(true))
 	m.Poke32(mustSym(t, kernC, "g_gpio_lo"), v.GPIOOutCtrl(false))
+	// HDMI framebuffer (kfb.c, prompts/036): PSRAM boards get the fb
+	// globals and a live PSRAM model; g_fb_psram stays 0 elsewhere.
+	if bd.PSRAMSize != 0 {
+		m.PSRAM = make([]byte, bd.PSRAMSize)
+		fbWalk, fbKick, fbStrm, fbVbl, fbTail, fbCopy := boards.FbCtrls(v)
+		m.Poke32(mustSym(t, kernC, "g_fb_psram"), bd.PSRAMBase)
+		m.Poke32(mustSym(t, kernC, "g_fb_psram_sz"), bd.PSRAMSize)
+		m.Poke32(mustSym(t, kernC, "g_fb_sram"), bd.FbHome)
+		m.Poke32(mustSym(t, kernC, "g_fb_hstx"), v.HSTXFifoBase)
+		m.Poke32(mustSym(t, kernC, "g_fb_dmabase"), emu.DMABase)
+		m.Poke32(mustSym(t, kernC, "g_fb_abort"), v.ChanAbortAddr())
+		m.Poke32(mustSym(t, kernC, "g_fb_ctrl_walk"), fbWalk)
+		m.Poke32(mustSym(t, kernC, "g_fb_ctrl_kick"), fbKick)
+		m.Poke32(mustSym(t, kernC, "g_fb_ctrl_strm"), fbStrm)
+		m.Poke32(mustSym(t, kernC, "g_fb_ctrl_vbl"), fbVbl)
+		m.Poke32(mustSym(t, kernC, "g_fb_ctrl_tail"), fbTail)
+		m.Poke32(mustSym(t, kernC, "g_fb_ctrl_copy"), fbCopy)
+	}
 	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
 		Compact: true, Entry: entrySh, Scratch: bd.Scratch,
 	}); err != nil {
@@ -470,6 +489,214 @@ func TestXv6ShPico(t *testing.T) {
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("pico session missing %q", want)
+		}
+	}
+}
+
+// TestXv6ShFeather boots the Feather board: the PSRAM-backed
+// framebuffer comes up (boot line + /dev/fb0), the console still
+// works, and fbtest exercises the SYS_fb API end to end (acquire,
+// user writes straight into the PSRAM window, verify, release).
+func TestXv6ShFeather(t *testing.T) {
+	// A blank flash part: persistence is live, so `sync` runs the
+	// machine's QMI direct-mode session with the scanout enabled —
+	// the kfb_pause/resume bracket is on the path (prompts/036).
+	flash := make([]byte, boards.Feather.FlashSize)
+	for i := range flash {
+		flash[i] = 0xFF
+	}
+	m, _ := bootXshBoard(t, flash, boards.Feather)
+	m.FeedConsole("ls /dev\rcat /dev/fb0\rfbtest\rcat /dev/fb0\r" +
+		"echo persists > note\rsync\rcat note\recho done\r")
+	// Chunked run: the feather syncs through the ARM-executor mailbox
+	// (boards.Feather.MachineFlashExec is false), which the test plays.
+	for used := uint64(0); used < 2_500_000_000; used += 500_000 {
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 500_000}); err != nil {
+			t.Fatalf("%v\nconsole:\n%s", err, m.ConsoleOut)
+		}
+		for serviceFlashMailbox(m, flash) {
+		}
+		if strings.Contains(strings.ReplaceAll(string(m.ConsoleOut), "\r", ""), "\ndone\n") {
+			break
+		}
+	}
+	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
+	t.Logf("console:\n%s", out)
+	for _, want := range []string{
+		"fb: 640x480x8 on",  // kfb_init on the boot path
+		"fb0",               // devfs node
+		"640x480x8 owner=0", // fb0 text after release
+		"fb ok 640x480x8",   // fbtest acquired, wrote, verified
+		"\npersists\n",      // written, synced, read back
+		"\ndone\n",          // still alive after pause/resume
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("feather session missing %q", want)
+		}
+	}
+}
+
+// TestXv6Fbcon checks the rendered pixels, not the UART echo: after
+// `echo zqzq`, the framebuffer must contain the cell sequence
+// z,q,z,q (identical 64-byte glyph cells at positions 0 and 2, a
+// different one at 1) at least twice — the typed echo and the output
+// line. Then enough output to scroll: the kick table's READ column
+// must rotate away from the framebuffer base (the pan IS the scroll),
+// and rendering must still work.
+func TestXv6Fbcon(t *testing.T) {
+	m, _ := bootXshBoard(t, nil, boards.Feather)
+	m.FeedConsole("echo zqzq\r")
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	cell := func(r, c int) []byte {
+		var b []byte
+		for y := 0; y < 8; y++ {
+			off := (r*8+y)*640 + c*8
+			b = append(b, m.PSRAM[off:off+8]...)
+		}
+		return b
+	}
+	blank := make([]byte, 64)
+	countZQZQ := func() int {
+		n := 0
+		for r := 0; r < 60; r++ {
+			for c := 0; c+3 < 80; c++ {
+				z, q := cell(r, c), cell(r, c+1)
+				if bytes.Equal(z, blank) || bytes.Equal(z, q) {
+					continue
+				}
+				if bytes.Equal(z, cell(r, c+2)) && bytes.Equal(q, cell(r, c+3)) {
+					n++
+					c += 3
+				}
+			}
+		}
+		return n
+	}
+	if got := countZQZQ(); got < 2 {
+		t.Errorf("want >=2 rendered zqzq cell runs (echo + output), got %d", got)
+	}
+	// Scroll: twelve /dev listings overflow the 60-row screen.
+	kick0Read := boards.Feather.FbHome + uint32((2*480+4)*16) + 8
+	if got := m.Peek32(kick0Read); got != boards.Feather.PSRAMBase {
+		t.Fatalf("kick table row 0 should start at the fb base before scrolling, got %#x", got)
+	}
+	var lots strings.Builder
+	for i := 0; i < 12; i++ {
+		lots.WriteString("ls /dev\r")
+	}
+	m.FeedConsole(lots.String() + "echo zqzq\r")
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 2_500_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Peek32(kick0Read); got == boards.Feather.PSRAMBase {
+		t.Errorf("kick table did not rotate: scroll is not panning")
+	}
+	if got := countZQZQ(); got < 1 {
+		t.Errorf("no rendered zqzq after scrolling")
+	}
+}
+
+// TestFbScanoutRing drives the pure-DMA scanout engine itself: DREQ
+// credits stand in for the HSTX FIFO's pacing, and the captured FIFO
+// stream must show the exact frame structure — per-line command
+// prefixes, pixel payloads matching live PSRAM (the copier runs one
+// line ahead), the three vblank regions, and a second frame identical
+// to the first (the tail block loops the walker forever).
+func TestFbScanoutRing(t *testing.T) {
+	m, _ := bootXshBoard(t, nil, boards.Feather)
+	m.FeedConsole("echo ready\r")
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(m.ConsoleOut), "ready") {
+		t.Fatalf("no prompt; console %q", m.ConsoleOut)
+	}
+	// Distinctive pixels the copier must observe live.
+	m.PSRAM[5*640+123] = 0xAA
+	m.PSRAM[250*640+9] = 0xBB
+	m.PSRAM[479*640+639] = 0xCC
+	const lineW = 9 + 160                 // command prefix + pixel words
+	const frame = 480*lineW + 80 + 16 + 264 // active + FP + vsync + BP
+	v := m.Variant()
+	for iter := 0; len(m.HSTXOut) < 2*frame+lineW && iter < 400000; iter++ {
+		for i := 0; i < 24; i++ {
+			m.PulseDREQ(v.DreqHSTX)
+		}
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 600}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(m.HSTXOut) < 2*frame+lineW {
+		t.Fatalf("scanout stalled: only %d words captured", len(m.HSTXOut))
+	}
+	const lanes12 = 0x354<<10 | 0x354<<20
+	const v1h1, v1h0 = 0x2AB | lanes12, 0x154 | lanes12
+	const v0h1, v0h0 = 0x0AB | lanes12, 0x354 | lanes12
+	prefix := []uint32{
+		0x1000 | 16, v1h1, 0xF000, 0x1000 | 96, v1h0, 0xF000,
+		0x1000 | 48, v1h1, 0x2000 | 640,
+	}
+	out := m.HSTXOut
+	for n := 0; n < 480; n++ {
+		for i, w := range prefix {
+			if out[n*lineW+i] != w {
+				t.Fatalf("line %d command word %d: got %#x want %#x", n, i, out[n*lineW+i], w)
+			}
+		}
+	}
+	rowWord := func(row, i int) uint32 {
+		off := row*640 + 4*i
+		return binary.LittleEndian.Uint32(m.PSRAM[off:])
+	}
+	checkRow := func(base, row int) {
+		for i := 0; i < 160; i++ {
+			if out[base+9+i] != rowWord(row, i) {
+				t.Fatalf("row %d pixel word %d: got %#x want %#x", row, i, out[base+9+i], rowWord(row, i))
+			}
+		}
+	}
+	// Frame 1: rows 2+ are live copies. Rows 0 and 1 stream the
+	// buffers primed at init, before the boot banner rendered (all
+	// zero) — staleness heals one frame later by design.
+	for _, row := range []int{2, 5, 250, 479} {
+		checkRow(row*lineW, row)
+	}
+	for _, row := range []int{0, 1} {
+		for i := 0; i < 160; i++ {
+			if out[row*lineW+9+i] != 0 {
+				t.Fatalf("frame 1 row %d should stream the primed (cleared) line, got %#x", row, out[row*lineW+9+i])
+			}
+		}
+	}
+	// Frame 2 rows 0 and 1 are live copies (kicked during frame 1).
+	checkRow(frame, 0)
+	checkRow(frame+lineW, 1)
+	// Vblank: front porch (vsync off), vsync on, back porch.
+	vb := 480 * lineW
+	voff := []uint32{0x1000 | 16, v1h1, 0x1000 | 96, v1h0, 0x1000 | (48 + 640), v1h1, 0xF000, 0xF000}
+	von := []uint32{0x1000 | 16, v0h1, 0x1000 | 96, v0h0, 0x1000 | (48 + 640), v0h1, 0xF000, 0xF000}
+	for i := 0; i < 80; i++ {
+		if out[vb+i] != voff[i%8] {
+			t.Fatalf("front porch word %d: got %#x want %#x", i, out[vb+i], voff[i%8])
+		}
+	}
+	for i := 0; i < 16; i++ {
+		if out[vb+80+i] != von[i%8] {
+			t.Fatalf("vsync word %d: got %#x want %#x", i, out[vb+80+i], von[i%8])
+		}
+	}
+	for i := 0; i < 264; i++ {
+		if out[vb+96+i] != voff[i%8] {
+			t.Fatalf("back porch word %d: got %#x want %#x", i, out[vb+96+i], voff[i%8])
+		}
+	}
+	// The loop: frame 2 equals frame 1 word for word from row 2 on
+	// (rows 0/1 differ: frame 1 streamed their pre-banner priming).
+	for i := 2 * lineW; i < frame; i++ {
+		if out[i] != out[frame+i] {
+			t.Fatalf("frame period broken at word %d: %#x vs %#x", i, out[i], out[frame+i])
 		}
 	}
 }
