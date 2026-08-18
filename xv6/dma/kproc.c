@@ -515,7 +515,15 @@ cons_poll(void)
     if (cons_e - cons_r < INPUT_BUF) {
       cons_buf[cons_e % INPUT_BUF] = (char)c;
       cons_e++;
-      cputc((int)c);
+      if (c < ' ' && c != '\n' && c != '\t') {
+        /* ECHOCTL: a control byte echoes as ^X, never verbatim — a
+         * raw ESC [ A would command the user's terminal (the caret
+         * walks the screen when arrows are typed mid-command). */
+        cputc('^');
+        cputc((int)c + 64);
+      } else {
+        cputc((int)c);
+      }
       if (c == '\n' || cons_e - cons_r == INPUT_BUF)
         cons_w = cons_e;
     }

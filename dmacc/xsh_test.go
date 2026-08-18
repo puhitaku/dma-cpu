@@ -355,6 +355,32 @@ func tailB(b []byte, n int) string {
 	return string(b)
 }
 
+// TestXv6EchoCtl: control bytes typed while the console is COOKED (a
+// command is running, boot output is streaming) must echo as ^X, not
+// verbatim — a raw ESC [ A echo would command the user's terminal.
+// The queued arrow still reaches the next readline as type-ahead and
+// recalls history.
+func TestXv6EchoCtl(t *testing.T) {
+	m, _ := bootXsh(t)
+	// The arrow lands after Enter, in the cooked window while sh runs
+	// `echo x`; the second Enter applies the recalled line.
+	m.FeedConsole("echo x\r\x1b[A\r")
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	out := string(m.ConsoleOut)
+	if !strings.Contains(out, "^[[A") {
+		t.Errorf("cooked echo of ESC[A is not ^[[A; tail %q", tailB(m.ConsoleOut, 200))
+	}
+	if strings.Contains(out, "\x1b[A") {
+		t.Errorf("raw ESC[A leaked to the terminal; tail %q", tailB(m.ConsoleOut, 200))
+	}
+	if got := strings.Count(strings.ReplaceAll(out, "\r", ""), "\nx\n"); got != 2 {
+		t.Errorf("type-ahead history recall: want 'x' twice, got %d; tail %q",
+			got, tailB(m.ConsoleOut, 300))
+	}
+}
+
 // TestXv6Readline: the raw-mode line editor — mid-line arrow edits,
 // tab completion against the root directory, and history recall.
 func TestXv6Readline(t *testing.T) {

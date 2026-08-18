@@ -334,9 +334,9 @@ readline(const char *prompt, char *buf, int max)
         rl_redraw(prompt, buf, len, cur);
       continue;
     }
-    if (c == 0x1B) { /* ESC [ ... */
+    if (c == 0x1B) { /* ESC [ X (CSI) or ESC O X (application mode) */
       char c2 = 0, c3 = 0;
-      if (read(0, &c2, 1) < 1 || c2 != '[')
+      if (read(0, &c2, 1) < 1 || (c2 != '[' && c2 != 'O'))
         continue;
       if (read(0, &c3, 1) < 1)
         continue;

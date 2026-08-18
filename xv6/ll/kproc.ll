@@ -150,13 +150,13 @@ define internal fastcc void @cons_poll() unnamed_addr #3 {
   %3 = load i32, ptr @cons_r, align 4, !tbaa !9
   %4 = sub i32 %2, %3
   %5 = icmp ult i32 %4, 128
-  br i1 %5, label %6, label %181
+  br i1 %5, label %6, label %189
 
 6:                                                ; preds = %1
   %7 = load volatile i32, ptr @__dma_uart_fr, align 4, !tbaa !9
   %8 = and i32 %7, 16
   %9 = icmp eq i32 %8, 0
-  br i1 %9, label %10, label %181
+  br i1 %9, label %10, label %189
 
 10:                                               ; preds = %6
   %11 = load volatile i32, ptr @__dma_uart_dr, align 4, !tbaa !9
@@ -275,7 +275,7 @@ define internal fastcc void @cons_poll() unnamed_addr #3 {
   %78 = icmp eq ptr %45, null
   br i1 %78, label %79, label %80
 
-79:                                               ; preds = %24, %65, %123, %77, %37, %21, %180, %177, %164, %167, %14
+79:                                               ; preds = %24, %65, %123, %77, %37, %21, %188, %185, %166, %169, %14
   br label %1, !llvm.loop !13
 
 80:                                               ; preds = %72, %77
@@ -423,48 +423,61 @@ define internal fastcc void @cons_poll() unnamed_addr #3 {
   br label %123, !llvm.loop !33
 
 162:                                              ; preds = %19
-  %163 = trunc i32 %11 to i8
-  switch i8 %163, label %169 [
-    i8 8, label %164
-    i8 127, label %164
+  %163 = icmp eq i32 %12, 13
+  %164 = select i1 %163, i32 10, i32 %12
+  %165 = trunc i32 %11 to i8
+  switch i8 %165, label %171 [
+    i8 8, label %166
+    i8 127, label %166
   ]
 
-164:                                              ; preds = %162, %162
-  %165 = load i32, ptr @cons_w, align 4, !tbaa !9
-  %166 = icmp eq i32 %2, %165
-  br i1 %166, label %79, label %167
+166:                                              ; preds = %162, %162
+  %167 = load i32, ptr @cons_w, align 4, !tbaa !9
+  %168 = icmp eq i32 %2, %167
+  br i1 %168, label %79, label %169
 
-167:                                              ; preds = %164
-  %168 = add i32 %2, -1
-  store i32 %168, ptr @cons_e, align 4, !tbaa !9
+169:                                              ; preds = %166
+  %170 = add i32 %2, -1
+  store i32 %170, ptr @cons_e, align 4, !tbaa !9
   tail call fastcc void @cputc(i32 noundef 8) #12
   tail call fastcc void @cputc(i32 noundef 32) #12
   tail call fastcc void @cputc(i32 noundef 8) #12
   br label %79
 
-169:                                              ; preds = %162
-  %170 = icmp eq i32 %12, 13
-  %171 = select i1 %170, i32 10, i32 %12
-  %172 = trunc nuw i32 %171 to i8
+171:                                              ; preds = %162
+  %172 = trunc nuw i32 %164 to i8
   %173 = and i32 %2, 127
   %174 = getelementptr inbounds nuw [128 x i8], ptr @cons_buf, i32 0, i32 %173
   store i8 %172, ptr %174, align 1, !tbaa !3
   %175 = add i32 %2, 1
   store i32 %175, ptr @cons_e, align 4, !tbaa !9
-  tail call fastcc void @cputc(i32 noundef %171) #12
-  %176 = icmp eq i32 %171, 10
-  br i1 %176, label %180, label %177
+  %176 = icmp samesign ult i32 %164, 32
+  %177 = add nsw i32 %164, -11
+  %178 = icmp ult i32 %177, -2
+  %179 = and i1 %176, %178
+  br i1 %179, label %180, label %182
 
-177:                                              ; preds = %169
-  %178 = sub i32 %175, %3
-  %179 = icmp eq i32 %178, 128
-  br i1 %179, label %180, label %79
+180:                                              ; preds = %171
+  tail call fastcc void @cputc(i32 noundef 94) #12
+  %181 = or disjoint i32 %164, 64
+  br label %182
 
-180:                                              ; preds = %177, %169
+182:                                              ; preds = %171, %180
+  %183 = phi i32 [ %181, %180 ], [ %164, %171 ]
+  tail call fastcc void @cputc(i32 noundef %183) #12
+  %184 = icmp eq i32 %164, 10
+  br i1 %184, label %188, label %185
+
+185:                                              ; preds = %182
+  %186 = sub i32 %175, %3
+  %187 = icmp eq i32 %186, 128
+  br i1 %187, label %188, label %79
+
+188:                                              ; preds = %185, %182
   store i32 %175, ptr @cons_w, align 4, !tbaa !9
   br label %79
 
-181:                                              ; preds = %1, %6
+189:                                              ; preds = %1, %6
   ret void
 }
 
