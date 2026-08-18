@@ -266,6 +266,27 @@ ttyraw(int on)
   return dma_trap();
 }
 
+int
+gpioctl(int op, int pin, int val)
+{
+  fill(SYS_gpio, (uint)op, (uint)pin, (uint)val);
+  return dma_trap();
+}
+
+int
+pinmux(int pin, int func)
+{
+  fill(SYS_pinmux, (uint)pin, (uint)func, 0);
+  return dma_trap();
+}
+
+int
+pioctl(int op, uint a, uint b)
+{
+  fill(SYS_pio, (uint)op, a, b);
+  return dma_trap();
+}
+
 /* One non-blocking read attempt: -2 when nothing is buffered. Raw-mode
  * ESC-sequence disambiguation (ulib readline, vi) needs to peek. */
 int

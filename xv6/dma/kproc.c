@@ -480,6 +480,9 @@ kconsread(uint dst, int n)
 }
 
 static void deliver_sigint(void);
+int kgpio(uint op, uint pin, uint val);   /* kgpio.c */
+int kpinmux(uint pin, uint func);
+int kpio(uint op, uint a, uint b);
 
 static void
 cons_poll(void)
@@ -1293,6 +1296,19 @@ dma_ksyscall(void)
       cons_raw_pid = 0;
     }
     ret = 0;
+    break;
+  case SYS_gpio: /* a0: op (0 write, 1 read), a1: pin, a2: value */
+    ret = (uint)kgpio(m->a0, m->a1, m->a2);
+    break;
+  case SYS_pinmux: /* a0: pin, a1: FUNCSEL */
+    ret = (uint)kpinmux(m->a0, m->a1);
+    break;
+  case SYS_pio: /* a0: op (0 load, 1 init, 2 gate), a1/a2 per op;
+                 * pointer args are small read-only structs */
+    if ((m->a0 == 0 || m->a0 == 1) && badbuf(p, m->a1, 4 * 7))
+      ret = (uint)-1;
+    else
+      ret = (uint)kpio(m->a0, m->a1, m->a2);
     break;
   case SYS_signal: /* a0: signum (SIGINT only); a2: &usys sigctx
                     * (0 = revert to the default death) */

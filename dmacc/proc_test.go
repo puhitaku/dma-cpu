@@ -44,9 +44,9 @@ func compileKernelOpts(t *testing.T, fs, xip bool) string {
 
 func compileKernelFull(t *testing.T, fs, xip, size bool) string {
 	t.Helper()
-	list := []string{"kproc", "kfsstub"}
+	list := []string{"kproc", "kgpio", "kfsstub"}
 	if fs {
-		list = []string{"kproc", "kfs", "kfile", "kbio", "kfsglue", "kpipe", "kflash", "kfat", "string"}
+		list = []string{"kproc", "kgpio", "kfs", "kfile", "kbio", "kfsglue", "kpipe", "kflash", "kfat", "kdev", "string"}
 	}
 	var mods []*llir.Module
 	for _, p := range list {
@@ -109,7 +109,7 @@ func TestXv6Proc(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x20004000, 0x2001A000)
+			kernC := buildKernelC(t, v, 0x20004000, 0x2001C000)
 			asm := func(text, data uint32) *dmaasm.Result {
 				res, err := dmaasm.Assemble(pdasm, dmaasm.Options{
 					Variant: v, TextBase: text, DataBase: data})

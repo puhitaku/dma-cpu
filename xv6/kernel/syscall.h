@@ -27,3 +27,6 @@
 #define SYS_mount  26
 #define SYS_umount 27
 #define SYS_ttyraw 28
+#define SYS_gpio   29
+#define SYS_pinmux 30
+#define SYS_pio    31

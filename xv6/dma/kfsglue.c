@@ -147,6 +147,10 @@ consolewrite(int user_src, uint64 addr, int n)
 /* --- lifecycle: called by kproc.c --- */
 uint fsready;
 
+static struct inode *create(char *path, short type, short major, short minor);
+static char devmnt[8]; /* "/dev" once kfs_start wires it; "" before */
+static uint devmnt_dev = (uint)-1, devmnt_inum;
+
 /* Mounts the RAM disk, installs the console device, and gives every
  * live process a root cwd and console fds 0/1/2. */
 void
@@ -162,6 +166,26 @@ kfs_start(void)
   struct inode *cons = namei("/console");
   if (cons == 0)
     panic("kfs_start: no console");
+  /* devfs: ensure the /dev mountpoint exists on the RAM disk, then
+   * record its identity so vfs_resolve crosses into kdev.c. */
+  {
+    struct inode *dp = namei("/dev");
+    if (dp == 0) {
+      dp = create("/dev", T_DIR, 0, 0);
+      if (dp)
+        iunlock(dp);
+    }
+    if (dp) {
+      devmnt_dev = dp->dev;
+      devmnt_inum = dp->inum;
+      iput(dp);
+      devmnt[0] = '/';
+      devmnt[1] = 'd';
+      devmnt[2] = 'e';
+      devmnt[3] = 'v';
+      devmnt[4] = 0;
+    }
+  }
   for (int i = 0; i < KNPROC; i++) {
     struct proc *p = &fsproc[i];
     p->sz = (uint64)-1;
@@ -222,6 +246,15 @@ extern struct inode *fat_root(void);
 extern struct inode *fat_walk(struct inode *from, const char *path);
 extern struct inode *fat_lookup(struct inode *dp, const char *name);
 extern void fat_dup(struct inode *ip);
+/* devfs (kdev.c): the second synthetic backend, mounted at /dev. */
+int dev_is(struct inode *ip);
+struct inode *dev_root(void);
+struct inode *dev_lookup(struct inode *dir, const char *name);
+int dev_readi(struct inode *ip, uint dst, uint off, uint n);
+void dev_stati(struct inode *ip, struct stat *st);
+void dev_put(struct inode *ip);
+void dev_dup(struct inode *ip);
+
 extern int fat_readi(struct inode *ip, uint dst, uint off, uint n);
 extern void fat_stati(struct inode *ip, struct stat *st);
 extern void fat_put(struct inode *ip);
@@ -236,24 +269,27 @@ static uint fatmnt_dev = (uint)-1, fatmnt_inum; /* the mountpoint inode:
 int
 vfs_readi(struct inode *ip, int u, uint64 dst, uint off, uint n)
 {
-  return fat_is(ip) ? fat_readi(ip, (uint)dst, off, n)
-                    : readi(ip, u, dst, off, n);
+  if (fat_is(ip))
+    return fat_readi(ip, (uint)dst, off, n);
+  if (dev_is(ip))
+    return dev_readi(ip, (uint)dst, off, n);
+  return readi(ip, u, dst, off, n);
 }
 int
 vfs_writei(struct inode *ip, int u, uint64 src, uint off, uint n)
 {
-  return fat_is(ip) ? -1 : writei(ip, u, src, off, n);
+  return (fat_is(ip) || dev_is(ip)) ? -1 : writei(ip, u, src, off, n);
 }
 void
 vfs_ilock(struct inode *ip)
 {
-  if (!fat_is(ip))
+  if (!fat_is(ip) && !dev_is(ip))
     ilock(ip);
 }
 void
 vfs_iunlock(struct inode *ip)
 {
-  if (!fat_is(ip))
+  if (!fat_is(ip) && !dev_is(ip))
     iunlock(ip);
 }
 void
@@ -261,6 +297,8 @@ vfs_iput(struct inode *ip)
 {
   if (fat_is(ip))
     fat_put(ip);
+  else if (dev_is(ip))
+    dev_put(ip);
   else
     iput(ip);
 }
@@ -269,6 +307,8 @@ vfs_stati(struct inode *ip, struct stat *st)
 {
   if (fat_is(ip))
     fat_stati(ip, st);
+  else if (dev_is(ip))
+    dev_stati(ip, st);
   else
     stati(ip, st);
 }
@@ -284,6 +324,23 @@ fat_prefix(const char *path)
   while (fatmnt[i] && path[i] == fatmnt[i])
     i++;
   if (fatmnt[i] != 0)
+    return 0;
+  if (path[i] == 0)
+    return path + i;
+  if (path[i] == '/')
+    return path + i + 1;
+  return 0;
+}
+
+static const char *
+dev_prefix(const char *path)
+{
+  if (devmnt[0] == 0 || path[0] != '/')
+    return 0;
+  int i = 0;
+  while (devmnt[i] && path[i] == devmnt[i])
+    i++;
+  if (devmnt[i] != 0)
     return 0;
   if (path[i] == 0)
     return path + i;
@@ -315,19 +372,18 @@ pathelem(const char *path, char *name)
 }
 
 static struct inode *
-vfs_resolve(char *path)
+vfs_walk(char *path)
 {
   struct proc *p = myproc();
   struct inode *ip;
-  if (fatmnt[0] == 0 && !(p->cwd && fat_is(p->cwd)))
-    return namei(path); /* no mount: exactly the old semantics (namei
-                         * also tolerates corners like a deleted cwd's
-                         * dangling ".." that the walk below trips on) */
   if (path[0] == '/' || p->cwd == 0) {
     ip = namei("/");
   } else if (fat_is(p->cwd)) {
     ip = p->cwd;
     fat_dup(ip);
+  } else if (dev_is(p->cwd)) {
+    ip = p->cwd;
+    dev_dup(ip);
   } else {
     ip = idup(p->cwd);
   }
@@ -340,6 +396,14 @@ vfs_resolve(char *path)
     if (fat_is(ip)) {
       nxt = ip->type == T_DIR ? fat_lookup(ip, name) : 0;
       fat_put(ip);
+      if (nxt == 0)
+        return 0;
+      ip = nxt;
+      continue;
+    }
+    if (dev_is(ip)) {
+      nxt = ip->type == T_DIR ? dev_lookup(ip, name) : 0;
+      dev_put(ip);
       if (nxt == 0)
         return 0;
       ip = nxt;
@@ -359,8 +423,57 @@ vfs_resolve(char *path)
       nxt = fat_root();
       if (nxt == 0)
         return 0;
+    } else if (nxt->dev == devmnt_dev && nxt->inum == devmnt_inum) {
+      iput(nxt); /* cross into /dev */
+      nxt = dev_root();
+      if (nxt == 0)
+        return 0;
     }
     ip = nxt;
+  }
+  return ip;
+}
+
+/* namei-first resolution: the plain-fs corners (a deleted cwd's
+ * dangling "..", usertests' unlinkcwd) behave exactly as upstream,
+ * because the component walk above only runs where a synthetic fs can
+ * be involved — a synthetic cwd, a mount-prefixed absolute path, a
+ * namei result that IS a mountpoint (swap to the synthetic root), or
+ * a namei failure that might be a mid-path crossing ("ls dev/gpio"
+ * relative to /). */
+static struct inode *
+vfs_resolve(char *path)
+{
+  struct proc *p = myproc();
+  if (fatmnt[0] == 0 && devmnt[0] == 0 &&
+      !(p->cwd && (fat_is(p->cwd) || dev_is(p->cwd))))
+    return namei(path);
+  if (p->cwd && (fat_is(p->cwd) || dev_is(p->cwd)))
+    return vfs_walk(path);
+  if (path[0] == '/' && (fat_prefix(path) || dev_prefix(path)))
+    return vfs_walk(path);
+  struct inode *ip = namei(path);
+  if (ip == 0) {
+    /* namei said no. The only reason to try harder is a mid-path
+     * crossing into a synthetic fs ("ls dev/gpio" relative to /) —
+     * so only a synthetic result counts. A regular-inode result
+     * must NOT override namei: the walk lacks namex's corner
+     * handling (unlinked dirs, dangling ".."), and returning its
+     * inode can ilock a freed dinode. */
+    ip = vfs_walk(path);
+    if (ip && !fat_is(ip) && !dev_is(ip)) {
+      iput(ip);
+      return 0;
+    }
+    return ip;
+  }
+  if (ip->dev == fatmnt_dev && ip->inum == fatmnt_inum) {
+    iput(ip);
+    return fat_root();
+  }
+  if (ip->dev == devmnt_dev && ip->inum == devmnt_inum) {
+    iput(ip);
+    return dev_root();
   }
   return ip;
 }
@@ -369,10 +482,10 @@ vfs_resolve(char *path)
 static int
 fat_writepath(const char *path)
 {
-  if (fat_prefix(path))
+  if (fat_prefix(path) || dev_prefix(path))
     return 1;
   struct proc *p = myproc();
-  return path[0] != '/' && p->cwd && fat_is(p->cwd);
+  return path[0] != '/' && p->cwd && (fat_is(p->cwd) || dev_is(p->cwd));
 }
 
 int
@@ -390,6 +503,11 @@ kfs_mount(uint srcaddr, uint tgtaddr)
       const char *b = " type vfat (ro)\n";
       while (*b)
         o[n++] = *b++;
+    }
+    if (devmnt[0]) {
+      const char *d = "devfs on /dev type devfs (ro)\n";
+      while (*d)
+        o[n++] = *d++;
     }
     o[n] = 0;
     return n;
@@ -597,14 +715,23 @@ kfs_open(uint pathaddr, int omode)
   } else {
     if ((ip = vfs_resolve(path)) == 0)
       return -1;
-    if (fat_is(ip)) {
+    if (fat_is(ip) || dev_is(ip)) {
       struct file *ff = filealloc();
       int ffd = ff ? fdalloc(ff) : -1;
       if (ff == 0 || ffd < 0) {
         if (ff)
           fileclose(ff);
-        fat_put(ip);
+        vfs_iput(ip);
         return -1;
+      }
+      if (dev_is(ip) && ip->type == T_DEVICE) {
+        /* /dev/console: the real console device, read-write */
+        ff->type = FD_DEVICE;
+        ff->major = ip->major;
+        ff->ip = ip;
+        ff->readable = !(omode & O_WRONLY);
+        ff->writable = (omode & O_WRONLY) || (omode & O_RDWR);
+        return ffd;
       }
       ff->type = FD_INODE;
       ff->off = 0;

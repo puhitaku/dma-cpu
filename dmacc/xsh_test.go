@@ -63,7 +63,8 @@ func buildDisk(t *testing.T, v *emu.Variant) []byte {
 		b.AddFile(prog.name, blob)
 		if prog.name == "toolbox" {
 			for _, l := range []string{"kill", "spin", "trap", "free",
-				"sync", "mount", "umount", "wc", "mkdir", "rm"} {
+				"sync", "mount", "umount", "wc", "mkdir", "rm",
+				"gpio", "mux", "blink"} {
 				b.AddLink(l)
 			}
 		}
@@ -197,7 +198,12 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	if persist {
 		off := slotXIP - emu.XIPBase
 		h := func(i int) uint32 { return binary.LittleEndian.Uint32(flash[off+4*i:]) }
-		if h(0) == 0x32464D44 && h(2) == uint32(len(disk)) { /* 'DMF2' */
+		var gold uint32
+		for i := 0; i+4 <= len(disk); i += 4 {
+			gold += binary.LittleEndian.Uint32(disk[i:])
+		}
+		m.Poke32(mustSym(t, kernC, "g_goldsum"), gold)
+		if h(0) == 0x32464D44 && h(2) == uint32(len(disk)) && h(4) == gold { /* 'DMF2' */
 			var sum uint32
 			img := flash[off+0x1000 : off+0x1000+len(disk)]
 			for i := 0; i < len(img); i += 4 {
@@ -233,6 +239,13 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	m.Poke32(mustSym(t, kernC, "g_initpid"), 2)
 	m.Poke32(mustSym(t, kernC, "g_fgpid"), 1)
 	m.Poke32(mustSym(t, kernC, "g_k_sysentry"), mustSym(t, kern, "sys_entry"))
+	// GPIO / PIO driver bases (kgpio.c), SKU-resolved like g_fatvol.
+	m.Poke32(mustSym(t, kernC, "g_iobank0"), v.IOBank0Base)
+	m.Poke32(mustSym(t, kernC, "g_padsbank0"), v.PadsBank0Base)
+	m.Poke32(mustSym(t, kernC, "g_pio0base"), v.PIO0Base)
+	m.Poke32(mustSym(t, kernC, "g_gpiopins"), uint32(v.GPIOPins))
+	m.Poke32(mustSym(t, kernC, "g_gpio_hi"), v.GPIOOutCtrl(true))
+	m.Poke32(mustSym(t, kernC, "g_gpio_lo"), v.GPIOOutCtrl(false))
 	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
 		Compact: true, Entry: entrySh, Scratch: 0x2007FE00,
 	}); err != nil {
@@ -367,6 +380,129 @@ func tailB(b []byte, n int) string {
 		b = b[len(b)-n:]
 	}
 	return string(b)
+}
+
+// TestXv6GpioMux: the gpio/mux commands drive IO_BANK0 through the
+// kernel API — the emulator records OUTOVER events and loops the
+// driven level back through GPIOx_STATUS, so `gpio read` verifies
+// `gpio write` end to end.
+func TestXv6GpioMux(t *testing.T) {
+	m, _ := bootXsh(t)
+	v := m.Variant()
+	m.FeedConsole("gpio write 5 1\rgpio read 5\rgpio write 5 0\rgpio read 5\r" +
+		"mux 3 pio0\rgpio read 99\recho done\r")
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
+	if !strings.Contains(out, "\n1\n") || !strings.Contains(out, "\n0\n") {
+		t.Errorf("gpio read loopback missing; console %q", out)
+	}
+	if !strings.Contains(out, "gpio: bad pin") {
+		t.Errorf("pin bound check missing")
+	}
+	var hi, lo bool
+	for _, e := range m.GPIOEvents {
+		if e.Pin == 5 && e.High {
+			hi = true
+		}
+		if e.Pin == 5 && !e.High {
+			lo = true
+		}
+	}
+	if !hi || !lo {
+		t.Errorf("OUTOVER events for pin 5: hi=%v lo=%v", hi, lo)
+	}
+	if got := m.Peek32(v.IOBank0Base+8*3+4) & 0x1F; got != 6 {
+		t.Errorf("mux 3 pio0: FUNCSEL = %d, want 6", got)
+	}
+	if !strings.Contains(out, "\ndone\n") {
+		t.Errorf("session did not finish")
+	}
+}
+
+// TestXv6Blink: both blink modes. GPIO mode is a soft loop the fg
+// SIGINT stops (LED left low); PIO mode loads the program, starts SM0
+// asynchronously, survives the program exiting, and `blink stop`
+// gates it off.
+func TestXv6Blink(t *testing.T) {
+	m, _ := bootXsh(t)
+	v := m.Variant()
+	m.FeedConsole("blink gpio 7\r")
+	// boot + a few 300-tick half-periods (4.5M cycles each)
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 250_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	m.FeedConsole("\x03") // Ctrl-C stops the soft loop
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 200_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	var toggles int
+	last := -1
+	for _, e := range m.GPIOEvents {
+		if e.Pin != 7 {
+			continue
+		}
+		lv := 0
+		if e.High {
+			lv = 1
+		}
+		if lv != last {
+			toggles++
+			last = lv
+		}
+	}
+	if toggles < 3 {
+		t.Errorf("soft blink: %d level changes on pin 7, want >= 3", toggles)
+	}
+	if last != 0 {
+		t.Errorf("SIGINT handler must leave the LED low")
+	}
+
+	m.FeedConsole("blink pio 8\recho ok\r")
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 400_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
+	if !strings.Contains(out, "\nok\n") {
+		t.Fatalf("blink pio did not return to the prompt (async start)")
+	}
+	prog := []uint32{0xE081, 0xE03F, 0xFF01, 0x0042, 0xE03F, 0xFF00, 0x0045, 0x0001}
+	for i, want := range prog {
+		if got := m.Peek32(v.PIO0Base + 0x48 + uint32(i)*4); got != want {
+			t.Errorf("INSTR_MEM[%d] = %#x, want %#x", i, got, want)
+		}
+	}
+	if m.Peek32(v.PIO0Base)&1 == 0 {
+		t.Errorf("SM0 not enabled after blink pio")
+	}
+	if got := m.Peek32(v.IOBank0Base+8*8+4) & 0x1F; got != 6 {
+		t.Errorf("pin 8 FUNCSEL = %d, want pio0(6)", got)
+	}
+	m.FeedConsole("blink stop 8\recho fin\r")
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 400_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	if m.Peek32(v.PIO0Base)&1 != 0 {
+		t.Errorf("SM0 still enabled after blink stop")
+	}
+}
+
+// TestXv6Devfs: /dev lists the machine's resources as files; the gpio
+// file reflects pad state; the mount table names devfs.
+func TestXv6Devfs(t *testing.T) {
+	m, _ := bootXsh(t)
+	m.FeedConsole("ls /dev\rgpio write 5 1\rcat /dev/gpio\rcat /dev/pio0\rmount\recho done\r")
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 1_200_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
+	for _, want := range []string{"console", "fat0", "gpio", "pio0", "pio1", "pio2",
+		"05=1", "sm_enable=0x0", "devfs on /dev type devfs (ro)", "\ndone\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("devfs session missing %q", want)
+		}
+	}
 }
 
 // TestXv6EchoCtl: control bytes typed while the console is COOKED (a

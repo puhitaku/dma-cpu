@@ -11,13 +11,15 @@ import "fmt"
 // therefore SKU-specific: programs must be assembled for a Variant, and a
 // Machine emulates exactly one.
 type Variant struct {
-	Name        string
-	NChannels   int
-	NIRQs       int
-	SRAMSize    uint32
-	IOBank0Base uint32
-	UART0Base   uint32
-	GPIOPins    int
+	Name          string
+	NChannels     int
+	NIRQs         int
+	SRAMSize      uint32
+	IOBank0Base   uint32
+	PadsBank0Base uint32
+	PIO0Base      uint32 // PIO1/PIO2 follow at +0x100000 strides
+	UART0Base     uint32
+	GPIOPins      int
 
 	gpioOutoverLSB uint
 	gpioOeoverLSB  uint
@@ -58,13 +60,15 @@ type Variant struct {
 
 // RP2040: datasheet §2.5 (doc/rp2040-datasheet.pdf).
 var RP2040 = &Variant{
-	Name:        "rp2040",
-	NChannels:   12,
-	NIRQs:       2,
-	SRAMSize:    0x42000, // 256 KiB striped + 2 × 4 KiB scratch
-	IOBank0Base: 0x40014000,
-	UART0Base:   0x40034000, // RP2040 datasheet §4.2
-	GPIOPins:    30,
+	Name:          "rp2040",
+	NChannels:     12,
+	NIRQs:         2,
+	SRAMSize:      0x42000, // 256 KiB striped + 2 × 4 KiB scratch
+	IOBank0Base:   0x40014000,
+	PadsBank0Base: 0x4001C000,
+	PIO0Base:      0x50200000,
+	UART0Base:     0x40034000, // RP2040 datasheet §4.2
+	GPIOPins:      30,
 
 	gpioOutoverLSB: 8,
 	gpioOeoverLSB:  12,
@@ -95,13 +99,15 @@ var RP2040 = &Variant{
 // RP2350: datasheet §12.6 (doc/rp2350-datasheet.pdf). SECCFG/MPU
 // registers (0x480+) are not modelled; they read as zero.
 var RP2350 = &Variant{
-	Name:        "rp2350",
-	NChannels:   16,
-	NIRQs:       4,
-	SRAMSize:    0x82000, // 520 KiB
-	IOBank0Base: 0x40028000,
-	UART0Base:   0x40070000, // RP2350 datasheet §12.1
-	GPIOPins:    48,
+	Name:          "rp2350",
+	NChannels:     16,
+	NIRQs:         4,
+	SRAMSize:      0x82000, // 520 KiB
+	IOBank0Base:   0x40028000,
+	PadsBank0Base: 0x40038000,
+	PIO0Base:      0x50200000,
+	UART0Base:     0x40070000, // RP2350 datasheet §12.1
+	GPIOPins:      48,
 
 	gpioOutoverLSB: 12,
 	gpioOeoverLSB:  14,
@@ -178,7 +184,8 @@ func (v *Variant) transMode(reload uint32) uint32 {
 
 // --- SKU-specific addresses ---
 
-func (v *Variant) SniffCtrlAddr() uint32    { return DMABase + v.offSniffCtrl }
+func (v *Variant) SniffCtrlAddr() uint32 { return DMABase + v.offSniffCtrl }
+
 // UART0 data and flag registers (PL011: DR at +0x00, FR at +0x18). The
 // emulator models DR writes as console output; FR reads back 0, so the
 // TX-full poll a real-hardware putc needs falls straight through.

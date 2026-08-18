@@ -294,7 +294,7 @@ func buildKernelPair(v *emu.Variant, kText, kData, cText, cData uint32) (*dmaasm
 	if err != nil {
 		return nil, nil, fmt.Errorf("kernel: %w", err)
 	}
-	dasm, err := compileLL([]string{"xv6/ll/kproc.ll", "xv6/ll/kfsstub.ll"},
+	dasm, err := compileLL([]string{"xv6/ll/kproc.ll", "xv6/ll/kgpio.ll", "xv6/ll/kfsstub.ll"},
 		dmacc.Options{Entry: "kmain", NoSafepoints: true})
 	if err != nil {
 		return nil, nil, err
@@ -478,7 +478,7 @@ func libcPaths(first ...string) ([]string, error) {
 // buildSched: the scheduler-only bundle (two counter processes, no
 // syscalls). Fits the narrow rp2040 layout.
 func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
-	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x17000)
+	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x19000)
 	if err != nil {
 		return nil, err
 	}
@@ -486,20 +486,20 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1B000, DataBase: lay.text + 0x1C000})
+	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1B800, DataBase: lay.text + 0x1C800})
 	if err != nil {
 		return nil, err
 	}
-	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1D000, DataBase: lay.text + 0x1E000})
+	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1D800, DataBase: lay.text + 0x1E800})
 	if err != nil {
 		return nil, err
 	}
 	b := &kernBundle{names: []string{"kernel", "kernc", "proca", "procb"}, sym: map[string]uint32{}}
-	b.entry0 = lay.text + 0x1B000 + procA.Image.EntryOff
-	entryB := lay.text + 0x1D000 + procB.Image.EntryOff
-	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x17000, []kprocSpec{
-		{procA, lay.text + 0x1C000, b.entry0, 1, 0, false},
-		{procB, lay.text + 0x1E000, entryB, 2, 0, false},
+	b.entry0 = lay.text + 0x1B800 + procA.Image.EntryOff
+	entryB := lay.text + 0x1D800 + procB.Image.EntryOff
+	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x19000, []kprocSpec{
+		{procA, lay.text + 0x1C800, b.entry0, 1, 0, false},
+		{procB, lay.text + 0x1E800, entryB, 2, 0, false},
 	}); err != nil {
 		return nil, err
 	}
@@ -553,7 +553,7 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 // Needs the wide rp2350 layout.
 func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x1A000
+	cText, cData := lay.text+0x4000, lay.text+0x1C000
 	sText, sData := lay.text+0x1E000, lay.text+0x36000
 	pText, pData := lay.text+0x32000, lay.text+0x33000
 	blobHome := lay.text + 0x3E000
@@ -715,9 +715,9 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	kcDasm, err := compileLL([]string{"xv6/ll/kproc.ll", "xv6/ll/kfs.ll", "xv6/ll/kfile.ll",
+	kcDasm, err := compileLL([]string{"xv6/ll/kproc.ll", "xv6/ll/kgpio.ll", "xv6/ll/kfs.ll", "xv6/ll/kfile.ll",
 		"xv6/ll/kbio.ll", "xv6/ll/kfsglue.ll", "xv6/ll/kpipe.ll", "xv6/ll/kflash.ll",
-		"xv6/ll/kfat.ll", "xv6/ll/string.ll"},
+		"xv6/ll/kfat.ll", "xv6/ll/kdev.ll", "xv6/ll/string.ll"},
 		dmacc.Options{Entry: "kmain", NoSafepoints: true, XIPText: true,
 			/* the QMI sync session tears down XIP: it must run from SRAM */
 			RAMTextFuncs: []string{"kflash_sync"}})
@@ -789,7 +789,8 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		if up.name == "toolbox" {
 			/* the multi-call names: hard links onto the one blob */
 			for _, l := range []string{"kill", "spin", "trap", "free",
-				"sync", "mount", "umount", "wc", "mkdir", "rm"} {
+				"sync", "mount", "umount", "wc", "mkdir", "rm",
+				"gpio", "mux", "blink"} {
 				fb.AddLink(l)
 			}
 		}
@@ -857,7 +858,11 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		{"g_initpid", 2},        /* idle adopts orphans (prompts/024) */
 		{"g_fgpid", 1},          /* Ctrl-C interrupts sh's foreground job */
 		{"g_fatvol", fatVolXIP}, /* the vfat volume (prompts/029) */
-		{"g_kflash_arm", 0},     /* 0: the MACHINE drives the QMI itself
+		{"g_goldsum", checksum32(disk)},
+		{"g_iobank0", v.IOBank0Base}, {"g_padsbank0", v.PadsBank0Base},
+		{"g_pio0base", v.PIO0Base}, {"g_gpiopins", uint32(v.GPIOPins)},
+		{"g_gpio_hi", v.GPIOOutCtrl(true)}, {"g_gpio_lo", v.GPIOOutCtrl(false)},
+		{"g_kflash_arm", 0}, /* 0: the MACHINE drives the QMI itself
 		 * (prompts/028); the parked ARM's mailbox loop stays as a
 		 * dormant fallback — repoint this at scratch+0x10 to use it */
 	} {
@@ -923,6 +928,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	b.sym["FSSLOT"] = fsSlotXIP
 	b.sym["DISK_LEN"] = uint32(len(disk))
 	b.sym["FLASHREQ"] = lay.scratch + 0x10
+	b.sym["GOLDSUM"] = checksum32(disk)
 	b.vec, b.disp0, b.inj = sy(kern, "vecSched"), sy(sh, "dispatch"), kernInjCtrlCh(v, inj)
 	b.ticks = sy(kernC, "g_ticks")
 	if errs != nil {
@@ -1001,7 +1007,7 @@ const sysWantConsole = "hello from pid 1 via SYS_write\n" +
 // (dmacc/testdata/xv6sys.c + xv6/dma/usys.c). Wide layout.
 func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x1A000
+	cText, cData := lay.text+0x4000, lay.text+0x1C000
 	aText, aData := lay.text+0x1E000, lay.text+0x22000
 	bText, bData := lay.text+0x26000, lay.text+0x2A000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
@@ -1087,6 +1093,15 @@ func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 
 // packReloc encodes an img.Reloc for the kernel loader: bit31 target
 // segment (0 text, 1 data), bit30 referenced segment, low 30 bits off.
+// checksum32 is the kernel's disk_checksum: a word sum.
+func checksum32(b []byte) uint32 {
+	var sum uint32
+	for i := 0; i+4 <= len(b); i += 4 {
+		sum += binary.LittleEndian.Uint32(b[i:])
+	}
+	return sum
+}
+
 func packReloc(r img.Reloc) uint32 {
 	w := r.Off & 0x3FFFFFFF
 	if r.Seg == 1 {
@@ -1221,7 +1236,7 @@ func stageBlobsEmu(m *emu.Machine, blobs [][]byte, names []string, syms map[stri
 // kernel places, relocates and runs it at exec() time.
 func buildExec(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x1A000
+	cText, cData := lay.text+0x4000, lay.text+0x1C000
 	aText, aData := lay.text+0x1E000, lay.text+0x22000
 	bText, bData := lay.text+0x26000, lay.text+0x2A000
 	blobHome := lay.text + 0x2C000

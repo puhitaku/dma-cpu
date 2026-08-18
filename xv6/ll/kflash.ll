@@ -5,6 +5,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 
 @fsslot = dso_local local_unnamed_addr global i32 0, align 4
 @dma_disksize = external dso_local local_unnamed_addr global i32, align 4
+@goldsum = dso_local local_unnamed_addr global i32 0, align 4
 @fs_gen = internal unnamed_addr global i32 0, align 4
 @kflash_cal.pat = internal unnamed_addr constant [4 x i8] c"\11\CE\A0\0D", align 1
 @fs_dirty = external dso_local local_unnamed_addr global i32, align 4
@@ -16,30 +17,37 @@ target triple = "thumbv6m-unknown-none-eabi"
 define dso_local i32 @kflash_slot_gen() local_unnamed_addr #0 {
   %1 = load i32, ptr @fsslot, align 4, !tbaa !3
   %2 = icmp eq i32 %1, 0
-  br i1 %2, label %16, label %3
+  br i1 %2, label %21, label %3
 
 3:                                                ; preds = %0
   %4 = add i32 %1, 67108864
   %5 = inttoptr i32 %4 to ptr
   %6 = load i32, ptr %5, align 4, !tbaa !3
   %7 = icmp eq i32 %6, 843468100
-  br i1 %7, label %8, label %16
+  br i1 %7, label %8, label %21
 
 8:                                                ; preds = %3
   %9 = getelementptr inbounds nuw i8, ptr %5, i32 8
   %10 = load i32, ptr %9, align 4, !tbaa !3
   %11 = load i32, ptr @dma_disksize, align 4, !tbaa !3
   %12 = icmp eq i32 %10, %11
-  br i1 %12, label %13, label %16
+  br i1 %12, label %13, label %21
 
 13:                                               ; preds = %8
-  %14 = getelementptr inbounds nuw i8, ptr %5, i32 4
+  %14 = getelementptr inbounds nuw i8, ptr %5, i32 16
   %15 = load i32, ptr %14, align 4, !tbaa !3
-  br label %16
+  %16 = load i32, ptr @goldsum, align 4, !tbaa !3
+  %17 = icmp eq i32 %15, %16
+  br i1 %17, label %18, label %21
 
-16:                                               ; preds = %13, %8, %3, %0
-  %17 = phi i32 [ 0, %0 ], [ %15, %13 ], [ 0, %8 ], [ 0, %3 ]
-  ret i32 %17
+18:                                               ; preds = %13
+  %19 = getelementptr inbounds nuw i8, ptr %5, i32 4
+  %20 = load i32, ptr %19, align 4, !tbaa !3
+  br label %21
+
+21:                                               ; preds = %18, %13, %8, %3, %0
+  %22 = phi i32 [ 0, %0 ], [ %20, %18 ], [ 0, %13 ], [ 0, %8 ], [ 0, %3 ]
+  ret i32 %22
 }
 
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
@@ -358,7 +366,7 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #3 {
   %1 = alloca [64 x i32], align 4
   %2 = load i32, ptr @fsslot, align 4, !tbaa !3
   %3 = icmp eq i32 %2, 0
-  br i1 %3, label %80, label %4
+  br i1 %3, label %82, label %4
 
 4:                                                ; preds = %0
   %5 = add i32 %2, -268435456
@@ -372,7 +380,7 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #3 {
   %13 = load i32, ptr @fs_dirty, align 4
   %14 = icmp eq i32 %13, 0
   %15 = select i1 %12, i1 %14, i1 false
-  br i1 %15, label %80, label %16
+  br i1 %15, label %82, label %16
 
 16:                                               ; preds = %4
   %17 = load i32, ptr @kflash_arm, align 4, !tbaa !3
@@ -432,10 +440,10 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #3 {
   %46 = add nuw nsw i32 %23, 1
   br label %22, !llvm.loop !17
 
-47:                                               ; preds = %72, %25
-  %48 = phi i32 [ 0, %25 ], [ %74, %72 ]
+47:                                               ; preds = %74, %25
+  %48 = phi i32 [ 0, %25 ], [ %76, %74 ]
   %49 = icmp eq i32 %48, 64
-  br i1 %49, label %50, label %72
+  br i1 %49, label %50, label %74
 
 50:                                               ; preds = %47
   store i32 843468100, ptr %1, align 4, !tbaa !3
@@ -467,34 +475,37 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #3 {
 68:                                               ; preds = %59
   %69 = getelementptr inbounds nuw i8, ptr %1, i32 12
   store i32 %60, ptr %69, align 4, !tbaa !3
+  %70 = load i32, ptr @goldsum, align 4, !tbaa !3
+  %71 = getelementptr inbounds nuw i8, ptr %1, i32 16
+  store i32 %70, ptr %71, align 4, !tbaa !3
   call fastcc void @flash_prog_page(i32 noundef %5, ptr noundef nonnull %1) #4
-  %70 = load i32, ptr @kflash_arm, align 4, !tbaa !3
-  %71 = icmp eq i32 %70, 0
-  br i1 %71, label %75, label %78
+  %72 = load i32, ptr @kflash_arm, align 4, !tbaa !3
+  %73 = icmp eq i32 %72, 0
+  br i1 %73, label %77, label %80
 
-72:                                               ; preds = %47
-  %73 = getelementptr inbounds nuw [64 x i32], ptr %1, i32 0, i32 %48
-  store i32 -1, ptr %73, align 4, !tbaa !3
-  %74 = add nuw nsw i32 %48, 1
+74:                                               ; preds = %47
+  %75 = getelementptr inbounds nuw [64 x i32], ptr %1, i32 0, i32 %48
+  store i32 -1, ptr %75, align 4, !tbaa !3
+  %76 = add nuw nsw i32 %48, 1
   br label %47, !llvm.loop !19
 
-75:                                               ; preds = %68
+77:                                               ; preds = %68
   store volatile i32 4096, ptr inttoptr (i32 1074593808 to ptr), align 16, !tbaa !3
   store volatile i32 3, ptr inttoptr (i32 1074593812 to ptr), align 4, !tbaa !3
-  %76 = load i32, ptr @fs_gen, align 4, !tbaa !3
-  %77 = add i32 %76, 1
-  br label %78
-
-78:                                               ; preds = %75, %68
-  %79 = phi i32 [ %77, %75 ], [ %52, %68 ]
-  store i32 %79, ptr @fs_gen, align 4, !tbaa !3
-  store i32 0, ptr @fs_dirty, align 4, !tbaa !3
-  call void @llvm.lifetime.end.p0(i64 256, ptr nonnull %1) #5
+  %78 = load i32, ptr @fs_gen, align 4, !tbaa !3
+  %79 = add i32 %78, 1
   br label %80
 
-80:                                               ; preds = %78, %4, %0
-  %81 = phi i32 [ -1, %0 ], [ 0, %4 ], [ 0, %78 ]
-  ret i32 %81
+80:                                               ; preds = %77, %68
+  %81 = phi i32 [ %79, %77 ], [ %52, %68 ]
+  store i32 %81, ptr @fs_gen, align 4, !tbaa !3
+  store i32 0, ptr @fs_dirty, align 4, !tbaa !3
+  call void @llvm.lifetime.end.p0(i64 256, ptr nonnull %1) #5
+  br label %82
+
+82:                                               ; preds = %80, %4, %0
+  %83 = phi i32 [ -1, %0 ], [ 0, %4 ], [ 0, %80 ]
+  ret i32 %83
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize

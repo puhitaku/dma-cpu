@@ -965,7 +965,10 @@ static void xsh_start(void)
      * the golden image. */
     const uint32_t *hdr = (const uint32_t *)HIL_XSH_FSSLOT;
     int fromflash = 0;
-    if (hdr[0] == 0x32464D44u && hdr[2] == HIL_XSH_DISK_LEN) { /* 'DMF2' */
+    if (hdr[0] == 0x32464D44u && hdr[2] == HIL_XSH_DISK_LEN &&
+        hdr[4] == HIL_XSH_GOLDSUM) { /* 'DMF2', and from THIS build's
+                                      * golden disk — an older build's
+                                      * slot self-invalidates */
         const uint32_t *img = (const uint32_t *)(HIL_XSH_FSSLOT + 0x1000);
         uint32_t sum = 0;
         for (uint32_t i = 0; i < HIL_XSH_DISK_LEN / 4; i++)

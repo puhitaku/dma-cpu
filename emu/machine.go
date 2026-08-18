@@ -34,6 +34,7 @@ type Machine struct {
 
 	Cycle      uint64
 	GPIOEvents []GPIOEvent
+	gpioLevel  [64]byte // last OUTOVER-driven level per pin (loopback)
 
 	// ConsoleOut collects bytes written to UART0's data register — the
 	// DMA machine's stdout (see libc/, Phase 4.5).
@@ -170,6 +171,15 @@ func (m *Machine) Read(addr uint32, size int) (uint32, error) {
 			return v, nil
 		}
 		norm, _ := aliasOp(addr)
+		// IO_BANK0 GPIOx_STATUS: reflect the OUTOVER-driven level as
+		// INFROMPAD (bit 17) and OUTTOPAD (bit 9), the loopback real
+		// pads give when the input buffer is enabled — `gpio read`
+		// self-verifies without wiring.
+		if norm >= m.v.IOBank0Base && norm < m.v.IOBank0Base+uint32(m.v.GPIOPins)*8 &&
+			(norm-m.v.IOBank0Base)%8 == 0 {
+			lv := uint32(m.gpioLevel[(norm-m.v.IOBank0Base)/8])
+			return lv<<17 | lv<<9, nil
+		}
 		switch norm {
 		case m.v.UARTDRAddr():
 			if len(m.ConsoleIn) == 0 {
@@ -256,8 +266,10 @@ func (m *Machine) decodeGPIO(normAddr, val uint32) {
 	}
 	switch (val >> m.v.gpioOutoverLSB) & 3 { // OUTOVER field
 	case 2:
+		m.gpioLevel[off/8] = 0
 		m.GPIOEvents = append(m.GPIOEvents, GPIOEvent{m.Cycle, int(off / 8), false})
 	case 3:
+		m.gpioLevel[off/8] = 1
 		m.GPIOEvents = append(m.GPIOEvents, GPIOEvent{m.Cycle, int(off / 8), true})
 	}
 }

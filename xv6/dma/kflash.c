@@ -61,6 +61,9 @@ uint fsslot;     /* loader-patched: XIP address of the slot header;
 uint kflash_arm; /* loader-patched: &flashreq mailbox in SRAM, or 0
                   * to let the machine drive the QMI itself */
 uint kflash_phase; /* diagnostic: fine-grained progress marker */
+uint goldsum; /* loader-patched: checksum of the BUILD's golden disk —
+               * stamped into the slot header so a persisted image from
+               * an older build self-invalidates (hdr[4] mismatch) */
 
 struct flashreq {
   uint op;  /* 1 erase 4K, 2 program 256 */
@@ -299,7 +302,7 @@ kflash_slot_gen(void)
   if (fsslot == 0)
     return 0;
   const uint *h = (const uint *)(fsslot + 0x04000000u);
-  if (h[0] != FS_MAGIC || h[2] != dma_disksize)
+  if (h[0] != FS_MAGIC || h[2] != dma_disksize || h[4] != goldsum)
     return 0;
   return h[1];
 }
@@ -420,6 +423,7 @@ kflash_sync(void)
   hdr[1] = fs_gen + 1;
   hdr[2] = dma_disksize;
   hdr[3] = disk_checksum();
+  hdr[4] = goldsum;
   flash_prog_page(base, (const uchar *)hdr);
   if (!kflash_arm)
     qmi_serial_xip(); /* keep XIP readable from plain-SPI state */

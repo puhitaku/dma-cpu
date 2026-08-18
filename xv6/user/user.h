@@ -18,6 +18,23 @@ int mount(const char *, const char *);
 int umount(const char *);
 int ttyraw(int);
 int read_nb(int, void *, int);
+// GPIO / pin-mux / PIO (kernel API, gpiod-style — prompts/034)
+#define GPIO_WRITE 0
+#define GPIO_READ 1
+#define PIO_LOAD 0
+#define PIO_INIT 1
+#define PIO_GATE 2
+int gpioctl(int op, int pin, int val);
+int pinmux(int pin, int func);
+int pioctl(int op, uint a, uint b);
+struct pio_prog {
+  uint pio, origin, count;
+  uint instr[32];
+};
+struct pio_smcfg {
+  uint pio, sm, origin;
+  uint clkdiv, execctrl, shiftctrl, pinctrl;
+};
 void fputstr(int, const char *);
 void fputnum(int, int);
 int exec(const char *, char **);
