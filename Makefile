@@ -46,7 +46,7 @@ libc:
 # The curated list grows as the port proceeds; goldens in xv6/ll are
 # committed and linked by dmacc like the libc ones.
 XV6_SRCS = kernel/string.c user/umalloc.c user/ulib.c user/printf.c user/echo.c user/sh.c \
-           user/cat.c user/ls.c user/wc.c \
+           user/cat.c user/ls.c user/wc.c user/vi.c \
            dma/usys.c dma/kproc.c dma/kfsstub.c dma/calflash.c dma/toolbox.c
 XV6_CLANG = clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding \
             -I$(CURDIR)/xv6 -S -emit-llvm

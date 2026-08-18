@@ -96,7 +96,11 @@ func (m *Machine) Variant() *Variant { return m.v }
 // --- Bus ---
 
 func (m *Machine) inSRAM(addr uint32, size int) bool {
-	return addr >= SRAMBase && addr+uint32(size) <= SRAMBase+uint32(len(m.sram))
+	// addr+size can wrap at the top of the address space (a stray
+	// pointer like -4): compare in offset space, which cannot wrap
+	// once addr >= SRAMBase holds.
+	return addr >= SRAMBase && addr-SRAMBase+uint32(size) <= uint32(len(m.sram)) &&
+		addr-SRAMBase <= addr-SRAMBase+uint32(size)
 }
 
 // aliasOp splits a peripheral-space address into its normalized register
@@ -138,9 +142,10 @@ func (m *Machine) Read(addr uint32, size int) (uint32, error) {
 	case addr >= DMABase && addr < DMABase+0x4000:
 		norm, _ := aliasOp(addr - DMABase)
 		return m.dma.regRead(norm), nil
-	case m.Flash != nil && addr >= XIPBase && addr+uint32(size) <= XIPBase+uint32(len(m.Flash)),
+	case m.Flash != nil && addr >= XIPBase &&
+		addr-XIPBase+uint32(size) <= uint32(len(m.Flash)),
 		m.Flash != nil && addr >= XIPBase+0x04000000 &&
-			addr+uint32(size) <= XIPBase+0x04000000+uint32(len(m.Flash)):
+			addr-(XIPBase+0x04000000)+uint32(size) <= uint32(len(m.Flash)):
 		// The second range is the uncached alias (0x14000000); the
 		// emulator has no cache, so both windows read the same bytes.
 		if m.fl.csr&qmiCSREn != 0 {

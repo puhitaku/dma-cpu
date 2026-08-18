@@ -117,7 +117,7 @@ define dso_local void @kflash_cal(ptr noundef %0) local_unnamed_addr #3 {
   store volatile i32 %35, ptr %36, align 4, !tbaa !3
   tail call fastcc void @qmi_end() #4
   store volatile i32 4, ptr %0, align 4, !tbaa !3
-  tail call fastcc void @flash_erase4k(i32 noundef 1245184) #4
+  tail call fastcc void @flash_erase4k(i32 noundef 4128768) #4
   %37 = tail call fastcc i32 @qmi_read32() #4
   %38 = getelementptr inbounds nuw i8, ptr %0, i32 20
   store volatile i32 %37, ptr %38, align 4, !tbaa !3
@@ -131,14 +131,14 @@ define dso_local void @kflash_cal(ptr noundef %0) local_unnamed_addr #3 {
   br i1 %41, label %42, label %48
 
 42:                                               ; preds = %39
-  call fastcc void @flash_prog_page(i32 noundef 1245184, ptr noundef nonnull %2) #4
+  call fastcc void @flash_prog_page(i32 noundef 4128768, ptr noundef nonnull %2) #4
   %43 = call fastcc i32 @qmi_read32() #4
   %44 = getelementptr inbounds nuw i8, ptr %0, i32 24
   store volatile i32 %43, ptr %44, align 4, !tbaa !3
   store volatile i32 6, ptr %0, align 4, !tbaa !3
   store volatile i32 4096, ptr inttoptr (i32 1074593808 to ptr), align 16, !tbaa !3
   store volatile i32 3, ptr inttoptr (i32 1074593812 to ptr), align 4, !tbaa !3
-  %45 = load volatile i32, ptr inttoptr (i32 336789504 to ptr), align 65536, !tbaa !3
+  %45 = load volatile i32, ptr inttoptr (i32 339673088 to ptr), align 65536, !tbaa !3
   %46 = getelementptr inbounds nuw i8, ptr %0, i32 28
   store volatile i32 %45, ptr %46, align 4, !tbaa !3
   store volatile i32 7, ptr %0, align 4, !tbaa !3
@@ -283,9 +283,9 @@ define internal fastcc i32 @qmi_read32() unnamed_addr #3 {
   %2 = or i32 %1, 16777221
   store volatile i32 %2, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
   %3 = tail call fastcc i32 @qmi_xfer(i32 noundef 3) #4
-  %4 = tail call fastcc i32 @qmi_xfer(i32 noundef 19) #4
-  %5 = tail call fastcc i32 @qmi_xfer(i32 noundef 4864) #4
-  %6 = tail call fastcc i32 @qmi_xfer(i32 noundef 1245184) #4
+  %4 = tail call fastcc i32 @qmi_xfer(i32 noundef 63) #4
+  %5 = tail call fastcc i32 @qmi_xfer(i32 noundef 16128) #4
+  %6 = tail call fastcc i32 @qmi_xfer(i32 noundef 4128768) #4
   br label %7
 
 7:                                                ; preds = %12, %0

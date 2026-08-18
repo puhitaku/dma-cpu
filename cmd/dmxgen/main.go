@@ -689,9 +689,11 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 // scratch (dmaasm CompactScratch). The RAM disk carries upstream
 // echo, cat, wc AND ls as DMX-exec files.
 func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
-	const fatVolXIP = 0x10140000 // vfat volume: above the fs slot
-	const cTextXIP = 0x10160000  // fs-kernel text, XIP-resident (prompts/030)
-	const sTextXIP = 0x101A0000  // sh text, XIP-resident
+	const fatVolXIP = 0x10240000 // vfat volume: above the fs slot
+	const cTextXIP = 0x10260000  // fs-kernel text, XIP-resident (prompts/030)
+	const sTextXIP = 0x102A0000  // sh text, XIP-resident
+	const viHome = 0x102C0000    // vi registry blob (text+data+relocs)
+	const viEnd = 0x10310000     // 320 KiB budget for it
 	kText, kData := lay.text, lay.text+0x1000
 	cRText, cData := lay.text+0x2000, lay.text+0xA000
 	sRText, sData := lay.text+0x16000, lay.text+0x1A000
@@ -797,6 +799,33 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		return nil, fmt.Errorf("xsh disk too large: %d", len(disk))
 	}
 
+	// vi (BusyBox port, prompts/033): far too large for the RAM disk,
+	// so it ships as a kernel-registry image whose blobs stay in flash
+	// — exec copies text+data to the arena and applies the relocs from
+	// XIP directly. OptSize: an editor is human-speed-bound.
+	viDasm, err := compileLL([]string{"xv6/ll/vi.ll", "xv6/ll/ulib.ll",
+		"xv6/ll/umalloc.ll", "xv6/ll/usys.ll"},
+		dmacc.Options{OptSize: true})
+	if err != nil {
+		return nil, fmt.Errorf("vi: %w", err)
+	}
+	viRes, err := casm(viDasm, 0x10000000, 0x10040000, 0)
+	if err != nil {
+		return nil, fmt.Errorf("vi: %w", err)
+	}
+	viText := pad4(viRes.Image.Segments[0].Data)
+	viData := pad4(viRes.Image.Segments[1].Data)
+	var viRel []byte
+	for _, r := range viRes.Image.Relocs {
+		var w [4]byte
+		binary.LittleEndian.PutUint32(w[:], packReloc(r))
+		viRel = append(viRel, w[:]...)
+	}
+	viBlob := append(append(append([]byte(nil), viText...), viData...), viRel...)
+	if viHome+uint32(len(viBlob)) > viEnd {
+		return nil, fmt.Errorf("vi blob %d bytes overflows its flash budget", len(viBlob))
+	}
+
 	b := &kernBundle{names: []string{"kernel", "kernc", "sh", "idle"}, sym: map[string]uint32{}}
 	b.entry0 = sTextXIP + sh.Image.EntryOff
 	entryI := iText + idle.Image.EntryOff
@@ -838,6 +867,43 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 			}
 		}
 	}
+	// Registry row 0: vi. The exec fallback (kproc.c lookup()) copies
+	// text/data out of flash and applies the packed relocs in place.
+	{
+		viT, viD := uint32(0x10000000), uint32(0x10040000)
+		tHome := uint32(viHome)
+		dHome := tHome + uint32(len(viText))
+		rHome := dHome + uint32(len(viData))
+		vy := func(n string) uint32 {
+			a, e := viRes.Symbol(n)
+			if e != nil && errs == nil {
+				errs = e
+			}
+			return a
+		}
+		var name [12]byte
+		copy(name[:], "vi")
+		rowVals := []uint32{
+			binary.LittleEndian.Uint32(name[0:]), binary.LittleEndian.Uint32(name[4:]),
+			binary.LittleEndian.Uint32(name[8:]),
+			tHome, uint32(len(viText)),
+			dHome, uint32(len(viData)),
+			viT, viD,
+			rHome, uint32(len(viRes.Image.Relocs)),
+			vy("warmstart") - viT, vy("crtthunk") - viT,
+			vy("dispatch") - viD, vy("irqresume") - viD, vy("lr") - viD,
+			vy("g___dma_sysmail") - viD, vy("g___dma_syscall_entry") - viD,
+		}
+		row := sy(kernC, "g_kimages")
+		for i, val := range rowVals {
+			if errs == nil {
+				if err := patchData(kernC.Image, cData, row+uint32(i)*4, val); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+
 	// Golden vfat volume (prompts/029): the firmware stages it into
 	// flash at fatVolXIP when no valid BPB is present, so `mount fat0`
 	// works on silicon out of the box.
@@ -847,8 +913,10 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		[]byte("the DMA CPU mounts FAT32 now\n"))
 	fatb.AddDir("SUB")
 	fatb.AddFile("SUB/NESTED.TXT", []byte("nested vfat read\n"))
-	b.blobs = [][]byte{pad4(disk), fatb.Bytes()}
-	b.blobNames = []string{"disk", "fat"}
+	b.blobs = [][]byte{pad4(disk), fatb.Bytes(), viBlob}
+	b.blobNames = []string{"disk", "fat", "vib"}
+	b.sym["VI_HOME"] = viHome
+	b.sym["VI_LEN"] = uint32(len(viBlob))
 	b.sym["FATVOL"] = fatVolXIP
 	b.sym["BLOB_DISK_HOME"] = diskHome
 	b.sym["INJ_CH"] = uint32(inj)
@@ -864,7 +932,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	// Emulator session verification: ls, files, redirection, a pipe.
 	m := emu.NewMachine(v)
 	m.TXPace = 13000                 // ~115200 baud vs the 15000-cycle tick, as on silicon
-	m.Flash = make([]byte, 0x200000) // slot header + XIP text regions
+	m.Flash = make([]byte, 0x400000) // the full 4 MiB part (prompts/033)
 	for i := range m.Flash {
 		m.Flash[i] = 0xFF
 	}
@@ -874,6 +942,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 			return nil, err
 		}
 	}
+	copy(m.Flash[viHome-0x10000000:], viBlob) /* what the firmware stages */
 	for o := 0; o < len(disk); o += 4 {
 		m.Poke32(diskHome+uint32(o), binary.LittleEndian.Uint32(disk[o:]))
 	}
@@ -922,7 +991,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 // fsSlotXIP is the persistent-fs slot: one 4 KB header sector + the
 // disk image, at a fixed flash offset above the firmware region (the
 // firmware asserts it does not grow past it).
-const fsSlotXIP = 0x10100000
+const fsSlotXIP = 0x10200000
 
 const sysWantConsole = "hello from pid 1 via SYS_write\n" +
 	"pid 1 saw the clock advance\n" +
@@ -1348,7 +1417,7 @@ func patchData(im *img.Image, dataBase, addr, val uint32) error {
 func verify(v *emu.Variant, lay layout, t *test) error {
 	m := emu.NewMachine(v)
 	m.TXPace = 13000                 // ~115200 baud vs the 15000-cycle tick, as on silicon
-	m.Flash = make([]byte, 0x180000) // cal_flash probes the NOR model
+	m.Flash = make([]byte, 0x400000) // cal_flash probes the NOR model (CAL_OFF at 0x3F0000)
 	for i := range m.Flash {
 		m.Flash[i] = 0xFF
 	}

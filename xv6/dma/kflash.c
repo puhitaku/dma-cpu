@@ -324,8 +324,9 @@ kflash_init(void)
  *         (expect 0xFFFFFFFF)
  *   r[6]  the same word after page program (expect 0x0DA0CE11)
  *   r[7]  the same word via the uncached XIP alias afterwards
- *   r[8]  done flag. Scratch sector: flash offset 0x130000. */
-#define CAL_OFF 0x130000u
+ *   r[8]  done flag. Scratch sector: flash offset 0x3F0000 (top of
+ *   the 4 MiB part, above every staged region). */
+#define CAL_OFF 0x3F0000u
 
 static uint
 qmi_read32(uint off)

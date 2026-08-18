@@ -30,11 +30,11 @@ func TestXv6Mount(t *testing.T) {
 	fb.AddFile("BIG.BIN", big)
 	vol := fb.Bytes()
 
-	flash := make([]byte, 0x200000)
+	flash := make([]byte, 0x400000)
 	for i := range flash {
 		flash[i] = 0xFF
 	}
-	copy(flash[0x140000:], vol)
+	copy(flash[0x240000:], vol)
 
 	m, _ := bootXshFlash(t, flash)
 	m.FeedConsole("mkdir /mnt\rmount fat0 /mnt\rmount\rls /mnt\r" +

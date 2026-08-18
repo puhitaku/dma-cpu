@@ -923,6 +923,10 @@ static void xsh_start(void)
     stage_xip_text(HIL_XSH_STEXT_HOME, hil_xsh_blob_stext,
                    (uint32_t)sizeof hil_xsh_blob_stext, "sh");
 #endif
+#ifdef HIL_XSH_VI_HOME
+    stage_xip_text(HIL_XSH_VI_HOME, hil_xsh_blob_vib,
+                   (uint32_t)sizeof hil_xsh_blob_vib, "vi");
+#endif
     uint32_t e;
     if (dmx_load(hil_xsh_kernel_dmx, sizeof hil_xsh_kernel_dmx, NULL, &e) != DMX_OK ||
         dmx_load(hil_xsh_kernc_dmx, sizeof hil_xsh_kernc_dmx, NULL, &e) != DMX_OK ||
