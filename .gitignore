@@ -14,3 +14,7 @@
 /examples/*/build/
 .DS_Store
 /dmxgen
+
+# Reference source trees for ports (licenses live upstream; ported
+# files carry their attribution in LICENSE)
+/references/

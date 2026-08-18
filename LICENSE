@@ -104,3 +104,15 @@ The following files contain derived portions from xv6:
  - not yet, todo
 
 
+
+
+** BusyBox **
+
+vi is ported from BusyBox 1.38.0 (editors/vi.c),
+Copyright (C) 2000, 2001 Sterling Huxley <sterling@europa.com>,
+licensed under GPLv2 or later — see https://busybox.net/ and the
+LICENSE file in the BusyBox source tree (/references/busybox-1.38.0).
+
+The following files contain derived portions from BusyBox:
+ - xv6/user/vi.c (patched port; the original header is retained)
+ - target/firmware/generated/images.h (the compiled vi image)
