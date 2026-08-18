@@ -116,3 +116,18 @@ LICENSE file in the BusyBox source tree (/references/busybox-1.38.0).
 The following files contain derived portions from BusyBox:
  - xv6/user/vi.c (patched port; the original header is retained)
  - target/firmware/generated/images.h (the compiled vi image)
+
+
+** SimpleTerminal **
+
+The framebuffer console's escape-sequence handling follows the shape
+of SimpleTerminal, and its 8x8 font is taken from SimpleTerminal's
+embedded fonts. MIT/X Consortium License,
+© 2024-2025 haoict, © 2009-2012 Aurélien APTEL,
+© 2012 Roberto E. Vargas Caballero, © 2012 Christoph Lohmann,
+© 2009 Anselm R Garbe — see /references/simpleterminal/LICENSE.
+
+The following files contain derived portions from SimpleTerminal:
+ - xv6/dma/kfbfont.h (the embedded 8x8 font, regenerated verbatim)
+ - xv6/dma/kfbcon.c (VT subset and 16-color palette, reimplemented)
+ - target/firmware/generated/images.h (the compiled kernel image)

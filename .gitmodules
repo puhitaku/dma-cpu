@@ -8,3 +8,6 @@
 [submodule "references/xv6-ns"]
 	path = references/xv6-ns
 	url = git@github.com:davidsaOpenu/xv6-ns.git
+[submodule "references/simpleterminal"]
+	path = references/simpleterminal
+	url = git@github.com:haoict/SimpleTerminal.git
