@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/puhitaku/dma-cpu/boards"
 	"github.com/puhitaku/dma-cpu/dmaasm"
 	"github.com/puhitaku/dma-cpu/dmacc"
 	"github.com/puhitaku/dma-cpu/emu"
@@ -554,8 +555,8 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
 	cText, cData := lay.text+0x4000, lay.text+0x1C000
-	sText, sData := lay.text+0x1E000, lay.text+0x36000
-	pText, pData := lay.text+0x32000, lay.text+0x33000
+	sText, sData := lay.text+0x21000, lay.text+0x36000
+	pText, pData := lay.text+0x2E000, lay.text+0x2F000
 	blobHome := lay.text + 0x3E000
 	arena, arenaEnd := lay.text+0x40000, lay.text+0x56000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
@@ -688,23 +689,23 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 // mode-switch records share one window-selector word at the machine
 // scratch (dmaasm CompactScratch). The RAM disk carries upstream
 // echo, cat, wc AND ls as DMX-exec files.
-func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
-	const fatVolXIP = 0x10240000 // vfat volume: above the fs slot
-	const cTextXIP = 0x10260000  // fs-kernel text, XIP-resident (prompts/030)
-	const sTextXIP = 0x102A0000  // sh text, XIP-resident
-	const viHome = 0x102C0000    // vi registry blob (text+data+relocs)
-	const viEnd = 0x10310000     // 320 KiB budget for it
-	kText, kData := lay.text, lay.text+0x1000
-	cRText, cData := lay.text+0x2000, lay.text+0xA000
-	sRText, sData := lay.text+0x16000, lay.text+0x1A000
-	iText, iData := lay.text+0x22000, lay.text+0x23000
-	diskHome := lay.text + 0x24000
-	diskMax := uint32(0x18000) // 96 KiB
-	arena, arenaEnd := lay.text+0x3E000, lay.scratch-0x200
+func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
+	// Everything positional comes from the board definition — the RAM
+	// partition, the flash sections, and the app set (boards/boards.go
+	// is the single source of truth, shared with the test harness).
+	fatVolXIP, cTextXIP, sTextXIP := bd.FatVol, bd.KernTextXIP, bd.ShTextXIP
+	viHome, viEnd := bd.ViHome, bd.ViEnd
+	kText, kData := bd.KernText, bd.KernData
+	cRText, cData := bd.KernCRText, bd.KernCData
+	sRText, sData := bd.ShRText, bd.ShData
+	iText, iData := bd.IdleText, bd.IdleData
+	diskHome := bd.DiskHome
+	diskMax := bd.DiskMax
+	arena, arenaEnd := bd.Arena, bd.ArenaEnd
 
 	casm := func(src string, text, data, rtext uint32) (*dmaasm.Result, error) {
 		return dmaasm.Assemble(src, dmaasm.Options{
-			Variant: v, Compact: true, CompactScratch: lay.scratch,
+			Variant: v, Compact: true, CompactScratch: bd.Scratch,
 			TextBase: text, DataBase: data, RAMTextBase: rtext})
 	}
 	ksrc, err := prog.HIL("kernel")
@@ -765,15 +766,17 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	}
 
 	// The disk: upstream user programs as compact DMX-exec files.
-	fb := fsimg.New(96, 64)
+	fb := fsimg.New(uint32(bd.DiskBlocks), 64)
 	fb.AddDevice("console", 1, 0)
 	fb.AddFile("README", []byte("the DMA machine runs upstream xv6.\n"))
-	for _, up := range []struct {
-		name  string
-		extra []string
-	}{{"echo", nil}, {"cat", nil}, {"ls", nil}, {"toolbox", nil}} {
-		paths := append([]string{"xv6/ll/" + up.name + ".ll", "xv6/ll/ulib.ll", "xv6/ll/usys.ll"}, up.extra...)
-		udasm, err := compileLL(paths, dmacc.Options{})
+	// Apps: either DMX-exec files on the RAM disk, or (small-RAM
+	// boards) flash-resident registry images — the kernel's exec
+	// falls back to the registry by name, and toolbox's multi-call
+	// aliases each get a row over the same blob.
+	appRes := map[string]*dmaasm.Result{}
+	for _, name := range bd.DiskApps {
+		udasm, err := compileLL([]string{"xv6/ll/" + name + ".ll", "xv6/ll/ulib.ll", "xv6/ll/usys.ll"},
+			dmacc.Options{})
 		if err != nil {
 			return nil, err
 		}
@@ -781,16 +784,18 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		if err != nil {
 			return nil, err
 		}
+		if bd.AppsHome != 0 {
+			appRes[name] = ures
+			continue
+		}
 		blob, err := fsimg.DMXExec(ures.Image, ures.Symbol)
 		if err != nil {
 			return nil, err
 		}
-		fb.AddFile(up.name, blob)
-		if up.name == "toolbox" {
+		fb.AddFile(name, blob)
+		if name == "toolbox" {
 			/* the multi-call names: hard links onto the one blob */
-			for _, l := range []string{"kill", "spin", "trap", "free",
-				"sync", "mount", "umount", "wc", "mkdir", "rm",
-				"gpio", "mux", "blink"} {
+			for _, l := range bd.ToolboxLinks {
 				fb.AddLink(l)
 			}
 		}
@@ -800,31 +805,35 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		return nil, fmt.Errorf("xsh disk too large: %d", len(disk))
 	}
 
-	// vi (BusyBox port, prompts/033): far too large for the RAM disk,
-	// so it ships as a kernel-registry image whose blobs stay in flash
-	// — exec copies text+data to the arena and applies the relocs from
+	// vi (BusyBox port, prompts/033): boards with the flash budget
+	// carry it as a kernel-registry image whose blobs stay in flash —
+	// exec copies text+data to the arena and applies the relocs from
 	// XIP directly.
-	viDasm, err := compileLL([]string{"xv6/ll/vi.ll", "xv6/ll/ulib.ll",
-		"xv6/ll/umalloc.ll", "xv6/ll/usys.ll"},
-		dmacc.Options{}) /* balanced: editor latency over bytes */
-	if err != nil {
-		return nil, fmt.Errorf("vi: %w", err)
-	}
-	viRes, err := casm(viDasm, 0x10000000, 0x10040000, 0)
-	if err != nil {
-		return nil, fmt.Errorf("vi: %w", err)
-	}
-	viText := pad4(viRes.Image.Segments[0].Data)
-	viData := pad4(viRes.Image.Segments[1].Data)
-	var viRel []byte
-	for _, r := range viRes.Image.Relocs {
-		var w [4]byte
-		binary.LittleEndian.PutUint32(w[:], packReloc(r))
-		viRel = append(viRel, w[:]...)
-	}
-	viBlob := append(append(append([]byte(nil), viText...), viData...), viRel...)
-	if viHome+uint32(len(viBlob)) > viEnd {
-		return nil, fmt.Errorf("vi blob %d bytes overflows its flash budget", len(viBlob))
+	var viRes *dmaasm.Result
+	var viText, viData, viBlob []byte
+	if viHome != 0 {
+		viDasm, err := compileLL([]string{"xv6/ll/vi.ll", "xv6/ll/ulib.ll",
+			"xv6/ll/umalloc.ll", "xv6/ll/usys.ll"},
+			dmacc.Options{}) /* balanced: editor latency over bytes */
+		if err != nil {
+			return nil, fmt.Errorf("vi: %w", err)
+		}
+		viRes, err = casm(viDasm, 0x10000000, 0x10040000, 0)
+		if err != nil {
+			return nil, fmt.Errorf("vi: %w", err)
+		}
+		viText = pad4(viRes.Image.Segments[0].Data)
+		viData = pad4(viRes.Image.Segments[1].Data)
+		var viRel []byte
+		for _, r := range viRes.Image.Relocs {
+			var w [4]byte
+			binary.LittleEndian.PutUint32(w[:], packReloc(r))
+			viRel = append(viRel, w[:]...)
+		}
+		viBlob = append(append(append([]byte(nil), viText...), viData...), viRel...)
+		if viHome+uint32(len(viBlob)) > viEnd {
+			return nil, fmt.Errorf("vi blob %d bytes overflows its flash budget", len(viBlob))
+		}
 	}
 
 	b := &kernBundle{names: []string{"kernel", "kernc", "sh", "idle"}, sym: map[string]uint32{}}
@@ -854,7 +863,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		{"g_nextpid", 3}, {"g_k_sysentry", sy(kern, "sys_entry")},
 		{"g_inj_wreg", emu.ChanRegAddr(inj, emu.OffWriteAddr)},
 		{"g_inj_treg", emu.ChanRegAddr(inj, emu.OffAl1TransCountTrig)},
-		{"g_fsslot", fsSlotXIP},
+		{"g_fsslot", bd.FSSlot},
 		{"g_initpid", 2},        /* idle adopts orphans (prompts/024) */
 		{"g_fgpid", 1},          /* Ctrl-C interrupts sh's foreground job */
 		{"g_fatvol", fatVolXIP}, /* the vfat volume (prompts/029) */
@@ -862,9 +871,9 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		{"g_iobank0", v.IOBank0Base}, {"g_padsbank0", v.PadsBank0Base},
 		{"g_pio0base", v.PIO0Base}, {"g_gpiopins", uint32(v.GPIOPins)},
 		{"g_gpio_hi", v.GPIOOutCtrl(true)}, {"g_gpio_lo", v.GPIOOutCtrl(false)},
-		{"g_kflash_arm", 0}, /* 0: the MACHINE drives the QMI itself
-		 * (prompts/028); the parked ARM's mailbox loop stays as a
-		 * dormant fallback — repoint this at scratch+0x10 to use it */
+		{"g_kflash_arm", flashArm(bd)}, /* 0: the MACHINE drives the
+		 * flash itself (RP2350 QMI, prompts/028); else the parked
+		 * ARM's mailbox loop at scratch+0x10 executes for it */
 	} {
 		if errs == nil {
 			if err := patchData(kernC.Image, cData, sy(kernC, g.name), g.val); err != nil {
@@ -872,40 +881,84 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 			}
 		}
 	}
-	// Registry row 0: vi. The exec fallback (kproc.c lookup()) copies
-	// text/data out of flash and applies the packed relocs in place.
-	{
-		viT, viD := uint32(0x10000000), uint32(0x10040000)
-		tHome := uint32(viHome)
-		dHome := tHome + uint32(len(viText))
-		rHome := dHome + uint32(len(viData))
+	// Registry rows: exec's by-name fallback for flash-resident
+	// images (kproc.c lookup()) — vi when installed, and the whole
+	// app set on flash-apps boards (aliases share one blob).
+	rowIdx := 0
+	patchRow := func(name string, res *dmaasm.Result, tHome, tLen, dHome, dLen, rHome, nrel uint32) error {
+		const viT, viD = uint32(0x10000000), uint32(0x10040000)
 		vy := func(n string) uint32 {
-			a, e := viRes.Symbol(n)
+			a, e := res.Symbol(n)
 			if e != nil && errs == nil {
 				errs = e
 			}
 			return a
 		}
-		var name [12]byte
-		copy(name[:], "vi")
+		var nb [12]byte
+		copy(nb[:], name)
 		rowVals := []uint32{
-			binary.LittleEndian.Uint32(name[0:]), binary.LittleEndian.Uint32(name[4:]),
-			binary.LittleEndian.Uint32(name[8:]),
-			tHome, uint32(len(viText)),
-			dHome, uint32(len(viData)),
+			binary.LittleEndian.Uint32(nb[0:]), binary.LittleEndian.Uint32(nb[4:]),
+			binary.LittleEndian.Uint32(nb[8:]),
+			tHome, tLen,
+			dHome, dLen,
 			viT, viD,
-			rHome, uint32(len(viRes.Image.Relocs)),
+			rHome, nrel,
 			vy("warmstart") - viT, vy("crtthunk") - viT,
 			vy("dispatch") - viD, vy("irqresume") - viD, vy("lr") - viD,
 			vy("g___dma_sysmail") - viD, vy("g___dma_syscall_entry") - viD,
 		}
-		row := sy(kernC, "g_kimages")
+		row := sy(kernC, "g_kimages") + uint32(rowIdx)*72
+		rowIdx++
 		for i, val := range rowVals {
 			if errs == nil {
 				if err := patchData(kernC.Image, cData, row+uint32(i)*4, val); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	if viHome != 0 {
+		dHome := viHome + uint32(len(viText))
+		rHome := dHome + uint32(len(viData))
+		if err := patchRow("vi", viRes, viHome, uint32(len(viText)),
+			dHome, uint32(len(viData)), rHome, uint32(len(viRes.Image.Relocs))); err != nil {
+			return nil, err
+		}
+	}
+	var appsBlob []byte
+	if bd.AppsHome != 0 {
+		cursor := bd.AppsHome
+		for _, name := range bd.DiskApps {
+			res := appRes[name]
+			text := pad4(res.Image.Segments[0].Data)
+			data := pad4(res.Image.Segments[1].Data)
+			var rel []byte
+			for _, r := range res.Image.Relocs {
+				var w [4]byte
+				binary.LittleEndian.PutUint32(w[:], packReloc(r))
+				rel = append(rel, w[:]...)
+			}
+			tHome, dHome := cursor, cursor+uint32(len(text))
+			rHome := dHome + uint32(len(data))
+			cursor = rHome + uint32(len(rel))
+			appsBlob = append(append(append(appsBlob, text...), data...), rel...)
+			names := []string{name}
+			if name == "toolbox" {
+				names = append(names, bd.ToolboxLinks...)
+			}
+			for _, n := range names {
+				if err := patchRow(n, res, tHome, uint32(len(text)),
+					dHome, uint32(len(data)), rHome, uint32(len(res.Image.Relocs))); err != nil {
 					return nil, err
 				}
 			}
+		}
+		if cursor > bd.AppsEnd {
+			return nil, fmt.Errorf("apps blob overflows its flash budget by %d bytes", cursor-bd.AppsEnd)
+		}
+		if rowIdx > 20 {
+			return nil, fmt.Errorf("registry rows exhausted: %d > NIMG", rowIdx)
 		}
 	}
 
@@ -918,16 +971,25 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		[]byte("the DMA CPU mounts FAT32 now\n"))
 	fatb.AddDir("SUB")
 	fatb.AddFile("SUB/NESTED.TXT", []byte("nested vfat read\n"))
-	b.blobs = [][]byte{pad4(disk), fatb.Bytes(), viBlob}
-	b.blobNames = []string{"disk", "fat", "vib"}
-	b.sym["VI_HOME"] = viHome
-	b.sym["VI_LEN"] = uint32(len(viBlob))
+	b.blobs = [][]byte{pad4(disk), fatb.Bytes()}
+	b.blobNames = []string{"disk", "fat"}
+	if viHome != 0 {
+		b.blobs = append(b.blobs, viBlob)
+		b.blobNames = append(b.blobNames, "vib")
+		b.sym["VI_HOME"] = viHome
+		b.sym["VI_LEN"] = uint32(len(viBlob))
+	}
+	if bd.AppsHome != 0 {
+		b.blobs = append(b.blobs, appsBlob)
+		b.blobNames = append(b.blobNames, "apps")
+		b.sym["APPS_HOME"] = bd.AppsHome
+	}
 	b.sym["FATVOL"] = fatVolXIP
 	b.sym["BLOB_DISK_HOME"] = diskHome
 	b.sym["INJ_CH"] = uint32(inj)
-	b.sym["FSSLOT"] = fsSlotXIP
+	b.sym["FSSLOT"] = bd.FSSlot
 	b.sym["DISK_LEN"] = uint32(len(disk))
-	b.sym["FLASHREQ"] = lay.scratch + 0x10
+	b.sym["FLASHREQ"] = bd.Scratch + 0x10
 	b.sym["GOLDSUM"] = checksum32(disk)
 	b.vec, b.disp0, b.inj = sy(kern, "vecSched"), sy(sh, "dispatch"), kernInjCtrlCh(v, inj)
 	b.ticks = sy(kernC, "g_ticks")
@@ -937,8 +999,8 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 
 	// Emulator session verification: ls, files, redirection, a pipe.
 	m := emu.NewMachine(v)
-	m.TXPace = 13000                 // ~115200 baud vs the 15000-cycle tick, as on silicon
-	m.Flash = make([]byte, 0x400000) // the full 4 MiB part (prompts/033)
+	m.TXPace = 13000 // ~115200 baud vs the 15000-cycle tick, as on silicon
+	m.Flash = make([]byte, bd.FlashSize)
 	for i := range m.Flash {
 		m.Flash[i] = 0xFF
 	}
@@ -948,7 +1010,12 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 			return nil, err
 		}
 	}
-	copy(m.Flash[viHome-0x10000000:], viBlob) /* what the firmware stages */
+	if viHome != 0 {
+		copy(m.Flash[viHome-0x10000000:], viBlob) /* firmware-staged */
+	}
+	if bd.AppsHome != 0 {
+		copy(m.Flash[bd.AppsHome-0x10000000:], appsBlob)
+	}
 	for o := 0; o < len(disk); o += 4 {
 		m.Poke32(diskHome+uint32(o), binary.LittleEndian.Uint32(disk[o:]))
 	}
@@ -956,7 +1023,7 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 		return nil, err
 	}
 	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
-		Compact: true, Entry: b.entry0, Scratch: lay.scratch,
+		Compact: true, Entry: b.entry0, Scratch: bd.Scratch,
 	}); err != nil {
 		return nil, err
 	}
@@ -1008,8 +1075,8 @@ const sysWantConsole = "hello from pid 1 via SYS_write\n" +
 func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
 	cText, cData := lay.text+0x4000, lay.text+0x1C000
-	aText, aData := lay.text+0x1E000, lay.text+0x22000
-	bText, bData := lay.text+0x26000, lay.text+0x2A000
+	aText, aData := lay.text+0x21000, lay.text+0x25000
+	bText, bData := lay.text+0x29000, lay.text+0x2D000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {
 		return nil, err
@@ -1093,6 +1160,15 @@ func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 
 // packReloc encodes an img.Reloc for the kernel loader: bit31 target
 // segment (0 text, 1 data), bit30 referenced segment, low 30 bits off.
+// flashArm picks the flash executor the kernel uses for sync: 0 for
+// the machine-driven QMI driver, else the ARM mailbox address.
+func flashArm(bd *boards.Board) uint32 {
+	if bd.MachineFlashExec {
+		return 0
+	}
+	return bd.Scratch + 0x10
+}
+
 // checksum32 is the kernel's disk_checksum: a word sum.
 func checksum32(b []byte) uint32 {
 	var sum uint32
@@ -1237,10 +1313,10 @@ func stageBlobsEmu(m *emu.Machine, blobs [][]byte, names []string, syms map[stri
 func buildExec(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
 	cText, cData := lay.text+0x4000, lay.text+0x1C000
-	aText, aData := lay.text+0x1E000, lay.text+0x22000
-	bText, bData := lay.text+0x26000, lay.text+0x2A000
-	blobHome := lay.text + 0x2C000
-	arena, arenaEnd := lay.text+0x30000, lay.text+0x3B000
+	aText, aData := lay.text+0x21000, lay.text+0x25000
+	bText, bData := lay.text+0x29000, lay.text+0x2D000
+	blobHome := lay.text + 0x2F000
+	arena, arenaEnd := lay.text+0x33000, lay.text+0x3E000
 
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {
@@ -1726,12 +1802,25 @@ func emitHeader(v *emu.Variant, lay layout, tests []*test, sched, shl, sys, exe,
 }
 
 func run() error {
-	sku := flag.String("sku", "rp2350", "target SKU (rp2040 or rp2350)")
+	sku := flag.String("sku", "", "target SKU (rp2040 or rp2350); picks that SKU's default board")
+	board := flag.String("board", "", "target board (pico2, pico); overrides -sku")
 	out := flag.String("o", "target/firmware/generated/images.h", "output C header path")
 	dmxDir := flag.String("dmxdir", "", "also write raw .dmx files into this directory")
 	flag.Parse()
 
-	v, err := emu.VariantByName(*sku)
+	var bd *boards.Board
+	switch {
+	case *board != "":
+		var ok bool
+		if bd, ok = boards.All[*board]; !ok {
+			return fmt.Errorf("unknown board %q", *board)
+		}
+	case *sku != "":
+		bd = boards.Default(*sku)
+	default:
+		bd = boards.Pico2
+	}
+	v, err := emu.VariantByName(bd.SKU)
 	if err != nil {
 		return err
 	}
@@ -1802,17 +1891,23 @@ func run() error {
 		return fmt.Errorf("sched bundle: %w", err)
 	}
 	var shl, sys, exe, xsh *kernBundle
-	if v.Name == "rp2350" { // needs the wide layout
+	if bd.HasBundle("shell") {
 		if shl, err = buildShell(v, lay); err != nil {
 			return fmt.Errorf("shell bundle: %w", err)
 		}
+	}
+	if bd.HasBundle("syscall") {
 		if sys, err = buildSyscall(v, lay); err != nil {
 			return fmt.Errorf("syscall bundle: %w", err)
 		}
+	}
+	if bd.HasBundle("exec") {
 		if exe, err = buildExec(v, lay); err != nil {
 			return fmt.Errorf("exec bundle: %w", err)
 		}
-		if xsh, err = buildXsh(v, lay); err != nil {
+	}
+	if bd.HasBundle("xsh") {
+		if xsh, err = buildXsh(v, bd); err != nil {
 			return fmt.Errorf("xsh bundle: %w", err)
 		}
 	}

@@ -35,7 +35,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @kw_park = dso_local global ptr null, align 4
 @kw_parkvec = dso_local global ptr null, align 4
 @tickpending = dso_local global i32 0, align 4
-@kimages = dso_local local_unnamed_addr global [4 x %struct.kimg] zeroinitializer, align 4
+@kimages = dso_local local_unnamed_addr global [20 x %struct.kimg] zeroinitializer, align 4
 @initpid = dso_local local_unnamed_addr global i32 0, align 4
 @fgpid = dso_local local_unnamed_addr global i32 0, align 4
 @__dma_uart_fr = external dso_local global i32, align 4
@@ -1725,11 +1725,11 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #3 {
 
 435:                                              ; preds = %454, %431
   %436 = phi i32 [ 0, %431 ], [ %455, %454 ]
-  %437 = icmp eq i32 %436, 4
+  %437 = icmp eq i32 %436, 20
   br i1 %437, label %610, label %438
 
 438:                                              ; preds = %435
-  %439 = getelementptr inbounds nuw [4 x %struct.kimg], ptr @kimages, i32 0, i32 %436
+  %439 = getelementptr inbounds nuw [20 x %struct.kimg], ptr @kimages, i32 0, i32 %436
   %440 = load i8, ptr %439, align 4, !tbaa !3
   %441 = icmp eq i8 %440, 0
   br i1 %441, label %610, label %442

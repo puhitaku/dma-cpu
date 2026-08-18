@@ -17,7 +17,9 @@
 
 #include "pico/stdlib.h"
 #include "hardware/flash.h"
+#if PICO_RP2350
 #include "hardware/structs/accessctrl.h"
+#endif
 #include "hardware/sync.h"
 #include "hardware/gpio.h"
 #include "hardware/pio.h"
@@ -757,13 +759,10 @@ static void exp_syscall(void)
 }
 #endif
 
-#ifdef HIL_HAS_EXEC
-/* Phase 5e (xv6/PORT.md): fork/exec/wait with the image loader IN the
- * kernel. Stages the hello blob at its registered RAM homes; pid 2
- * vforks, the child execs "hello" (the kernel places and relocates
- * it), the parent waits and reaps exit(7). The three lines between
- * the markers are written by SYS_write. */
-static void stage_blob(uint32_t home, const uint8_t *src, size_t len)
+/* Copies a build-embedded blob to its registered RAM home, word-wise
+ * through the machine's bus view (shared by the exec/shell demos and
+ * the xsh disk staging). */
+static void __attribute__((unused)) stage_blob(uint32_t home, const uint8_t *src, size_t len)
 {
     for (size_t i = 0; i < len; i += 4) {
         uint32_t w = (uint32_t)src[i] | ((uint32_t)src[i + 1] << 8) |
@@ -771,6 +770,13 @@ static void stage_blob(uint32_t home, const uint8_t *src, size_t len)
         reg_wr(home + i, w);
     }
 }
+
+#ifdef HIL_HAS_EXEC
+/* Phase 5e (xv6/PORT.md): fork/exec/wait with the image loader IN the
+ * kernel. Stages the hello blob at its registered RAM homes; pid 2
+ * vforks, the child execs "hello" (the kernel places and relocates
+ * it), the parent waits and reaps exit(7). The three lines between
+ * the markers are written by SYS_write. */
 
 static void exp_exec(void)
 {
@@ -927,6 +933,10 @@ static void xsh_start(void)
     stage_xip_text(HIL_XSH_VI_HOME, hil_xsh_blob_vib,
                    (uint32_t)sizeof hil_xsh_blob_vib, "vi");
 #endif
+#ifdef HIL_XSH_APPS_HOME
+    stage_xip_text(HIL_XSH_APPS_HOME, hil_xsh_blob_apps,
+                   (uint32_t)sizeof hil_xsh_blob_apps, "apps");
+#endif
     uint32_t e;
     if (dmx_load(hil_xsh_kernel_dmx, sizeof hil_xsh_kernel_dmx, NULL, &e) != DMX_OK ||
         dmx_load(hil_xsh_kernc_dmx, sizeof hil_xsh_kernc_dmx, NULL, &e) != DMX_OK ||
@@ -1003,14 +1013,17 @@ int main(void)
     stdio_init_all();
     sleep_ms(3000);
 
+#if PICO_RP2350
     /* ACCESSCTRL: XIP_QMI and XIP_CTRL reset to 0xB8 — DMA access
      * FORBIDDEN (RP2350 datasheet section 10.6.2.1). Every machine
      * access to the QMI bus-faulted, which prompts/023 misread as a
      * hardware limitation. Open them like the other machine-visible
      * peripherals (0xFC: DBG|DMA|CORE1|CORE0|SP|SU) before the DMA
-     * CPU runs, so it can drive flash itself (prompts/028). */
+     * CPU runs, so it can drive flash itself (prompts/028). RP2040
+     * has no ACCESSCTRL — its DMA already reaches everything. */
     accessctrl_hw->xip_qmi = ACCESSCTRL_PASSWORD_BITS | 0xFC;
     accessctrl_hw->xip_ctrl = ACCESSCTRL_PASSWORD_BITS | 0xFC;
+#endif
 
     /* GPIO2: input from the firmware's view; the DMA machine drives it
      * via IO_BANK0 overrides. gpio_init also clears RP2350 pad isolation. */

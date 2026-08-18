@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/puhitaku/dma-cpu/boards"
 	"github.com/puhitaku/dma-cpu/dmaasm"
 	"github.com/puhitaku/dma-cpu/dmacc"
 	"github.com/puhitaku/dma-cpu/emu"
@@ -16,6 +17,10 @@ import (
 // buildUser compiles an xv6 user program (name.ll + the userland
 // modules) and assembles it reloc-intact at canonical link bases.
 func buildUser(t *testing.T, v *emu.Variant, name string, extra ...string) *dmaasm.Result {
+	return buildUserScratch(t, v, boards.Pico2.Scratch, name, extra...)
+}
+
+func buildUserScratch(t *testing.T, v *emu.Variant, scratch uint32, name string, extra ...string) *dmaasm.Result {
 	t.Helper()
 	paths := append([]string{name, "ulib", "usys"}, extra...)
 	var mods []*llir.Module
@@ -31,7 +36,7 @@ func buildUser(t *testing.T, v *emu.Variant, name string, extra ...string) *dmaa
 		t.Fatal(err)
 	}
 	res, err := dmaasm.Assemble(dasm, dmaasm.Options{
-		Variant: v, Compact: true, CompactScratch: 0x2007FE00,
+		Variant: v, Compact: true, CompactScratch: scratch,
 		TextBase: 0x10000000, DataBase: 0x10040000})
 	if err != nil {
 		t.Fatal(err)
@@ -42,30 +47,28 @@ func buildUser(t *testing.T, v *emu.Variant, name string, extra ...string) *dmaa
 // buildDisk assembles the user programs as DMX-exec files and packs
 // them (plus README) into an xv6 filesystem image.
 func buildDisk(t *testing.T, v *emu.Variant) []byte {
+	return buildDiskBoard(t, v, boards.Pico2)
+}
+
+// buildDiskBoard builds a board's RAM disk. Flash-apps boards get a
+// data-only disk; the apps become registry rows (registerFlashApps).
+func buildDiskBoard(t *testing.T, v *emu.Variant, bd *boards.Board) []byte {
 	t.Helper()
-	b := fsimg.New(96, 64)
+	b := fsimg.New(uint32(bd.DiskBlocks), 64)
 	b.AddDevice("console", 1, 0)
 	b.AddFile("README", []byte("the DMA machine runs upstream xv6.\n"))
-	for _, prog := range []struct {
-		name  string
-		extra []string
-	}{
-		{"echo", nil},
-		{"cat", nil},
-		{"ls", nil},
-		{"toolbox", nil},
-	} {
-		res := buildUser(t, v, prog.name, prog.extra...)
-		blob, err := fsimg.DMXExec(res.Image, res.Symbol)
-		if err != nil {
-			t.Fatal(err)
-		}
-		b.AddFile(prog.name, blob)
-		if prog.name == "toolbox" {
-			for _, l := range []string{"kill", "spin", "trap", "free",
-				"sync", "mount", "umount", "wc", "mkdir", "rm",
-				"gpio", "mux", "blink"} {
-				b.AddLink(l)
+	if bd.AppsHome == 0 {
+		for _, name := range bd.DiskApps {
+			res := buildUserScratch(t, v, bd.Scratch, name)
+			blob, err := fsimg.DMXExec(res.Image, res.Symbol)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b.AddFile(name, blob)
+			if name == "toolbox" {
+				for _, l := range bd.ToolboxLinks {
+					b.AddLink(l)
+				}
 			}
 		}
 	}
@@ -113,8 +116,15 @@ func serviceFlashMailbox(m *emu.Machine, flash []byte) bool {
 // does at boot), else from the golden image; the kernel gets the slot
 // address so SYS_sync can burn it.
 func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
+	return bootXshBoard(t, flash, boards.Pico2)
+}
+
+// bootXshBoard boots the xsh stack exactly as a board deploys it —
+// the RAM partition, flash sections and app placement all come from
+// boards/boards.go, the same definitions dmxgen ships.
+func bootXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, *dmaasm.Result) {
 	t.Helper()
-	v, err := emu.VariantByName("rp2350")
+	v, err := emu.VariantByName(bd.SKU)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,24 +150,24 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 
 	casm := func(src string, text, data, rtext uint32) (*dmaasm.Result, error) {
 		return dmaasm.Assemble(src, dmaasm.Options{
-			Variant: v, Compact: true, CompactScratch: 0x2007FE00,
+			Variant: v, Compact: true, CompactScratch: bd.Scratch,
 			TextBase: text, DataBase: data, RAMTextBase: rtext})
 	}
 	// XIP layout (prompts/030): kernC and sh text executes from the
 	// flash window; only their .ramtext stubs and data live in SRAM.
-	kern, err := casm(ksrc, 0x20002000, 0x20003000, 0)
+	kern, err := casm(ksrc, bd.KernText, bd.KernData, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernC, err := casm(kcDasm, 0x10260000, 0x2000C000, 0x20004000)
+	kernC, err := casm(kcDasm, bd.KernTextXIP, bd.KernCData, bd.KernCRText)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sh, err := casm(shDasm, 0x102A0000, 0x2001C000, 0x20018000)
+	sh, err := casm(shDasm, bd.ShTextXIP, bd.ShData, bd.ShRText)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idle, err := casm(idleDasm, 0x20024000, 0x20025000, 0)
+	idle, err := casm(idleDasm, bd.IdleText, bd.IdleData, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,10 +179,10 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	// A caller-provided flash additionally carries slot + fat volume.
 	persist := flash != nil
 	if flash == nil {
-		flash = make([]byte, 0x400000)
+		flash = make([]byte, bd.FlashSize)
 	}
-	if len(flash) < 0x400000 {
-		t.Fatalf("flash model too small for the 4 MiB map: %#x", len(flash))
+	if uint32(len(flash)) < bd.FlashSize {
+		t.Fatalf("flash model smaller than the board's part: %#x", len(flash))
 	}
 	m.Flash = flash
 	entrySh, err := sh.Image.Load(m, nil)
@@ -192,11 +202,15 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 		{sh, entrySh, 1, 0, true},
 		{idle, entryI, 2, 0, false},
 	}, true)
+	// Flash-apps boards: user programs live in flash as registry rows.
+	if bd.AppsHome != 0 {
+		registerFlashApps(t, m, v, kernC, bd)
+	}
 	// The RAM disk: staged from a valid flash slot, else golden.
-	disk := buildDisk(t, v)
-	const slotXIP = 0x10200000
+	disk := buildDiskBoard(t, v, bd)
+	slotXIP := bd.FSSlot
 	if persist {
-		off := slotXIP - emu.XIPBase
+		off := int(slotXIP - emu.XIPBase)
 		h := func(i int) uint32 { return binary.LittleEndian.Uint32(flash[off+4*i:]) }
 		var gold uint32
 		for i := 0; i+4 <= len(disk); i += 4 {
@@ -215,7 +229,12 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 			}
 		}
 		m.Poke32(mustSym(t, kernC, "g_fsslot"), slotXIP)
-		m.Poke32(mustSym(t, kernC, "g_fatvol"), 0x10240000)
+		m.Poke32(mustSym(t, kernC, "g_fatvol"), bd.FatVol)
+		if !bd.MachineFlashExec {
+			/* boards without the QMI machine executor sync through
+			 * the ARM mailbox (serviceFlashMailbox plays the ARM) */
+			m.Poke32(mustSym(t, kernC, "g_kflash_arm"), bd.Scratch+0x10)
+		}
 		// The kernel posts erase/program requests to the ARM-executor
 		// mailbox; emulator tests service it via serviceFlashMailbox,
 		// playing the parked ARM (kflash.c explains why).
@@ -223,18 +242,18 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 		 * NOR model itself (prompts/028). serviceFlashMailbox remains
 		 * for the dormant ARM-executor fallback. */
 	}
-	const diskBase = 0x20026000
-	if diskBase+len(disk) > 0x20040000 {
+	diskBase := bd.DiskHome
+	if diskBase+uint32(len(disk)) > bd.DiskHome+bd.DiskMax {
 		t.Fatalf("disk too large: %d", len(disk))
 	}
 	for i := 0; i < len(disk); i += 4 {
-		m.Poke32(uint32(diskBase+i), binary.LittleEndian.Uint32(disk[i:]))
+		m.Poke32(diskBase+uint32(i), binary.LittleEndian.Uint32(disk[i:]))
 	}
 	m.Poke32(mustSym(t, kernC, "g_dma_disk"), diskBase)
 	m.Poke32(mustSym(t, kernC, "g_dma_disksize"), uint32(len(disk)))
 	// exec arena.
-	m.Poke32(mustSym(t, kernC, "g_arena"), 0x20040000)
-	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007FE00)
+	m.Poke32(mustSym(t, kernC, "g_arena"), bd.Arena)
+	m.Poke32(mustSym(t, kernC, "g_arena_end"), bd.ArenaEnd)
 	m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 	m.Poke32(mustSym(t, kernC, "g_initpid"), 2)
 	m.Poke32(mustSym(t, kernC, "g_fgpid"), 1)
@@ -247,42 +266,47 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	m.Poke32(mustSym(t, kernC, "g_gpio_hi"), v.GPIOOutCtrl(true))
 	m.Poke32(mustSym(t, kernC, "g_gpio_lo"), v.GPIOOutCtrl(false))
 	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
-		Compact: true, Entry: entrySh, Scratch: 0x2007FE00,
+		Compact: true, Entry: entrySh, Scratch: bd.Scratch,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	return m, kernC
 }
 
-// registerVi compiles the BusyBox vi port, stages its blobs into the
-// machine's flash model at the same home dmxgen uses, and patches the
-// kernel's registry row 0 — the emulator twin of the firmware staging.
-func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result) {
+// registerRow patches one kimages registry row (the emulator twin of
+// dmxgen's patchRow) for a flash-resident image.
+func registerRow(t *testing.T, m *emu.Machine, kernC *dmaasm.Result, idx int,
+	name string, res *dmaasm.Result, tHome, tLen, dHome, dLen, rHome, nrel uint32) {
 	t.Helper()
-	const viHome, viT, viD = 0x102C0000, 0x10000000, 0x10040000
-	mod, err := llir.Merge(parseLL(t, "../xv6/ll/vi.ll"), parseLL(t, "../xv6/ll/ulib.ll"),
-		parseLL(t, "../xv6/ll/umalloc.ll"), parseLL(t, "../xv6/ll/usys.ll"))
-	if err != nil {
-		t.Fatal(err)
+	const iT, iD = 0x10000000, 0x10040000
+	row := mustSym(t, kernC, "g_kimages") + uint32(idx)*72
+	var nb [12]byte
+	copy(nb[:], name)
+	vals := []uint32{
+		binary.LittleEndian.Uint32(nb[0:]), binary.LittleEndian.Uint32(nb[4:]),
+		binary.LittleEndian.Uint32(nb[8:]),
+		tHome, tLen, dHome, dLen, iT, iD, rHome, nrel,
+		mustSym(t, res, "warmstart") - iT, mustSym(t, res, "crtthunk") - iT,
+		mustSym(t, res, "dispatch") - iD, mustSym(t, res, "irqresume") - iD,
+		mustSym(t, res, "lr") - iD,
+		mustSym(t, res, "g___dma_sysmail") - iD, mustSym(t, res, "g___dma_syscall_entry") - iD,
 	}
-	dasm, err := dmacc.Compile(mod, dmacc.Options{})
-	if err != nil {
-		t.Fatal(err)
+	for i, v := range vals {
+		m.Poke32(row+uint32(i)*4, v)
 	}
-	res, err := dmaasm.Assemble(dasm, dmaasm.Options{
-		Variant: m.Variant(), Compact: true, CompactScratch: 0x2007FE00,
-		TextBase: viT, DataBase: viD})
-	if err != nil {
-		t.Fatal(err)
-	}
+}
+
+// stageFlashImage writes text+data+packed relocs at home in the flash
+// model and returns (dHome, rHome, end).
+func stageFlashImage(m *emu.Machine, res *dmaasm.Result, home uint32) (uint32, uint32, uint32) {
 	text := res.Image.Segments[0].Data
 	data := res.Image.Segments[1].Data
-	off := viHome - 0x10000000
+	off := home - 0x10000000
 	copy(m.Flash[off:], text)
-	dHome := viHome + uint32(len(text))
-	copy(m.Flash[off+len(text):], data)
+	dHome := home + uint32(len(text))
+	copy(m.Flash[off+uint32(len(text)):], data)
 	rHome := dHome + uint32(len(data))
-	rp := off + len(text) + len(data)
+	rp := off + uint32(len(text)) + uint32(len(data))
 	for _, r := range res.Image.Relocs {
 		w := r.Off & 0x3FFFFFFF
 		if r.Seg == 1 {
@@ -294,24 +318,64 @@ func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result) {
 		binary.LittleEndian.PutUint32(m.Flash[rp:], w)
 		rp += 4
 	}
-	row := mustSym(t, kernC, "g_kimages")
-	var name [12]byte
-	copy(name[:], "vi")
-	vals := []uint32{
-		binary.LittleEndian.Uint32(name[0:]), binary.LittleEndian.Uint32(name[4:]),
-		binary.LittleEndian.Uint32(name[8:]),
-		viHome, uint32(len(text)),
-		dHome, uint32(len(data)),
-		viT, viD,
-		rHome, uint32(len(res.Image.Relocs)),
-		mustSym(t, res, "warmstart") - viT, mustSym(t, res, "crtthunk") - viT,
-		mustSym(t, res, "dispatch") - viD, mustSym(t, res, "irqresume") - viD,
-		mustSym(t, res, "lr") - viD,
-		mustSym(t, res, "g___dma_sysmail") - viD, mustSym(t, res, "g___dma_syscall_entry") - viD,
+	return dHome, rHome, 0x10000000 + rp
+}
+
+// registerFlashApps: the flash-apps boards' user programs as registry
+// rows (toolbox's multi-call aliases share its blob).
+func registerFlashApps(t *testing.T, m *emu.Machine, v *emu.Variant,
+	kernC *dmaasm.Result, bd *boards.Board) {
+	t.Helper()
+	cursor := bd.AppsHome
+	idx := 0
+	if bd.ViHome != 0 {
+		idx = 1 /* row 0 belongs to vi */
 	}
-	for i, v := range vals {
-		m.Poke32(row+uint32(i)*4, v)
+	for _, name := range bd.DiskApps {
+		res := buildUserScratch(t, v, bd.Scratch, name)
+		text, data := res.Image.Segments[0].Data, res.Image.Segments[1].Data
+		dHome, rHome, end := stageFlashImage(m, res, cursor)
+		names := []string{name}
+		if name == "toolbox" {
+			names = append(names, bd.ToolboxLinks...)
+		}
+		for _, n := range names {
+			registerRow(t, m, kernC, idx, n, res, cursor, uint32(len(text)),
+				dHome, uint32(len(data)), rHome, uint32(len(res.Image.Relocs)))
+			idx++
+		}
+		cursor = end
 	}
+	if cursor > bd.AppsEnd {
+		t.Fatalf("apps overflow the flash budget: %#x > %#x", cursor, bd.AppsEnd)
+	}
+}
+
+// registerVi compiles the BusyBox vi port, stages its blobs into the
+// machine's flash model at the same home dmxgen uses, and patches the
+// kernel's registry row 0 — the emulator twin of the firmware staging.
+func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result) {
+	t.Helper()
+	bd := boards.Pico2
+	mod, err := llir.Merge(parseLL(t, "../xv6/ll/vi.ll"), parseLL(t, "../xv6/ll/ulib.ll"),
+		parseLL(t, "../xv6/ll/umalloc.ll"), parseLL(t, "../xv6/ll/usys.ll"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dasm, err := dmacc.Compile(mod, dmacc.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := dmaasm.Assemble(dasm, dmaasm.Options{
+		Variant: m.Variant(), Compact: true, CompactScratch: bd.Scratch,
+		TextBase: 0x10000000, DataBase: 0x10040000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, data := res.Image.Segments[0].Data, res.Image.Segments[1].Data
+	dHome, rHome, _ := stageFlashImage(m, res, bd.ViHome)
+	registerRow(t, m, kernC, 0, "vi", res, bd.ViHome, uint32(len(text)),
+		dHome, uint32(len(data)), rHome, uint32(len(res.Image.Relocs)))
 }
 
 // TestXv6Vi: the BusyBox vi port end to end — open a new file, insert
@@ -380,6 +444,34 @@ func tailB(b []byte, n int) string {
 		b = b[len(b)-n:]
 	}
 	return string(b)
+}
+
+// TestXv6ShPico: the whole xv6 stack booted exactly as the Pico
+// (RP2040) board deploys it — 264 KiB SRAM, XIP kernel and sh text,
+// flash-resident apps behind registry rows, the ARM-mailbox flash
+// executor, and the 2 MiB flash map. One board definition drives
+// both this boot and dmxgen's shipped image.
+func TestXv6ShPico(t *testing.T) {
+	m, _ := bootXshBoard(t, nil, boards.Pico)
+	m.FeedConsole("ls\rcat README\recho pico > note\rcat note\r" +
+		"cat README | wc\rgpio write 5 1\rgpio read 5\rls /dev\rfree\r")
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 1_500_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
+	t.Logf("console:\n%s", out)
+	for _, want := range []string{
+		"the DMA machine runs upstream xv6.", // cat via a flash registry row
+		"\npico\n",                           // redirection onto the RAM disk
+		"1 6 35",                             // pipe into wc (also flash-resident)
+		"\n1\n",                              // gpio loopback on the rp2040 variant
+		"fat0",                               // devfs
+		"arena: total",                       // free
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("pico session missing %q", want)
+		}
+	}
 }
 
 // TestXv6GpioMux: the gpio/mux commands drive IO_BANK0 through the

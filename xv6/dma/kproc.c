@@ -144,7 +144,8 @@ uint inj_treg = 0x500000DCu; /* CH3 AL1_TRANS_COUNT_TRIG */
  * now lives in the kernel. Packed reloc word: bit31 = target segment
  * (0 text, 1 data), bit30 = referenced segment, low 30 bits = byte
  * offset within the target segment. */
-#define NIMG 4
+#define NIMG 20 /* flash-resident apps: one row per NAME (toolbox
+              * links each get a row aliasing the same blob) */
 
 struct kimg {
   char name[12];

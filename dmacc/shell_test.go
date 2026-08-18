@@ -141,12 +141,12 @@ func TestShellSystem(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			end := registerImage(t, m, kernC, 0, "echo", echoImg, 0x20038000)
+			end := registerImage(t, m, kernC, 0, "echo", echoImg, 0x20039000)
 			end = registerImage(t, m, kernC, 1, "hello", helloImg, end)
-			if end > 0x2003A000 {
+			if end > 0x2003B000 {
 				t.Fatalf("blob storage overflow: %#x", end)
 			}
-			m.Poke32(mustSym(t, kernC, "g_arena"), 0x2003A000)
+			m.Poke32(mustSym(t, kernC, "g_arena"), 0x2003B000)
 			m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2003FE00)
 			m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 			m.Poke32(mustSym(t, kernC, "g_k_sysentry"), mustSym(t, kern, "sys_entry"))
