@@ -138,9 +138,8 @@ runcmd(struct cmd *cmd)
 int
 getcmd(char *buf, int nbuf)
 {
-  write(2, "$ ", 2);
   memset(buf, 0, nbuf);
-  gets(buf, nbuf);
+  readline("$ ", buf, nbuf); /* dma: raw-mode editor (ulib.c) */
   if (buf[0] == 0) // EOF
     return -1;
   return 0;

@@ -431,6 +431,10 @@ static void terminate(struct proc *p, int status);
 #define INPUT_BUF 128
 static char cons_buf[INPUT_BUF];
 static uint cons_r, cons_w, cons_e; /* read, committed, edit (free-running) */
+/* Raw mode (SYS_ttyraw): bytes pass through uncooked and unechoed —
+ * no line discipline, no CR->NL, Ctrl-C delivered as a byte. Owned by
+ * the enabling process so a dying editor cannot wedge the console. */
+static uint cons_raw, cons_raw_pid;
 
 static void
 cputc(int c)
@@ -487,6 +491,12 @@ cons_poll(void)
   while (cons_e - cons_r < INPUT_BUF &&
          !(__dma_uart_fr & (1u << 4))) { /* RXFE clear: a byte waits */
     uint c = __dma_uart_dr & 0xFFu;
+    if (cons_raw) { /* uncooked: every byte, immediately, no echo */
+      cons_buf[cons_e % INPUT_BUF] = (char)c;
+      cons_e++;
+      cons_w = cons_e;
+      continue;
+    }
     if (c == 3) { /* Ctrl-C: never buffered, interrupts the fg job */
       deliver_sigint();
       continue;
@@ -893,6 +903,10 @@ static void
 terminate(struct proc *p, int status)
 {
   int slot = (int)(p - proc);
+  if (cons_raw && cons_raw_pid == p->pid) {
+    cons_raw = 0; /* a dying editor must not wedge the console */
+    cons_raw_pid = 0;
+  }
   p->xstate = (uint)status;
   if (fsready)
     kfs_exit(slot);
@@ -1256,6 +1270,17 @@ dma_ksyscall(void)
     ret = 0;
     break;
   }
+  case SYS_ttyraw: /* a0: 1 = raw console (uncooked, unechoed), 0 =
+                    * back to the line discipline. Owned per process. */
+    if (m->a1) {
+      cons_raw = 1;
+      cons_raw_pid = p->pid;
+    } else {
+      cons_raw = 0;
+      cons_raw_pid = 0;
+    }
+    ret = 0;
+    break;
   case SYS_signal: /* a0: signum (SIGINT only); a2: &usys sigctx
                     * (0 = revert to the default death) */
     p->sigctx = m->a2;

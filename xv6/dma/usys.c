@@ -259,6 +259,22 @@ umount(const char *target)
   return dma_trap();
 }
 
+int
+ttyraw(int on)
+{
+  fill(SYS_ttyraw, (uint)on, 0, 0);
+  return dma_trap();
+}
+
+/* One non-blocking read attempt: -2 when nothing is buffered. Raw-mode
+ * ESC-sequence disambiguation (ulib readline, vi) needs to peek. */
+int
+read_nb(int fd, void *buf, int n)
+{
+  fill(SYS_read, (uint)fd, (uint)buf, (uint)n);
+  return dma_trap();
+}
+
 /* dmacc's bounded-recursion sink (depth-K clones exhausted): die as a
  * process instead of halting the whole machine — deeply nested sh
  * subshells overflow in the vfork child and the shell survives. Must

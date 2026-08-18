@@ -26,3 +26,4 @@
 #define SYS_meminfo 25
 #define SYS_mount  26
 #define SYS_umount 27
+#define SYS_ttyraw 28

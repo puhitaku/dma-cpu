@@ -242,23 +242,19 @@ declare dso_local i32 @dup(i32 noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local range(i32 -1, 1) i32 @getcmd(ptr noundef %0, i32 noundef %1) local_unnamed_addr #4 {
-  %3 = tail call i32 @write(i32 noundef 2, ptr noundef nonnull @.str.5, i32 noundef 2) #9
-  %4 = tail call ptr @memset(ptr noundef %0, i32 noundef 0, i32 noundef %1) #9
-  %5 = tail call ptr @gets(ptr noundef %0, i32 noundef %1) #9
-  %6 = load i8, ptr %0, align 1, !tbaa !26
-  %7 = icmp eq i8 %6, 0
-  %8 = sext i1 %7 to i32
-  ret i32 %8
+  %3 = tail call ptr @memset(ptr noundef %0, i32 noundef 0, i32 noundef %1) #9
+  %4 = tail call ptr @readline(ptr noundef nonnull @.str.5, ptr noundef %0, i32 noundef %1) #9
+  %5 = load i8, ptr %0, align 1, !tbaa !26
+  %6 = icmp eq i8 %5, 0
+  %7 = sext i1 %6 to i32
+  ret i32 %7
 }
-
-; Function Attrs: minsize optsize
-declare dso_local i32 @write(i32 noundef, ptr noundef, i32 noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize optsize
 declare dso_local ptr @memset(ptr noundef, i32 noundef, i32 noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize optsize
-declare dso_local ptr @gets(ptr noundef, i32 noundef) local_unnamed_addr #3
+declare dso_local ptr @readline(ptr noundef, ptr noundef, i32 noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize noreturn nounwind optsize
 define dso_local noundef i32 @main() local_unnamed_addr #0 {
