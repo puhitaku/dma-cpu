@@ -3445,79 +3445,83 @@ define internal fastcc range(i32 -1, -2147483648) i32 @file_insert(ptr noundef %
   %10 = load ptr, ptr %9, align 4, !tbaa !48
   %11 = icmp ugt ptr %8, %10
   %12 = select i1 %11, ptr %10, ptr %8
-  %13 = tail call i32 @open(ptr noundef %0, i32 noundef 0) #17
-  %14 = icmp slt i32 %13, 0
-  br i1 %14, label %15, label %18
+  %13 = icmp eq ptr %0, null
+  br i1 %13, label %54, label %14
 
-15:                                               ; preds = %3
-  %16 = icmp eq i32 %2, 0
-  br i1 %16, label %17, label %52
+14:                                               ; preds = %3
+  %15 = tail call i32 @open(ptr noundef nonnull %0, i32 noundef 0) #17
+  %16 = icmp slt i32 %15, 0
+  br i1 %16, label %17, label %20
 
-17:                                               ; preds = %15
-  tail call fastcc void @status_line_bold_errno(ptr noundef %0) #16
-  br label %52
+17:                                               ; preds = %14
+  %18 = icmp eq i32 %2, 0
+  br i1 %18, label %19, label %54
 
-18:                                               ; preds = %3
-  %19 = call i32 @fstat(i32 noundef %13, ptr noundef nonnull %4) #17
-  %20 = icmp slt i32 %19, 0
-  br i1 %20, label %21, label %22
+19:                                               ; preds = %17
+  tail call fastcc void @status_line_bold_errno(ptr noundef nonnull %0) #16
+  br label %54
 
-21:                                               ; preds = %18
-  call fastcc void @status_line_bold_errno(ptr noundef %0) #16
-  br label %49
+20:                                               ; preds = %14
+  %21 = call i32 @fstat(i32 noundef %15, ptr noundef nonnull %4) #17
+  %22 = icmp slt i32 %21, 0
+  br i1 %22, label %23, label %24
 
-22:                                               ; preds = %18
-  %23 = getelementptr inbounds nuw i8, ptr %4, i32 8
-  %24 = load i16, ptr %23, align 4, !tbaa !97
-  %25 = icmp eq i16 %24, 2
-  br i1 %25, label %27, label %26
+23:                                               ; preds = %20
+  call fastcc void @status_line_bold_errno(ptr noundef nonnull %0) #16
+  br label %51
 
-26:                                               ; preds = %22
-  call void (ptr, ...) @status_line_bold(ptr noundef nonnull @.str.3, ptr noundef %0) #16
-  br label %49
+24:                                               ; preds = %20
+  %25 = getelementptr inbounds nuw i8, ptr %4, i32 8
+  %26 = load i16, ptr %25, align 4, !tbaa !97
+  %27 = icmp eq i16 %26, 2
+  br i1 %27, label %29, label %28
 
-27:                                               ; preds = %22
-  %28 = getelementptr inbounds nuw i8, ptr %4, i32 12
-  %29 = load i32, ptr %28, align 4, !tbaa !101
-  %30 = call i32 @llvm.umin.i32(i32 %29, i32 2147483647)
-  %31 = call fastcc i32 @text_hole_make(ptr noundef %12, i32 noundef %30) #16
-  %32 = getelementptr inbounds nuw i8, ptr %12, i32 %31
-  br label %33
+28:                                               ; preds = %24
+  call void (ptr, ...) @status_line_bold(ptr noundef nonnull @.str.3, ptr noundef nonnull %0) #16
+  br label %51
 
-33:                                               ; preds = %36, %27
-  %34 = phi i32 [ 0, %27 ], [ %41, %36 ]
-  %35 = icmp slt i32 %34, %30
-  br i1 %35, label %36, label %42
+29:                                               ; preds = %24
+  %30 = getelementptr inbounds nuw i8, ptr %4, i32 12
+  %31 = load i32, ptr %30, align 4, !tbaa !101
+  %32 = call i32 @llvm.umin.i32(i32 %31, i32 2147483647)
+  %33 = call fastcc i32 @text_hole_make(ptr noundef %12, i32 noundef %32) #16
+  %34 = getelementptr inbounds nuw i8, ptr %12, i32 %33
+  br label %35
 
-36:                                               ; preds = %33
-  %37 = getelementptr inbounds nuw i8, ptr %32, i32 %34
-  %38 = sub nsw i32 %30, %34
-  %39 = call i32 @read(i32 noundef range(i32 0, -2147483648) %13, ptr noundef %37, i32 noundef %38) #17
-  %40 = icmp slt i32 %39, 1
-  %41 = add nuw nsw i32 %39, %34
-  br i1 %40, label %42, label %33
+35:                                               ; preds = %38, %29
+  %36 = phi i32 [ 0, %29 ], [ %43, %38 ]
+  %37 = icmp slt i32 %36, %32
+  br i1 %37, label %38, label %44
 
-42:                                               ; preds = %33, %36
-  %43 = icmp samesign ult i32 %34, %30
-  br i1 %43, label %44, label %49
+38:                                               ; preds = %35
+  %39 = getelementptr inbounds nuw i8, ptr %34, i32 %36
+  %40 = sub nsw i32 %32, %36
+  %41 = call i32 @read(i32 noundef range(i32 0, -2147483648) %15, ptr noundef %39, i32 noundef %40) #17
+  %42 = icmp slt i32 %41, 1
+  %43 = add nuw nsw i32 %41, %36
+  br i1 %42, label %44, label %35
 
-44:                                               ; preds = %42
-  %45 = getelementptr inbounds nuw i8, ptr %32, i32 %34
-  %46 = getelementptr inbounds nuw i8, ptr %32, i32 %30
-  %47 = getelementptr inbounds i8, ptr %46, i32 -1
-  %48 = call fastcc ptr @text_hole_delete(ptr noundef %45, ptr noundef nonnull %47) #16
-  call void (ptr, ...) @status_line_bold(ptr noundef nonnull @.str.4, ptr noundef %0) #16
-  br label %49
+44:                                               ; preds = %35, %38
+  %45 = icmp samesign ult i32 %36, %32
+  br i1 %45, label %46, label %51
 
-49:                                               ; preds = %44, %42, %26, %21
-  %50 = phi i32 [ -1, %21 ], [ %34, %44 ], [ %34, %42 ], [ -1, %26 ]
-  %51 = call i32 @close(i32 noundef %13) #17
-  br label %52
+46:                                               ; preds = %44
+  %47 = getelementptr inbounds nuw i8, ptr %34, i32 %36
+  %48 = getelementptr inbounds nuw i8, ptr %34, i32 %32
+  %49 = getelementptr inbounds i8, ptr %48, i32 -1
+  %50 = call fastcc ptr @text_hole_delete(ptr noundef %47, ptr noundef nonnull %49) #16
+  call void (ptr, ...) @status_line_bold(ptr noundef nonnull @.str.4, ptr noundef nonnull %0) #16
+  br label %51
 
-52:                                               ; preds = %15, %17, %49
-  %53 = phi i32 [ %50, %49 ], [ -1, %17 ], [ -1, %15 ]
+51:                                               ; preds = %46, %44, %28, %23
+  %52 = phi i32 [ -1, %23 ], [ %36, %46 ], [ %36, %44 ], [ -1, %28 ]
+  %53 = call i32 @close(i32 noundef %15) #17
+  br label %54
+
+54:                                               ; preds = %17, %19, %3, %51
+  %55 = phi i32 [ %52, %51 ], [ -1, %3 ], [ -1, %19 ], [ -1, %17 ]
   call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #19
-  ret i32 %53
+  ret i32 %55
 }
 
 ; Function Attrs: minsize nounwind optsize

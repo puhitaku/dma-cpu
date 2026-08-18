@@ -26,7 +26,7 @@ func buildUser(t *testing.T, v *emu.Variant, name string, extra ...string) *dmaa
 	if err != nil {
 		t.Fatal(err)
 	}
-	dasm, err := dmacc.Compile(mod, dmacc.Options{OptSize: true})
+	dasm, err := dmacc.Compile(mod, dmacc.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dasm, err := dmacc.Compile(mod, dmacc.Options{OptSize: true})
+	dasm, err := dmacc.Compile(mod, dmacc.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +330,12 @@ func TestXv6Vi(t *testing.T) {
 			}
 		}
 	}
-	settle("vi note.txt\r", 600_000_000)
+	// "jjx" rides along with the command: it lands while vi is still
+	// exec-loading, i.e. in the COOKED window without a newline. The
+	// raw switch must commit it (kproc SYS_ttyraw), and vi must
+	// consume it as ordinary type-ahead (two harmless j's, one x on an
+	// empty buffer) — the user-reported "i needs Enter" bug.
+	settle("vi note.txt\rjjx", 600_000_000)
 	settle("ihello from vi\nsecond line\x1b", 400_000_000)
 	settle(":wq\r", 400_000_000)
 	// Only bytes AFTER the cat echo count: vi's own screen echo of the
@@ -378,6 +383,47 @@ func TestXv6EchoCtl(t *testing.T) {
 	if got := strings.Count(strings.ReplaceAll(out, "\r", ""), "\nx\n"); got != 2 {
 		t.Errorf("type-ahead history recall: want 'x' twice, got %d; tail %q",
 			got, tailB(m.ConsoleOut, 300))
+	}
+}
+
+// TestXv6ViNoArg: `vi` without a filename must open an unnamed empty
+// buffer — not stat address 0 and complain "'(null)' is not a regular
+// file" (xv6's open(NULL) walks address 0 instead of faulting).
+func TestXv6ViNoArg(t *testing.T) {
+	m, kernC := bootXsh(t)
+	registerVi(t, m, kernC)
+	m.TXPace = 0
+	settle := func(feed string, budget uint64) {
+		m.FeedConsole(feed)
+		var spent uint64
+		quiet := 0
+		last := len(m.ConsoleOut)
+		for spent < budget && quiet < 25 {
+			rr, err := m.Run(emu.RunConfig{MaxCycles: 2_000_000})
+			if err != nil {
+				t.Fatal(err)
+			}
+			spent += rr.Cycles
+			if len(m.ConsoleOut) == last {
+				quiet++
+			} else {
+				quiet = 0
+				last = len(m.ConsoleOut)
+			}
+		}
+	}
+	settle("vi\r", 600_000_000)
+	if strings.Contains(string(m.ConsoleOut), "(null)") {
+		t.Fatalf("no-arg vi stats NULL; tail %q", tailB(m.ConsoleOut, 300))
+	}
+	settle("inoname buffer\x1b", 400_000_000)
+	settle(":w noname.txt\r", 400_000_000)
+	settle(":q\r", 300_000_000)
+	mark := len(m.ConsoleOut)
+	settle("cat noname.txt\r", 200_000_000)
+	out := strings.ReplaceAll(string(m.ConsoleOut[mark:]), "\r", "")
+	if !strings.Contains(out, "noname buffer") {
+		t.Errorf(":w from the unnamed buffer failed; tail %q", tailB(m.ConsoleOut, 300))
 	}
 }
 

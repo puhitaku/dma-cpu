@@ -1992,6 +1992,9 @@ static int file_insert(const char *fn, char *p, int initial)
 	if (p > end)
 		p = end;
 
+	if (fn == NULL) /* dma: unnamed buffer; xv6's open(NULL) does not
+			 * fault like EFAULT — it walks address 0 */
+		return cnt;
 	fd = open(fn, O_RDONLY);
 	if (fd < 0) {
 		if (!initial)

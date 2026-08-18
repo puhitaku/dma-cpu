@@ -1283,6 +1283,11 @@ dma_ksyscall(void)
     if (m->a1) {
       cons_raw = 1;
       cons_raw_pid = p->pid;
+      /* Commit any half-typed cooked line: keys pressed while the
+       * editor was still exec-loading must reach it now, not after
+       * the next keystroke (they only commit on newline in cooked
+       * mode). */
+      cons_w = cons_e;
     } else {
       cons_raw = 0;
       cons_raw_pid = 0;

@@ -27,6 +27,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @heapmem = internal unnamed_addr global [8 x i32] zeroinitializer, align 4
 @cons_raw = internal unnamed_addr global i1 false, align 4
 @cons_raw_pid = internal unnamed_addr global i32 0, align 4
+@cons_e = internal unnamed_addr global i32 0, align 4
 @kw_pcurdisp = dso_local global ptr null, align 4
 @kw_curthunk = dso_local global ptr null, align 4
 @kw_pcurresume = dso_local global ptr null, align 4
@@ -39,7 +40,6 @@ target triple = "thumbv6m-unknown-none-eabi"
 @fgpid = dso_local local_unnamed_addr global i32 0, align 4
 @__dma_uart_fr = external dso_local global i32, align 4
 @__dma_uart_dr = external dso_local global i32, align 4
-@cons_e = internal unnamed_addr global i32 0, align 4
 @rearm = internal unnamed_addr global i1 false, align 4
 @dma_disk = external dso_local local_unnamed_addr global i32, align 4
 @parked = internal unnamed_addr global i1 false, align 4
@@ -2215,18 +2215,21 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #3 {
 758:                                              ; preds = %10
   %759 = getelementptr inbounds nuw i8, ptr %13, i32 8
   %760 = load volatile i32, ptr %759, align 4, !tbaa !49
-  %761 = icmp ne i32 %760, 0
-  br i1 %761, label %762, label %765
+  %761 = icmp eq i32 %760, 0
+  br i1 %761, label %766, label %762
 
 762:                                              ; preds = %758
+  store i1 true, ptr @cons_raw, align 4
   %763 = getelementptr inbounds nuw i8, ptr %5, i32 4
   %764 = load i32, ptr %763, align 4, !tbaa !16
-  br label %765
+  store i32 %764, ptr @cons_raw_pid, align 4, !tbaa !9
+  %765 = load i32, ptr @cons_e, align 4, !tbaa !9
+  store i32 %765, ptr @cons_w, align 4, !tbaa !9
+  br label %817
 
-765:                                              ; preds = %758, %762
-  %766 = phi i32 [ %764, %762 ], [ 0, %758 ]
-  store i1 %761, ptr @cons_raw, align 4
-  store i32 %766, ptr @cons_raw_pid, align 4, !tbaa !9
+766:                                              ; preds = %758
+  store i1 false, ptr @cons_raw, align 4
+  store i32 0, ptr @cons_raw_pid, align 4, !tbaa !9
   br label %817
 
 767:                                              ; preds = %10
@@ -2312,8 +2315,8 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #3 {
   store i32 1, ptr %816, align 4, !tbaa !32
   br label %817
 
-817:                                              ; preds = %794, %303, %213, %123, %24, %10, %19, %22, %681, %718, %765, %767, %49, %52, %58, %61, %65, %68, %72, %75, %81, %84, %88, %91, %95, %98, %102, %105, %111, %114, %118, %121, %287, %291, %654, %657, %663, %666, %808, %815, %814, %772, %45, %143, %153, %165, %182, %198, %610
-  %818 = phi i32 [ -1, %610 ], [ -1, %165 ], [ -1, %198 ], [ -1, %182 ], [ -1, %153 ], [ %145, %143 ], [ %47, %45 ], [ -1, %772 ], [ 0, %814 ], [ 0, %815 ], [ -1, %808 ], [ -1, %663 ], [ %669, %666 ], [ -1, %654 ], [ %662, %657 ], [ -1, %291 ], [ %290, %287 ], [ -1, %118 ], [ %122, %121 ], [ -1, %111 ], [ %117, %114 ], [ -1, %102 ], [ %110, %105 ], [ -1, %95 ], [ %101, %98 ], [ -1, %88 ], [ %94, %91 ], [ -1, %81 ], [ %87, %84 ], [ -1, %72 ], [ %80, %75 ], [ -1, %65 ], [ %71, %68 ], [ -1, %58 ], [ %64, %61 ], [ -1, %49 ], [ %57, %52 ], [ 0, %767 ], [ 0, %765 ], [ 0, %718 ], [ -1, %681 ], [ %23, %22 ], [ %21, %19 ], [ -1, %10 ], [ -1, %24 ], [ -1, %123 ], [ %203, %213 ], [ -1, %303 ], [ -1, %794 ]
+817:                                              ; preds = %794, %303, %213, %123, %24, %10, %19, %22, %681, %718, %767, %49, %52, %58, %61, %65, %68, %72, %75, %81, %84, %88, %91, %95, %98, %102, %105, %111, %114, %118, %121, %287, %291, %654, %657, %663, %666, %766, %762, %808, %815, %814, %772, %45, %143, %153, %165, %182, %198, %610
+  %818 = phi i32 [ -1, %610 ], [ -1, %165 ], [ -1, %198 ], [ -1, %182 ], [ -1, %153 ], [ %145, %143 ], [ %47, %45 ], [ -1, %772 ], [ 0, %814 ], [ 0, %815 ], [ -1, %808 ], [ 0, %762 ], [ 0, %766 ], [ -1, %663 ], [ %669, %666 ], [ -1, %654 ], [ %662, %657 ], [ -1, %291 ], [ %290, %287 ], [ -1, %118 ], [ %122, %121 ], [ -1, %111 ], [ %117, %114 ], [ -1, %102 ], [ %110, %105 ], [ -1, %95 ], [ %101, %98 ], [ -1, %88 ], [ %94, %91 ], [ -1, %81 ], [ %87, %84 ], [ -1, %72 ], [ %80, %75 ], [ -1, %65 ], [ %71, %68 ], [ -1, %58 ], [ %64, %61 ], [ -1, %49 ], [ %57, %52 ], [ 0, %767 ], [ 0, %718 ], [ -1, %681 ], [ %23, %22 ], [ %21, %19 ], [ -1, %10 ], [ -1, %24 ], [ -1, %123 ], [ %203, %213 ], [ -1, %303 ], [ -1, %794 ]
   %819 = load i32, ptr %11, align 4, !tbaa !27
   %820 = inttoptr i32 %819 to ptr
   %821 = getelementptr inbounds nuw i8, ptr %820, i32 16

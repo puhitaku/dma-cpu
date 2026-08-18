@@ -802,10 +802,10 @@ func buildXsh(v *emu.Variant, lay layout) (*kernBundle, error) {
 	// vi (BusyBox port, prompts/033): far too large for the RAM disk,
 	// so it ships as a kernel-registry image whose blobs stay in flash
 	// — exec copies text+data to the arena and applies the relocs from
-	// XIP directly. OptSize: an editor is human-speed-bound.
+	// XIP directly.
 	viDasm, err := compileLL([]string{"xv6/ll/vi.ll", "xv6/ll/ulib.ll",
 		"xv6/ll/umalloc.ll", "xv6/ll/usys.ll"},
-		dmacc.Options{OptSize: true})
+		dmacc.Options{}) /* balanced: editor latency over bytes */
 	if err != nil {
 		return nil, fmt.Errorf("vi: %w", err)
 	}
