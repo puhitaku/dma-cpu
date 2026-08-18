@@ -315,7 +315,7 @@ func TestXv6Vi(t *testing.T) {
 		var spent uint64
 		quiet := 0
 		last := len(m.ConsoleOut)
-		for spent < budget && quiet < 5 {
+		for spent < budget && quiet < 25 {
 			rr, err := m.Run(emu.RunConfig{MaxCycles: 2_000_000})
 			if err != nil {
 				t.Logf("console tail: %q", tailB(m.ConsoleOut, 300))
@@ -333,10 +333,18 @@ func TestXv6Vi(t *testing.T) {
 	settle("vi note.txt\r", 600_000_000)
 	settle("ihello from vi\nsecond line\x1b", 400_000_000)
 	settle(":wq\r", 400_000_000)
+	// Only bytes AFTER the cat echo count: vi's own screen echo of the
+	// inserted text must not satisfy the check, and the closing prompt
+	// proves sh survived vi's exit (a main() that returns instead of
+	// exiting halts the whole machine).
+	mark := len(m.ConsoleOut)
 	settle("cat note.txt\r", 200_000_000)
-	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
+	out := strings.ReplaceAll(string(m.ConsoleOut[mark:]), "\r", "")
 	if !strings.Contains(out, "hello from vi\nsecond line") {
-		t.Errorf("vi session did not produce the file; tail: %q", tailB(m.ConsoleOut, 400))
+		t.Errorf("cat does not show the written file; tail: %q", tailB(m.ConsoleOut, 400))
+	}
+	if !strings.HasSuffix(strings.TrimRight(out, " "), "$") {
+		t.Errorf("no prompt after the vi session; tail: %q", tailB(m.ConsoleOut, 200))
 	}
 }
 

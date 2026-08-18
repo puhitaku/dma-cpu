@@ -5005,8 +5005,9 @@ int vi_main(int argc, char **argv)
 	return 0;
 }
 
-/* dma: the xv6 entry point — start() calls main(). */
+/* dma: the xv6 entry point. Must exit() rather than return — a return
+ * runs into crt0's halt and stops the whole machine. */
 int main(int argc, char **argv)
 {
-	return vi_main(argc, argv);
+	exit(vi_main(argc, argv));
 }
