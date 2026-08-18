@@ -2213,8 +2213,8 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #3 {
   br label %712, !llvm.loop !93
 
 758:                                              ; preds = %10
-  %759 = getelementptr inbounds nuw i8, ptr %13, i32 8
-  %760 = load volatile i32, ptr %759, align 4, !tbaa !49
+  %759 = getelementptr inbounds nuw i8, ptr %13, i32 4
+  %760 = load volatile i32, ptr %759, align 4, !tbaa !45
   %761 = icmp eq i32 %760, 0
   br i1 %761, label %766, label %762
 

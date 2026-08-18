@@ -336,6 +336,15 @@ func TestXv6Vi(t *testing.T) {
 	// consume it as ordinary type-ahead (two harmless j's, one x on an
 	// empty buffer) — the user-reported "i needs Enter" bug.
 	settle("vi note.txt\rjjx", 600_000_000)
+	// A lone ESC after startup must be handled by vi in raw mode, not
+	// cooked-echoed as ^[ — the discriminating check for SYS_ttyraw
+	// actually engaging.
+	rawMark := len(m.ConsoleOut)
+	settle("\x1b", 100_000_000)
+	if strings.Contains(string(m.ConsoleOut[rawMark:]), "^[") {
+		t.Fatalf("ESC cooked-echoed inside vi: raw mode not engaged; got %q",
+			string(m.ConsoleOut[rawMark:]))
+	}
 	settle("ihello from vi\nsecond line\x1b", 400_000_000)
 	settle(":wq\r", 400_000_000)
 	// Only bytes AFTER the cat echo count: vi's own screen echo of the
@@ -429,16 +438,36 @@ func TestXv6ViNoArg(t *testing.T) {
 
 // TestXv6Readline: the raw-mode line editor — mid-line arrow edits,
 // tab completion against the root directory, and history recall.
+//
+// The first phase deliberately sends NO trailing newline: raw mode
+// must deliver and interpret keys immediately. A cooked console would
+// (a) echo the arrow as ^[[D (ECHOCTL) and (b) hold every byte until
+// Enter — the regression that shipped when SYS_ttyraw read the wrong
+// mailbox slot and readline only appeared to work via type-ahead.
 func TestXv6Readline(t *testing.T) {
 	m, _ := bootXsh(t)
-	m.FeedConsole("echo helo\x1b[D\x1b[Dl\r" + // left,left, insert 'l' -> hello
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	mark := len(m.ConsoleOut)
+	m.FeedConsole("echo helo\x1b[D\x1b[Dl") // no newline!
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 100_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	live := string(m.ConsoleOut[mark:])
+	if strings.Contains(live, "^[[D") {
+		t.Fatalf("arrow echoed as ^[[D: raw mode is not engaged; got %q", live)
+	}
+	if !strings.Contains(live, "hello") {
+		t.Fatalf("mid-line insert not visible before Enter (line-buffered?); got %q", live)
+	}
+	m.FeedConsole("\r" +
 		"cat READ\tw\x1b[D\x1b[3~\r" + // tab -> "cat README ", type w, left, delete w
 		"\x1b[A\x1b[A\r") // history up twice -> "echo hello" again
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
 		t.Fatal(err)
 	}
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
-	t.Logf("console:\n%s", out)
 	if got := strings.Count(out, "\nhello\n"); got != 2 {
 		t.Errorf("want the edited and history-recalled 'hello' twice, got %d", got)
 	}

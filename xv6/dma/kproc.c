@@ -1280,7 +1280,7 @@ dma_ksyscall(void)
   }
   case SYS_ttyraw: /* a0: 1 = raw console (uncooked, unechoed), 0 =
                     * back to the line discipline. Owned per process. */
-    if (m->a1) {
+    if (m->a0) {
       cons_raw = 1;
       cons_raw_pid = p->pid;
       /* Commit any half-typed cooked line: keys pressed while the
