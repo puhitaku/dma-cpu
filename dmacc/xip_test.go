@@ -26,7 +26,7 @@ func TestXIPRecursion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dasm, err := dmacc.Compile(mod, dmacc.Options{XIPText: true})
+	dasm, err := dmacc.Compile(mod, dmacc.Options{XIPText: true, OptSize: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestXIPDifferential(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse: %v", err)
 			}
-			dasm, err := dmacc.Compile(mod, dmacc.Options{XIPText: true})
+			dasm, err := dmacc.Compile(mod, dmacc.Options{XIPText: true, OptSize: true})
 			if err != nil {
 				t.Fatalf("compile: %v", err)
 			}

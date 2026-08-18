@@ -31,7 +31,18 @@ func compileKernel(t *testing.T, fs bool) string {
 	return compileKernelOpts(t, fs, false)
 }
 
+// compileKernelSized is the -Os build (descriptor compares), kept
+// measured so the speed/size gap of Options.OptSize stays visible.
+func compileKernelSized(t *testing.T) string {
+	t.Helper()
+	return compileKernelFull(t, true, true, true)
+}
+
 func compileKernelOpts(t *testing.T, fs, xip bool) string {
+	return compileKernelFull(t, fs, xip, false)
+}
+
+func compileKernelFull(t *testing.T, fs, xip, size bool) string {
 	t.Helper()
 	list := []string{"kproc", "kfsstub"}
 	if fs {
@@ -45,7 +56,7 @@ func compileKernelOpts(t *testing.T, fs, xip bool) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := dmacc.Options{Entry: "kmain", NoSafepoints: true, XIPText: xip}
+	opts := dmacc.Options{Entry: "kmain", NoSafepoints: true, XIPText: xip, OptSize: size}
 	if xip && fs {
 		// The whole sync path must execute from SRAM: its QMI session
 		// tears down the XIP window the kernel text now lives behind.

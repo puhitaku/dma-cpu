@@ -41,6 +41,13 @@ type Options struct {
 	// direct-mode session would otherwise fetch its own records through
 	// the window it just tore down.
 	RAMTextFuncs []string
+	// OptSize trades execution speed for text size, like -Os: outlined
+	// comparison sites shrink to two records via constant descriptors
+	// (~9% smaller text) at ~2x the per-branch cost — the unpack is a
+	// byte-wise copy plus two indirections. The default (balanced)
+	// build keeps the four-move protocol: TestZZBenchXsh showed the
+	// descriptor form doubling whole-command cycle counts.
+	OptSize bool
 }
 
 // Compile translates a parsed module into dmaasm source. The generated

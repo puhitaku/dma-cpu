@@ -33,6 +33,7 @@ func TestZZAllSizes(t *testing.T) {
 	meas("lean", compileKernel(t, false), false)
 	meas("fs-kernel", compileKernel(t, true), true)
 	meas("fs-kern-xip", compileKernelOpts(t, true, true), true)
+	meas("fs-xip-Os", compileKernelSized(t), true)
 	shMod, err := llir.Merge(
 		parseLL(t, "../xv6/ll/sh.ll"), parseLL(t, "../xv6/ll/ulib.ll"),
 		parseLL(t, "../xv6/ll/umalloc.ll"), parseLL(t, "../xv6/ll/usys.ll"))

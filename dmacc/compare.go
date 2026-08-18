@@ -167,7 +167,7 @@ func (fc *funcCtx) emitCmpSite(helper, a, b, t, f string) {
 	// RAMTextFuncs code runs while XIP is down; its descriptors would
 	// live in flash text, so those sites keep the all-SRAM four-move
 	// protocol (the plain helpers and their operands are RAM-resident).
-	if pa, ok := fc.wordAddr(a); ok && !fc.inRAM {
+	if pa, ok := fc.wordAddr(a); ok && !fc.inRAM && fc.g.opts.OptSize {
 		pb, ok2 := "", b == ""
 		if b != "" {
 			pb, ok2 = fc.wordAddr(b)

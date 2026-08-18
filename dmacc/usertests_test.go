@@ -76,9 +76,9 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 		return res
 	}
 	kern := casm(ksrc, 0x20002000, 0x20003000)
-	kernC := casm(kcDasm, 0x20004000, 0x20026000)
-	ut := casm(utDasm, 0x20032000, 0x20049000)
-	idle := casm(idleDasm, 0x2005B000, 0x2005C000)
+	kernC := casm(kcDasm, 0x20004000, 0x2002A000)
+	ut := casm(utDasm, 0x20033000, 0x2004E000)
+	idle := casm(idleDasm, 0x2005D000, 0x2005E000)
 
 	m := emu.NewMachine(v)
 	m.TXPace = 0 // the exam prints a lot; run the console at full speed
@@ -120,13 +120,13 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 	fb.AddFile("README", []byte("exam disk\n"))
 	fb.AddFile("echo", blob)
 	disk := fb.Bytes()
-	const diskBase = 0x2005D000
+	const diskBase = 0x2005F000
 	for i := 0; i < len(disk); i += 4 {
 		m.Poke32(uint32(diskBase+i), binary.LittleEndian.Uint32(disk[i:]))
 	}
 	m.Poke32(mustSym(t, kernC, "g_dma_disk"), diskBase)
 	m.Poke32(mustSym(t, kernC, "g_dma_disksize"), uint32(len(disk)))
-	m.Poke32(mustSym(t, kernC, "g_arena"), 0x2006F000)
+	m.Poke32(mustSym(t, kernC, "g_arena"), 0x20071000)
 	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007F000)
 	m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 	m.Poke32(mustSym(t, kernC, "g_initpid"), 2)
