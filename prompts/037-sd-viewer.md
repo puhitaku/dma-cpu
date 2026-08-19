@@ -85,6 +85,22 @@ LBAs (raw and volume reads share it), and unmount drops the card
 state so a swapped card re-inits. `show /dev/sd0` doubles as a raw
 read probe in TestXv6SD.
 
+## help, /dev/apps, and the first real card
+
+The registry design made commands invisible to ls, so /dev grew an
+`apps` file (one runnable name per line straight from the kimg
+rows) and the toolbox a `help` applet that prints it in columns
+after naming the one true sh builtin (cd). NIMG went 20 -> 24 for
+headroom, which nudged the feather's C-kernel data past its window:
+ShRText moved up 2 KiB.
+
+The user's first real card (a >4 GB one, formatted by macOS) taught
+two lessons the emulator's tidy images couldn't: stat sizes print
+SIGNED, so the capacity clamp moved under 2 GiB (16 GB once listed
+as -512), and macOS strews AppleDouble `._*.sld` droppings that
+match the viewer's suffix filter AND sort first — show now skips
+dotfiles. Both are pinned by emulator tests.
+
 ## Still open
 
 - The contiguous-LBA raw read path for slides.bin (mount resolves

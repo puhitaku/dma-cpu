@@ -84,7 +84,7 @@ func (b *Board) HasBundle(name string) bool {
 
 var stdApps = []string{"echo", "cat", "ls", "toolbox"}
 var stdLinks = []string{"kill", "spin", "trap", "free", "sync", "mount",
-	"umount", "wc", "mkdir", "rm", "gpio", "mux", "blink"}
+	"umount", "wc", "mkdir", "rm", "gpio", "mux", "blink", "help"}
 var fbLinks = append(append([]string{}, stdLinks...), "fbtest", "show")
 
 // Pico2: RP2350, 520 KiB SRAM, 4 MiB flash. The full experience —
@@ -163,7 +163,9 @@ var Feather = &Board{
 	// boot check caught the overlap on silicon, prompts/036).
 	KernText: 0x20002800, KernData: 0x20003400,
 	KernCRText: 0x20004000, KernCData: 0x2000C000,
-	ShRText: 0x20019800, ShData: 0x2001C000,
+	// ShRText sits 2 KiB above the pico2 map: the fb kernel's data
+	// (LUTs + the 24-row image registry) outgrew the 0xD800 window.
+	ShRText: 0x2001A000, ShData: 0x2001C000,
 	IdleText: 0x20024000, IdleData: 0x20025000,
 	DiskHome: 0x20026000, DiskMax: 0x6000, // 24 KiB: data only — apps in flash
 	Arena: 0x2002C000, ArenaEnd: 0x20054000, // 160 KiB

@@ -511,7 +511,7 @@ func tailB(b []byte, n int) string {
 func TestXv6ShPico(t *testing.T) {
 	m, _ := bootXshBoard(t, nil, boards.Pico)
 	m.FeedConsole("ls\rcat README\recho pico > note\rcat note\r" +
-		"cat README | wc\rgpio write 5 1\rgpio read 5\rls /dev\rfree\r")
+		"cat README | wc\rgpio write 5 1\rgpio read 5\rls /dev\rhelp\rfree\r")
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 1_500_000_000}); err != nil {
 		t.Fatal(err)
 	}
@@ -523,6 +523,8 @@ func TestXv6ShPico(t *testing.T) {
 		"1 6 35",                             // pipe into wc (also flash-resident)
 		"\n1\n",                              // gpio loopback on the rp2040 variant
 		"fat0",                               // devfs
+		"builtin: cd",                        // help header
+		"blink",                              // help lists the registry
 		"arena: total",                       // free
 	} {
 		if !strings.Contains(out, want) {
@@ -660,6 +662,9 @@ func TestXv6SD(t *testing.T) {
 	}
 	fatb := fsimg.NewFAT32(2048)
 	fatb.AddFile("HELLO.TXT", []byte("hello from the sd card\n"))
+	// macOS AppleDouble dropping: matches *.sld and sorts before A —
+	// the viewer must skip dotfiles or the deck opens with garbage.
+	fatb.AddFile("._A.SLD", bytes.Repeat([]byte{0xEE}, 512))
 	fatb.AddFile("A.SLD", slideA)
 	fatb.AddFile("B.SLD", slideB)
 	vol := fatb.Bytes()

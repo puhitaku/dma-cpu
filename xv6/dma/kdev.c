@@ -10,6 +10,7 @@
  *             size 0 until the card is up — the first read inits it
  *   gpio      one "NN=x" line per pad (input buffer level)
  *   pio0..2   the PIO block's enabled-SM mask
+ *   apps      the exec registry: one runnable command name per line
  */
 #include "types.h"
 #include "riscv.h"
@@ -34,8 +35,9 @@ int kfb_h(void);
 uint kfb_owner(void);
 uint fat_sd_bytes(void); /* kfat.c */
 int fat_sd_rawread(uint dst, uint off, uint n);
+const char *kimg_name(int i); /* kproc.c */
 
-enum { DK_DIR, DK_CONSOLE, DK_FAT, DK_GPIO, DK_PIO, DK_FB, DK_SD };
+enum { DK_DIR, DK_CONSOLE, DK_FAT, DK_GPIO, DK_PIO, DK_FB, DK_SD, DK_APPS };
 
 static const struct {
   const char *name;
@@ -44,7 +46,7 @@ static const struct {
 } devtab[] = {
     {"console", DK_CONSOLE, 0}, {"fat0", DK_FAT, 0}, {"sd0", DK_SD, 0},
     {"gpio", DK_GPIO, 0},       {"pio0", DK_PIO, 0}, {"pio1", DK_PIO, 1},
-    {"pio2", DK_PIO, 2},        {"fb0", DK_FB, 0},
+    {"pio2", DK_PIO, 2},        {"fb0", DK_FB, 0},   {"apps", DK_APPS, 0},
 };
 #define NDEV ((int)(sizeof(devtab) / sizeof(devtab[0])))
 
@@ -75,7 +77,17 @@ static int
 dev_text(int idx, char *buf, int cap)
 {
   int kind = devtab[idx].kind, n = 0;
-  if (kind == DK_GPIO) {
+  if (kind == DK_APPS) {
+    for (int i = 0;; i++) {
+      const char *nm = kimg_name(i);
+      if (!nm)
+        break;
+      for (int j = 0; nm[j] && j < 12 && n < cap; j++)
+        buf[n++] = nm[j];
+      if (n < cap)
+        buf[n++] = '\n';
+    }
+  } else if (kind == DK_GPIO) {
     for (uint pin = 0; pin < gpiopins && n + 6 < cap; pin++) {
       buf[n++] = (char)('0' + pin / 10);
       buf[n++] = (char)('0' + pin % 10);
@@ -133,7 +145,7 @@ dev_text(int idx, char *buf, int cap)
 static uint
 dev_size(int idx)
 {
-  char tmp[300];
+  char tmp[400]; /* fits 24 registry names and the gpio table */
   switch (devtab[idx].kind) {
   case DK_FAT:
     return fat0_size();
@@ -142,6 +154,7 @@ dev_size(int idx)
   case DK_GPIO:
   case DK_PIO:
   case DK_FB:
+  case DK_APPS:
     return (uint)dev_text(idx, tmp, sizeof(tmp));
   }
   return 0;
@@ -251,7 +264,7 @@ dev_readi(struct inode *ip, uint dst, uint off, uint n)
     memmove((void *)dst, (const void *)(fatvol + off), n);
     return (int)n;
   }
-  char tmp[300];
+  char tmp[400]; /* fits 24 registry names and the gpio table */
   int len = dev_text(idx, tmp, sizeof(tmp));
   if (off >= (uint)len)
     return 0;

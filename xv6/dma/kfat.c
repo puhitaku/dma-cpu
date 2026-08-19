@@ -222,15 +222,16 @@ fat_is_sd(void)
 
 /* --- /dev/sd0 (kdev.c): the raw card, absolute LBA 0 onward --- */
 
-/* Card capacity in bytes; 0 until the card has been brought up. The
- * uint ceiling clamps cards past 4 GiB (stat and reads agree). */
+/* Card capacity in bytes; 0 until the card has been brought up.
+ * Clamped below 2 GiB: stat sizes print SIGNED (a 16 GB card once
+ * listed as -512), and file offsets are 32-bit anyway. */
 uint
 fat_sd_bytes(void)
 {
   if (sdsectors == 0)
     return 0;
-  if (sdsectors >= (0xFFFFFFFFu / 512u))
-    return 0xFFFFFE00u;
+  if (sdsectors >= (0x7FFFFFFFu / 512u))
+    return 0x7FFFFE00u;
   return sdsectors * 512u;
 }
 

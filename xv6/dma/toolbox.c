@@ -222,6 +222,49 @@ t_rm(int argc, char **argv)
   return 0;
 }
 
+/* --- help: what can be run --- The commands live in the flash
+ * image registry, not on any disk (ls cannot see them), so this
+ * lists /dev/apps in columns. */
+static int
+t_help(void)
+{
+  write(1, "builtin: cd\ncommands (flash registry, /dev/apps):\n", 50);
+  int fd = open("/dev/apps", 0);
+  if (fd < 0) {
+    write(2, "help: no /dev/apps\n", 19);
+    return 1;
+  }
+  char buf[400];
+  int n = read(fd, buf, sizeof(buf));
+  close(fd);
+  char line[80];
+  int col = 0, ln = 0;
+  for (int i = 0; i <= n; i++) {
+    char c = (i < n) ? buf[i] : '\n';
+    if (c != '\n') {
+      if (ln < 78)
+        line[ln++] = c;
+      continue;
+    }
+    if (ln == 0 && col == 0)
+      continue;
+    col++;
+    if (col == 6) { /* six 13-char columns per row */
+      line[ln++] = '\n';
+      write(1, line, ln);
+      col = ln = 0;
+    } else {
+      while (ln % 13)
+        line[ln++] = ' ';
+    }
+  }
+  if (ln) {
+    line[ln++] = '\n';
+    write(1, line, ln);
+  }
+  return 0;
+}
+
 /* --- mount/umount: the vfat volume --- */
 static int
 t_mount(int argc, char **argv)
@@ -570,6 +613,9 @@ t_show(int argc, char **argv)
       while (read(fd, &de, sizeof(de)) == sizeof(de)) {
         if (de.inum == 0 || !sldsuffix(de.name))
           continue;
+        if (de.name[0] == '.') /* dotfiles: macOS ._* AppleDouble
+                                * droppings match *.sld and sort FIRST */
+          continue;
         if (nshow < 32) {
           for (int i = 0; i < 62; i++)
             shownames[nshow][i] = de.name[i];
@@ -691,6 +737,8 @@ main(int argc, char **argv)
     exit(t_free());
   if (streq(base, "sync"))
     exit(t_sync());
+  if (streq(base, "help"))
+    exit(t_help());
   if (streq(base, "mount"))
     exit(t_mount(argc, argv));
   if (streq(base, "umount"))

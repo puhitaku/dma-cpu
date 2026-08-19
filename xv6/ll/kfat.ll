@@ -339,28 +339,28 @@ define dso_local range(i32 0, 2) i32 @fat_is_sd() local_unnamed_addr #1 {
 }
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, argmem: none, inaccessiblemem: none)
-define dso_local range(i32 0, -511) i32 @fat_sd_bytes() local_unnamed_addr #1 {
+define dso_local range(i32 0, 2147483137) i32 @fat_sd_bytes() local_unnamed_addr #1 {
   %1 = load i32, ptr @sdsectors, align 4, !tbaa !10
-  %2 = tail call i32 @llvm.umin.i32(i32 %1, i32 8388607)
-  %3 = shl nuw i32 %2, 9
+  %2 = tail call i32 @llvm.umin.i32(i32 %1, i32 4194303)
+  %3 = shl nuw nsw i32 %2, 9
   ret i32 %3
 }
 
 ; Function Attrs: minsize nounwind optsize
-define dso_local range(i32 -1, -511) i32 @fat_sd_rawread(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #2 {
+define dso_local range(i32 -1, 2147483137) i32 @fat_sd_rawread(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #2 {
   %4 = tail call fastcc i32 @sd_up() #10
   %5 = icmp slt i32 %4, 0
   br i1 %5, label %30, label %6
 
 6:                                                ; preds = %3
   %7 = load i32, ptr @sdsectors, align 4, !tbaa !10
-  %8 = tail call i32 @llvm.umin.i32(i32 %7, i32 8388607)
-  %9 = shl nuw i32 %8, 9
+  %8 = tail call i32 @llvm.umin.i32(i32 %7, i32 4194303)
+  %9 = shl nuw nsw i32 %8, 9
   %10 = icmp ult i32 %1, %9
   br i1 %10, label %11, label %30
 
 11:                                               ; preds = %6
-  %12 = sub nuw i32 %9, %1
+  %12 = sub nuw nsw i32 %9, %1
   %13 = tail call i32 @llvm.umin.i32(i32 %2, i32 %12)
   br label %14
 

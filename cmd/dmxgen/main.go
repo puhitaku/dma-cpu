@@ -988,7 +988,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		if cursor > bd.AppsEnd {
 			return nil, fmt.Errorf("apps blob overflows its flash budget by %d bytes", cursor-bd.AppsEnd)
 		}
-		if rowIdx > 20 {
+		if rowIdx > 24 {
 			return nil, fmt.Errorf("registry rows exhausted: %d > NIMG", rowIdx)
 		}
 	}

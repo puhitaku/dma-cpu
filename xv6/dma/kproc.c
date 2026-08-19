@@ -158,7 +158,7 @@ uint inj_treg = 0x500000DCu; /* CH3 AL1_TRANS_COUNT_TRIG */
  * now lives in the kernel. Packed reloc word: bit31 = target segment
  * (0 text, 1 data), bit30 = referenced segment, low 30 bits = byte
  * offset within the target segment. */
-#define NIMG 20 /* flash-resident apps: one row per NAME (toolbox
+#define NIMG 24 /* flash-resident apps: one row per NAME (toolbox
               * links each get a row aliasing the same blob) */
 
 struct kimg {
@@ -380,6 +380,16 @@ badbuf(struct proc *p, uint addr, uint n)
 {
   return p->heapmax != 0 && n != 0 && addr < p->heapmax &&
          addr + n > p->brk && addr + n >= addr;
+}
+
+/* Registry name by index for /dev/apps (kdev.c); rows are packed
+ * from 0, so the first empty name ends the walk. Returns 0 past it. */
+const char *
+kimg_name(int i)
+{
+  if (i < 0 || i >= NIMG || kimages[i].name[0] == 0)
+    return 0;
+  return kimages[i].name;
 }
 
 static struct kimg *
