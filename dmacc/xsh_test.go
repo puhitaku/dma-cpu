@@ -782,7 +782,14 @@ func TestXv6SD(t *testing.T) {
 			for _, pin := range []int{24, 26, 27, 28, 29} {
 				m.Poke32(v.GPIOCtrlAddr(pin), v.GPIOOutCtrl(true))
 			}
-			feed := "mkdir /sd\rmount sd0 /sd\rls /dev\rls /sd\r" +
+			// The two variants exercise the two mount spellings: the
+			// bare device with an absolute target, and the /dev path
+			// with a relative target (cwd is /).
+			mnt := "mount sd0 /sd\r"
+			if name == "superfloppy" {
+				mnt = "mount /dev/sd0 sd\r"
+			}
+			feed := "mkdir /sd\r" + mnt + "ls /dev\rls /sd\r" +
 				"cat /sd/HELLO.TXT\rmount\rshow /sd\r"
 			m.FeedConsole(feed)
 			fbBuf := boards.Feather.FbBuf

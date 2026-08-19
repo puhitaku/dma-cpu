@@ -515,18 +515,50 @@ kfs_mount(uint srcaddr, uint tgtaddr)
     return n;
   }
   const char *src = (const char *)srcaddr;
-  char *tgt = (char *)tgtaddr;
+  const char *tgt = (const char *)tgtaddr;
+  char abs[28];
   if (fatmnt[0] != 0)
     return -1;
+  /* the source may be spelled as its /dev listing ("/dev/sd0") */
+  if (src[0] == '/' && src[1] == 'd' && src[2] == 'e' && src[3] == 'v' &&
+      src[4] == '/')
+    src += 5;
   int sd = src[0] == 's' && src[1] == 'd' && src[2] == '0' && src[3] == 0;
   if (!sd && !(src[0] == 'f' && src[1] == 'a' && src[2] == 't' &&
                src[3] == '0' && src[4] == 0))
     return -1;
   if (!sd && fatvol == 0)
     return -1;
-  if (tgt[0] != '/' || tgt[1] == 0)
+  if (tgt[0] != '/') {
+    /* A relative mount point is accepted when it names the same
+     * directory as its absolute form (i.e. the cwd is /): the prefix
+     * router (fat_prefix) stores absolute paths only, so a relative
+     * name that means something else must fail rather than route
+     * wrongly. */
+    abs[0] = '/';
+    int i = 0;
+    while (tgt[i] && i < 26) {
+      abs[i + 1] = tgt[i];
+      i++;
+    }
+    abs[i + 1] = 0;
+    struct inode *rel = namei((char *)tgt);
+    if (rel == 0)
+      return -1;
+    uint rdev = rel->dev, rin = rel->inum;
+    iput(rel);
+    struct inode *ab = namei(abs);
+    if (ab == 0)
+      return -1;
+    int same = ab->dev == rdev && ab->inum == rin;
+    iput(ab);
+    if (!same)
+      return -1;
+    tgt = abs;
+  }
+  if (tgt[1] == 0)
     return -1;
-  struct inode *mp = namei(tgt); /* the mount point must exist */
+  struct inode *mp = namei((char *)tgt); /* the mount point must exist */
   if (mp == 0)
     return -1;
   ilock(mp);
@@ -556,10 +588,13 @@ kfs_umount(uint tgtaddr)
   const char *tgt = (const char *)tgtaddr;
   if (fatmnt[0] == 0)
     return -1;
+  const char *m = fatmnt;
+  if (tgt[0] != '/' && m[0] == '/')
+    m++; /* `umount sd` matches the stored "/sd" */
   int i = 0;
-  while (fatmnt[i] && tgt[i] == fatmnt[i])
+  while (m[i] && tgt[i] == m[i])
     i++;
-  if (fatmnt[i] != 0 || (tgt[i] != 0 && !(tgt[i] == '/' && tgt[i + 1] == 0)))
+  if (m[i] != 0 || (tgt[i] != 0 && !(tgt[i] == '/' && tgt[i + 1] == 0)))
     return -1;
   if (fat_busy())
     return -1; /* open files or cwds still inside */

@@ -290,7 +290,7 @@ t_mount(int argc, char **argv)
     }
     return 0;
   }
-  write(2, "usage: mount [fat0 /dir | -u /dir]\n", 35);
+  write(2, "usage: mount [fat0|sd0 DIR | -u DIR]\n", 37);
   return 1;
 }
 

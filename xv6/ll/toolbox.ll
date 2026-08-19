@@ -49,7 +49,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @.str.37 = private unnamed_addr constant [3 x i8] c"-u\00", align 1
 @.str.38 = private unnamed_addr constant [38 x i8] c"umount: failed (busy or not mounted)\0A\00", align 1
 @.str.39 = private unnamed_addr constant [15 x i8] c"mount: failed\0A\00", align 1
-@.str.40 = private unnamed_addr constant [36 x i8] c"usage: mount [fat0 /dir | -u /dir]\0A\00", align 1
+@.str.40 = private unnamed_addr constant [38 x i8] c"usage: mount [fat0|sd0 DIR | -u DIR]\0A\00", align 1
 @.str.41 = private unnamed_addr constant [20 x i8] c"usage: umount /dir\0A\00", align 1
 @.str.42 = private unnamed_addr constant [17 x i8] c"wc: cannot open\0A\00", align 1
 @wc_one.buf = internal global [512 x i8] zeroinitializer, align 1
@@ -577,7 +577,7 @@ define internal fastcc range(i32 0, 2) i32 @t_mount(i32 noundef %0, ptr noundef 
   br label %29
 
 27:                                               ; preds = %2
-  %28 = tail call i32 @write(i32 noundef 2, ptr noundef nonnull @.str.40, i32 noundef 35) #10
+  %28 = tail call i32 @write(i32 noundef 2, ptr noundef nonnull @.str.40, i32 noundef 37) #10
   br label %29
 
 29:                                               ; preds = %22, %17, %27, %25, %20, %9
