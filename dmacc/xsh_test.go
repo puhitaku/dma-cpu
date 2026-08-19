@@ -229,6 +229,9 @@ func bootXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, *
 				t.Logf("staged disk from flash slot generation %d", h(1))
 			}
 		}
+		if bd.ReadOnlyFS {
+			slotXIP = 0 // read-only board: sync disabled, golden disk only
+		}
 		m.Poke32(mustSym(t, kernC, "g_fsslot"), slotXIP)
 		m.Poke32(mustSym(t, kernC, "g_fatvol"), bd.FatVol)
 		if !bd.MachineFlashExec {
@@ -505,7 +508,11 @@ func TestXv6ShFeather(t *testing.T) {
 	for i := range flash {
 		flash[i] = 0xFF
 	}
-	m, _ := bootXshBoard(t, flash, boards.Feather)
+	m, kernC := bootXshBoard(t, flash, boards.Feather)
+	// The shipped feather is read-only (ReadOnlyFS); re-arm the slot
+	// here so the ARM-mailbox sync machinery — pause/park the scanout,
+	// flash ops, XIP restore, resume — keeps emulator coverage.
+	m.Poke32(mustSym(t, kernC, "g_fsslot"), boards.Feather.FSSlot)
 	m.FeedConsole("ls /dev\rcat /dev/fb0\rfbtest\rcat /dev/fb0\r" +
 		"echo persists > note\rsync\rcat note\recho done\r")
 	// Chunked run: the feather syncs through the ARM-executor mailbox

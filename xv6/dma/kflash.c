@@ -427,6 +427,9 @@ kflash_sync(void)
   flash_prog_page(base, (const uchar *)hdr);
   if (!kflash_arm)
     qmi_serial_xip(); /* keep XIP readable from plain-SPI state */
+  else
+    arm_request(3, 0, 0); /* one XIP restore for the whole sync: the
+                           * ARM re-runs the boot-time fast setup */
 
   fs_gen++;
   fs_dirty = 0;

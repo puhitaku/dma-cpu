@@ -8,9 +8,9 @@ target triple = "thumbv6m-unknown-none-eabi"
 @fb_owner = internal unnamed_addr global i32 0, align 4
 @fb_sram = dso_local local_unnamed_addr global i32 0, align 4
 @fb_abort = dso_local local_unnamed_addr global i32 0, align 4
+@fb_dmabase = dso_local local_unnamed_addr global i32 0, align 4
 @fb_psram_sz = dso_local local_unnamed_addr global i32 0, align 4
 @fb_hstx = dso_local local_unnamed_addr global i32 0, align 4
-@fb_dmabase = dso_local local_unnamed_addr global i32 0, align 4
 @fb_ctrl_walk = dso_local local_unnamed_addr global i32 0, align 4
 @fb_ctrl_kick = dso_local local_unnamed_addr global i32 0, align 4
 @fb_ctrl_strm = dso_local local_unnamed_addr global i32 0, align 4
@@ -149,23 +149,61 @@ declare void @llvm.lifetime.end.p0(i64 immarg, ptr captures(none)) #4
 ; Function Attrs: minsize nofree norecurse nounwind optsize
 define dso_local void @kfb_pause() local_unnamed_addr #3 {
   %1 = load i1, ptr @fb_on, align 4
-  br i1 %1, label %2, label %11
+  br i1 %1, label %2, label %38
 
 2:                                                ; preds = %0
-  %3 = load i32, ptr @fb_abort, align 4, !tbaa !3
-  %4 = inttoptr i32 %3 to ptr
-  store volatile i32 57344, ptr %4, align 4, !tbaa !3
-  %5 = load i32, ptr @fb_abort, align 4, !tbaa !3
-  %6 = inttoptr i32 %5 to ptr
-  br label %7
+  %3 = load i32, ptr @fb_sram, align 4, !tbaa !3
+  %4 = add i32 %3, 15412
+  %5 = add i32 %3, 22567
+  %6 = and i32 %5, -32
+  %7 = add i32 %6, 68
+  %8 = inttoptr i32 %7 to ptr
+  store volatile i32 0, ptr %8, align 4, !tbaa !3
+  %9 = load i32, ptr @fb_sram, align 4, !tbaa !3
+  %10 = add i32 %9, 22567
+  %11 = and i32 %10, -32
+  %12 = add i32 %11, 68
+  %13 = inttoptr i32 %4 to ptr
+  store volatile i32 %12, ptr %13, align 4, !tbaa !3
+  %14 = load i32, ptr @fb_sram, align 4
+  %15 = add i32 %14, 22567
+  %16 = and i32 %15, -32
+  %17 = add i32 %16, 68
+  %18 = inttoptr i32 %17 to ptr
+  br label %19
 
-7:                                                ; preds = %7, %2
-  %8 = load volatile i32, ptr %6, align 4, !tbaa !3
-  %9 = and i32 %8, 57344
-  %10 = icmp eq i32 %9, 0
-  br i1 %10, label %11, label %7, !llvm.loop !11
+19:                                               ; preds = %22, %2
+  %20 = phi i32 [ 0, %2 ], [ %25, %22 ]
+  %21 = icmp eq i32 %20, 40000
+  br i1 %21, label %26, label %22
 
-11:                                               ; preds = %7, %0
+22:                                               ; preds = %19
+  %23 = load volatile i32, ptr %18, align 4, !tbaa !3
+  %24 = icmp eq i32 %23, %14
+  %25 = add nuw nsw i32 %20, 1
+  br i1 %24, label %26, label %19, !llvm.loop !11
+
+26:                                               ; preds = %22, %19
+  %27 = load i32, ptr @fb_abort, align 4, !tbaa !3
+  %28 = inttoptr i32 %27 to ptr
+  store volatile i32 57344, ptr %28, align 4, !tbaa !3
+  %29 = load i32, ptr @fb_abort, align 4, !tbaa !3
+  %30 = inttoptr i32 %29 to ptr
+  br label %31
+
+31:                                               ; preds = %31, %26
+  %32 = load volatile i32, ptr %30, align 4, !tbaa !3
+  %33 = and i32 %32, 57344
+  %34 = icmp eq i32 %33, 0
+  br i1 %34, label %35, label %31, !llvm.loop !12
+
+35:                                               ; preds = %31
+  %36 = load i32, ptr @fb_dmabase, align 4, !tbaa !3
+  %37 = add i32 %36, 892
+  store volatile i32 %37, ptr %13, align 4, !tbaa !3
+  br label %38
+
+38:                                               ; preds = %0, %35
   ret void
 }
 
@@ -217,7 +255,7 @@ define internal fastcc void @start() unnamed_addr #3 {
 25:                                               ; preds = %25, %0
   %26 = load volatile i32, ptr %24, align 4, !tbaa !3
   %27 = icmp eq i32 %26, 0
-  br i1 %27, label %28, label %25, !llvm.loop !12
+  br i1 %27, label %28, label %25, !llvm.loop !13
 
 28:                                               ; preds = %25
   %29 = load i32, ptr @fb_ctrl_walk, align 4, !tbaa !3
@@ -381,7 +419,7 @@ define dso_local range(i32 -1, 301) i32 @kfb_init() local_unnamed_addr #3 {
   %51 = inttoptr i32 %50 to ptr
   store volatile i32 8832, ptr %51, align 4, !tbaa !3
   %52 = add nuw nsw i32 %28, 1
-  br label %27, !llvm.loop !13
+  br label %27, !llvm.loop !14
 
 53:                                               ; preds = %27, %56
   %54 = phi i32 [ %80, %56 ], [ 0, %27 ]
@@ -421,7 +459,7 @@ define dso_local range(i32 -1, 301) i32 @kfb_init() local_unnamed_addr #3 {
   %79 = inttoptr i32 %78 to ptr
   store volatile i32 61440, ptr %79, align 4, !tbaa !3
   %80 = add nuw nsw i32 %54, 1
-  br label %53, !llvm.loop !14
+  br label %53, !llvm.loop !15
 
 81:                                               ; preds = %53
   %82 = load i32, ptr @fb_psram, align 4, !tbaa !3
@@ -451,7 +489,7 @@ define dso_local range(i32 -1, 301) i32 @kfb_init() local_unnamed_addr #3 {
   store volatile i32 %84, ptr %99, align 4, !tbaa !3
   %100 = add i32 %84, 640
   %101 = add nuw nsw i32 %85, 1
-  br label %83, !llvm.loop !15
+  br label %83, !llvm.loop !16
 
 102:                                              ; preds = %83
   %103 = load i32, ptr @fb_dmabase, align 4, !tbaa !3
@@ -504,7 +542,7 @@ define dso_local range(i32 -1, 301) i32 @kfb_init() local_unnamed_addr #3 {
   %139 = inttoptr i32 %138 to ptr
   store volatile i32 %137, ptr %139, align 4, !tbaa !3
   %140 = add i32 %107, 32
-  br label %106, !llvm.loop !16
+  br label %106, !llvm.loop !17
 
 141:                                              ; preds = %106
   %142 = load i32, ptr @fb_sram, align 4, !tbaa !3
@@ -586,7 +624,7 @@ define dso_local range(i32 -1, 301) i32 @kfb_init() local_unnamed_addr #3 {
   %197 = inttoptr i32 %25 to ptr
   store volatile i32 0, ptr %197, align 4, !tbaa !3
   %198 = add i32 %25, 4
-  br label %24, !llvm.loop !17
+  br label %24, !llvm.loop !18
 
 199:                                              ; preds = %0, %141, %21
   %200 = phi i32 [ -1, %21 ], [ 300, %141 ], [ 0, %0 ]
@@ -625,3 +663,4 @@ attributes #9 = { minsize nobuiltin nounwind optsize "no-builtins" }
 !15 = distinct !{!15, !8, !9}
 !16 = distinct !{!16, !8, !9}
 !17 = distinct !{!17, !8, !9}
+!18 = distinct !{!18, !8, !9}

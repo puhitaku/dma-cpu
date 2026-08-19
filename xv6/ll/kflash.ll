@@ -366,7 +366,7 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #3 {
   %1 = alloca [64 x i32], align 4
   %2 = load i32, ptr @fsslot, align 4, !tbaa !3
   %3 = icmp eq i32 %2, 0
-  br i1 %3, label %82, label %4
+  br i1 %3, label %83, label %4
 
 4:                                                ; preds = %0
   %5 = add i32 %2, -268435456
@@ -380,7 +380,7 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #3 {
   %13 = load i32, ptr @fs_dirty, align 4
   %14 = icmp eq i32 %13, 0
   %15 = select i1 %12, i1 %14, i1 false
-  br i1 %15, label %82, label %16
+  br i1 %15, label %83, label %16
 
 16:                                               ; preds = %4
   %17 = load i32, ptr @kflash_arm, align 4, !tbaa !3
@@ -494,18 +494,48 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #3 {
   store volatile i32 3, ptr inttoptr (i32 1074593812 to ptr), align 4, !tbaa !3
   %78 = load i32, ptr @fs_gen, align 4, !tbaa !3
   %79 = add i32 %78, 1
-  br label %80
+  br label %81
 
-80:                                               ; preds = %77, %68
-  %81 = phi i32 [ %79, %77 ], [ %52, %68 ]
-  store i32 %81, ptr @fs_gen, align 4, !tbaa !3
+80:                                               ; preds = %68
+  call fastcc void @arm_request(i32 noundef 3, i32 noundef 0, i32 noundef 0) #4
+  br label %81
+
+81:                                               ; preds = %80, %77
+  %82 = phi i32 [ %52, %80 ], [ %79, %77 ]
+  store i32 %82, ptr @fs_gen, align 4, !tbaa !3
   store i32 0, ptr @fs_dirty, align 4, !tbaa !3
   call void @llvm.lifetime.end.p0(i64 256, ptr nonnull %1) #5
-  br label %82
+  br label %83
 
-82:                                               ; preds = %80, %4, %0
-  %83 = phi i32 [ -1, %0 ], [ 0, %4 ], [ 0, %80 ]
-  ret i32 %83
+83:                                               ; preds = %81, %4, %0
+  %84 = phi i32 [ -1, %0 ], [ 0, %4 ], [ 0, %81 ]
+  ret i32 %84
+}
+
+; Function Attrs: minsize nofree norecurse nounwind optsize
+define internal fastcc void @arm_request(i32 noundef range(i32 1, 4) %0, i32 noundef %1, i32 noundef %2) unnamed_addr #3 {
+  %4 = load i32, ptr @kflash_arm, align 4, !tbaa !3
+  %5 = inttoptr i32 %4 to ptr
+  store volatile i32 %0, ptr %5, align 4, !tbaa !20
+  %6 = getelementptr inbounds nuw i8, ptr %5, i32 4
+  store volatile i32 %1, ptr %6, align 4, !tbaa !22
+  %7 = getelementptr inbounds nuw i8, ptr %5, i32 8
+  store volatile i32 %2, ptr %7, align 4, !tbaa !23
+  %8 = getelementptr inbounds nuw i8, ptr %5, i32 12
+  %9 = load volatile i32, ptr %8, align 4, !tbaa !24
+  %10 = add i32 %9, 1
+  store volatile i32 %10, ptr %8, align 4, !tbaa !24
+  %11 = getelementptr inbounds nuw i8, ptr %5, i32 16
+  br label %12
+
+12:                                               ; preds = %12, %3
+  %13 = load volatile i32, ptr %11, align 4, !tbaa !25
+  %14 = load volatile i32, ptr %8, align 4, !tbaa !24
+  %15 = icmp eq i32 %13, %14
+  br i1 %15, label %16, label %12, !llvm.loop !26
+
+16:                                               ; preds = %12
+  ret void
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
@@ -524,33 +554,7 @@ define internal fastcc void @qspi_clocks(i32 noundef range(i32 16, 33) %0) unnam
   store volatile i32 57344, ptr inttoptr (i32 1073938452 to ptr), align 4, !tbaa !3
   store volatile i32 61440, ptr inttoptr (i32 1073938452 to ptr), align 4, !tbaa !3
   %7 = add nuw nsw i32 %3, 1
-  br label %2, !llvm.loop !20
-}
-
-; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @arm_request(i32 noundef range(i32 1, 3) %0, i32 noundef %1, i32 noundef %2) unnamed_addr #3 {
-  %4 = load i32, ptr @kflash_arm, align 4, !tbaa !3
-  %5 = inttoptr i32 %4 to ptr
-  store volatile i32 %0, ptr %5, align 4, !tbaa !21
-  %6 = getelementptr inbounds nuw i8, ptr %5, i32 4
-  store volatile i32 %1, ptr %6, align 4, !tbaa !23
-  %7 = getelementptr inbounds nuw i8, ptr %5, i32 8
-  store volatile i32 %2, ptr %7, align 4, !tbaa !24
-  %8 = getelementptr inbounds nuw i8, ptr %5, i32 12
-  %9 = load volatile i32, ptr %8, align 4, !tbaa !25
-  %10 = add i32 %9, 1
-  store volatile i32 %10, ptr %8, align 4, !tbaa !25
-  %11 = getelementptr inbounds nuw i8, ptr %5, i32 16
-  br label %12
-
-12:                                               ; preds = %12, %3
-  %13 = load volatile i32, ptr %11, align 4, !tbaa !26
-  %14 = load volatile i32, ptr %8, align 4, !tbaa !25
-  %15 = icmp eq i32 %13, %14
-  br i1 %15, label %16, label %12, !llvm.loop !27
-
-16:                                               ; preds = %12
-  ret void
+  br label %2, !llvm.loop !27
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
@@ -602,11 +606,11 @@ attributes #5 = { nounwind }
 !17 = distinct !{!17, !8, !9}
 !18 = distinct !{!18, !8, !9}
 !19 = distinct !{!19, !8, !9}
-!20 = distinct !{!20, !8, !9}
-!21 = !{!22, !4, i64 0}
-!22 = !{!"flashreq", !4, i64 0, !4, i64 4, !4, i64 8, !4, i64 12, !4, i64 16}
-!23 = !{!22, !4, i64 4}
-!24 = !{!22, !4, i64 8}
-!25 = !{!22, !4, i64 12}
-!26 = !{!22, !4, i64 16}
+!20 = !{!21, !4, i64 0}
+!21 = !{!"flashreq", !4, i64 0, !4, i64 4, !4, i64 8, !4, i64 12, !4, i64 16}
+!22 = !{!21, !4, i64 4}
+!23 = !{!21, !4, i64 8}
+!24 = !{!21, !4, i64 12}
+!25 = !{!21, !4, i64 16}
+!26 = distinct !{!26, !8, !9}
 !27 = distinct !{!27, !8, !9}

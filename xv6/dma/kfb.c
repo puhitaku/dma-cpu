@@ -93,6 +93,7 @@ uint fb_ctrl_copy;
 #define BUFS    (KICKTAB + FB_H * 12)
 #define VBUFS   ((BUFS + 2 * BUFSZ + 31) & ~31u)
 #define RESETW  (VBUFS + 64)
+#define SCRAP   (RESETW + 4) /* kfb_pause's frame-boundary sentinel */
 
 static uint fb_owner; /* pid holding the fb; 0 = fbcon renders */
 static uint fb_on;
@@ -277,14 +278,31 @@ kfb_pause(void)
 {
   if (!fb_on)
     return;
+  /* Park the ring at a frame boundary BY ITS OWN MACHINERY: point
+   * the tail block's write at a sentinel instead of the walker's
+   * READ_ADDR_TRIG, and wait for the executor to run it — the chain
+   * simply ends. Aborting RUNNING channels is not safe on silicon
+   * (prompts/006: ~50% wedge; here it left the executor free-running
+   * unpaced after resume — garbage video and a starved machine). */
+  uint tailw = RING + (NBLK - 1) * 16 + 4;
+  W32(SCRAP) = 0;
+  W32(tailw) = SCRAP;
+  /* Up to two frames (the walker may already hold the old tail);
+   * ~40k polls of machine time comfortably covers 33 ms. */
+  for (uint i = 0; i < 40000; i++) {
+    if (W32(SCRAP) == RING)
+      break;
+  }
+  /* Now a cleanup abort: a no-op on the parked ring; it still clears
+   * a stalled or torn state (and the emulator's credit-starved ring,
+   * which never reaches the tail). CHAN_ABORT is asynchronous — an
+   * in-flight PSRAM burst must retire before the caller tears the
+   * XIP window down, so poll the in-progress bits. */
   uint mask = (1u << CH_WALK) | (1u << CH_EXEC) | (1u << CH_COPY);
   W32(fb_abort) = mask;
-  /* CHAN_ABORT is asynchronous: it reads back as the in-progress
-   * abort bits, and an in-flight PSRAM burst must retire BEFORE the
-   * caller tears the XIP window down (RP2350 datasheet §12.6;
-   * skipping this wedged sync on silicon). */
   while (W32(fb_abort) & mask)
     ;
+  W32(tailw) = fb_dmabase + CH_WALK * 0x40 + 0x3C;
 }
 
 void

@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "pico/stdlib.h"
+#include "pico/bootrom.h"
 #include "hardware/flash.h"
 #if PICO_RP2350
 #include "hardware/structs/accessctrl.h"
@@ -874,6 +875,13 @@ static void shell_start(void)
  * runs the SDK's XIP-safe routines (they handle the quad-mode
  * exit-XIP dance the machine cannot). Between requests the loop just
  * spins in SRAM — the ARM never fetches from flash again. */
+#if defined(ADAFRUIT_FEATHER_RP2350)
+/* The bootrom's fast M0 window config, snapshotted at boot for the
+ * executor's end-of-sync restore (feather_video_init fills it). */
+static volatile uint32_t boot_m0[3];
+static volatile uint32_t boot_m0_saved;
+#endif
+
 static void __attribute__((noinline, section(".time_critical.park"))) park_forever(void)
 {
     __asm volatile("cpsid i");
@@ -882,15 +890,30 @@ static void __attribute__((noinline, section(".time_critical.park"))) park_forev
     for (;;) {
         if (req[3] != req[4]) {
             uint32_t op = req[0], off = req[1], src = req[2];
-            if (op == 1)
+            if (op == 1) {
                 flash_range_erase(off, 4096);
-            else if (op == 2)
+            } else if (op == 2) {
                 flash_range_program(off, (const uint8_t *)src, 256);
-            /* flash_range_* leaves XIP in the bootrom's slow serial
-             * command mode; restore full-speed XIP (and, via the SDK
-             * hook, the PSRAM CS1 setup) BEFORE acking — the machine
-             * resumes XIP fetches the moment the ack lands. */
-            flash_start_xip();
+            } else if (op == 3) {
+                /* End-of-sync XIP restore, once per sync. The SDK's
+                 * per-op path leaves XIP in the bootrom's slow serial
+                 * command mode (fine while the machine waits in
+                 * .ramtext); flash_start_xip makes XIP valid again
+                 * (and re-runs the CS1/PSRAM hook), then the M0
+                 * registers snapshotted at boot bring back the
+                 * bootrom's fast per-burst quad config. (Calling the
+                 * bootrom's saved XIP stub here hard-faulted: boot
+                 * RAM is reused after boot, so the saved pointer is a
+                 * lottery — plain register restore is exact.) */
+                flash_start_xip();
+#if defined(ADAFRUIT_FEATHER_RP2350)
+                if (boot_m0_saved) {
+                    qmi_hw->m[0].timing = boot_m0[0];
+                    qmi_hw->m[0].rfmt = boot_m0[1];
+                    qmi_hw->m[0].rcmd = boot_m0[2];
+                }
+#endif
+            }
             req[4] = req[3];
         }
     }
@@ -985,9 +1008,11 @@ static void xsh_start(void)
 #endif
     /* Stage the disk: a valid persistent slot (magic, size, word-sum
      * checksum, header written last by the kernel's sync) wins over
-     * the golden image. */
-    const uint32_t *hdr = (const uint32_t *)HIL_XSH_FSSLOT;
+     * the golden image. FSSLOT == 0 = read-only board: golden always. */
     int fromflash = 0;
+    uint32_t slotgen = 0;
+#if HIL_XSH_FSSLOT
+    const uint32_t *hdr = (const uint32_t *)HIL_XSH_FSSLOT;
     if (hdr[0] == 0x32464D44u && hdr[2] == HIL_XSH_DISK_LEN &&
         hdr[4] == HIL_XSH_GOLDSUM) { /* 'DMF2', and from THIS build's
                                       * golden disk — an older build's
@@ -1000,15 +1025,17 @@ static void xsh_start(void)
             for (uint32_t i = 0; i < HIL_XSH_DISK_LEN; i += 4)
                 reg_wr(HIL_XSH_BLOB_DISK_HOME + i, img[i / 4]);
             fromflash = 1;
+            slotgen = hdr[1];
         }
     }
+#endif
     if (!fromflash) {
         stage_blob(HIL_XSH_BLOB_DISK_HOME, hil_xsh_blob_disk, sizeof hil_xsh_blob_disk);
     }
     printf("=== handing console to UPSTREAM xv6 sh + fs, Tier-C compact "
            "(disk: %s gen %lu; ARM -> SRAM wfi; the $ prompt below is served "
            "entirely by the DMA controller) ===\n",
-           fromflash ? "FLASH SLOT" : "golden", fromflash ? (unsigned long)hdr[1] : 0);
+           fromflash ? "FLASH SLOT" : "golden", (unsigned long)slotgen);
     dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 1}; /* compact machine */
     if (dmx_start(&cfg, HIL_XSH_ENTRY) != DMX_OK) {
         printf("XSH: FAIL start\n");
@@ -1091,6 +1118,23 @@ static void feather_video_init(void)
 
     printf("feather: psram %u KiB, clk_hstx 126 MHz, hstx dvi ready\n",
            (unsigned)(psram_get_size() / 1024));
+    /* The boot-time QMI window configs, for comparing against the
+     * post-sync state (the executor must restore these exactly). */
+    printf("feather: qmi m0 timing=%08lx rfmt=%08lx rcmd=%08lx\n",
+           (unsigned long)qmi_hw->m[0].timing,
+           (unsigned long)qmi_hw->m[0].rfmt, (unsigned long)qmi_hw->m[0].rcmd);
+    printf("feather: qmi m1 timing=%08lx rfmt=%08lx rcmd=%08lx wfmt=%08lx\n",
+           (unsigned long)qmi_hw->m[1].timing,
+           (unsigned long)qmi_hw->m[1].rfmt, (unsigned long)qmi_hw->m[1].rcmd,
+           (unsigned long)qmi_hw->m[1].wfmt);
+    /* Snapshot the bootrom's fast M0 window config for the executor's
+     * end-of-sync restore. It is per-burst (RFMT PREFIX_LEN=8, RCMD
+     * suffix 0x00 — no continuous-read mode), so writing the three
+     * registers back is exact and safe from any chip state. */
+    boot_m0[0] = qmi_hw->m[0].timing;
+    boot_m0[1] = qmi_hw->m[0].rfmt;
+    boot_m0[2] = qmi_hw->m[0].rcmd;
+    boot_m0_saved = 1;
 }
 #endif
 
@@ -1125,7 +1169,7 @@ int main(void)
                HIL_SKU, iter, (void *)&__bss_end__,
                (unsigned long)HIL_MACHINE_RAM_START,
                (unsigned long)HIL_MACHINE_RAM_END);
-#ifdef HIL_XSH_FSSLOT
+#if defined(HIL_XSH_FSSLOT) && HIL_XSH_FSSLOT
         extern char __flash_binary_end;
         if ((uintptr_t)&__flash_binary_end >= HIL_XSH_FSSLOT) {
             printf("FATAL: firmware overlaps the fs flash slot\n");

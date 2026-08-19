@@ -155,6 +155,36 @@ an open item that would speed the whole kernel; llvm.usub.sat was
 added to the intrinsic set along the way (clang emits it for clamped
 subtraction).
 
+## The sync saga (second silicon round)
+
+Two more stacked bugs surfaced once sync ran with the display live,
+each pinned by SWD snapshots:
+
+- **CHAN_ABORT on the running ring corrupts it.** kfb_pause aborted
+  active channels; prompts/006 already measured ~50% wedge rates for
+  exactly that. The half-wedged executor free-ran unpaced after
+  resume: garbage video, machine starved of bus slots (~15 s per
+  keystroke). Fixed: pause parks the ring at a frame boundary by its
+  own machinery — the tail block is redirected to write a sentinel,
+  the chain ends itself, and the follow-up abort only cleans parked
+  or stalled states. Snapshot-verified on silicon.
+- **The bootrom's "saved XIP setup stub" is a lottery.** The op-3
+  XIP restore called the pointer boot RAM holds; boot RAM is reused
+  after boot, and the ARM hard-faulted mid-op (mailbox seq=ack+1, PC
+  in the fault handler) — the machine then waits forever on the ack,
+  which read as "sluggish". Fixed: the firmware snapshots the
+  bootrom's M0 window registers at boot (per-burst EB quad, no
+  continuous-read mode — blind register restore is exact) and the
+  executor writes them back once per sync (mailbox op 3), after
+  flash_start_xip re-validates the window. Post-sync console: 9 ms
+  echo, sync 2.3 s, verified over repeated syncs.
+
+The feather also ships **read-only by default** (boards.ReadOnlyFS):
+g_fsslot = 0, no slot staging, sync returns -1 — persistence is a
+nice-to-have and can never disturb the display in a demo. The sync
+machinery stays covered: silicon-validated above, and
+TestXv6ShFeather re-arms the slot in the emulator.
+
 Open items: 320x240 double-scan mode table entry; DisplayLink USB
 output sharing the same framebuffer + FB_ACQUIRE contract; a
 presentation app on SYS_fb.

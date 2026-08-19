@@ -60,10 +60,15 @@ type Board struct {
 	// itself for sync (the RP2350 QMI direct-mode driver). Boards
 	// without it use the parked ARM's mailbox executor.
 	MachineFlashExec bool
-	DiskBlocks       int      // fsimg.New size (1 KiB blocks)
-	DiskApps         []string // user programs baked into the RAM disk
-	ToolboxLinks     []string // multi-call names linked onto toolbox
-	Bundles          []string // dmxgen bundles beyond the HIL suite
+	// ReadOnlyFS ships the board without persistence: the fs slot is
+	// never staged or written (sync returns -1) even though the flash
+	// section stays reserved. Demo posture: a sync can then never
+	// disturb the display path.
+	ReadOnlyFS   bool
+	DiskBlocks   int      // fsimg.New size (1 KiB blocks)
+	DiskApps     []string // user programs baked into the RAM disk
+	ToolboxLinks []string // multi-call names linked onto toolbox
+	Bundles      []string // dmxgen bundles beyond the HIL suite
 }
 
 // HasBundle reports whether the board installs the named bundle.
@@ -183,10 +188,15 @@ var Feather = &Board{
 	// a millisecond of resuming the display (prompts/036). The SDK
 	// path restores full quad XIP and re-runs the CS1 setup hook.
 	MachineFlashExec: false,
-	DiskBlocks:       96,
-	DiskApps:         stdApps,
-	ToolboxLinks:     fbLinks,
-	Bundles:          []string{"shell", "syscall", "exec", "xsh"},
+	// RO by default: the HDMI console is the product; persistence is
+	// a nice-to-have and stays off until wanted (slides arrive over
+	// USB, not the fs). The sync machinery itself remains validated
+	// (silicon + TestXv6ShFeather re-arms it in the emulator).
+	ReadOnlyFS:   true,
+	DiskBlocks:   96,
+	DiskApps:     stdApps,
+	ToolboxLinks: fbLinks,
+	Bundles:      []string{"shell", "syscall", "exec", "xsh"},
 }
 
 // All maps board names to definitions.

@@ -872,7 +872,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		{"g_nextpid", 3}, {"g_k_sysentry", sy(kern, "sys_entry")},
 		{"g_inj_wreg", emu.ChanRegAddr(inj, emu.OffWriteAddr)},
 		{"g_inj_treg", emu.ChanRegAddr(inj, emu.OffAl1TransCountTrig)},
-		{"g_fsslot", bd.FSSlot},
+		{"g_fsslot", roFSSlot(bd)},
 		{"g_initpid", 2},        /* idle adopts orphans (prompts/024) */
 		{"g_fgpid", 1},          /* Ctrl-C interrupts sh's foreground job */
 		{"g_fatvol", fatVolXIP}, /* the vfat volume (prompts/029) */
@@ -1023,7 +1023,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	b.sym["FATVOL"] = fatVolXIP
 	b.sym["BLOB_DISK_HOME"] = diskHome
 	b.sym["INJ_CH"] = uint32(inj)
-	b.sym["FSSLOT"] = bd.FSSlot
+	b.sym["FSSLOT"] = roFSSlot(bd)
 	b.sym["DISK_LEN"] = uint32(len(disk))
 	b.sym["FLASHREQ"] = bd.Scratch + 0x10
 	b.sym["GOLDSUM"] = checksum32(disk)
@@ -1203,6 +1203,15 @@ func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 // segment (0 text, 1 data), bit30 referenced segment, low 30 bits off.
 // flashArm picks the flash executor the kernel uses for sync: 0 for
 // the machine-driven QMI driver, else the ARM mailbox address.
+// roFSSlot is the slot address a board's kernel sees: 0 on read-only
+// boards (sync disabled, no slot staging at boot).
+func roFSSlot(bd *boards.Board) uint32 {
+	if bd.ReadOnlyFS {
+		return 0
+	}
+	return bd.FSSlot
+}
+
 func flashArm(bd *boards.Board) uint32 {
 	if bd.MachineFlashExec {
 		return 0
