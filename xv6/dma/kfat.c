@@ -251,10 +251,16 @@ fat_sd_rawread(uint dst, uint off, uint n)
   while (done < n) {
     uint p = off + done;
     uint so = p & 511;
+    uint d = dst + done;
+    if (so == 0 && n - done >= 512 && (d & 3) == 0) {
+      kflash_sd(4, p >> 9, d); /* whole sector: straight to dst */
+      done += 512;
+      continue;
+    }
     uint take = 512 - so;
     if (take > n - done)
       take = n - done;
-    memmove((void *)(dst + done), sdsec(p >> 9) + so, take);
+    memmove((void *)d, sdsec(p >> 9) + so, take);
     done += take;
   }
   return (int)n;
@@ -536,13 +542,22 @@ fat_readi(struct inode *ip, uint dst, uint off, uint n)
     if (take > n - done)
       take = n - done;
     if (fat_sd) {
-      /* Copy per cached sector: memmove from the SRAM cache slot, so
-       * bulk reads run at memcpy speed plus one mailbox round-trip
-       * per 512 bytes. */
+      /* Bulk fast path: for whole, aligned sectors the ARM writes
+       * the SPI data STRAIGHT into the caller's buffer (op 4 takes
+       * any SRAM address) — no cache slot, no machine-side memmove,
+       * which was interpreted word-at-a-time and dominated slide
+       * loads. Ragged head/tail bytes still go through the cache. */
       uint voff = clusaddr(cl) + pos - SDBASE;
       uint left = take, d = dst + done;
       while (left) {
         uint in = voff & 511;
+        if (in == 0 && left >= 512 && (d & 3) == 0) {
+          kflash_sd(4, sdpart + (voff >> 9), d);
+          voff += 512;
+          d += 512;
+          left -= 512;
+          continue;
+        }
         uint chunk = 512 - in;
         if (chunk > left)
           chunk = left;

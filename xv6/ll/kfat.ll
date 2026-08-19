@@ -350,44 +350,65 @@ define dso_local range(i32 0, 2147483137) i32 @fat_sd_bytes() local_unnamed_addr
 define dso_local range(i32 -1, 2147483137) i32 @fat_sd_rawread(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #2 {
   %4 = tail call fastcc i32 @sd_up() #10
   %5 = icmp slt i32 %4, 0
-  br i1 %5, label %30, label %6
+  br i1 %5, label %42, label %6
 
 6:                                                ; preds = %3
   %7 = load i32, ptr @sdsectors, align 4, !tbaa !10
   %8 = tail call i32 @llvm.umin.i32(i32 %7, i32 4194303)
   %9 = shl nuw nsw i32 %8, 9
   %10 = icmp ult i32 %1, %9
-  br i1 %10, label %11, label %30
+  br i1 %10, label %11, label %42
 
 11:                                               ; preds = %6
   %12 = sub nuw nsw i32 %9, %1
   %13 = tail call i32 @llvm.umin.i32(i32 %2, i32 %12)
   br label %14
 
-14:                                               ; preds = %17, %11
-  %15 = phi i32 [ 0, %11 ], [ %29, %17 ]
+14:                                               ; preds = %40, %11
+  %15 = phi i32 [ 0, %11 ], [ %41, %40 ]
   %16 = icmp ult i32 %15, %13
-  br i1 %16, label %17, label %30
+  br i1 %16, label %17, label %42
 
 17:                                               ; preds = %14
   %18 = add i32 %15, %1
   %19 = and i32 %18, 511
-  %20 = sub nuw nsw i32 512, %19
+  %20 = add i32 %15, %0
   %21 = sub nuw i32 %13, %15
-  %22 = tail call i32 @llvm.umin.i32(i32 %20, i32 %21)
-  %23 = add i32 %15, %0
-  %24 = inttoptr i32 %23 to ptr
-  %25 = lshr i32 %18, 9
-  %26 = tail call fastcc ptr @sdsec(i32 noundef %25) #10
-  %27 = getelementptr inbounds nuw i8, ptr %26, i32 %19
-  %28 = tail call ptr @memmove(ptr noundef %24, ptr noundef nonnull %27, i32 noundef %22) #12
-  %29 = add i32 %22, %15
+  %22 = icmp samesign ugt i32 %21, 511
+  %23 = and i32 %20, 3
+  %24 = or i32 %23, %19
+  %25 = icmp eq i32 %24, 0
+  %26 = and i1 %22, %25
+  br i1 %26, label %27, label %31
+
+27:                                               ; preds = %17
+  %28 = lshr exact i32 %18, 9
+  %29 = tail call i32 @kflash_sd(i32 noundef 4, i32 noundef %28, i32 noundef %20) #12
+  %30 = add i32 %15, 512
+  br label %40
+
+31:                                               ; preds = %17
+  %32 = sub nuw nsw i32 512, %19
+  %33 = tail call i32 @llvm.umin.i32(i32 %32, i32 %21)
+  %34 = inttoptr i32 %20 to ptr
+  %35 = lshr i32 %18, 9
+  %36 = tail call fastcc ptr @sdsec(i32 noundef %35) #10
+  %37 = getelementptr inbounds nuw i8, ptr %36, i32 %19
+  %38 = tail call ptr @memmove(ptr noundef %34, ptr noundef nonnull %37, i32 noundef %33) #12
+  %39 = add i32 %33, %15
+  br label %40
+
+40:                                               ; preds = %31, %27
+  %41 = phi i32 [ %30, %27 ], [ %39, %31 ]
   br label %14, !llvm.loop !19
 
-30:                                               ; preds = %14, %6, %3
-  %31 = phi i32 [ -1, %3 ], [ 0, %6 ], [ %13, %14 ]
-  ret i32 %31
+42:                                               ; preds = %14, %6, %3
+  %43 = phi i32 [ -1, %3 ], [ 0, %6 ], [ %13, %14 ]
+  ret i32 %43
 }
+
+; Function Attrs: minsize optsize
+declare dso_local i32 @kflash_sd(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #6
 
 ; Function Attrs: minsize optsize
 declare dso_local ptr @memmove(ptr noundef, ptr noundef, i32 noundef) local_unnamed_addr #6
@@ -1137,14 +1158,14 @@ define dso_local i32 @fat_readi(ptr noundef %0, i32 noundef %1, i32 noundef %2, 
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %7) #11
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %6) #11
   call void @llvm.lifetime.end.p0(i64 64, ptr nonnull %5) #11
-  br label %156
+  br label %175
 
 74:                                               ; preds = %4
   %75 = getelementptr inbounds [16 x %struct.fatmeta], ptr @fatmeta, i32 0, i32 %14
   %76 = getelementptr inbounds nuw i8, ptr %75, i32 4
   %77 = load i32, ptr %76, align 4, !tbaa !29
   %78 = icmp ult i32 %2, %77
-  br i1 %78, label %79, label %156
+  br i1 %78, label %79, label %175
 
 79:                                               ; preds = %74
   %80 = load i32, ptr %75, align 4, !tbaa !27
@@ -1175,15 +1196,15 @@ define dso_local i32 @fat_readi(ptr noundef %0, i32 noundef %1, i32 noundef %2, 
   %99 = urem i32 %2, %98
   br label %100
 
-100:                                              ; preds = %153, %93
-  %101 = phi i32 [ %84, %93 ], [ %155, %153 ]
-  %102 = phi i32 [ 0, %93 ], [ %154, %153 ]
-  %103 = phi i32 [ %99, %93 ], [ 0, %153 ]
+100:                                              ; preds = %172, %93
+  %101 = phi i32 [ %84, %93 ], [ %174, %172 ]
+  %102 = phi i32 [ 0, %93 ], [ %173, %172 ]
+  %103 = phi i32 [ %99, %93 ], [ 0, %172 ]
   %104 = icmp ult i32 %102, %97
   %105 = add i32 %101, -2
   %106 = icmp ult i32 %105, 268435446
   %107 = select i1 %104, i1 %106, i1 false
-  br i1 %107, label %108, label %156
+  br i1 %107, label %108, label %175
 
 108:                                              ; preds = %100
   %109 = load i32, ptr @clussz, align 4, !tbaa !10
@@ -1191,7 +1212,7 @@ define dso_local i32 @fat_readi(ptr noundef %0, i32 noundef %1, i32 noundef %2, 
   %111 = sub nuw i32 %97, %102
   %112 = tail call i32 @llvm.umin.i32(i32 %110, i32 %111)
   %113 = load i1, ptr @fat_sd, align 4
-  br i1 %113, label %114, label %142
+  br i1 %113, label %114, label %161
 
 114:                                              ; preds = %108
   %115 = load i32, ptr @fbase, align 4, !tbaa !10
@@ -1204,50 +1225,75 @@ define dso_local i32 @fat_readi(ptr noundef %0, i32 noundef %1, i32 noundef %2, 
   %122 = add i32 %102, %1
   br label %123
 
-123:                                              ; preds = %128, %114
-  %124 = phi i32 [ %121, %114 ], [ %139, %128 ]
-  %125 = phi i32 [ %112, %114 ], [ %141, %128 ]
-  %126 = phi i32 [ %122, %114 ], [ %140, %128 ]
+123:                                              ; preds = %157, %114
+  %124 = phi i32 [ %121, %114 ], [ %158, %157 ]
+  %125 = phi i32 [ %112, %114 ], [ %159, %157 ]
+  %126 = phi i32 [ %122, %114 ], [ %160, %157 ]
   %127 = icmp eq i32 %125, 0
-  br i1 %127, label %153, label %128
+  br i1 %127, label %172, label %128
 
 128:                                              ; preds = %123
   %129 = and i32 %124, 511
-  %130 = sub nuw nsw i32 512, %129
-  %131 = tail call i32 @llvm.umin.i32(i32 %130, i32 %125)
-  %132 = inttoptr i32 %126 to ptr
-  %133 = load i32, ptr @sdpart, align 4, !tbaa !10
-  %134 = lshr i32 %124, 9
-  %135 = add i32 %133, %134
-  %136 = tail call fastcc ptr @sdsec(i32 noundef %135) #10
-  %137 = getelementptr inbounds nuw i8, ptr %136, i32 %129
-  %138 = tail call ptr @memmove(ptr noundef %132, ptr noundef nonnull %137, i32 noundef %131) #12
-  %139 = add i32 %131, %124
-  %140 = add i32 %131, %126
-  %141 = sub i32 %125, %131
+  %130 = icmp eq i32 %129, 0
+  %131 = icmp ugt i32 %125, 511
+  %132 = and i1 %130, %131
+  %133 = and i32 %126, 3
+  %134 = icmp eq i32 %133, 0
+  %135 = select i1 %132, i1 %134, i1 false
+  br i1 %135, label %136, label %144
+
+136:                                              ; preds = %128
+  %137 = load i32, ptr @sdpart, align 4, !tbaa !10
+  %138 = lshr exact i32 %124, 9
+  %139 = add i32 %137, %138
+  %140 = tail call i32 @kflash_sd(i32 noundef 4, i32 noundef %139, i32 noundef %126) #12
+  %141 = add i32 %124, 512
+  %142 = add i32 %126, 512
+  %143 = add i32 %125, -512
+  br label %157
+
+144:                                              ; preds = %128
+  %145 = sub nuw nsw i32 512, %129
+  %146 = tail call i32 @llvm.umin.i32(i32 %145, i32 %125)
+  %147 = inttoptr i32 %126 to ptr
+  %148 = load i32, ptr @sdpart, align 4, !tbaa !10
+  %149 = lshr i32 %124, 9
+  %150 = add i32 %148, %149
+  %151 = tail call fastcc ptr @sdsec(i32 noundef %150) #10
+  %152 = getelementptr inbounds nuw i8, ptr %151, i32 %129
+  %153 = tail call ptr @memmove(ptr noundef %147, ptr noundef nonnull %152, i32 noundef %146) #12
+  %154 = add i32 %146, %124
+  %155 = add i32 %146, %126
+  %156 = sub i32 %125, %146
+  br label %157
+
+157:                                              ; preds = %144, %136
+  %158 = phi i32 [ %141, %136 ], [ %154, %144 ]
+  %159 = phi i32 [ %143, %136 ], [ %156, %144 ]
+  %160 = phi i32 [ %142, %136 ], [ %155, %144 ]
   br label %123, !llvm.loop !49
 
-142:                                              ; preds = %108
-  %143 = add i32 %102, %1
-  %144 = inttoptr i32 %143 to ptr
-  %145 = load i32, ptr @fbase, align 4, !tbaa !10
-  %146 = load i32, ptr @dataoff, align 4, !tbaa !10
-  %147 = mul i32 %109, %105
-  %148 = add i32 %147, %103
-  %149 = add i32 %148, %145
-  %150 = add i32 %149, %146
-  %151 = inttoptr i32 %150 to ptr
-  %152 = tail call ptr @memmove(ptr noundef %144, ptr noundef %151, i32 noundef %112) #12
-  br label %153
+161:                                              ; preds = %108
+  %162 = add i32 %102, %1
+  %163 = inttoptr i32 %162 to ptr
+  %164 = load i32, ptr @fbase, align 4, !tbaa !10
+  %165 = load i32, ptr @dataoff, align 4, !tbaa !10
+  %166 = mul i32 %109, %105
+  %167 = add i32 %166, %103
+  %168 = add i32 %167, %164
+  %169 = add i32 %168, %165
+  %170 = inttoptr i32 %169 to ptr
+  %171 = tail call ptr @memmove(ptr noundef %163, ptr noundef %170, i32 noundef %112) #12
+  br label %172
 
-153:                                              ; preds = %123, %142
-  %154 = add i32 %112, %102
-  %155 = tail call fastcc i32 @fat_next(i32 noundef %101) #10
+172:                                              ; preds = %123, %161
+  %173 = add i32 %112, %102
+  %174 = tail call fastcc i32 @fat_next(i32 noundef %101) #10
   br label %100, !llvm.loop !50
 
-156:                                              ; preds = %100, %74, %71
-  %157 = phi i32 [ %73, %71 ], [ 0, %74 ], [ %102, %100 ]
-  ret i32 %157
+175:                                              ; preds = %100, %74, %71
+  %176 = phi i32 [ %73, %71 ], [ 0, %74 ], [ %102, %100 ]
+  ret i32 %176
 }
 
 ; Function Attrs: minsize nounwind optsize
@@ -1281,9 +1327,6 @@ define dso_local void @fat_stati(ptr noundef readonly captures(none) %0, ptr nou
   store i32 %11, ptr %12, align 4, !tbaa !57
   ret void
 }
-
-; Function Attrs: minsize optsize
-declare dso_local i32 @kflash_sd(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #6
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
 declare i32 @llvm.umin.i32(i32, i32) #9
