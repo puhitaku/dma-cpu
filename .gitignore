@@ -15,3 +15,6 @@
 /examples/*/build/
 .DS_Store
 /dmxgen
+
+# Temporary area
+/temp
