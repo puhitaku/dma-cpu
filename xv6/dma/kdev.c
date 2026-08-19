@@ -6,6 +6,8 @@
  *
  *   console   the console device (open/read/write as usual)
  *   fat0      the raw vfat volume bytes, straight off XIP
+ *   sd0       the raw SD card (boards with the ARM SD executor);
+ *             size 0 until the card is up — the first read inits it
  *   gpio      one "NN=x" line per pad (input buffer level)
  *   pio0..2   the PIO block's enabled-SM mask
  */
@@ -30,17 +32,19 @@ int kfb_active(void); /* kfb.c */
 int kfb_w(void);
 int kfb_h(void);
 uint kfb_owner(void);
+uint fat_sd_bytes(void); /* kfat.c */
+int fat_sd_rawread(uint dst, uint off, uint n);
 
-enum { DK_DIR, DK_CONSOLE, DK_FAT, DK_GPIO, DK_PIO, DK_FB };
+enum { DK_DIR, DK_CONSOLE, DK_FAT, DK_GPIO, DK_PIO, DK_FB, DK_SD };
 
 static const struct {
   const char *name;
   int kind;
   int arg;
 } devtab[] = {
-    {"console", DK_CONSOLE, 0}, {"fat0", DK_FAT, 0}, {"gpio", DK_GPIO, 0},
-    {"pio0", DK_PIO, 0},        {"pio1", DK_PIO, 1}, {"pio2", DK_PIO, 2},
-    {"fb0", DK_FB, 0},
+    {"console", DK_CONSOLE, 0}, {"fat0", DK_FAT, 0}, {"sd0", DK_SD, 0},
+    {"gpio", DK_GPIO, 0},       {"pio0", DK_PIO, 0}, {"pio1", DK_PIO, 1},
+    {"pio2", DK_PIO, 2},        {"fb0", DK_FB, 0},
 };
 #define NDEV ((int)(sizeof(devtab) / sizeof(devtab[0])))
 
@@ -133,6 +137,8 @@ dev_size(int idx)
   switch (devtab[idx].kind) {
   case DK_FAT:
     return fat0_size();
+  case DK_SD: /* no lazy init here: ls /dev must not probe the bus */
+    return fat_sd_bytes();
   case DK_GPIO:
   case DK_PIO:
   case DK_FB:
@@ -234,6 +240,8 @@ dev_readi(struct inode *ip, uint dst, uint off, uint n)
     return (int)(made * sizeof(de));
   }
   int idx = (int)ip->inum - 1;
+  if (devtab[idx].kind == DK_SD)
+    return fat_sd_rawread(dst, off, n);
   if (devtab[idx].kind == DK_FAT) {
     uint size = fat0_size();
     if (off >= size)

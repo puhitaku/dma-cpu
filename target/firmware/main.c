@@ -925,7 +925,8 @@ static uint8_t sd_cmd(uint8_t cmd, uint32_t arg, uint8_t crc)
     return 0xFF;
 }
 
-static int sd_hc; /* SDHC/SDXC: block addressing */
+static int sd_hc;           /* SDHC/SDXC: block addressing */
+static uint32_t sd_sectors; /* capacity from the CSD (op 5 reports it) */
 
 static int sd_init_card(void)
 {
@@ -974,6 +975,34 @@ static int sd_init_card(void)
     }
     if (!sd_hc)
         sd_cmd(16, 512, 0x01); /* byte-addressed cards: block size 512 */
+    sd_sectors = 0;
+    if (sd_cmd(9, 0, 0x01) == 0x00) { /* SEND_CSD: card capacity */
+        int tok = -1;
+        for (int i = 0; i < 200000; i++) {
+            if (sd_xfer(0xFF) == 0xFE) {
+                tok = 0;
+                break;
+            }
+        }
+        if (tok == 0) {
+            uint8_t csd[16];
+            for (int i = 0; i < 16; i++)
+                csd[i] = sd_xfer(0xFF);
+            sd_xfer(0xFF); /* CRC */
+            sd_xfer(0xFF);
+            if (csd[0] >> 6 == 1) { /* CSD v2 (SDHC/SDXC) */
+                uint32_t csize = ((uint32_t)(csd[7] & 0x3F) << 16) |
+                                 ((uint32_t)csd[8] << 8) | csd[9];
+                sd_sectors = (csize + 1) * 1024;
+            } else { /* CSD v1 */
+                uint32_t csize = ((uint32_t)(csd[6] & 3) << 10) |
+                                 ((uint32_t)csd[7] << 2) | (csd[8] >> 6);
+                uint32_t mult = ((uint32_t)(csd[9] & 3) << 1) | (csd[10] >> 7);
+                uint32_t bl = csd[5] & 0xF;
+                sd_sectors = ((csize + 1) << (mult + 2)) << bl >> 9;
+            }
+        }
+    }
     sd_cs(0);
     sd_xfer(0xFF);
     spi_set_baudrate(SD_SPI, 20 * 1000 * 1000);
@@ -1110,9 +1139,9 @@ static void __attribute__((noinline, section(".time_critical.park"))) park_forev
                 if (sd_read_sector(off, (uint8_t *)src) != 0)
                     for (int i = 0; i < 512; i++) /* poison, never stale */
                         ((uint8_t *)src)[i] = 0xFF;
-            } else if (op == 5) { /* SD: (re)initialize; {status,0} at src */
+            } else if (op == 5) { /* SD: (re)init; {status, sectors} at src */
                 ((uint32_t *)src)[0] = (uint32_t)sd_init_card();
-                ((uint32_t *)src)[1] = 0;
+                ((uint32_t *)src)[1] = sd_sectors;
 #endif
             } else if (op == 3) {
                 /* End-of-sync XIP restore, once per sync. The SDK's

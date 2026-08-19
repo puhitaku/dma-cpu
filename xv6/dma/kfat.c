@@ -46,17 +46,19 @@ static uint rootclus;
 extern int kflash_sd(uint op, uint off, uint src); /* kflash.c */
 #define SDBASE 0x08000000u /* fake volume base; never dereferenced */
 #define NSDCACHE 2
-static uint fat_sd;   /* volume lives on SD, not XIP */
-static uint sdpart;   /* partition start LBA */
+static uint fat_sd;    /* volume lives on SD, not XIP */
+static uint sdpart;    /* partition start LBA */
+static uint sdsectors; /* card capacity; 0 = card not brought up */
 static uchar sdcache[NSDCACHE][512];
 static uint sdtag[NSDCACHE]; /* LBA + 1; 0 = empty */
 static uint sdvict;          /* round-robin victim */
 
-/* sdsec returns the cache slot holding the given volume sector. */
+/* sdsec returns the cache slot holding the given absolute-LBA sector
+ * (volume readers add sdpart; /dev/sd0 reads the whole card). */
 static uchar *
-sdsec(uint sec)
+sdsec(uint lba)
 {
-  uint tag = sdpart + sec + 1;
+  uint tag = lba + 1;
   for (int i = 0; i < NSDCACHE; i++) {
     if (sdtag[i] == tag)
       return sdcache[i];
@@ -64,10 +66,30 @@ sdsec(uint sec)
   uint v = sdvict;
   sdvict = (sdvict + 1) % NSDCACHE;
   sdtag[v] = 0;
-  if (kflash_sd(4, sdpart + sec, (uint)sdcache[v]) < 0)
+  if (kflash_sd(4, lba, (uint)sdcache[v]) < 0)
     return sdcache[v]; /* no executor: stale bytes, mount gates this */
   sdtag[v] = tag;
   return sdcache[v];
+}
+
+/* sd_up brings the card up once (op 5 through the ARM executor) and
+ * learns its capacity; a card swap is only seen after unmount clears
+ * sdsectors, so mounting forces a fresh init. Returns 0 when ready. */
+static int
+sd_up(void)
+{
+  if (sdsectors)
+    return 0;
+  volatile uint res[2]; /* volatile: keeps clang from fusing the pair
+                         * into an i64 store dmacc cannot lower */
+  res[0] = 0xFFFFFFFFu;
+  res[1] = 0;
+  if (kflash_sd(5, 0, (uint)res) < 0 || res[0] != 0)
+    return -1;
+  sdsectors = res[1];
+  for (int i = 0; i < NSDCACHE; i++)
+    sdtag[i] = 0;
+  return sdsectors ? 0 : -1;
 }
 
 struct fatmeta {
@@ -94,7 +116,7 @@ rd8(uint a)
 {
   if (fat_sd) {
     uint off = a - SDBASE;
-    return sdsec(off >> 9)[off & 511];
+    return sdsec(sdpart + (off >> 9))[off & 511];
   }
   return *(volatile uchar *)a;
 }
@@ -117,14 +139,9 @@ int fat_mount(uint base);
 int
 fat_mount_sd(void)
 {
-  volatile uint res[2]; /* volatile: keeps clang from fusing the pair
-                         * into an i64 store dmacc cannot lower */
-  res[0] = 0xFFFFFFFFu;
-  res[1] = 0;
-  if (kflash_sd(5, 0, (uint)res) < 0 || res[0] != 0)
+  sdsectors = 0; /* force a fresh card init: it may have been swapped */
+  if (sd_up() < 0)
     return -1;
-  for (int i = 0; i < NSDCACHE; i++)
-    sdtag[i] = 0;
   fat_sd = 1;
   sdpart = 0;
   /* MBR or BPB? A BPB has a jump opcode and 512 bytes/sector at +11;
@@ -143,8 +160,7 @@ fat_mount_sd(void)
     }
     sdpart = rd8(pe + 8) | (rd8(pe + 9) << 8) | (rd8(pe + 10) << 16) |
              (rd8(pe + 11) << 24);
-    for (int i = 0; i < NSDCACHE; i++)
-      sdtag[i] = 0; /* sector 0 now means the partition's sector 0 */
+    /* cache tags are absolute LBAs: no flush needed across the shift */
   }
   if (fat_mount(SDBASE) < 0) {
     fat_sd = 0;
@@ -193,12 +209,54 @@ fat_unmount(void)
 {
   fbase = 0;
   fat_sd = 0;
+  sdsectors = 0; /* next mount (or /dev/sd0 read) re-inits the card */
+  for (int i = 0; i < NSDCACHE; i++)
+    sdtag[i] = 0;
 }
 
 int
 fat_is_sd(void)
 {
   return fat_sd;
+}
+
+/* --- /dev/sd0 (kdev.c): the raw card, absolute LBA 0 onward --- */
+
+/* Card capacity in bytes; 0 until the card has been brought up. The
+ * uint ceiling clamps cards past 4 GiB (stat and reads agree). */
+uint
+fat_sd_bytes(void)
+{
+  if (sdsectors == 0)
+    return 0;
+  if (sdsectors >= (0xFFFFFFFFu / 512u))
+    return 0xFFFFFE00u;
+  return sdsectors * 512u;
+}
+
+/* Raw card read through the sector cache; inits the card on first
+ * touch so /dev/sd0 is inspectable before (or without) a mount. */
+int
+fat_sd_rawread(uint dst, uint off, uint n)
+{
+  if (sd_up() < 0)
+    return -1;
+  uint cap = fat_sd_bytes();
+  if (off >= cap)
+    return 0;
+  if (n > cap - off)
+    n = cap - off;
+  uint done = 0;
+  while (done < n) {
+    uint p = off + done;
+    uint so = p & 511;
+    uint take = 512 - so;
+    if (take > n - done)
+      take = n - done;
+    memmove((void *)(dst + done), sdsec(p >> 9) + so, take);
+    done += take;
+  }
+  return (int)n;
 }
 
 static uint
@@ -487,7 +545,7 @@ fat_readi(struct inode *ip, uint dst, uint off, uint n)
         uint chunk = 512 - in;
         if (chunk > left)
           chunk = left;
-        memmove((void *)d, sdsec(voff >> 9) + in, chunk);
+        memmove((void *)d, sdsec(sdpart + (voff >> 9)) + in, chunk);
         voff += chunk;
         d += chunk;
         left -= chunk;

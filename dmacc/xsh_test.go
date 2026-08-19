@@ -3,6 +3,7 @@ package dmacc_test
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -673,10 +674,13 @@ func TestXv6SD(t *testing.T) {
 			for _, pin := range []int{24, 26, 27, 28, 29} {
 				m.Poke32(v.GPIOCtrlAddr(pin), v.GPIOOutCtrl(true))
 			}
-			feed := "mkdir /sd\rmount sd0 /sd\rls /sd\rcat /sd/HELLO.TXT\r" +
-				"mount\rshow /sd\r"
+			feed := "mkdir /sd\rmount sd0 /sd\rls /dev\rls /sd\r" +
+				"cat /sd/HELLO.TXT\rmount\rshow /sd\r"
 			m.FeedConsole(feed)
-			fed2 := false
+			fbBuf := boards.Feather.FbBuf
+			// The dynamic input script: page the slide show, quit it,
+			// then re-run the viewer on /dev/sd0 as a raw-read probe.
+			fed2, fedQ, fed3, fed4 := false, false, false, false
 			deadline := uint64(3_000_000_000)
 			for used := uint64(0); used < deadline; used += 200_000 {
 				if _, err := m.Run(emu.RunConfig{MaxCycles: 200_000}); err != nil {
@@ -689,7 +693,6 @@ func TestXv6SD(t *testing.T) {
 					strings.Contains(out, "hello from the sd card") {
 					// Give the viewer time to load slide A, check the
 					// fb, page to B, check, then quit.
-					fbBuf := boards.Feather.FbBuf
 					ok := true
 					for i := 0; i < 4096; i += 4 {
 						if m.Peek32(fbBuf+uint32(i)) == 0 {
@@ -708,17 +711,30 @@ func TestXv6SD(t *testing.T) {
 						fed2 = true
 					}
 				}
-				if fed2 {
-					got := m.Peek32(boards.Feather.FbBuf)
+				if fed2 && !fedQ {
+					got := m.Peek32(fbBuf)
 					wantB := uint32(slideB[0]) | uint32(slideB[1])<<8 |
 						uint32(slideB[2])<<16 | uint32(slideB[3])<<24
 					if got == wantB {
 						m.FeedConsole("q")
+						fedQ = true
 					}
 				}
-				if strings.Contains(string(m.ConsoleOut), "sd0 on /sd") &&
-					fed2 && strings.HasSuffix(string(m.ConsoleOut), "$ ") &&
-					strings.Count(string(m.ConsoleOut), "$ ") > 6 {
+				if fedQ && !fed3 && strings.HasSuffix(out, "$ ") {
+					m.FeedConsole("show /dev/sd0\r")
+					fed3 = true
+				}
+				if fed3 && !fed4 {
+					// The card's first sector, byte-exact in the fb.
+					w0 := binary.LittleEndian.Uint32(sd[0:])
+					w508 := binary.LittleEndian.Uint32(sd[508:])
+					if m.Peek32(fbBuf) == w0 && m.Peek32(fbBuf+508) == w508 {
+						m.FeedConsole("q")
+						fed4 = true
+					}
+				}
+				if fed4 && strings.HasSuffix(string(m.ConsoleOut), "$ ") &&
+					strings.Contains(string(m.ConsoleOut), "sd0 on /sd") {
 					break
 				}
 			}
@@ -733,8 +749,25 @@ func TestXv6SD(t *testing.T) {
 					t.Errorf("missing %q", want)
 				}
 			}
+			// ls /dev after the mount: sd0 with the card's capacity.
+			sdline := ""
+			for _, ln := range strings.Split(out, "\n") {
+				// skip the mount listing's "sd0 on /sd ..." row
+				if strings.HasPrefix(ln, "sd0 ") && !strings.Contains(ln, " on ") {
+					sdline = ln
+				}
+			}
+			if !strings.Contains(sdline, fmt.Sprint(len(sd))) {
+				t.Errorf("ls /dev sd0 row %q lacks capacity %d", sdline, len(sd))
+			}
 			if !fed2 {
 				t.Errorf("the viewer never displayed slide A")
+			}
+			if !fed4 {
+				t.Errorf("show /dev/sd0 never landed the raw sector in the fb: "+
+					"fb[0]=%#x want %#x, fb[508]=%#x want %#x (fed3=%v)",
+					m.Peek32(fbBuf), binary.LittleEndian.Uint32(sd[0:]),
+					m.Peek32(fbBuf+508), binary.LittleEndian.Uint32(sd[508:]), fed3)
 			}
 		})
 	}

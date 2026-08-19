@@ -68,6 +68,23 @@ would squash circles into eggs), area-average down, and
 Floyd-Steinberg dither into RGB332 — on 256 colors dithering is the
 difference between gradients and bands. Stdlib only; png/jpeg/gif.
 
+## /dev/sd0 and the second silicon pass
+
+The first card the user inserted mounted straight off (macOS
+Spotlight droppings and all), which surfaced two review questions:
+mount is CALLABLE but not in ls / (answer: it is a toolbox applet
+reached through the flash image registry — exec falls back to
+registry names when the path misses, so flash-resident commands are
+invisible to ls by design), and /dev had no sd0. Now it does: the
+raw card, absolute LBA 0 onward, sized from the CSD (the firmware's
+op 5 reports the capacity CMD9 reads; SPI-mode CSD v1 and v2 both
+parse). ls /dev must never probe the bus, so the size shows 0 until
+the card is up; the first READ of /dev/sd0 brings it up, making the
+card inspectable without a mount. The sector cache now tags absolute
+LBAs (raw and volume reads share it), and unmount drops the card
+state so a swapped card re-inits. `show /dev/sd0` doubles as a raw
+read probe in TestXv6SD.
+
 ## Still open
 
 - The contiguous-LBA raw read path for slides.bin (mount resolves
