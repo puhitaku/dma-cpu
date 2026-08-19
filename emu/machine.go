@@ -838,3 +838,37 @@ func (m *Machine) Run(cfg RunConfig) (RunResult, error) {
 // fast paths (idle timer jumps, window caches, bursts) so a suspected
 // divergence can be bisected against the plain per-cycle model.
 var noFast = os.Getenv("EMU_NO_FAST") != ""
+
+// Clone returns an independent deep copy of the machine: identical
+// architectural state, no shared mutable memory. Host-side observers
+// (trace writer, watchpoints) do not carry over. The intended use is
+// boot-once-fork-many test harnesses: boot a golden machine to a
+// known point, then run divergent scenarios on clones in parallel.
+func (m *Machine) Clone() *Machine {
+	n := &Machine{}
+	*n = *m
+	n.sram = append([]byte(nil), m.sram...)
+	n.loaded = append([][2]uint32(nil), m.loaded...)
+	n.mmio = make(map[uint32]uint32, len(m.mmio))
+	for k, v := range m.mmio {
+		n.mmio[k] = v
+	}
+	n.GPIOEvents = append([]GPIOEvent(nil), m.GPIOEvents...)
+	n.ConsoleOut = append([]byte(nil), m.ConsoleOut...)
+	n.ConsoleIn = append([]byte(nil), m.ConsoleIn...)
+	if m.Flash != nil {
+		n.Flash = append([]byte(nil), m.Flash...)
+	}
+	if m.PSRAM != nil {
+		n.PSRAM = append([]byte(nil), m.PSRAM...)
+	}
+	n.HSTXOut = append([]uint32(nil), m.HSTXOut...)
+	n.fl.rx = append([]byte(nil), m.fl.rx...)
+	n.fl.page = append([]byte(nil), m.fl.page...)
+	n.TraceW = nil
+	n.watch = nil
+	n.watchHit = nil
+	n.dma.nowp = &n.Cycle
+	n.winsInvalidate() // cached windows point into the old machine
+	return n
+}

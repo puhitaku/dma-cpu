@@ -1,6 +1,7 @@
 package dmacc_test
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -23,15 +24,26 @@ func TestXv6Persist(t *testing.T) {
 		m, _ := bootXshFlash(t, flash)
 		m.FeedConsole(feed)
 		// Chunked run, servicing the ARM-executor mailbox in between
-		// (the kernel spins on the ack while a request is pending).
+		// (the kernel spins on the ack while a request is pending),
+		// stopping once the script has quiesced at a prompt — the
+		// fixed budget alone burned 10-50x the needed cycles.
 		var used uint64
-		for used < budget {
-			if _, err := m.Run(emu.RunConfig{MaxCycles: 500_000}); err != nil {
+		quiet, last := 0, len(m.ConsoleOut)
+		for used < budget && quiet < 3 {
+			rr, err := m.Run(emu.RunConfig{MaxCycles: 500_000})
+			if err != nil {
 				t.Fatalf("%v\nconsole:\n%s", err, m.ConsoleOut)
 			}
-			used += 500_000
+			used += rr.Cycles
 			for serviceFlashMailbox(m, flash) {
 			}
+			if len(m.ConsoleIn) == 0 && len(m.ConsoleOut) == last &&
+				bytes.HasSuffix(m.ConsoleOut, []byte("$ ")) {
+				quiet++
+			} else {
+				quiet = 0
+			}
+			last = len(m.ConsoleOut)
 		}
 		return strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
 	}

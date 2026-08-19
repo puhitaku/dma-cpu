@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/puhitaku/dma-cpu/boards"
@@ -83,6 +84,37 @@ func bootXsh(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	return bootXshFlash(t, nil)
 }
 
+// runScript runs the machine until the queued console script has been
+// consumed and the shell sits quiet at a prompt, or the cycle budget
+// runs out. The budget used to be the ONLY stop: a machine at the
+// prompt never idles (UART poll + the idle proc), so a plain Run
+// always burned its entire allotment — most of the suite's wall time
+// was prompt-polling. Quiescence = no new output for three chunks
+// with the prompt as the suffix and the input queue drained.
+func runScript(t *testing.T, m *emu.Machine, budget uint64) {
+	t.Helper()
+	var spent uint64
+	quiet := 0
+	last := len(m.ConsoleOut)
+	for spent < budget {
+		rr, err := m.Run(emu.RunConfig{MaxCycles: 4_000_000})
+		if err != nil {
+			t.Fatalf("%v\nconsole:\n%s", err, m.ConsoleOut)
+		}
+		spent += rr.Cycles
+		if len(m.ConsoleIn) == 0 && len(m.ConsoleOut) == last &&
+			bytes.HasSuffix(m.ConsoleOut, []byte("$ ")) {
+			quiet++
+			if quiet >= 3 {
+				return
+			}
+		} else {
+			quiet = 0
+		}
+		last = len(m.ConsoleOut)
+	}
+}
+
 // flashMailbox is where emulator tests place the ARM-executor mailbox
 // (op, off, src, seq, ack — kflash.c's struct flashreq).
 const flashMailbox = 0x2007FE10
@@ -97,6 +129,12 @@ func serviceFlashMailbox(m *emu.Machine, flash []byte) bool {
 // serviceMailbox additionally plays the SD card side of the executor
 // (op 4: read sector, op 5: init) against the given card image.
 func serviceMailbox(m *emu.Machine, flash, sd []byte) bool {
+	return serviceMailboxAt(m, flashMailbox, flash, sd)
+}
+
+// serviceMailboxAt is serviceMailbox with the mailbox at an explicit
+// address (boards place it at Scratch+0x10; the constant is pico2's).
+func serviceMailboxAt(m *emu.Machine, flashMailbox uint32, flash, sd []byte) bool {
 	seq := m.Peek32(flashMailbox + 12)
 	ack := m.Peek32(flashMailbox + 16)
 	if seq == ack {
@@ -149,7 +187,50 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 // bootXshBoard boots the xsh stack exactly as a board deploys it —
 // the RAM partition, flash sections and app placement all come from
 // boards/boards.go, the same definitions dmxgen ships.
+// goldenBoot caches one BOOTED machine per board (blank-flash shape
+// only): the ~14s emulated boot to the first shell prompt is
+// identical for every console-script test, so it runs once and each
+// test gets an independent Clone. Tests that stage their own flash
+// (persistence) still boot fresh.
+type goldenBoot struct {
+	once  sync.Once
+	m     *emu.Machine
+	kernC *dmaasm.Result
+}
+
+var goldens sync.Map // board name -> *goldenBoot
+
 func bootXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, *dmaasm.Result) {
+	t.Helper()
+	if flash == nil {
+		gi, _ := goldens.LoadOrStore(bd.Name, &goldenBoot{})
+		g := gi.(*goldenBoot)
+		g.once.Do(func() {
+			m, kernC := buildXshBoard(t, nil, bd)
+			// Run to the first "$ " prompt (servicing the ARM mailbox
+			// for boards that use the executor during boot).
+			for i := 0; i < 600; i++ {
+				if _, err := m.Run(emu.RunConfig{MaxCycles: 5_000_000}); err != nil {
+					t.Fatalf("golden %s boot: %v\nconsole:\n%s", bd.Name, err, m.ConsoleOut)
+				}
+				for serviceMailboxAt(m, bd.Scratch+0x10, m.Flash, nil) {
+				}
+				if strings.HasSuffix(string(m.ConsoleOut), "$ ") {
+					g.m, g.kernC = m, kernC
+					return
+				}
+			}
+			t.Fatalf("golden %s boot: no prompt\nconsole:\n%s", bd.Name, m.ConsoleOut)
+		})
+		if g.m == nil {
+			t.Fatalf("golden %s boot failed in another test", bd.Name)
+		}
+		return g.m.Clone(), g.kernC
+	}
+	return buildXshBoard(t, flash, bd)
+}
+
+func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, *dmaasm.Result) {
 	t.Helper()
 	v, err := emu.VariantByName(bd.SKU)
 	if err != nil {
@@ -514,9 +595,7 @@ func TestXv6ShPico(t *testing.T) {
 	m, _ := bootXshBoard(t, nil, boards.Pico)
 	m.FeedConsole("ls\rcat README\recho pico > note\rcat note\r" +
 		"cat README | wc\rgpio write 5 1\rgpio read 5\rls /dev\rhelp\rfree\r")
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 1_500_000_000}); err != nil {
-		t.Fatal(err)
-	}
+	runScript(t, m, 1_500_000_000)
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
 	t.Logf("console:\n%s", out)
 	for _, want := range []string{
@@ -594,9 +673,7 @@ func TestXv6Fbcon(t *testing.T) {
 	t.Parallel()
 	m, _ := bootXshBoard(t, nil, boards.Feather)
 	m.FeedConsole("echo zqzq\r")
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
-		t.Fatal(err)
-	}
+	runScript(t, m, 900_000_000)
 	fbBuf := boards.Feather.FbBuf
 	cell := func(r, c int) []byte {
 		var b []byte
@@ -639,9 +716,7 @@ func TestXv6Fbcon(t *testing.T) {
 		lots.WriteString("ls /dev\r")
 	}
 	m.FeedConsole(lots.String() + "echo zqzq\r")
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 2_500_000_000}); err != nil {
-		t.Fatal(err)
-	}
+	runScript(t, m, 2_500_000_000)
 	if got := m.Peek32(panWord); got == 0 {
 		t.Errorf("the pan word did not advance: scroll is not panning")
 	}
@@ -809,9 +884,7 @@ func TestXv6GpioMux(t *testing.T) {
 	v := m.Variant()
 	m.FeedConsole("gpio write 5 1\rgpio read 5\rgpio write 5 0\rgpio read 5\r" +
 		"mux 3 pio0\rgpio read 99\recho done\r")
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
-		t.Fatal(err)
-	}
+	runScript(t, m, 900_000_000)
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
 	if !strings.Contains(out, "\n1\n") || !strings.Contains(out, "\n0\n") {
 		t.Errorf("gpio read loopback missing; console %q", out)
@@ -848,14 +921,26 @@ func TestXv6Blink(t *testing.T) {
 	m, _ := bootXsh(t)
 	v := m.Variant()
 	m.FeedConsole("blink gpio 7\r")
-	// boot + a few 300-tick half-periods (4.5M cycles each)
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 250_000_000}); err != nil {
-		t.Fatal(err)
+	// A few 300-tick half-periods (4.5M cycles each): run until the
+	// pin has visibly blinked instead of burning a fixed budget.
+	for spent := uint64(0); spent < 250_000_000; {
+		rr, err := m.Run(emu.RunConfig{MaxCycles: 4_000_000})
+		if err != nil {
+			t.Fatal(err)
+		}
+		spent += rr.Cycles
+		n := 0
+		for _, e := range m.GPIOEvents {
+			if e.Pin == 7 {
+				n++
+			}
+		}
+		if n >= 6 {
+			break
+		}
 	}
 	m.FeedConsole("\x03") // Ctrl-C stops the soft loop
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 200_000_000}); err != nil {
-		t.Fatal(err)
-	}
+	runScript(t, m, 200_000_000)
 	var toggles int
 	last := -1
 	for _, e := range m.GPIOEvents {
@@ -879,9 +964,7 @@ func TestXv6Blink(t *testing.T) {
 	}
 
 	m.FeedConsole("blink pio 8\recho ok\r")
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 400_000_000}); err != nil {
-		t.Fatal(err)
-	}
+	runScript(t, m, 400_000_000)
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
 	if !strings.Contains(out, "\nok\n") {
 		t.Fatalf("blink pio did not return to the prompt (async start)")
@@ -899,9 +982,7 @@ func TestXv6Blink(t *testing.T) {
 		t.Errorf("pin 8 FUNCSEL = %d, want pio0(6)", got)
 	}
 	m.FeedConsole("blink stop 8\recho fin\r")
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 400_000_000}); err != nil {
-		t.Fatal(err)
-	}
+	runScript(t, m, 400_000_000)
 	if m.Peek32(v.PIO0Base)&1 != 0 {
 		t.Errorf("SM0 still enabled after blink stop")
 	}
@@ -913,9 +994,7 @@ func TestXv6Devfs(t *testing.T) {
 	t.Parallel()
 	m, _ := bootXsh(t)
 	m.FeedConsole("ls /dev\rgpio write 5 1\rcat /dev/gpio\rcat /dev/pio0\rmount\recho done\r")
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 1_200_000_000}); err != nil {
-		t.Fatal(err)
-	}
+	runScript(t, m, 1_200_000_000)
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
 	for _, want := range []string{"console", "fat0", "gpio", "pio0", "pio1", "pio2",
 		"05=1", "sm_enable=0x0", "devfs on /dev type devfs (ro)", "\ndone\n"} {
@@ -932,13 +1011,16 @@ func TestXv6Devfs(t *testing.T) {
 // recalls history.
 func TestXv6EchoCtl(t *testing.T) {
 	t.Parallel()
-	m, _ := bootXsh(t)
+	// A fresh (unbooted) machine on purpose: this test's whole premise
+	// is type-ahead landing in the cooked window, and that timing only
+	// exists when the input is queued before boot — the golden-clone
+	// path starts at the prompt and would hand the arrow to the line
+	// editor instead.
+	m, _ := buildXshBoard(t, nil, boards.Pico2)
 	// The arrow lands after Enter, in the cooked window while sh runs
 	// `echo x`; the second Enter applies the recalled line.
 	m.FeedConsole("echo x\r\x1b[A\r")
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
-		t.Fatal(err)
-	}
+	runScript(t, m, 900_000_000)
 	out := string(m.ConsoleOut)
 	if !strings.Contains(out, "^[[A") {
 		t.Errorf("cooked echo of ESC[A is not ^[[A; tail %q", tailB(m.ConsoleOut, 200))
@@ -1004,10 +1086,7 @@ func TestXv6ViNoArg(t *testing.T) {
 // mailbox slot and readline only appeared to work via type-ahead.
 func TestXv6Readline(t *testing.T) {
 	t.Parallel()
-	m, _ := bootXsh(t)
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
-		t.Fatal(err)
-	}
+	m, _ := bootXsh(t) // the golden clone is already at the prompt
 	mark := len(m.ConsoleOut)
 	m.FeedConsole("echo helo\x1b[D\x1b[Dl") // no newline!
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 100_000_000}); err != nil {
@@ -1023,9 +1102,7 @@ func TestXv6Readline(t *testing.T) {
 	m.FeedConsole("\r" +
 		"cat READ\tw\x1b[D\x1b[3~\r" + // tab -> "cat README ", type w, left, delete w
 		"\x1b[A\x1b[A\r") // history up twice -> "echo hello" again
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
-		t.Fatal(err)
-	}
+	runScript(t, m, 900_000_000)
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
 	if got := strings.Count(out, "\nhello\n"); got != 2 {
 		t.Errorf("want the edited and history-recalled 'hello' twice, got %d", got)
@@ -1041,9 +1118,7 @@ func TestXv6Sh(t *testing.T) {
 	t.Parallel()
 	m, _ := bootXsh(t)
 	m.FeedConsole("ls\rcat README\recho booom > note\rcat note\recho one; echo two\rcat README | wc\r")
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
-		t.Fatal(err)
-	}
+	runScript(t, m, 900_000_000)
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
 	t.Logf("console:\n%s", out)
 	for _, want := range []string{

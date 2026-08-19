@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/puhitaku/dma-cpu/emu"
 	"github.com/puhitaku/dma-cpu/fsimg"
 )
 
@@ -45,9 +44,7 @@ func TestXv6Mount(t *testing.T) {
 		"cd mnt\rls .\rcat SUB/NESTED.TXT\rcd /\r" +
 		"echo no > /mnt/nope\r" +
 		"mount -u /mnt\rls /mnt\recho done\r")
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 2_000_000_000}); err != nil {
-		t.Fatalf("%v\nconsole:\n%s", err, m.ConsoleOut)
-	}
+	runScript(t, m, 2_000_000_000)
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
 	t.Logf("console:\n%s", out)
 	for _, want := range []string{

@@ -3,6 +3,7 @@ package dmacc_test
 import (
 	"encoding/binary"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/puhitaku/dma-cpu/dmaasm"
@@ -39,11 +40,15 @@ var examTests = []string{
 	"reparent", "reparent2",
 }
 
-func bootExam(t *testing.T, arg string) *emu.Machine {
+// utCache memoizes the exam binary: 35 subtests boot it, the compile
+// is deterministic, and under parallel subtests the redundant work
+// would race for CPU (the kernelCache pattern).
+var utCache sync.Map
+
+func examUtDasm(t *testing.T) string {
 	t.Helper()
-	v, err := emu.VariantByName("rp2350")
-	if err != nil {
-		t.Fatal(err)
+	if v, ok := utCache.Load("ut"); ok {
+		return v.(string)
 	}
 	utMod, err := llir.Merge(
 		parseLL(t, "../xv6/ll/usertests.ll"), parseLL(t, "../xv6/ll/ulib.ll"),
@@ -52,10 +57,21 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 	if err != nil {
 		t.Fatal(err)
 	}
-	utDasm, err := dmacc.Compile(utMod, dmacc.Options{})
+	dasm, err := dmacc.Compile(utMod, dmacc.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	utCache.Store("ut", dasm)
+	return dasm
+}
+
+func bootExam(t *testing.T, arg string) *emu.Machine {
+	t.Helper()
+	v, err := emu.VariantByName("rp2350")
+	if err != nil {
+		t.Fatal(err)
+	}
+	utDasm := examUtDasm(t)
 	// The XIP fs kernel (the deployable shape): its text executes from
 	// the flash model, freeing ~100 KiB of SRAM the RAM-resident
 	// variant burned — the usertests image, a 72-block disk and a
@@ -180,6 +196,7 @@ func TestXv6Usertests(t *testing.T) {
 	}
 	for _, name := range examTests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel() // one machine per exam name; fully independent
 			m := bootExam(t, name)
 			done := false
 			for i := 0; i < 600 && !done; i++ {
