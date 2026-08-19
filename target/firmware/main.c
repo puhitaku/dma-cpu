@@ -1329,12 +1329,21 @@ static void feather_video_init(void)
     clock_configure_undivided(clk_hstx, 0,
         CLOCKS_CLK_HSTX_CTRL_AUXSRC_VALUE_CLKSRC_PLL_USB, 126 * MHZ);
 
+    /* Each lane takes the FULL rotated pixel byte (NBITS field 7 =
+     * 8 bits) instead of just its own 3(2)-bit field: the expander
+     * zero-fills below NBITS and cannot bit-replicate, so 3-bit
+     * levels top out at 224 (blue at 192) and "white" rendered dark
+     * and warm. With the whole byte, the bits below a lane's field
+     * are the pixel's OTHER channels — 0xFF now displays as exact
+     * (255,255,255), grays track, and the cost is a bounded additive
+     * bleed into saturated colors (worst: blue picks up <=25% of a
+     * bright red) which sldgen's dither model compensates for. */
     hstx_ctrl_hw->expand_tmds =
-        2u << HSTX_CTRL_EXPAND_TMDS_L2_NBITS_LSB |
+        7u << HSTX_CTRL_EXPAND_TMDS_L2_NBITS_LSB |
         0u << HSTX_CTRL_EXPAND_TMDS_L2_ROT_LSB |
-        2u << HSTX_CTRL_EXPAND_TMDS_L1_NBITS_LSB |
+        7u << HSTX_CTRL_EXPAND_TMDS_L1_NBITS_LSB |
         29u << HSTX_CTRL_EXPAND_TMDS_L1_ROT_LSB |
-        1u << HSTX_CTRL_EXPAND_TMDS_L0_NBITS_LSB |
+        7u << HSTX_CTRL_EXPAND_TMDS_L0_NBITS_LSB |
         26u << HSTX_CTRL_EXPAND_TMDS_L0_ROT_LSB;
     hstx_ctrl_hw->expand_shift = /* 4 RGB332 pixels per FIFO word */
         4u << HSTX_CTRL_EXPAND_SHIFT_ENC_N_SHIFTS_LSB |

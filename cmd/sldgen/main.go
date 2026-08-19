@@ -248,6 +248,18 @@ func boxAvg(src *image.NRGBA, x0, y0, x1, y1 float64) (r, g, b, cov float64) {
 	return r / sw, g / sw, b / sw, sw / area
 }
 
+// display returns the color the Feather's HSTX actually shows for a
+// framebuffer byte: each TMDS lane takes the FULL rotated pixel byte
+// (firmware feather_video_init), so a lane's low bits come from the
+// pixel's other channels — 0xFF displays as exact white, and bright
+// channels bleed additively into the others. The dither loop diffuses
+// error against THESE values, compensating where the palette allows.
+func display(p byte) (r, g, b float64) {
+	return float64(p),
+		float64((p << 3) | (p >> 5)),
+		float64((p << 6) | (p >> 2))
+}
+
 // quantize packs the planes into RGB332 (RRRGGGBB), optionally with
 // Floyd-Steinberg error diffusion — on 256 colors dithering is the
 // difference between gradients and bands.
@@ -256,13 +268,16 @@ func quantize(r, g, b []float64, dither bool) []byte {
 	for y := 0; y < fbH; y++ {
 		for x := 0; x < fbW; x++ {
 			i := y*fbW + x
-			qr, er := quant(r[i], 7)
-			qg, eg := quant(g[i], 7)
-			qb, eb := quant(b[i], 3)
-			out[i] = byte(qr<<5 | qg<<2 | qb)
+			qr, _ := quant(r[i], 7)
+			qg, _ := quant(g[i], 7)
+			qb, _ := quant(b[i], 3)
+			p := byte(qr<<5 | qg<<2 | qb)
+			out[i] = p
 			if !dither {
 				continue
 			}
+			dr, dg, db := display(p)
+			er, eg, eb := r[i]-dr, g[i]-dg, b[i]-db
 			spread := func(p []float64, e float64) {
 				if x+1 < fbW {
 					p[i+1] += e * 7 / 16

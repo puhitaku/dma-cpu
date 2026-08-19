@@ -27,9 +27,9 @@ func writePNG(t *testing.T, path string, img image.Image) {
 // exact RGB332 code — no letterbox, no dither noise on an exact color.
 func TestSolidFill(t *testing.T) {
 	img := image.NewNRGBA(image.Rect(0, 0, 320, 240))
-	// R=255 G=0 B=85: the only exactly representable levels are
-	// multiples of 255/levels — codes 7, 0, 1 -> 0xE1
-	draw.Draw(img, img.Bounds(), &image.Uniform{color.NRGBA{255, 0, 85, 255}}, image.Point{}, draw.Src)
+	// Pure white: the one color the display model renders exactly
+	// (0xFF -> 255,255,255), so the dither has zero error to diffuse.
+	draw.Draw(img, img.Bounds(), &image.Uniform{color.NRGBA{255, 255, 255, 255}}, image.Point{}, draw.Src)
 	p := filepath.Join(t.TempDir(), "solid.png")
 	writePNG(t, p, img)
 
@@ -41,8 +41,8 @@ func TestSolidFill(t *testing.T) {
 		t.Fatalf("size %d, want %d", len(sld), slideBytes)
 	}
 	for i, b := range sld {
-		if b != 0xE1 {
-			t.Fatalf("pixel %d = %#02x, want 0xe1", i, b)
+		if b != 0xFF {
+			t.Fatalf("pixel %d = %#02x, want 0xff", i, b)
 		}
 	}
 }
@@ -88,13 +88,14 @@ func TestDitherRamp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// average the green channel over a band and compare to the source
+	// average the DISPLAYED green over a band and compare to the
+	// source (the dither targets the display model, not raw codes)
 	for _, x := range []int{100, 300, 500} {
 		var sum, n float64
 		for y := 0; y < fbH; y++ {
 			for dx := -8; dx <= 8; dx++ {
-				g := int(sld[y*fbW+x+dx]>>2) & 7
-				sum += float64(g) * 255 / 7
+				_, dg, _ := display(sld[y*fbW+x+dx])
+				sum += dg
 				n++
 			}
 		}
