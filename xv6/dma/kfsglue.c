@@ -633,6 +633,19 @@ kfs_dup(int fd)
   return nfd;
 }
 
+/* Absolute-offset seek (FD_INODE only: devices and pipes have no
+ * position). Returns the new offset — enough for the slide deck's
+ * fixed-size random access; nobody has needed whence yet. */
+int
+kfs_seek(int fd, uint off)
+{
+  struct file *f = fdget(fd);
+  if (!f || f->type != FD_INODE)
+    return -1;
+  f->off = off;
+  return (int)off;
+}
+
 int
 kfs_fstat(int fd, uint staddr)
 {

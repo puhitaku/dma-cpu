@@ -260,6 +260,13 @@ umount(const char *target)
 }
 
 int
+seek(int fd, uint off)
+{
+  fill(SYS_seek, (uint)fd, off, 0);
+  return dma_trap();
+}
+
+int
 ttyraw(int on)
 {
   fill(SYS_ttyraw, (uint)on, 0, 0);

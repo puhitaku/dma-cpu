@@ -109,6 +109,33 @@ drawing / Done drawing per slide, and one line per input event
 fbcon console tee is muted while the fb is acquired, so the log
 reaches the serial side without scribbling on the slide.
 
+## Robust conversion: decks, series, and the 16:9 stretch
+
+Round three of the converter (user feedback from real projector
+use):
+
+- Arbitrary input sizes were already letterbox-fitted with aspect
+  preserved; now it is pinned by tests (a 1:3 source spans 160
+  columns).
+- Projectors that stretch 4:3 to 16:9 get a dedicated series: the
+  169 render pre-squeezes content horizontally by 3/4 so the
+  stretch restores the original aspect.
+- Both series ship in ONE deck file (deck.sldk): "SLDK" magic, u32
+  version/nseries/bytes-per-slide, 24-byte series entries
+  {name[12], count, offset}, then fixed-size slides. `show
+  deck.sldk` plays the first series, `show deck.sldk 169` selects
+  by name; paging seeks — which grew the kernel a minimal SYS_seek
+  (absolute offset, FD_INODE only).
+
+The fallout was the best bug of the phase: the toolbox outgrew the
+pico's arena (exec COPIES text, and one instance no longer fit),
+and the failure exposed a real kernel leak — the registry exec
+path leaked its text allocation when the data allocation failed,
+poisoning every later exec. Fixed both ways: the leak is closed,
+and fbtest/show moved into their own `fbtools` multi-call binary
+installed only on fb boards, so displayless boards stopped paying
+~15 KB per toolbox exec for tools they cannot link.
+
 ## Still open
 
 - The contiguous-LBA raw read path for slides.bin (mount resolves

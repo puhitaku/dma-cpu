@@ -111,6 +111,7 @@ extern int kfs_open(uint pathaddr, int omode);
 extern int kfs_close(int fd);
 extern int kfs_dup(int fd);
 extern int kfs_fstat(int fd, uint staddr);
+extern int kfs_seek(int fd, uint off);
 extern int kfs_pipe(uint fdarray);
 extern int kfs_chdir(uint pathaddr);
 extern int kfs_mkdir(uint pathaddr);
@@ -1043,6 +1044,9 @@ dma_ksyscall(void)
   case SYS_fstat:
     ret = fsready ? (uint)kfs_fstat((int)m->a0, m->a1) : (uint)-1;
     break;
+  case SYS_seek:
+    ret = fsready ? (uint)kfs_seek((int)m->a0, m->a1) : (uint)-1;
+    break;
   case SYS_pipe:
     ret = fsready ? (uint)kfs_pipe(m->a0) : (uint)-1;
     break;
@@ -1214,6 +1218,10 @@ dma_ksyscall(void)
       tb = kalloc(im->textlen);
       db = kalloc(im->datalen);
       if (!tb || !db) {
+        kfree(tb); /* a half-failed exec must not leak: one leaked
+                    * text region poisoned every later exec (the fs
+                    * path above always freed both) */
+        kfree(db);
         ret = (uint)-1;
         break;
       }

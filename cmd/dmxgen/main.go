@@ -802,11 +802,9 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			return nil, err
 		}
 		fb.AddFile(name, blob)
-		if name == "toolbox" {
-			/* the multi-call names: hard links onto the one blob */
-			for _, l := range bd.ToolboxLinks {
-				fb.AddLink(l)
-			}
+		/* the multi-call names: hard links onto the one blob */
+		for _, l := range bd.LinksFor(name) {
+			fb.AddLink(l)
 		}
 	}
 	disk := fb.Bytes()
@@ -974,10 +972,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			rHome := dHome + uint32(len(data))
 			cursor = rHome + uint32(len(rel))
 			appsBlob = append(append(append(appsBlob, text...), data...), rel...)
-			names := []string{name}
-			if name == "toolbox" {
-				names = append(names, bd.ToolboxLinks...)
-			}
+			names := append([]string{name}, bd.LinksFor(name)...)
 			for _, n := range names {
 				if err := patchRow(n, res, tHome, uint32(len(text)),
 					dHome, uint32(len(data)), rHome, uint32(len(res.Image.Relocs))); err != nil {

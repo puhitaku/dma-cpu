@@ -103,8 +103,8 @@ type Ptr struct {
 	abs uint32
 }
 
-func Abs(addr uint32) Ptr          { return Ptr{abs: addr} }
-func In(s *Seg, off uint32) Ptr    { return Ptr{seg: s, off: off} }
+func Abs(addr uint32) Ptr       { return Ptr{abs: addr} }
+func In(s *Seg, off uint32) Ptr { return Ptr{seg: s, off: off} }
 
 // BlockP appends a control block with relocatable operands and returns its
 // offset.

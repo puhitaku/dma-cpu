@@ -16,6 +16,7 @@ int kfs_open(uint pathaddr, int omode) { (void)pathaddr; (void)omode; return -1;
 int kfs_close(int fd) { (void)fd; return -1; }
 int kfs_dup(int fd) { (void)fd; return -1; }
 int kfs_fstat(int fd, uint staddr) { (void)fd; (void)staddr; return -1; }
+int kfs_seek(int fd, uint off) { (void)fd; (void)off; return -1; }
 int kfs_pipe(uint fdarray) { (void)fdarray; return -1; }
 int kfs_chdir(uint pathaddr) { (void)pathaddr; return -1; }
 int kfs_mkdir(uint pathaddr) { (void)pathaddr; return -1; }

@@ -68,10 +68,8 @@ func buildDiskBoard(t *testing.T, v *emu.Variant, bd *boards.Board) []byte {
 				t.Fatal(err)
 			}
 			b.AddFile(name, blob)
-			if name == "toolbox" {
-				for _, l := range bd.ToolboxLinks {
-					b.AddLink(l)
-				}
+			for _, l := range bd.LinksFor(name) {
+				b.AddLink(l)
 			}
 		}
 	}
@@ -454,10 +452,7 @@ func registerFlashApps(t *testing.T, m *emu.Machine, v *emu.Variant,
 		res := buildUserScratch(t, v, bd.Scratch, name)
 		text, data := res.Image.Segments[0].Data, res.Image.Segments[1].Data
 		dHome, rHome, end := stageFlashImage(m, res, cursor)
-		names := []string{name}
-		if name == "toolbox" {
-			names = append(names, bd.ToolboxLinks...)
-		}
+		names := append([]string{name}, bd.LinksFor(name)...)
 		for _, n := range names {
 			registerRow(t, m, kernC, idx, n, res, cursor, uint32(len(text)),
 				dHome, uint32(len(data)), rHome, uint32(len(res.Image.Relocs)))
@@ -740,7 +735,34 @@ func TestXv6SD(t *testing.T) {
 		slideA[i] = byte(i*7 + 3)
 		slideB[i] = byte(i*13 + 5)
 	}
+	// A two-series deck (SLDK container) with SMALL 4096-byte slides:
+	// the bytes-per-slide header field must be honored, not assumed.
+	// Series 169 carries the slides in reverse so selection is provable.
+	deck := append([]byte(nil), "SLDK"...)
+	le := func(v uint32) []byte {
+		var w [4]byte
+		binary.LittleEndian.PutUint32(w[:], v)
+		return w[:]
+	}
+	deck = append(deck, le(1)...)
+	deck = append(deck, le(2)...)
+	deck = append(deck, le(4096)...)
+	base := uint32(16 + 24*2)
+	for i, name := range []string{"43", "169"} {
+		var nm [12]byte
+		copy(nm[:], name)
+		deck = append(deck, nm[:]...)
+		deck = append(deck, le(2)...)
+		deck = append(deck, le(base+uint32(i)*2*4096)...)
+		deck = append(deck, le(0)...)
+	}
+	deck = append(deck, slideA...) // series 43: A, B
+	deck = append(deck, slideB...)
+	deck = append(deck, slideB...) // series 169: B, A
+	deck = append(deck, slideA...)
+
 	fatb := fsimg.NewFAT32(2048)
+	fatb.AddFile("DECK.SLDK", deck)
 	fatb.AddFile("HELLO.TXT", []byte("hello from the sd card\n"))
 	// macOS AppleDouble dropping: matches *.sld and sorts before A —
 	// the viewer must skip dotfiles or the deck opens with garbage.
@@ -766,6 +788,7 @@ func TestXv6SD(t *testing.T) {
 			// The dynamic input script: page the slide show, quit it,
 			// then re-run the viewer on /dev/sd0 as a raw-read probe.
 			fed2, fedQ, fed3, fed4 := false, false, false, false
+			fed5, fed6, fed7 := false, false, false
 			deadline := uint64(3_000_000_000)
 			for used := uint64(0); used < deadline; used += 200_000 {
 				if _, err := m.Run(emu.RunConfig{MaxCycles: 200_000}); err != nil {
@@ -818,7 +841,23 @@ func TestXv6SD(t *testing.T) {
 						fed4 = true
 					}
 				}
-				if fed4 && strings.HasSuffix(string(m.ConsoleOut), "$ ") &&
+				// Deck phase: select series 169 (slides reversed: B then
+				// A) and page through it via seek().
+				if fed4 && !fed5 && strings.HasSuffix(out, "$ ") {
+					m.FeedConsole("show /sd/deck.sldk 169\r")
+					fed5 = true
+				}
+				wantA := binary.LittleEndian.Uint32(slideA[0:])
+				wantB := binary.LittleEndian.Uint32(slideB[0:])
+				if fed5 && !fed6 && m.Peek32(fbBuf) == wantB {
+					m.FeedConsole("n")
+					fed6 = true
+				}
+				if fed6 && !fed7 && m.Peek32(fbBuf) == wantA {
+					m.FeedConsole("q")
+					fed7 = true
+				}
+				if fed7 && strings.HasSuffix(string(m.ConsoleOut), "$ ") &&
 					strings.Contains(string(m.ConsoleOut), "sd0 on /sd") {
 					break
 				}
@@ -853,6 +892,18 @@ func TestXv6SD(t *testing.T) {
 			}
 			if !fed2 {
 				t.Errorf("the viewer never displayed slide A")
+			}
+			if !fed7 {
+				t.Errorf("deck series 169 never paged (fed5=%v fed6=%v)", fed5, fed6)
+			}
+			for _, want := range []string{
+				"2 slides found (series 169)",
+				"Start drawing slide 2 on FB",
+				"Done drawing slide 2",
+			} {
+				if !strings.Contains(out, want) {
+					t.Errorf("deck log missing %q", want)
+				}
 			}
 			if !fed4 {
 				t.Errorf("show /dev/sd0 never landed the raw sector in the fb: "+

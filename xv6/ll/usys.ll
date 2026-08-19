@@ -339,6 +339,18 @@ define dso_local i32 @umount(ptr noundef %0) local_unnamed_addr #0 {
 }
 
 ; Function Attrs: minsize nounwind optsize
+define dso_local i32 @seek(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
+  store volatile i32 33, ptr @__dma_sysmail, align 4, !tbaa !3
+  store volatile i32 %0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 4), align 4, !tbaa !8
+  store volatile i32 %1, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 8), align 4, !tbaa !9
+  store volatile i32 0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 12), align 4, !tbaa !10
+  %3 = load i32, ptr @__dma_syscall_entry, align 4, !tbaa !11
+  %4 = inttoptr i32 %3 to ptr
+  %5 = tail call i32 %4() #2
+  ret i32 %5
+}
+
+; Function Attrs: minsize nounwind optsize
 define dso_local i32 @ttyraw(i32 noundef %0) local_unnamed_addr #0 {
   store volatile i32 28, ptr @__dma_sysmail, align 4, !tbaa !3
   store volatile i32 %0, ptr getelementptr inbounds nuw (i8, ptr @__dma_sysmail, i32 4), align 4, !tbaa !8

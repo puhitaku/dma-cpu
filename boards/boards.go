@@ -83,9 +83,22 @@ func (b *Board) HasBundle(name string) bool {
 }
 
 var stdApps = []string{"echo", "cat", "ls", "toolbox"}
+var fbApps = append(append([]string{}, stdApps...), "fbtools")
 var stdLinks = []string{"kill", "spin", "trap", "free", "sync", "mount",
 	"umount", "wc", "mkdir", "rm", "gpio", "mux", "blink", "help"}
-var fbLinks = append(append([]string{}, stdLinks...), "fbtest", "show")
+
+// LinksFor returns the multi-call names linked onto the given app
+// image (busybox-style argv[0] dispatch): the toolbox carries the
+// board's ToolboxLinks; fbtools always carries the fb pair.
+func (b *Board) LinksFor(app string) []string {
+	switch app {
+	case "toolbox":
+		return b.ToolboxLinks
+	case "fbtools":
+		return []string{"fbtest", "show"}
+	}
+	return nil
+}
 
 // Pico2: RP2350, 520 KiB SRAM, 4 MiB flash. The full experience —
 // everything including vi and the machine-driven flash executor.
@@ -207,8 +220,8 @@ var Feather = &Board{
 	// (silicon + TestXv6ShFeather re-arms it in the emulator).
 	ReadOnlyFS:   true,
 	DiskBlocks:   24,
-	DiskApps:     stdApps,
-	ToolboxLinks: fbLinks,
+	DiskApps:     fbApps,
+	ToolboxLinks: stdLinks,
 	Bundles:      []string{"shell", "syscall", "exec", "xsh"},
 }
 

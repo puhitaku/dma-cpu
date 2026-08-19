@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"image"
 	"image/color"
 	"image/draw"
@@ -100,6 +101,103 @@ func TestDitherRamp(t *testing.T) {
 		want := float64(x) * 255 / 639
 		if got := sum / n; got < want-8 || got > want+8 {
 			t.Fatalf("ramp at x=%d: mean %.1f, want ~%.1f", x, got, want)
+		}
+	}
+}
+
+// The 169 series pre-squeezes horizontally by 3/4: the same square
+// source spans 480 columns in the 43 render and 360 in the 169 one,
+// with the vertical extent unchanged.
+func TestSqueeze169(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 200, 200))
+	draw.Draw(img, img.Bounds(), image.White, image.Point{}, draw.Src)
+
+	span := func(sld []byte) int {
+		row := sld[120*fbW : 121*fbW]
+		n := 0
+		for _, p := range row {
+			if p != 0 {
+				n++
+			}
+		}
+		return n
+	}
+	normal := render(img, 1, false)
+	wide := render(img, squeeze169, false)
+	if got := span(normal); got < 478 || got > 482 {
+		t.Errorf("43 content span %d, want ~480", got)
+	}
+	if got := span(wide); got < 358 || got > 362 {
+		t.Errorf("169 content span %d, want ~360", got)
+	}
+	// vertical extent identical: both fill the full 240 rows
+	for _, sld := range [][]byte{normal, wide} {
+		if sld[0*fbW+320] == 0 || sld[239*fbW+320] == 0 {
+			t.Errorf("square source should span the full height")
+		}
+	}
+}
+
+// Arbitrary input sizes fit with aspect preserved: a 1000x3000 (1:3)
+// source letterboxes to 160 columns wide, full height.
+func TestOddSizeFit(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 1000, 3000))
+	draw.Draw(img, img.Bounds(), image.White, image.Point{}, draw.Src)
+	sld := render(img, 1, false)
+	row := sld[120*fbW : 121*fbW]
+	n := 0
+	for _, p := range row {
+		if p != 0 {
+			n++
+		}
+	}
+	if n < 158 || n > 162 {
+		t.Errorf("1:3 source content span %d, want ~160 (480/3)", n)
+	}
+}
+
+// The deck container round-trips: magic, table geometry, and each
+// slide recoverable at its recorded offset.
+func TestDeckLayout(t *testing.T) {
+	mk := func(fill byte) []byte {
+		b := make([]byte, slideBytes)
+		for i := range b {
+			b[i] = fill
+		}
+		return b
+	}
+	p := filepath.Join(t.TempDir(), "deck.sldk")
+	if err := writeDeck(p, []series{
+		{name: "43", slides: [][]byte{mk(1), mk(2)}},
+		{name: "169", slides: [][]byte{mk(3), mk(4)}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	d, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(d[:4]) != deckMagic {
+		t.Fatalf("magic %q", d[:4])
+	}
+	u32 := func(off int) uint32 { return binary.LittleEndian.Uint32(d[off:]) }
+	if u32(4) != 1 || u32(8) != 2 || u32(12) != slideBytes {
+		t.Fatalf("header: ver %d nseries %d slidebytes %d", u32(4), u32(8), u32(12))
+	}
+	if len(d) != 16+24*2+4*slideBytes {
+		t.Fatalf("total size %d", len(d))
+	}
+	for si, want := range [][2]byte{{'4', 1}, {'1', 3}} {
+		e := 16 + 24*si
+		if d[e] != want[0] {
+			t.Errorf("series %d name starts %q", si, d[e])
+		}
+		count, off := u32(e+12), u32(e+16)
+		if count != 2 {
+			t.Errorf("series %d count %d", si, count)
+		}
+		if d[off] != want[1] || d[off+slideBytes] != want[1]+1 {
+			t.Errorf("series %d slides misplaced (first byte %d)", si, d[off])
 		}
 	}
 }

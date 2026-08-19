@@ -4,19 +4,37 @@
  * A slide (.sld) is a raw framebuffer image: 640x240 bytes of RGB332
  * (RRRGGGBB), 153600 bytes exactly. The framebuffer's rows are each
  * scanned twice on the wire, so the displayed picture is 640x480 with
- * 1:2 pixels: sources are fitted (letterboxed) into a virtual 640x480
- * canvas and every destination row integrates two canvas rows.
+ * 1:2 pixels: sources of ANY size are fitted (letterboxed, aspect
+ * preserved) into a virtual 640x480 canvas and every destination row
+ * integrates two canvas rows.
  *
- * Usage: sldgen [-o dir] [-bin name] [-nodither] image...
+ * Usage: sldgen [-o dir] [-deck name] [-nodither] image...
  *
- * Inputs keep their command-line order; outputs are named
+ * Inputs keep their command-line order; per-image outputs are named
  * NN-<stem>.sld so a plain name sort (what the viewer does) replays
- * that order. slides.bin is the concatenation, slide N at byte offset
- * N*153600 — the raw-read fast path for a future contiguous layout.
+ * that order.
+ *
+ * The deck (default deck.sldk) is the single-file form the viewer
+ * pages with seek(): a small header, a series table, and fixed-size
+ * slides back to back. It carries TWO series of every image:
+ *
+ *   43    the normal fit — for displays that show 4:3 as 4:3
+ *   169   pre-squeezed horizontally by 3/4 — for projectors that
+ *         stretch the 4:3 frame to 16:9; the stretch then restores
+ *         the original aspect (`show deck.sldk 169`)
+ *
+ * Layout (little-endian u32):
+ *   0x00  "SLDK"        0x04  version (1)
+ *   0x08  series count  0x0C  bytes per slide (153600)
+ *   0x10  series entries, 24 bytes each:
+ *         name[12] (NUL-padded), count, offset, reserved
+ *   then the slides, contiguous per series.
  */
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"image"
@@ -37,15 +55,54 @@ const (
 	slideBytes = fbW * fbH
 	maxSlides  = 32 // the viewer's directory cap
 	stemMax    = 32 // keep "/sd/NN-stem.sld" well under the 63-char path cap
+
+	// A 4:3 frame stretched onto a 16:9 panel widens by 4/3; the 169
+	// series pre-squeezes content by the reciprocal so the stretch
+	// cancels out.
+	squeeze169 = 3.0 / 4.0
+
+	deckMagic = "SLDK"
 )
+
+// A deck series: a name the viewer selects by, and one slide per
+// input image.
+type series struct {
+	name   string
+	slides [][]byte
+}
+
+// writeDeck serializes the container: header, series table, slides.
+func writeDeck(path string, all []series) error {
+	var hdr bytes.Buffer
+	hdr.WriteString(deckMagic)
+	u32 := func(v uint32) { _ = binary.Write(&hdr, binary.LittleEndian, v) }
+	u32(1)
+	u32(uint32(len(all)))
+	u32(slideBytes)
+	off := uint32(16 + 24*len(all))
+	var body bytes.Buffer
+	for _, se := range all {
+		var name [12]byte
+		copy(name[:], se.name)
+		hdr.Write(name[:])
+		u32(uint32(len(se.slides)))
+		u32(off)
+		u32(0)
+		for _, sl := range se.slides {
+			body.Write(sl)
+			off += uint32(len(sl))
+		}
+	}
+	return os.WriteFile(path, append(hdr.Bytes(), body.Bytes()...), 0o644)
+}
 
 func main() {
 	outdir := flag.String("o", ".", "output directory")
-	binName := flag.String("bin", "slides.bin", "concatenated output (empty to skip)")
+	deckName := flag.String("deck", "deck.sldk", "multi-series deck output (empty to skip)")
 	nodither := flag.Bool("nodither", false, "plain quantization instead of Floyd-Steinberg")
 	flag.Parse()
 	if flag.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "usage: sldgen [-o dir] [-bin name] [-nodither] image...")
+		fmt.Fprintln(os.Stderr, "usage: sldgen [-o dir] [-deck name] [-nodither] image...")
 		os.Exit(2)
 	}
 	if flag.NArg() > maxSlides {
@@ -55,25 +112,27 @@ func main() {
 	if err := os.MkdirAll(*outdir, 0o755); err != nil {
 		fatal(err)
 	}
-	var bin []byte
+	deck := []series{{name: "43"}, {name: "169"}}
 	for i, path := range flag.Args() {
-		sld, err := convert(path, !*nodither)
+		src, err := load(path)
 		if err != nil {
 			fatal(fmt.Errorf("%s: %w", path, err))
 		}
+		sld := render(src, 1, !*nodither)
 		name := fmt.Sprintf("%02d-%s.sld", i+1, stem(path))
 		if err := os.WriteFile(filepath.Join(*outdir, name), sld, 0o644); err != nil {
 			fatal(err)
 		}
 		fmt.Printf("  %s -> %s\n", path, name)
-		bin = append(bin, sld...)
+		deck[0].slides = append(deck[0].slides, sld)
+		deck[1].slides = append(deck[1].slides, render(src, squeeze169, !*nodither))
 	}
-	if *binName != "" {
-		p := filepath.Join(*outdir, *binName)
-		if err := os.WriteFile(p, bin, 0o644); err != nil {
+	if *deckName != "" {
+		p := filepath.Join(*outdir, *deckName)
+		if err := writeDeck(p, deck); err != nil {
 			fatal(err)
 		}
-		fmt.Printf("  %d slides -> %s\n", flag.NArg(), p)
+		fmt.Printf("  %d slides x {43, 169} -> %s\n", flag.NArg(), p)
 	}
 }
 
@@ -94,7 +153,7 @@ func stem(path string) string {
 	return strings.ToLower(s)
 }
 
-func convert(path string, dither bool) ([]byte, error) {
+func load(path string) (*image.NRGBA, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -106,31 +165,49 @@ func convert(path string, dither bool) ([]byte, error) {
 	}
 	src := image.NewNRGBA(image.Rect(0, 0, img.Bounds().Dx(), img.Bounds().Dy()))
 	draw.Draw(src, src.Bounds(), img, img.Bounds().Min, draw.Src)
-	r, g, b := resample(src)
-	return quantize(r, g, b, dither), nil
+	return src, nil
+}
+
+// render produces one slide: fit, optional horizontal pre-squeeze,
+// resample, quantize.
+func render(src *image.NRGBA, hsqueeze float64, dither bool) []byte {
+	r, g, b := resample(src, hsqueeze)
+	return quantize(r, g, b, dither)
+}
+
+// convert is the single-image path the tests exercise.
+func convert(path string, dither bool) ([]byte, error) {
+	src, err := load(path)
+	if err != nil {
+		return nil, err
+	}
+	return render(src, 1, dither), nil
 }
 
 // resample letterbox-fits src onto the 640x480 display canvas and
 // area-averages it down to the 640x240 framebuffer grid (each fb
-// pixel covers a 1x2 canvas box). Returns per-channel planes in
-// [0,255]; the letterbox stays exactly 0.
-func resample(src *image.NRGBA) (r, g, b []float64) {
+// pixel covers a 1x2 canvas box). hsqueeze < 1 additionally narrows
+// the content horizontally (anamorphic pre-compensation for displays
+// that stretch the frame). Returns per-channel planes in [0,255];
+// the letterbox stays exactly 0.
+func resample(src *image.NRGBA, hsqueeze float64) (r, g, b []float64) {
 	w, h := src.Bounds().Dx(), src.Bounds().Dy()
 	r = make([]float64, fbW*fbH)
 	g = make([]float64, fbW*fbH)
 	b = make([]float64, fbW*fbH)
 
 	scale := math.Min(fbW/float64(w), dispH/float64(h))
-	cw, ch := float64(w)*scale, float64(h)*scale // content size on the canvas
-	ox, oy := (fbW-cw)/2, (dispH-ch)/2           // letterbox origin
+	hscale := scale * hsqueeze
+	cw, ch := float64(w)*hscale, float64(h)*scale // content size on the canvas
+	ox, oy := (fbW-cw)/2, (dispH-ch)/2            // letterbox origin
 
 	for y := 0; y < fbH; y++ {
 		// the fb row's canvas span, mapped into source rows
 		sy0 := (float64(2*y) - oy) / scale
 		sy1 := (float64(2*y+2) - oy) / scale
 		for x := 0; x < fbW; x++ {
-			sx0 := (float64(x) - ox) / scale
-			sx1 := (float64(x+1) - ox) / scale
+			sx0 := (float64(x) - ox) / hscale
+			sx1 := (float64(x+1) - ox) / hscale
 			rr, gg, bb, cov := boxAvg(src, sx0, sy0, sx1, sy1)
 			i := y*fbW + x
 			// partial coverage at the letterbox edge blends with black

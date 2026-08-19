@@ -132,10 +132,10 @@ func align(v, a int) int { return (v + a - 1) &^ (a - 1) }
 type ValueKind int
 
 const (
-	VLocal     ValueKind = iota // %name
-	VGlobal                     // @name (+ constant byte offset)
-	VConst                      // integer constant (also null/undef/poison as 0)
-	VFunc                       // @name of a function used as a value
+	VLocal  ValueKind = iota // %name
+	VGlobal                  // @name (+ constant byte offset)
+	VConst                   // integer constant (also null/undef/poison as 0)
+	VFunc                    // @name of a function used as a value
 )
 
 // Value is an operand.
@@ -178,15 +178,15 @@ type Instr struct {
 	Typ  *Type  // result type; for store/icmp the operand type
 	Args []*Value
 
-	Pred   string       // icmp
-	To     *Type        // casts
-	Labels []string     // br: [dest] or [true, false]; switch: [default]
-	Cases  []SwitchCase // switch
-	Phi    []PhiEdge    // phi
-	Callee string       // call: named callee ("" for indirect)
-	CalleeVal *Value    // call: function-pointer value for indirect calls
-	FixedArgs int       // call: fixed params of a variadic callee (-1: not variadic)
-	AllocN int          // alloca: constant element count
+	Pred      string       // icmp
+	To        *Type        // casts
+	Labels    []string     // br: [dest] or [true, false]; switch: [default]
+	Cases     []SwitchCase // switch
+	Phi       []PhiEdge    // phi
+	Callee    string       // call: named callee ("" for indirect)
+	CalleeVal *Value       // call: function-pointer value for indirect calls
+	FixedArgs int          // call: fixed params of a variadic callee (-1: not variadic)
+	AllocN    int          // alloca: constant element count
 }
 
 // Block is a basic block.
