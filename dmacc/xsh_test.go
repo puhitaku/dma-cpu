@@ -427,6 +427,7 @@ func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result) {
 // TestXv6Vi: the BusyBox vi port end to end — open a new file, insert
 // two lines, save with :wq, and read the result back with cat.
 func TestXv6Vi(t *testing.T) {
+	t.Parallel()
 	m, kernC := bootXsh(t)
 	registerVi(t, m, kernC)
 	m.TXPace = 0 // vi repaints whole screens; pacing just slows the test
@@ -509,6 +510,7 @@ func tailB(b []byte, n int) string {
 // executor, and the 2 MiB flash map. One board definition drives
 // both this boot and dmxgen's shipped image.
 func TestXv6ShPico(t *testing.T) {
+	t.Parallel()
 	m, _ := bootXshBoard(t, nil, boards.Pico)
 	m.FeedConsole("ls\rcat README\recho pico > note\rcat note\r" +
 		"cat README | wc\rgpio write 5 1\rgpio read 5\rls /dev\rhelp\rfree\r")
@@ -538,6 +540,7 @@ func TestXv6ShPico(t *testing.T) {
 // works, and fbtest exercises the SYS_fb API end to end (acquire,
 // user writes straight into the PSRAM window, verify, release).
 func TestXv6ShFeather(t *testing.T) {
+	t.Parallel()
 	// A blank flash part: persistence is live, so `sync` runs the
 	// machine's QMI direct-mode session with the scanout enabled —
 	// the kfb_pause/resume bracket is on the path (prompts/036).
@@ -588,6 +591,7 @@ func TestXv6ShFeather(t *testing.T) {
 // must rotate away from the framebuffer base (the pan IS the scroll),
 // and rendering must still work.
 func TestXv6Fbcon(t *testing.T) {
+	t.Parallel()
 	m, _ := bootXshBoard(t, nil, boards.Feather)
 	m.FeedConsole("echo zqzq\r")
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
@@ -654,6 +658,7 @@ func TestXv6Fbcon(t *testing.T) {
 // navigates on a console key, and quits on 'q' — fb content is
 // asserted against the card's bytes.
 func TestXv6SD(t *testing.T) {
+	t.Parallel()
 	slideA := make([]byte, 4096)
 	slideB := make([]byte, 4096)
 	for i := range slideA {
@@ -799,6 +804,7 @@ func TestXv6SD(t *testing.T) {
 // driven level back through GPIOx_STATUS, so `gpio read` verifies
 // `gpio write` end to end.
 func TestXv6GpioMux(t *testing.T) {
+	t.Parallel()
 	m, _ := bootXsh(t)
 	v := m.Variant()
 	m.FeedConsole("gpio write 5 1\rgpio read 5\rgpio write 5 0\rgpio read 5\r" +
@@ -838,6 +844,7 @@ func TestXv6GpioMux(t *testing.T) {
 // asynchronously, survives the program exiting, and `blink stop`
 // gates it off.
 func TestXv6Blink(t *testing.T) {
+	t.Parallel()
 	m, _ := bootXsh(t)
 	v := m.Variant()
 	m.FeedConsole("blink gpio 7\r")
@@ -903,6 +910,7 @@ func TestXv6Blink(t *testing.T) {
 // TestXv6Devfs: /dev lists the machine's resources as files; the gpio
 // file reflects pad state; the mount table names devfs.
 func TestXv6Devfs(t *testing.T) {
+	t.Parallel()
 	m, _ := bootXsh(t)
 	m.FeedConsole("ls /dev\rgpio write 5 1\rcat /dev/gpio\rcat /dev/pio0\rmount\recho done\r")
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 1_200_000_000}); err != nil {
@@ -923,6 +931,7 @@ func TestXv6Devfs(t *testing.T) {
 // The queued arrow still reaches the next readline as type-ahead and
 // recalls history.
 func TestXv6EchoCtl(t *testing.T) {
+	t.Parallel()
 	m, _ := bootXsh(t)
 	// The arrow lands after Enter, in the cooked window while sh runs
 	// `echo x`; the second Enter applies the recalled line.
@@ -947,6 +956,7 @@ func TestXv6EchoCtl(t *testing.T) {
 // buffer — not stat address 0 and complain "'(null)' is not a regular
 // file" (xv6's open(NULL) walks address 0 instead of faulting).
 func TestXv6ViNoArg(t *testing.T) {
+	t.Parallel()
 	m, kernC := bootXsh(t)
 	registerVi(t, m, kernC)
 	m.TXPace = 0
@@ -993,6 +1003,7 @@ func TestXv6ViNoArg(t *testing.T) {
 // Enter — the regression that shipped when SYS_ttyraw read the wrong
 // mailbox slot and readline only appeared to work via type-ahead.
 func TestXv6Readline(t *testing.T) {
+	t.Parallel()
 	m, _ := bootXsh(t)
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
 		t.Fatal(err)
@@ -1027,6 +1038,7 @@ func TestXv6Readline(t *testing.T) {
 // TestXv6Sh: upstream sh on the full fs — ls, cat, output redirection
 // (O_CREATE through sysfile's create), and a pipe into wc.
 func TestXv6Sh(t *testing.T) {
+	t.Parallel()
 	m, _ := bootXsh(t)
 	m.FeedConsole("ls\rcat README\recho booom > note\rcat note\recho one; echo two\rcat README | wc\r")
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {

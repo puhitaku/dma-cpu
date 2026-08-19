@@ -3,6 +3,7 @@ package dmacc_test
 import (
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/puhitaku/dma-cpu/dmaasm"
@@ -48,8 +49,19 @@ func compileKernelXsh(t *testing.T, fb bool) string {
 	return compileKernelFull(t, true, true, false, fb)
 }
 
+// kernelCache memoizes compiled kernels per flag set: the compile is
+// deterministic (TestDeterminism pins it), every test wants one of a
+// handful of shapes, and under t.Parallel the redundant compiles
+// would otherwise race for CPU. Concurrent misses may both compile;
+// both store the identical string.
+var kernelCache sync.Map
+
 func compileKernelFull(t *testing.T, fs, xip, size, fb bool) string {
 	t.Helper()
+	key := [4]bool{fs, xip, size, fb}
+	if v, ok := kernelCache.Load(key); ok {
+		return v.(string)
+	}
 	// Only PSRAM boards carry the real fb driver (~25 KiB of machine
 	// text); everything else takes the no-display stub, kfsstub-style.
 	fbmods := []string{"kfbstub"}
@@ -79,6 +91,7 @@ func compileKernelFull(t *testing.T, fs, xip, size, fb bool) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	kernelCache.Store(key, dasm)
 	return dasm
 }
 
@@ -100,6 +113,7 @@ func buildKernelC(t *testing.T, v *emu.Variant, text, data uint32) *dmaasm.Resul
 // sleeping parent's mailbox; the child's slot is reaped to UNUSED and
 // the parent ends ZOMBIE (nobody waits for it).
 func TestXv6Proc(t *testing.T) {
+	t.Parallel()
 	pmod, err := llir.Merge(parseLL(t, "testdata/xv6proc.ll"), parseLL(t, "../xv6/ll/usys.ll"))
 	if err != nil {
 		t.Fatal(err)

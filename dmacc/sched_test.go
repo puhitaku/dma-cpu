@@ -18,6 +18,7 @@ import (
 // must make progress over the same window — true preemptive
 // interleaving with zero host involvement after setup.
 func TestPreemptiveScheduler(t *testing.T) {
+	t.Parallel()
 	src, err := os.ReadFile("testdata/proc.ll")
 	if err != nil {
 		t.Fatal(err)

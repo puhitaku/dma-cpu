@@ -174,6 +174,7 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 }
 
 func TestXv6Usertests(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("the exam boots once per test")
 	}

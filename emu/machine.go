@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math/bits"
+	"os"
 )
 
 // GPIOEvent records an output-level change decoded from a write to an
@@ -81,6 +82,10 @@ type Machine struct {
 	watch    []uint32
 	watchHit *uint32
 	rrLast   uint // last granted channel (round-robin arbitration)
+
+	// Burst-engine observability (words moved via the fast bulk loop).
+	BurstCount uint64
+	BurstWords uint64
 }
 
 // Run termination reasons.
@@ -108,6 +113,7 @@ func NewMachine(v *Variant) *Machine {
 		mmio: make(map[uint32]uint32),
 	}
 	m.dma.v = v
+	m.dma.nowp = &m.Cycle
 	return m
 }
 
@@ -298,6 +304,13 @@ func (m *Machine) Write(addr uint32, val uint32, size int) error {
 		return nil
 	case addr >= DMABase && addr < DMABase+0x4000:
 		norm, op := aliasOp(addr - DMABase)
+		if op == 0 {
+			// Plain write: applyAlias would discard the current value,
+			// so skip the regRead — this is the machine's instruction
+			// path (control-block streaming) and regRead was hot.
+			m.dma.regWrite(norm, val, val != 0)
+			return nil
+		}
 		final := applyAlias(m.dma.regRead(norm), val, op)
 		m.dma.regWrite(norm, final, val != 0)
 		return nil
@@ -435,8 +448,8 @@ func (m *Machine) INTR() uint32 { return m.dma.intr }
 // transfer was issued.
 func (m *Machine) step() (bool, error) {
 	m.Cycle++
-	if m.dma.timerActive != 0 {
-		m.dma.tickTimers()
+	if m.dma.timerActive != 0 && m.Cycle >= m.dma.timerNextMin {
+		m.dma.fireDue(m.Cycle)
 	}
 	// The XIP stream DREQ is level-like: while the streamer holds data,
 	// re-grant a credit to any drained listener (a trigger clears
@@ -469,34 +482,220 @@ func (m *Machine) step() (bool, error) {
 		ch = bits.TrailingZeros32(pick)
 	}
 	m.rrLast = uint(ch)
+	// Burst gate: the remaining-count compare alone rejects the
+	// machine's instruction traffic (1-4 word control sequences), so
+	// the full eligibility check runs only for genuine bulk moves.
+	if !noFast && m.dma.ch[ch].remaining >= burstMin && r == uint32(1)<<ch {
+		if k := m.burstLen(ch); k > 1 {
+			return true, m.burst(ch, k)
+		}
+	}
 	return true, m.transfer(ch)
+}
+
+// burstMin is the smallest sequence worth the burst setup cost; below
+// it the per-word path is faster than resolving windows.
+const burstMin = 16
+
+// burstLen reports how many words of the channel's sequence may run
+// as one uninterrupted burst, or 1 when the per-word path must be
+// used. Eligibility: the channel is the sole ready channel (checked
+// by the caller), unpaced (permanent TREQ, so no credit accounting),
+// counting down normally, with no observers (sniffer, trace, watch)
+// and no ring wrapping; nothing can preempt it before the next timer
+// pulse, because triggers only fire from completions and the XIP
+// stream DREQ is inactive.
+func (m *Machine) burstLen(chIdx int) uint64 {
+	d := &m.dma
+	c := &d.ch[chIdx]
+	if c.treq != TreqPermanent || c.mode == transModeEndless ||
+		c.sniffEn || c.ringMaskR != 0 || c.ringMaskW != 0 || c.sizeLog == 3 ||
+		m.TraceW != nil || len(m.watch) != 0 || m.streamCtr != 0 {
+		return 1
+	}
+	k := uint64(c.remaining)
+	if d.timerActive != 0 {
+		// The burst occupies cycles [Cycle, Cycle+k-1]; the next pulse
+		// lands at timerNextMin, which fireDue guarantees is > Cycle.
+		if gap := d.timerNextMin - m.Cycle; gap < k {
+			k = gap
+		}
+	}
+	if k > 1<<16 {
+		k = 1 << 16
+	}
+	return k
+}
+
+// burst executes k words of the channel in one tight loop over the
+// resolved memory windows — identical word order, addresses, and
+// final cycle count to k single steps (m.Cycle advances by k-1: the
+// caller's step already accounted the first word's cycle). Falls back
+// to one plain transfer when a window is not plain memory.
+func (m *Machine) burst(chIdx int, k uint64) error {
+	c := &m.dma.ch[chIdx]
+	sz := uint32(1) << c.sizeLog
+	ra, wa := c.readAddr, c.writeAddr
+	rw, ww := &c.rwin, &c.wwin
+	if rw.hi == 0 || ra < rw.lo || ra >= rw.hi {
+		*rw = m.resolveWin(ra, false)
+	}
+	if ww.hi == 0 || wa < ww.lo || wa >= ww.hi {
+		*ww = m.resolveWin(wa, true)
+	}
+	if rw.buf == nil || ww.buf == nil || ra&(sz-1) != 0 || wa&(sz-1) != 0 ||
+		ra < rw.lo || rw.hi-ra < sz || wa < ww.lo || ww.hi-wa < sz {
+		return m.transfer(chIdx)
+	}
+	// Cap the burst to the room each window has along its stride.
+	switch c.strideR {
+	case sz:
+		if r := uint64((rw.hi - ra) / sz); r < k {
+			k = r
+		}
+	case 0:
+	default: // reverse: -sz
+		if r := uint64((ra-rw.lo)/sz) + 1; r < k {
+			k = r
+		}
+	}
+	switch c.strideW {
+	case sz:
+		if r := uint64((ww.hi - wa) / sz); r < k {
+			k = r
+		}
+	case 0:
+	default:
+		if r := uint64((wa-ww.lo)/sz) + 1; r < k {
+			k = r
+		}
+	}
+	if k < 2 {
+		return m.transfer(chIdx)
+	}
+	m.BurstCount++
+	m.BurstWords += k
+	rb, wb := rw.buf, ww.buf
+	ro, wo := ra-rw.lo, wa-ww.lo
+	if sz == 4 && !c.bswap && c.strideR == 4 && c.strideW == 4 {
+		// The dominant shape: a forward word copy (memmove kernels,
+		// framebuffer blits, disk I/O). Per-word forward order also
+		// gives overlapping ranges their architectural result.
+		for i := uint64(0); i < k; i++ {
+			binary.LittleEndian.PutUint32(wb[wo:], binary.LittleEndian.Uint32(rb[ro:]))
+			ro += 4
+			wo += 4
+		}
+	} else {
+		for i := uint64(0); i < k; i++ {
+			var v uint32
+			switch sz {
+			case 1:
+				v = uint32(rb[ro])
+			case 2:
+				v = uint32(binary.LittleEndian.Uint16(rb[ro:]))
+			default:
+				v = binary.LittleEndian.Uint32(rb[ro:])
+			}
+			if c.bswap {
+				v = bswap(v, int(sz))
+			}
+			switch sz {
+			case 1:
+				wb[wo] = byte(v)
+			case 2:
+				binary.LittleEndian.PutUint16(wb[wo:], uint16(v))
+			default:
+				binary.LittleEndian.PutUint32(wb[wo:], v)
+			}
+			ro += c.strideR
+			wo += c.strideW
+		}
+	}
+	c.readAddr = ra + uint32(k)*c.strideR
+	c.writeAddr = wa + uint32(k)*c.strideW
+	m.Cycle += k - 1
+	c.remaining -= uint32(k)
+	if c.remaining == 0 && c.busy {
+		m.dma.complete(chIdx)
+	}
+	return nil
 }
 
 // transfer issues one datum move for the given channel and handles
 // completion, chaining, and the sniffer.
 func (m *Machine) transfer(chIdx int) error {
 	c := &m.dma.ch[chIdx]
-	if m.v.ctrlTreqSel(c.ctrl) != TreqPermanent && c.credit > 0 {
+	if c.treq != TreqPermanent && c.credit > 0 {
 		c.credit--
 		m.dma.updateReady(chIdx)
 	}
-	size := 1 << ctrlDataSize(c.ctrl)
-	if size == 8 { // DATA_SIZE == 0x3 is reserved
+	if c.sizeLog == 3 { // DATA_SIZE == 0x3 is reserved
 		return fmt.Errorf("ch%d: reserved DATA_SIZE in CTRL %#08x", chIdx, c.ctrl)
 	}
+	size := 1 << c.sizeLog
+	sz := uint32(size)
 
-	datum, err := m.Read(c.readAddr, size)
-	if err != nil {
-		return fmt.Errorf("ch%d: %w", chIdx, err)
+	// B3 fast path: while the address sits in a resolved plain-memory
+	// window, skip the bus decode. Falls back per word on any miss;
+	// the slow path is the reference semantics (and reports errors).
+	var datum uint32
+	fastR := false
+	if !noFast {
+		ra := c.readAddr
+		w := &c.rwin
+		if w.hi == 0 || ra < w.lo || ra >= w.hi {
+			*w = m.resolveWin(ra, false)
+		}
+		if w.buf != nil && ra >= w.lo && w.hi-ra >= sz && ra&(sz-1) == 0 {
+			off := ra - w.lo
+			switch size {
+			case 1:
+				datum = uint32(w.buf[off])
+			case 2:
+				datum = uint32(binary.LittleEndian.Uint16(w.buf[off:]))
+			default:
+				datum = binary.LittleEndian.Uint32(w.buf[off:])
+			}
+			fastR = true
+		}
 	}
-	if c.ctrl&m.v.CtrlBswap != 0 {
+	if !fastR {
+		var err error
+		datum, err = m.Read(c.readAddr, size)
+		if err != nil {
+			return fmt.Errorf("ch%d: %w", chIdx, err)
+		}
+	}
+	if c.bswap {
 		datum = bswap(datum, size)
 	}
 	writeAddr := c.writeAddr
-	if err := m.Write(writeAddr, datum, size); err != nil {
-		return fmt.Errorf("ch%d: %w", chIdx, err)
+	wrote := false
+	if !noFast && len(m.watch) == 0 {
+		w := &c.wwin
+		if w.hi == 0 || writeAddr < w.lo || writeAddr >= w.hi {
+			*w = m.resolveWin(writeAddr, true)
+		}
+		if w.buf != nil && writeAddr >= w.lo && w.hi-writeAddr >= sz && writeAddr&(sz-1) == 0 {
+			off := writeAddr - w.lo
+			switch size {
+			case 1:
+				w.buf[off] = byte(datum)
+			case 2:
+				binary.LittleEndian.PutUint16(w.buf[off:], uint16(datum))
+			default:
+				binary.LittleEndian.PutUint32(w.buf[off:], datum)
+			}
+			wrote = true
+		}
 	}
-	if c.ctrl&m.v.CtrlSniffEn != 0 {
+	if !wrote {
+		if err := m.Write(writeAddr, datum, size); err != nil {
+			return fmt.Errorf("ch%d: %w", chIdx, err)
+		}
+	}
+	if c.sniffEn {
 		m.dma.sniff(chIdx, datum, size)
 	}
 	if m.TraceW != nil {
@@ -504,11 +703,11 @@ func (m *Machine) transfer(chIdx int) error {
 			m.Cycle, chIdx, c.readAddr, writeAddr, 2*size+2, datum)
 	}
 
-	if c.ctrl&CtrlIncrRead != 0 {
-		c.readAddr = m.v.incrRing(c.readAddr, uint32(size), c.ctrl, false)
+	if c.strideR != 0 {
+		c.readAddr = advanceAddr(c.readAddr, c.strideR, c.ringMaskR)
 	}
-	if c.ctrl&m.v.CtrlIncrWrite != 0 {
-		c.writeAddr = m.v.incrRing(c.writeAddr, uint32(size), c.ctrl, true)
+	if c.strideW != 0 {
+		c.writeAddr = advanceAddr(c.writeAddr, c.strideW, c.ringMaskW)
 	}
 
 	// NOTE: the transfer above may have re-written this channel's own
@@ -526,28 +725,51 @@ func (m *Machine) transfer(chIdx int) error {
 	return nil
 }
 
-// incrRing advances an address by size (reverse-decrement on SKUs that
-// have INCR_*_REV) with optional ring wrapping (RING_SIZE bits, applied to
-// read or write side per RING_SEL).
-func (v *Variant) incrRing(addr, size, ctrl uint32, isWrite bool) uint32 {
-	rev := v.CtrlIncrReadRev
-	if isWrite {
-		rev = v.CtrlIncrWriteRev
+// resolveWin maps addr to a plain-memory window for direct channel
+// access, or a negative window (nil buf) spanning a region that must
+// stay on the slow bus path. A zero memWin means "unmapped; resolve
+// again next time" (the slow path will fault with the real error).
+func (m *Machine) resolveWin(addr uint32, forWrite bool) memWin {
+	if addr >= SRAMBase && addr-SRAMBase < uint32(len(m.sram)) {
+		return memWin{m.sram, SRAMBase, SRAMBase + uint32(len(m.sram))}
 	}
-	next := addr + size
-	if rev != 0 && ctrl&rev != 0 {
-		next = addr - size
+	if addr >= 0x40000000 && addr < 0x60000000 {
+		// DMA regs and MMIO: trigger/UART/GPIO semantics live here.
+		return memWin{nil, 0x40000000, 0x60000000}
 	}
-	ring := v.ctrlRingSize(ctrl)
-	if ring == 0 {
+	if m.fl.csr&qmiCSREn == 0 && addr >= XIPBase && addr < XIPBase+0x08000000 {
+		block := addr &^ 0x03FFFFFF // cached / uncached alias base
+		off := addr - block
+		if m.PSRAM != nil && off >= psramWinOff && off-psramWinOff < uint32(len(m.PSRAM)) {
+			lo := block + psramWinOff
+			return memWin{m.PSRAM, lo, lo + uint32(len(m.PSRAM))}
+		}
+		if m.Flash != nil && !forWrite && off < uint32(len(m.Flash)) &&
+			(block == XIPBase || block == XIPBase+0x04000000) {
+			return memWin{m.Flash, block, block + uint32(len(m.Flash))}
+		}
+	}
+	return memWin{}
+}
+
+// winsInvalidate drops every channel's cached memory windows (QMI
+// direct-mode transitions change what the fast path may touch).
+func (m *Machine) winsInvalidate() {
+	for i := range m.dma.ch {
+		m.dma.ch[i].rwin = memWin{}
+		m.dma.ch[i].wwin = memWin{}
+	}
+}
+
+// advanceAddr steps an address by the channel's pre-decoded stride
+// (negative strides wrap in uint32, matching reverse-decrement), with
+// optional ring wrapping when the mask is nonzero.
+func advanceAddr(addr, stride, ringMask uint32) uint32 {
+	next := addr + stride
+	if ringMask == 0 {
 		return next
 	}
-	ringApplies := (ctrl&v.CtrlRingSel != 0) == isWrite
-	if !ringApplies {
-		return next
-	}
-	mask := uint32(1)<<ring - 1
-	return (addr &^ mask) | (next & mask)
+	return (addr &^ ringMask) | (next & ringMask)
 }
 
 // RunConfig bounds a Run call.
@@ -596,7 +818,23 @@ func (m *Machine) Run(cfg RunConfig) (RunResult, error) {
 		if !anyTimerWait {
 			return RunResult{Reason: StopStalled, Cycles: m.Cycle - start}, nil
 		}
-		// Timer-paced wait: keep ticking.
+		// Timer-paced wait: nothing can happen until the next timer
+		// pulse, so jump straight to the cycle before it (the next
+		// step lands exactly on the fire cycle). Exact by
+		// construction: no channel is runnable and only timer pulses
+		// can change that. Clamped to the cycle budget.
+		if !noFast && m.dma.timerNextMin > m.Cycle+1 {
+			next := m.dma.timerNextMin - 1
+			if lim := start + maxCycles; next > lim {
+				next = lim
+			}
+			m.Cycle = next
+		}
 	}
 	return RunResult{Reason: StopMaxCycles, Cycles: m.Cycle - start}, nil
 }
+
+// noFast, set via EMU_NO_FAST=1, disables the semantics-preserving
+// fast paths (idle timer jumps, window caches, bursts) so a suspected
+// divergence can be bisected against the plain per-cycle model.
+var noFast = os.Getenv("EMU_NO_FAST") != ""

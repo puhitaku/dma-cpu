@@ -16,6 +16,7 @@ import (
 // test-local static-arena sbrk (kernel-less machine), driven by a self-checking allocator exercise
 // (testdata/xv6malloc.c). Goldens regenerate with `make xv6-ll`.
 func TestXv6Malloc(t *testing.T) {
+	t.Parallel()
 	paths := []string{"testdata/xv6malloc.ll",
 		"../xv6/ll/string.ll", "../xv6/ll/umalloc.ll"}
 	var mods []*llir.Module

@@ -17,6 +17,7 @@ import (
 // for the phase-2 child sleeping in pause() (interrupted pause returns
 // -1, the handler runs, the child exits 9). The idle keeper survives.
 func TestXv6Signal(t *testing.T) {
+	t.Parallel()
 	mod, err := llir.Merge(parseLL(t, "testdata/xv6sig.ll"), parseLL(t, "../xv6/ll/usys.ll"))
 	if err != nil {
 		t.Fatal(err)
@@ -133,6 +134,7 @@ func TestXv6Signal(t *testing.T) {
 // caught by the trap demo's handler; a background spin survives the
 // prompt-time Ctrl-C (no foreground job) and dies by kill as before.
 func TestXv6ShSigint(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("full-system boot")
 	}

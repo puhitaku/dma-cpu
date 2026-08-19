@@ -17,6 +17,7 @@ import (
 // "bob", erases the trailing 'b' with a backspace, and finishes
 // "om\r" — the cooked line must be "boom".
 func TestXv6Read(t *testing.T) {
+	t.Parallel()
 	mod, err := llir.Merge(
 		parseLL(t, "testdata/xv6readline.ll"),
 		parseLL(t, "../xv6/ll/ulib.ll"),

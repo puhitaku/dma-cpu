@@ -19,6 +19,7 @@ import (
 // in the emulator; the exit code must match the host execution recorded
 // in testdata/expected.txt.
 func TestDifferential(t *testing.T) {
+	t.Parallel()
 	exp, err := os.ReadFile("testdata/expected.txt")
 	if err != nil {
 		t.Fatal(err)
@@ -119,6 +120,7 @@ func loadLibc(t *testing.T) []*llir.Module {
 // compares both the exit code and every console byte with the host libc
 // execution (testdata/stdio.console, stdio.expected — `make llgen`).
 func TestLibcStdio(t *testing.T) {
+	t.Parallel()
 	src, err := os.ReadFile("testdata/stdio.ll")
 	if err != nil {
 		t.Fatal(err)
@@ -192,6 +194,7 @@ func TestLibcStdio(t *testing.T) {
 // its own static frame; depth-K overflow lowers to HALT). tree(10)
 // requires depth 10 of the default 12.
 func TestRecursion(t *testing.T) {
+	t.Parallel()
 	src, err := os.ReadFile("testdata/recurse.ll")
 	if err != nil {
 		t.Fatal(err)
@@ -229,6 +232,7 @@ func TestRecursion(t *testing.T) {
 
 // TestDeterminism: same IR in, same dasm out.
 func TestDeterminism(t *testing.T) {
+	t.Parallel()
 	src, err := os.ReadFile("testdata/memory.ll")
 	if err != nil {
 		t.Fatal(err)
@@ -252,6 +256,7 @@ func TestDeterminism(t *testing.T) {
 // TestNoSafepoints: the flag removes safepoints (and with them the need
 // for a live dispatch word beyond crt0 init).
 func TestNoSafepoints(t *testing.T) {
+	t.Parallel()
 	src, err := os.ReadFile("testdata/collatz.ll")
 	if err != nil {
 		t.Fatal(err)

@@ -10,6 +10,7 @@ import (
 )
 
 func TestZZAllSizes(t *testing.T) {
+	t.Parallel()
 	v, _ := emu.VariantByName("rp2350")
 	meas := func(name, dasm string, compact bool) {
 		res, err := dmaasm.Assemble(dasm, dmaasm.Options{

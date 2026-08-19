@@ -18,6 +18,7 @@ import (
 // exit leaves a ZOMBIE. Asserts the kernel-serialized console, clock
 // progress, pid 1's recorded exit state, and pid 2 surviving pid 1.
 func TestXv6Syscalls(t *testing.T) {
+	t.Parallel()
 	pmod, err := llir.Merge(parseLL(t, "testdata/xv6sys.ll"), parseLL(t, "../xv6/ll/usys.ll"))
 	if err != nil {
 		t.Fatal(err)

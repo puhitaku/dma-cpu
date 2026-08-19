@@ -13,6 +13,7 @@ import (
 // name, cd inside and use relative paths, check the read-only guard
 // and busy/unmount semantics, and confirm free/echo still behave.
 func TestXv6Mount(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("full-system boot")
 	}
@@ -51,7 +52,7 @@ func TestXv6Mount(t *testing.T) {
 	t.Logf("console:\n%s", out)
 	for _, want := range []string{
 		"fat0 on /mnt type vfat (ro)",
-		"hello.txt", // 8.3 names list lowercased
+		"hello.txt",                   // 8.3 names list lowercased
 		"a-rather-long-file-name.txt", // LFNs list IN FULL (DIRSIZ 62)
 		"sub",
 		"hello from vfat",

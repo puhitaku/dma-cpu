@@ -16,6 +16,7 @@ import (
 // (pid 4) is orphaned, adopted by init (pid 2, the idle counter, which
 // never waits) and freed without a zombie when it later exits.
 func TestXv6Kill(t *testing.T) {
+	t.Parallel()
 	mod, err := llir.Merge(parseLL(t, "testdata/xv6kill.ll"), parseLL(t, "../xv6/ll/usys.ll"))
 	if err != nil {
 		t.Fatal(err)

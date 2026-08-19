@@ -12,6 +12,39 @@ type channel struct {
 	mode      uint32 // TRANS_COUNT mode latched at trigger (RP2350)
 	busy      bool
 	credit    uint8 // DREQ credit counter (saturating; credit-based scheme)
+
+	// Decoded-CTRL cache (ctrlChanged is the single writer): the
+	// transfer loop touches these every word, and re-extracting the
+	// bit fields per word was ~9% of the suite. Pure accelerators,
+	// like ready/hp below — CTRL stays the source of truth.
+	treq      uint32 // ctrlTreqSel(ctrl)
+	sizeLog   uint32 // ctrlDataSize(ctrl); 3 = reserved (checked in transfer)
+	chainTo   int
+	strideR   uint32 // 0 when INCR_READ clear; else +size or -size (wrapping)
+	strideW   uint32
+	ringMaskR uint32 // nonzero when RING_SIZE set and RING_SEL picks this side
+	ringMaskW uint32
+	bswap     bool
+	sniffEn   bool
+	irqQuiet  bool
+
+	// Resolved memory windows for the read and write side (B3 fast
+	// path): while an address stays inside its window, the transfer
+	// loop bypasses the full bus decode with a direct slice access.
+	// A window with a nil buf but a nonzero range is a NEGATIVE
+	// window — the region (DMA regs, MMIO) must take the slow path,
+	// cached so it is not re-resolved every word. Zero value means
+	// "resolve on next use". Invalidated wholesale on QMI-mode
+	// changes (winsInvalidate).
+	rwin memWin
+	wwin memWin
+}
+
+// memWin is a resolved span of bus addresses served by one backing
+// slice (buf[a-lo] for a in [lo,hi)), or a negative span (buf nil).
+type memWin struct {
+	buf    []byte
+	lo, hi uint32
 }
 
 const maxChannels = 16 // RP2350; RP2040 uses the first 12
@@ -42,6 +75,79 @@ type dma struct {
 	hp          uint32
 	timerActive uint32
 	timerListen [4]uint32
+
+	// Timer next-fire schedule: ticking four fractional accumulators
+	// every cycle was ~8% of the suite, so each active timer instead
+	// records the absolute cycle of its next pulse batch (closed-form
+	// from the accumulator), and step() consults only the minimum.
+	// Exact: pulses land on the same cycles the per-cycle loop
+	// produced. nowp points at the machine's cycle counter.
+	nowp         *uint64
+	timerLast    [4]uint64 // cycle at which acc was last materialized
+	timerNext    [4]uint64 // absolute cycle of the next pulse batch
+	timerNextMin uint64
+}
+
+// timerRecalc rematerializes timer i's accumulator at the current
+// cycle and schedules its next fire.
+func (d *dma) timerRecalc(i int) {
+	t := &d.timers[i]
+	now := *d.nowp
+	d.timerLast[i] = now
+	x := uint64(t.reg >> 16)
+	y := uint64(t.reg & 0xFFFF)
+	if x == 0 || y == 0 {
+		d.timerNext[i] = ^uint64(0)
+		d.timerMin()
+		return
+	}
+	// smallest n >= 1 with acc + n*x >= y
+	n := uint64(1)
+	if uint64(t.acc) < y {
+		n = (y - uint64(t.acc) + x - 1) / x
+		if n == 0 {
+			n = 1
+		}
+	}
+	d.timerNext[i] = now + n
+	d.timerMin()
+}
+
+func (d *dma) timerMin() {
+	min := ^uint64(0)
+	for act := d.timerActive; act != 0; act &= act - 1 {
+		i := bits.TrailingZeros32(act)
+		if d.timerNext[i] < min {
+			min = d.timerNext[i]
+		}
+	}
+	d.timerNextMin = min
+}
+
+// fireDue advances every timer whose fire cycle has arrived, emitting
+// exactly the pulses the per-cycle accumulator loop would have.
+func (d *dma) fireDue(now uint64) {
+	for act := d.timerActive; act != 0; act &= act - 1 {
+		i := bits.TrailingZeros32(act)
+		if d.timerNext[i] > now {
+			continue
+		}
+		t := &d.timers[i]
+		x := uint64(t.reg >> 16)
+		y := uint64(t.reg & 0xFFFF)
+		total := uint64(t.acc) + x*(now-d.timerLast[i])
+		for p := total / y; p > 0; p-- {
+			d.pulseTimer(i)
+		}
+		t.acc = uint32(total % y)
+		d.timerLast[i] = now
+		n := (y - uint64(t.acc) + x - 1) / x
+		if n == 0 {
+			n = 1
+		}
+		d.timerNext[i] = now + n
+	}
+	d.timerMin()
 }
 
 // updateReady recomputes one channel's bit of the ready cache.
@@ -57,14 +163,43 @@ func (d *dma) updateReady(chIdx int) {
 func (d *dma) ctrlChanged(chIdx int) {
 	bit := uint32(1) << chIdx
 	c := &d.ch[chIdx]
+	v := d.v
 	if c.ctrl&CtrlHighPriority != 0 {
 		d.hp |= bit
 	} else {
 		d.hp &^= bit
 	}
-	sel := d.v.ctrlTreqSel(c.ctrl)
+	c.treq = v.ctrlTreqSel(c.ctrl)
+	c.sizeLog = ctrlDataSize(c.ctrl)
+	c.chainTo = v.ctrlChainTo(c.ctrl)
+	c.bswap = c.ctrl&v.CtrlBswap != 0
+	c.sniffEn = c.ctrl&v.CtrlSniffEn != 0
+	c.irqQuiet = c.ctrl&v.CtrlIRQQuiet != 0
+	size := uint32(1) << (c.sizeLog & 3)
+	c.strideR, c.strideW = 0, 0
+	if c.ctrl&CtrlIncrRead != 0 {
+		c.strideR = size
+		if v.CtrlIncrReadRev != 0 && c.ctrl&v.CtrlIncrReadRev != 0 {
+			c.strideR = -size
+		}
+	}
+	if c.ctrl&v.CtrlIncrWrite != 0 {
+		c.strideW = size
+		if v.CtrlIncrWriteRev != 0 && c.ctrl&v.CtrlIncrWriteRev != 0 {
+			c.strideW = -size
+		}
+	}
+	c.ringMaskR, c.ringMaskW = 0, 0
+	if ring := v.ctrlRingSize(c.ctrl); ring != 0 {
+		mask := uint32(1)<<ring - 1
+		if c.ctrl&v.CtrlRingSel != 0 {
+			c.ringMaskW = mask
+		} else {
+			c.ringMaskR = mask
+		}
+	}
 	for i := range d.timerListen {
-		if sel == TreqTimer0+uint32(i) {
+		if c.treq == TreqTimer0+uint32(i) {
 			d.timerListen[i] |= bit
 		} else {
 			d.timerListen[i] &^= bit
@@ -189,6 +324,7 @@ func (d *dma) regWrite(off, val uint32, rawNonZero bool) {
 		} else {
 			d.timerActive &^= 1 << i
 		}
+		d.timerRecalc(int(i))
 	case d.v.offMultiChanTrigger:
 		for i := 0; i < d.v.NChannels; i++ {
 			if val&(1<<i) != 0 {
@@ -255,10 +391,10 @@ func (d *dma) complete(chIdx int) {
 	c := &d.ch[chIdx]
 	c.busy = false
 	d.updateReady(chIdx)
-	if c.ctrl&d.v.CtrlIRQQuiet == 0 {
+	if !c.irqQuiet {
 		d.intr |= 1 << chIdx
 	}
-	if to := d.v.ctrlChainTo(c.ctrl); to != chIdx && to < d.v.NChannels {
+	if to := c.chainTo; to != chIdx && to < d.v.NChannels {
 		d.trigger(to, true, d.ch[to].ctrl)
 	}
 	if c.mode == transModeTriggerSelf {
@@ -272,7 +408,7 @@ func (d *dma) runnable(chIdx int) bool {
 	if !c.busy || c.ctrl&CtrlEN == 0 {
 		return false
 	}
-	if d.v.ctrlTreqSel(c.ctrl) == TreqPermanent {
+	if c.treq == TreqPermanent {
 		return true
 	}
 	return c.credit > 0
@@ -283,7 +419,7 @@ func (d *dma) runnable(chIdx int) bool {
 // even while a channel is idle or paused.
 func (d *dma) pulseDreq(dreq uint32) {
 	for i := 0; i < d.v.NChannels; i++ {
-		if d.v.ctrlTreqSel(d.ch[i].ctrl) == dreq && d.ch[i].credit < maxCredit {
+		if d.ch[i].treq == dreq && d.ch[i].credit < maxCredit {
 			d.ch[i].credit++
 			d.updateReady(i)
 		}
@@ -295,7 +431,7 @@ func (d *dma) pulseDreq(dreq uint32) {
 // the way a re-asserting hardware request line does.
 func (d *dma) levelDreq(dreq uint32) {
 	for i := 0; i < d.v.NChannels; i++ {
-		if d.v.ctrlTreqSel(d.ch[i].ctrl) == dreq && d.ch[i].busy && d.ch[i].credit == 0 {
+		if d.ch[i].treq == dreq && d.ch[i].busy && d.ch[i].credit == 0 {
 			d.ch[i].credit = 1
 			d.updateReady(i)
 		}
@@ -314,23 +450,6 @@ func (d *dma) pulseTimer(i int) {
 	}
 }
 
-// tickTimers advances the four fractional pacing timers by one
-// system-clock cycle. A timer with dividend X and divisor Y emits X DREQ
-// pulses every Y cycles.
-func (d *dma) tickTimers() {
-	for act := d.timerActive; act != 0; act &= act - 1 {
-		i := bits.TrailingZeros32(act)
-		t := &d.timers[i]
-		x := t.reg >> 16
-		y := t.reg & 0xFFFF
-		t.acc += x
-		for t.acc >= y {
-			t.acc -= y
-			d.pulseTimer(i)
-		}
-	}
-}
-
 // waitsOnLiveTimer reports whether the channel is blocked on a pacing
 // timer that will eventually produce credit (used for halt detection).
 func (d *dma) waitsOnLiveTimer(chIdx int) bool {
@@ -338,7 +457,7 @@ func (d *dma) waitsOnLiveTimer(chIdx int) bool {
 	if !c.busy || c.ctrl&CtrlEN == 0 {
 		return false
 	}
-	sel := d.v.ctrlTreqSel(c.ctrl)
+	sel := c.treq
 	if sel < TreqTimer0 || sel > TreqTimer3 {
 		return false
 	}

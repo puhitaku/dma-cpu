@@ -46,6 +46,7 @@ func compileWithLibc(t *testing.T, name string, extra ...string) string {
 // session must show the background counter advancing between two `stat`
 // commands — multitasking observable from inside the shell.
 func TestShellSystem(t *testing.T) {
+	t.Parallel()
 	shellDasm := compileWithLibc(t, "shell", "../xv6/ll/usys.ll")
 	echoMod, err := llir.Merge(parseLL(t, "../xv6/ll/echo.ll"),
 		parseLL(t, "../xv6/ll/ulib.ll"), parseLL(t, "../xv6/ll/usys.ll"))

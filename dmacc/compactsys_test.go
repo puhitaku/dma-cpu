@@ -15,6 +15,7 @@ import (
 // through 8-byte records, C kernel scheduling. Two counter processes
 // must both make progress.
 func TestCompactSched(t *testing.T) {
+	t.Parallel()
 	dasm, err := dmacc.Compile(parseLL(t, "testdata/proc.ll"), dmacc.Options{})
 	if err != nil {
 		t.Fatal(err)

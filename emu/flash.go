@@ -67,6 +67,11 @@ func (m *Machine) flashWrite(addr, val uint32) bool {
 	case QMIBase + qmiDirectCSR:
 		was := m.fl.csr
 		m.fl.csr = val & (qmiCSREn | qmiCSRAssertCS0n)
+		if (was^m.fl.csr)&qmiCSREn != 0 {
+			// Direct mode opened or closed: cached XIP/PSRAM windows
+			// change legality — drop them all.
+			m.winsInvalidate()
+		}
 		// CS deassert (or leaving direct mode) ends the transaction.
 		if (was&qmiCSRAssertCS0n != 0) && (m.fl.csr&qmiCSRAssertCS0n == 0) {
 			m.flashEndCmd()

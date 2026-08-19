@@ -74,6 +74,7 @@ func registerImage(t *testing.T, m *emu.Machine, kernC *dmaasm.Result,
 // own loader — the parent's fork() return arrives by deposit at exec
 // time, and wait() reaps the child's exit(7).
 func TestXv6Exec(t *testing.T) {
+	t.Parallel()
 	spawnMod, err := llir.Merge(parseLL(t, "testdata/xv6spawn.ll"), parseLL(t, "../xv6/ll/usys.ll"))
 	if err != nil {
 		t.Fatal(err)

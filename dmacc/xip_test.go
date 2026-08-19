@@ -18,6 +18,7 @@ import (
 // header stubs (Fha/Fhb) and __rt_memcpy are RAM-resident while the
 // recursive body executes from flash.
 func TestXIPRecursion(t *testing.T) {
+	t.Parallel()
 	src, err := os.ReadFile("testdata/recurse.ll")
 	if err != nil {
 		t.Fatal(err)
@@ -68,6 +69,7 @@ func TestXIPRecursion(t *testing.T) {
 // record lands in the RAM-resident .ramtext segment, and each golden must
 // still produce clang's answer.
 func TestXIPDifferential(t *testing.T) {
+	t.Parallel()
 	exp, err := os.ReadFile("testdata/expected.txt")
 	if err != nil {
 		t.Fatal(err)

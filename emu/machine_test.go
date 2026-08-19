@@ -327,7 +327,7 @@ func TestConditionalJump(t *testing.T) {
 				sniff := v.SniffDataAddr()
 				pc := emu.ChanRegAddr(p.cfg.Fetch, emu.OffReadAddr)
 
-				p.move(vv, sniff, v.CtrlBswap)   // sign bit -> bit 7 (bits 4-6 too)
+				p.move(vv, sniff, v.CtrlBswap)     // sign bit -> bit 7 (bits 4-6 too)
 				p.move(mask, v.SniffDataClrAddr()) // isolate bit 4: 0 or 16
 				p.move(trampBase, p.bucket, v.CtrlSniffEn)
 				p.move(sniff, pc) // jump to slot 0 or slot 1

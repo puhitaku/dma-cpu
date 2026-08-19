@@ -13,6 +13,7 @@ import (
 // same flash, stages from the now-valid slot, and reads the file
 // back. A third boot checks the generation advances.
 func TestXv6Persist(t *testing.T) {
+	t.Parallel()
 	flash := make([]byte, 0x400000) // the full 4 MiB flash map
 	for i := range flash {
 		flash[i] = 0xFF
