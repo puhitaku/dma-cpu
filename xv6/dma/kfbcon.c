@@ -26,6 +26,7 @@
 int kfb_active(void);
 uint kfb_base(void);
 uint kfb_owner(void);
+extern void kdmaset(uint dst, uint word, uint len); /* kdma.c */
 int kfb_w(void);
 int kfb_h(void);
 void kfb_setpan(uint row0);
@@ -138,20 +139,15 @@ clear_cells(int cx0, int cy, int n)
   uint bg = fbpal[fbg];
   uint w = bg | bg << 8 | bg << 16 | bg << 24;
   uint a = cell_addr(cx0, cy);
+  if (n >= 8) { /* wide spans (scroll, clear-screen rows): DMA fill */
+    for (int r = 0; r < CELLH; r++) {
+      kdmaset(a, w, (uint)(8 * n));
+      a += PITCH;
+    }
+    return;
+  }
   for (int r = 0; r < CELLH; r++) {
     uint p = a, words = (uint)(2 * n);
-    while (words >= 8) {
-      W32(p) = w;
-      W32(p + 4) = w;
-      W32(p + 8) = w;
-      W32(p + 12) = w;
-      W32(p + 16) = w;
-      W32(p + 20) = w;
-      W32(p + 24) = w;
-      W32(p + 28) = w;
-      p += 32;
-      words -= 8;
-    }
     while (words > 0) {
       W32(p) = w;
       p += 4;

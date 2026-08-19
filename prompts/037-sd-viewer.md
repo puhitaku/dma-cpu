@@ -136,6 +136,31 @@ and fbtest/show moved into their own `fbtools` multi-call binary
 installed only on fb boards, so displayless boards stopped paying
 ~15 KB per toolbox exec for tools they cannot link.
 
+## Generic DMA: kdmacpy on a machine made of DMA
+
+The user asked the right question: if this is a DMA controller, why
+is the pixel copy an interpreted loop? Two answers landed:
+
+1. SD bulk reads now point mailbox op 4 straight at the caller's
+   buffer for whole aligned sectors — the ARM writes SPI bytes to
+   their final home and the machine copies nothing.
+2. kdma.c: kdmacpy/kdmaset drive FREE channel 11 (unused by the
+   compact machine on both SKUs) as a bulk engine — one word per
+   bus slot instead of tens of interpreted transfers per word.
+   dmacpy_ctrl arrives loader-patched with the SKU's CTRL encoding
+   (zero = plain-loop fallback for unpatched lean kernels);
+   completion polls TRANS_COUNT (the BUSY bit is SKU-dependent).
+   Wired into exec's image placement (a 57 KB toolbox text per
+   exec), kfb_init's 150 KB blank, fbcon's row clears, and XIP
+   vfat bulk reads.
+
+The debugging lesson is a keeper: CHAIN_TO=0 in CTRL does not mean
+"no chain" — it means "trigger channel 0 on completion". The first
+kdmacpy re-armed a machine bank, the re-armed bank re-triggered the
+copier with advanced addresses, and the copier marched through SRAM
+until the bus fault. Self-chain (CHAIN_TO=11) is the no-chain
+encoding, now baked into KDMACopyCtrl.
+
 ## Still open
 
 - The contiguous-LBA raw read path for slides.bin (mount resolves

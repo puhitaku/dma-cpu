@@ -1158,14 +1158,14 @@ define dso_local i32 @fat_readi(ptr noundef %0, i32 noundef %1, i32 noundef %2, 
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %7) #11
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %6) #11
   call void @llvm.lifetime.end.p0(i64 64, ptr nonnull %5) #11
-  br label %175
+  br label %172
 
 74:                                               ; preds = %4
   %75 = getelementptr inbounds [16 x %struct.fatmeta], ptr @fatmeta, i32 0, i32 %14
   %76 = getelementptr inbounds nuw i8, ptr %75, i32 4
   %77 = load i32, ptr %76, align 4, !tbaa !29
   %78 = icmp ult i32 %2, %77
-  br i1 %78, label %79, label %175
+  br i1 %78, label %79, label %172
 
 79:                                               ; preds = %74
   %80 = load i32, ptr %75, align 4, !tbaa !27
@@ -1196,15 +1196,15 @@ define dso_local i32 @fat_readi(ptr noundef %0, i32 noundef %1, i32 noundef %2, 
   %99 = urem i32 %2, %98
   br label %100
 
-100:                                              ; preds = %172, %93
-  %101 = phi i32 [ %84, %93 ], [ %174, %172 ]
-  %102 = phi i32 [ 0, %93 ], [ %173, %172 ]
-  %103 = phi i32 [ %99, %93 ], [ 0, %172 ]
+100:                                              ; preds = %169, %93
+  %101 = phi i32 [ %84, %93 ], [ %171, %169 ]
+  %102 = phi i32 [ 0, %93 ], [ %170, %169 ]
+  %103 = phi i32 [ %99, %93 ], [ 0, %169 ]
   %104 = icmp ult i32 %102, %97
   %105 = add i32 %101, -2
   %106 = icmp ult i32 %105, 268435446
   %107 = select i1 %104, i1 %106, i1 false
-  br i1 %107, label %108, label %175
+  br i1 %107, label %108, label %172
 
 108:                                              ; preds = %100
   %109 = load i32, ptr @clussz, align 4, !tbaa !10
@@ -1230,7 +1230,7 @@ define dso_local i32 @fat_readi(ptr noundef %0, i32 noundef %1, i32 noundef %2, 
   %125 = phi i32 [ %112, %114 ], [ %159, %157 ]
   %126 = phi i32 [ %122, %114 ], [ %160, %157 ]
   %127 = icmp eq i32 %125, 0
-  br i1 %127, label %172, label %128
+  br i1 %127, label %169, label %128
 
 128:                                              ; preds = %123
   %129 = and i32 %124, 511
@@ -1275,25 +1275,23 @@ define dso_local i32 @fat_readi(ptr noundef %0, i32 noundef %1, i32 noundef %2, 
 
 161:                                              ; preds = %108
   %162 = add i32 %102, %1
-  %163 = inttoptr i32 %162 to ptr
-  %164 = load i32, ptr @fbase, align 4, !tbaa !10
-  %165 = load i32, ptr @dataoff, align 4, !tbaa !10
-  %166 = mul i32 %109, %105
-  %167 = add i32 %166, %103
+  %163 = load i32, ptr @fbase, align 4, !tbaa !10
+  %164 = load i32, ptr @dataoff, align 4, !tbaa !10
+  %165 = mul i32 %109, %105
+  %166 = add i32 %165, %103
+  %167 = add i32 %166, %163
   %168 = add i32 %167, %164
-  %169 = add i32 %168, %165
-  %170 = inttoptr i32 %169 to ptr
-  %171 = tail call ptr @memmove(ptr noundef %163, ptr noundef %170, i32 noundef %112) #12
-  br label %172
+  tail call void @kdmacpy(i32 noundef %162, i32 noundef %168, i32 noundef %112) #12
+  br label %169
 
-172:                                              ; preds = %123, %161
-  %173 = add i32 %112, %102
-  %174 = tail call fastcc i32 @fat_next(i32 noundef %101) #10
+169:                                              ; preds = %123, %161
+  %170 = add i32 %112, %102
+  %171 = tail call fastcc i32 @fat_next(i32 noundef %101) #10
   br label %100, !llvm.loop !50
 
-175:                                              ; preds = %100, %74, %71
-  %176 = phi i32 [ %73, %71 ], [ 0, %74 ], [ %102, %100 ]
-  ret i32 %176
+172:                                              ; preds = %100, %74, %71
+  %173 = phi i32 [ %73, %71 ], [ 0, %74 ], [ %102, %100 ]
+  ret i32 %173
 }
 
 ; Function Attrs: minsize nounwind optsize
@@ -1307,6 +1305,9 @@ define internal fastcc range(i32 0, 268435456) i32 @fat_next(i32 noundef range(i
   %8 = and i32 %7, 268435455
   ret i32 %8
 }
+
+; Function Attrs: minsize optsize
+declare dso_local void @kdmacpy(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #6
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(argmem: readwrite)
 define dso_local void @fat_stati(ptr noundef readonly captures(none) %0, ptr noundef writeonly captures(none) initializes((0, 16)) %1) local_unnamed_addr #7 {

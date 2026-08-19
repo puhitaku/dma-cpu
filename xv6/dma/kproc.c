@@ -112,6 +112,7 @@ extern int kfs_close(int fd);
 extern int kfs_dup(int fd);
 extern int kfs_fstat(int fd, uint staddr);
 extern int kfs_seek(int fd, uint off);
+extern void kdmacpy(uint dst, uint src, uint len); /* kdma.c */
 extern int kfs_pipe(uint fdarray);
 extern int kfs_chdir(uint pathaddr);
 extern int kfs_mkdir(uint pathaddr);
@@ -1225,12 +1226,11 @@ dma_ksyscall(void)
         ret = (uint)-1;
         break;
       }
-      uint *src = (uint *)im->text, *dst = (uint *)tb;
-      for (uint n = 0; n < im->textlen; n += 4)
-        *dst++ = *src++;
-      src = (uint *)im->data, dst = (uint *)db;
-      for (uint n = 0; n < im->datalen; n += 4)
-        *dst++ = *src++;
+      /* Bulk DMA copy (kdma.c): a 57 KB toolbox text used to be an
+       * interpreted word loop; channel 11 moves it a word per bus
+       * slot. Lengths round up to the word the old loop copied. */
+      kdmacpy(tb, im->text, (im->textlen + 3u) & ~3u);
+      kdmacpy(db, im->data, (im->datalen + 3u) & ~3u);
     }
     uint tD = tb - im->textlink, dD = db - im->datalink;
     uint *rl = (uint *)im->relocs;

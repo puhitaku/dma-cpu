@@ -369,6 +369,7 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 	m.Poke32(mustSym(t, kernC, "g_gpiopins"), uint32(v.GPIOPins))
 	m.Poke32(mustSym(t, kernC, "g_gpio_hi"), v.GPIOOutCtrl(true))
 	m.Poke32(mustSym(t, kernC, "g_gpio_lo"), v.GPIOOutCtrl(false))
+	m.Poke32(mustSym(t, kernC, "g_dmacpy_ctrl"), v.KDMACopyCtrl())
 	if !bd.MachineFlashExec {
 		/* Boards without the QMI machine executor use the parked
 		 * ARM's mailbox for flash sync AND SD reads — the executor

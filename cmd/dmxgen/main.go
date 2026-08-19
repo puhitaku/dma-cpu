@@ -296,7 +296,7 @@ func buildKernelPair(v *emu.Variant, kText, kData, cText, cData uint32) (*dmaasm
 		return nil, nil, fmt.Errorf("kernel: %w", err)
 	}
 	dasm, err := compileLL([]string{"xv6/ll/kproc.ll", "xv6/ll/kgpio.ll",
-		"xv6/ll/kfbstub.ll", "xv6/ll/kfsstub.ll"},
+		"xv6/ll/kdma.ll", "xv6/ll/kfbstub.ll", "xv6/ll/kfsstub.ll"},
 		dmacc.Options{Entry: "kmain", NoSafepoints: true})
 	if err != nil {
 		return nil, nil, err
@@ -727,7 +727,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	kcDasm, err := compileLL(append(append([]string{"xv6/ll/kproc.ll", "xv6/ll/kgpio.ll"},
 		fbMods...), "xv6/ll/kfs.ll", "xv6/ll/kfile.ll",
 		"xv6/ll/kbio.ll", "xv6/ll/kfsglue.ll", "xv6/ll/kpipe.ll", "xv6/ll/kflash.ll",
-		"xv6/ll/kfat.ll", "xv6/ll/kdev.ll", "xv6/ll/string.ll"),
+		"xv6/ll/kfat.ll", "xv6/ll/kdev.ll", "xv6/ll/kdma.ll", "xv6/ll/string.ll"),
 		dmacc.Options{Entry: "kmain", NoSafepoints: true, XIPText: true,
 			/* the QMI sync session tears down XIP: it must run from SRAM */
 			RAMTextFuncs: []string{"kflash_sync"}})
@@ -881,6 +881,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		{"g_kflash_arm", flashArm(bd)}, /* 0: the MACHINE drives the
 		 * flash itself (RP2350 QMI, prompts/028); else the parked
 		 * ARM's mailbox loop at scratch+0x10 executes for it */
+		{"g_dmacpy_ctrl", v.KDMACopyCtrl()}, /* kdma.c bulk channel */
 	} {
 		if errs == nil {
 			if err := patchData(kernC.Image, cData, sy(kernC, g.name), g.val); err != nil {

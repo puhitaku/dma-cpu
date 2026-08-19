@@ -130,11 +130,11 @@ define dso_local range(i32 -1, 1) i32 @kfb_syscall(i32 noundef %0, i32 noundef %
 ; Function Attrs: minsize optsize
 declare dso_local void @kfbcon_reset() local_unnamed_addr #5
 
-; Function Attrs: minsize nofree norecurse nounwind optsize
-define dso_local range(i32 -1, 151) i32 @kfb_init() local_unnamed_addr #3 {
+; Function Attrs: minsize nounwind optsize
+define dso_local range(i32 -1, 151) i32 @kfb_init() local_unnamed_addr #4 {
   %1 = load i32, ptr @fb_base, align 4, !tbaa !3
   %2 = icmp eq i32 %1, 0
-  br i1 %2, label %21, label %3
+  br i1 %2, label %13, label %3
 
 3:                                                ; preds = %0
   %4 = inttoptr i32 %1 to ptr
@@ -147,34 +147,23 @@ define dso_local range(i32 -1, 151) i32 @kfb_init() local_unnamed_addr #3 {
 
 9:                                                ; preds = %3
   store i32 0, ptr @fb_base, align 4, !tbaa !3
-  br label %21
+  br label %13
 
 10:                                               ; preds = %3
-  %11 = add i32 %5, 153600
-  br label %12
-
-12:                                               ; preds = %18, %10
-  %13 = phi i32 [ %5, %10 ], [ %20, %18 ]
-  %14 = icmp ult i32 %13, %11
-  br i1 %14, label %18, label %15
-
-15:                                               ; preds = %12
-  %16 = load i32, ptr @fb_ctl, align 4, !tbaa !3
-  %17 = inttoptr i32 %16 to ptr
-  store volatile i32 0, ptr %17, align 4, !tbaa !3
+  tail call void @kdmaset(i32 noundef %5, i32 noundef 0, i32 noundef 153600) #6
+  %11 = load i32, ptr @fb_ctl, align 4, !tbaa !3
+  %12 = inttoptr i32 %11 to ptr
+  store volatile i32 0, ptr %12, align 4, !tbaa !3
   store i1 true, ptr @fb_on, align 4
-  br label %21
+  br label %13
 
-18:                                               ; preds = %12
-  %19 = inttoptr i32 %13 to ptr
-  store volatile i32 0, ptr %19, align 4, !tbaa !3
-  %20 = add i32 %13, 4
-  br label %12, !llvm.loop !7
-
-21:                                               ; preds = %0, %15, %9
-  %22 = phi i32 [ -1, %9 ], [ 150, %15 ], [ 0, %0 ]
-  ret i32 %22
+13:                                               ; preds = %0, %10, %9
+  %14 = phi i32 [ -1, %9 ], [ 150, %10 ], [ 0, %0 ]
+  ret i32 %14
 }
+
+; Function Attrs: minsize optsize
+declare dso_local void @kdmaset(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #5
 
 attributes #0 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
@@ -194,6 +183,3 @@ attributes #6 = { minsize nobuiltin nounwind optsize "no-builtins" }
 !4 = !{!"int", !5, i64 0}
 !5 = !{!"omnipotent char", !6, i64 0}
 !6 = !{!"Simple C/C++ TBAA"}
-!7 = distinct !{!7, !8, !9}
-!8 = !{!"llvm.loop.mustprogress"}
-!9 = !{!"llvm.loop.unroll.disable"}

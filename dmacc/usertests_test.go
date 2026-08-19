@@ -154,6 +154,7 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 	m.Poke32(mustSym(t, kernC, "g_dma_disksize"), uint32(len(disk)))
 	m.Poke32(mustSym(t, kernC, "g_arena"), 0x20058000)
 	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007F000)
+	m.Poke32(mustSym(t, kernC, "g_dmacpy_ctrl"), v.KDMACopyCtrl())
 	m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 	m.Poke32(mustSym(t, kernC, "g_initpid"), 2)
 	m.Poke32(mustSym(t, kernC, "g_k_sysentry"), mustSym(t, kern, "sys_entry"))

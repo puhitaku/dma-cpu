@@ -733,69 +733,55 @@ define internal fastcc void @clear_cells(i32 noundef %0, i32 noundef %1, i32 nou
   %12 = or disjoint i32 %11, %10
   %13 = or disjoint i32 %12, %7
   %14 = tail call fastcc i32 @cell_addr(i32 noundef %0, i32 noundef %1) #5
-  %15 = shl nsw i32 %2, 1
-  br label %16
+  %15 = icmp sgt i32 %2, 7
+  br i1 %15, label %18, label %16
 
-16:                                               ; preds = %51, %3
-  %17 = phi i32 [ %14, %3 ], [ %52, %51 ]
-  %18 = phi i32 [ 0, %3 ], [ %53, %51 ]
-  %19 = icmp eq i32 %18, 8
-  br i1 %19, label %20, label %21
+16:                                               ; preds = %3
+  %17 = shl nsw i32 %2, 1
+  br label %27
 
-20:                                               ; preds = %16
-  ret void
+18:                                               ; preds = %3
+  %19 = shl nsw i32 %2, 3
+  br label %20
 
-21:                                               ; preds = %16, %25
-  %22 = phi i32 [ %41, %25 ], [ %17, %16 ]
-  %23 = phi i32 [ %42, %25 ], [ %15, %16 ]
-  %24 = icmp ugt i32 %23, 7
-  br i1 %24, label %25, label %43
+20:                                               ; preds = %18, %24
+  %21 = phi i32 [ %25, %24 ], [ %14, %18 ]
+  %22 = phi i32 [ %26, %24 ], [ 0, %18 ]
+  %23 = icmp eq i32 %22, 8
+  br i1 %23, label %42, label %24
 
-25:                                               ; preds = %21
-  %26 = inttoptr i32 %22 to ptr
-  store volatile i32 %13, ptr %26, align 4, !tbaa !3
-  %27 = add i32 %22, 4
-  %28 = inttoptr i32 %27 to ptr
-  store volatile i32 %13, ptr %28, align 4, !tbaa !3
-  %29 = add i32 %22, 8
-  %30 = inttoptr i32 %29 to ptr
-  store volatile i32 %13, ptr %30, align 4, !tbaa !3
-  %31 = add i32 %22, 12
-  %32 = inttoptr i32 %31 to ptr
-  store volatile i32 %13, ptr %32, align 4, !tbaa !3
-  %33 = add i32 %22, 16
-  %34 = inttoptr i32 %33 to ptr
-  store volatile i32 %13, ptr %34, align 4, !tbaa !3
-  %35 = add i32 %22, 20
-  %36 = inttoptr i32 %35 to ptr
+24:                                               ; preds = %20
+  tail call void @kdmaset(i32 noundef %21, i32 noundef %13, i32 noundef %19) #4
+  %25 = add i32 %21, 640
+  %26 = add nuw nsw i32 %22, 1
+  br label %20, !llvm.loop !17
+
+27:                                               ; preds = %16, %39
+  %28 = phi i32 [ %40, %39 ], [ %14, %16 ]
+  %29 = phi i32 [ %41, %39 ], [ 0, %16 ]
+  %30 = icmp eq i32 %29, 8
+  br i1 %30, label %42, label %31
+
+31:                                               ; preds = %27, %35
+  %32 = phi i32 [ %37, %35 ], [ %28, %27 ]
+  %33 = phi i32 [ %38, %35 ], [ %17, %27 ]
+  %34 = icmp eq i32 %33, 0
+  br i1 %34, label %39, label %35
+
+35:                                               ; preds = %31
+  %36 = inttoptr i32 %32 to ptr
   store volatile i32 %13, ptr %36, align 4, !tbaa !3
-  %37 = add i32 %22, 24
-  %38 = inttoptr i32 %37 to ptr
-  store volatile i32 %13, ptr %38, align 4, !tbaa !3
-  %39 = add i32 %22, 28
-  %40 = inttoptr i32 %39 to ptr
-  store volatile i32 %13, ptr %40, align 4, !tbaa !3
-  %41 = add i32 %22, 32
-  %42 = add i32 %23, -8
-  br label %21, !llvm.loop !17
+  %37 = add i32 %32, 4
+  %38 = add i32 %33, -1
+  br label %31, !llvm.loop !18
 
-43:                                               ; preds = %21, %47
-  %44 = phi i32 [ %49, %47 ], [ %22, %21 ]
-  %45 = phi i32 [ %50, %47 ], [ %23, %21 ]
-  %46 = icmp eq i32 %45, 0
-  br i1 %46, label %51, label %47
+39:                                               ; preds = %31
+  %40 = add i32 %28, 640
+  %41 = add nuw nsw i32 %29, 1
+  br label %27, !llvm.loop !19
 
-47:                                               ; preds = %43
-  %48 = inttoptr i32 %44 to ptr
-  store volatile i32 %13, ptr %48, align 4, !tbaa !3
-  %49 = add i32 %44, 4
-  %50 = add nsw i32 %45, -1
-  br label %43, !llvm.loop !18
-
-51:                                               ; preds = %43
-  %52 = add i32 %17, 640
-  %53 = add nuw nsw i32 %18, 1
-  br label %16, !llvm.loop !19
+42:                                               ; preds = %27, %20
+  ret void
 }
 
 ; Function Attrs: minsize nounwind optsize
@@ -812,6 +798,9 @@ define internal fastcc i32 @cell_addr(i32 noundef %0, i32 noundef %1) unnamed_ad
   %12 = add i32 %11, %9
   ret i32 %12
 }
+
+; Function Attrs: minsize optsize
+declare dso_local void @kdmaset(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local i32 @kfb_base() local_unnamed_addr #1

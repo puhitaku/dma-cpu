@@ -44,6 +44,7 @@ static uint rootclus;
 
 /* --- SD backend: a 2-sector LRU cache over ARM-mailbox reads --- */
 extern int kflash_sd(uint op, uint off, uint src); /* kflash.c */
+extern void kdmacpy(uint dst, uint src, uint len);   /* kdma.c */
 #define SDBASE 0x08000000u /* fake volume base; never dereferenced */
 #define NSDCACHE 2
 static uint fat_sd;    /* volume lives on SD, not XIP */
@@ -567,7 +568,9 @@ fat_readi(struct inode *ip, uint dst, uint off, uint n)
         left -= chunk;
       }
     } else {
-      memmove((void *)(dst + done), (const void *)(clusaddr(cl) + pos), take);
+      /* XIP volume: bulk DMA copy straight from the flash window
+       * (falls back to a byte loop when the span is ragged). */
+      kdmacpy(dst + done, clusaddr(cl) + pos, take);
     }
     done += take;
     pos = 0;

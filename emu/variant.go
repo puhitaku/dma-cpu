@@ -208,6 +208,19 @@ func (v *Variant) transMode(reload uint32) uint32 {
 
 // --- SKU-specific addresses ---
 
+// KDMACopyCtrl is the CTRL encoding for the kernel's bulk-copy
+// channel (kdma.c): enabled, high-priority, word-size, both sides
+// incrementing, unpaced, quiet, and CHAIN_TO = self — the no-chain
+// encoding (a zero CHAIN_TO field means "trigger channel 0 on
+// completion", which re-armed a machine bank and sent the copier
+// marching through SRAM). Poked into g_dmacpy_ctrl by the loader;
+// the SKUs disagree on the INCR_WRITE and TREQ/QUIET bit positions.
+func (v *Variant) KDMACopyCtrl() uint32 {
+	return CtrlEN | CtrlHighPriority | CtrlSize32 | CtrlIncrRead |
+		v.CtrlIncrWrite | v.CtrlChainTo(11) |
+		v.CtrlTreq(TreqPermanent) | v.CtrlIRQQuiet
+}
+
 func (v *Variant) SniffCtrlAddr() uint32 { return DMABase + v.offSniffCtrl }
 
 // UART0 data and flag registers (PL011: DR at +0x00, FR at +0x18). The

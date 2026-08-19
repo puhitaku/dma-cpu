@@ -18,6 +18,8 @@
 
 #include "kernel/types.h"
 
+extern void kdmaset(uint dst, uint word, uint len); /* kdma.c */
+
 #define W32(a) (*(volatile uint *)(a))
 
 uint fb_base; /* loader-patched: the SRAM framebuffer; 0 = none */
@@ -140,9 +142,7 @@ kfb_init(void)
     fb_base = 0;
     return -1;
   }
-  uint end = fb_base + FB_ROWS * FB_PITCH;
-  for (uint p = fb_base; p < end; p += 4)
-    W32(p) = 0;
+  kdmaset(fb_base, 0, FB_ROWS * FB_PITCH); /* 150 KB blank via ch11 */
   W32(fb_ctl) = 0;
   fb_on = 1;
   return (FB_ROWS * FB_PITCH) >> 10;

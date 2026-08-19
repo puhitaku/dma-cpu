@@ -68,9 +68,9 @@ func compileKernelFull(t *testing.T, fs, xip, size, fb bool) string {
 	if fb {
 		fbmods = []string{"kfb", "kfbcon"}
 	}
-	list := append([]string{"kproc", "kgpio"}, append(fbmods, "kfsstub")...)
+	list := append([]string{"kproc", "kgpio", "kdma"}, append(fbmods, "kfsstub")...)
 	if fs {
-		list = append([]string{"kproc", "kgpio"}, append(fbmods,
+		list = append([]string{"kproc", "kgpio", "kdma"}, append(fbmods,
 			"kfs", "kfile", "kbio", "kfsglue", "kpipe", "kflash", "kfat", "kdev", "string")...)
 	}
 	var mods []*llir.Module
