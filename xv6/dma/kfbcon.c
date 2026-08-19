@@ -33,7 +33,7 @@ void kfb_setpan(uint row0);
 #define CELLW 8
 #define CELLH 8
 #define COLS (640 / CELLW)
-#define ROWS (480 / CELLH)
+#define ROWS (240 / CELLH) /* the fb is 640x240, scanned double */
 #define PITCH 640
 
 /* The 16 ANSI colors in RGB332 (SimpleTerminal's colormap, quantized). */

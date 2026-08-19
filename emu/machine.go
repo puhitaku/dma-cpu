@@ -67,11 +67,20 @@ type Machine struct {
 	// the video scanout stream, captured for tests.
 	HSTXOut []uint32
 
+	// XIP streamer model (RP2350): STREAM_ADDR/STREAM_CTR writes arm a
+	// linear fetch; reads of the XIP_AUX drain port pop words from the
+	// XIP backing (flash or PSRAM). The stream DREQ self-sustains: one
+	// pulse per armed word up front (credit-capped), one more per
+	// drained word while the counter is live.
+	streamAddr uint32
+	streamCtr  uint32
+
 	// TraceW, when non-nil, receives one line per DMA transfer.
 	TraceW io.Writer
 
 	watch    []uint32
 	watchHit *uint32
+	rrLast   uint // last granted channel (round-robin arbitration)
 }
 
 // Run termination reasons.
@@ -204,6 +213,22 @@ func (m *Machine) Read(addr uint32, size int) (uint32, error) {
 		default:
 			return binary.LittleEndian.Uint32(m.PSRAM[off:]), nil
 		}
+	case m.v.XIPAuxBase != 0 && addr == m.v.XIPAuxBase:
+		// The stream drain port. Underflow (reading with no stream
+		// armed) returns zero, matching "undefined but harmless".
+		if m.fl.csr&qmiCSREn != 0 {
+			return 0, fmt.Errorf("XIP stream read during a QMI direct-mode session")
+		}
+		if m.streamCtr == 0 {
+			return 0, nil
+		}
+		v, err := m.Read(m.streamAddr, 4)
+		if err != nil {
+			return 0, err
+		}
+		m.streamAddr += 4
+		m.streamCtr--
+		return v, nil
 	case addr >= 0x40000000 && addr < 0x60000000:
 		if v, ok := m.flashRead(addr); ok {
 			return v, nil
@@ -296,6 +321,14 @@ func (m *Machine) Write(addr uint32, val uint32, size int) error {
 		}
 		if m.v.HSTXFifoBase != 0 && addr == m.v.HSTXFifoBase {
 			m.HSTXOut = append(m.HSTXOut, val)
+			return nil
+		}
+		if m.v.XIPStreamAddr != 0 && addr == m.v.XIPStreamAddr {
+			m.streamAddr = val &^ 3
+			return nil
+		}
+		if m.v.XIPStreamAddr != 0 && addr == m.v.XIPStreamAddr+4 {
+			m.streamCtr = val & 0x003FFFFF
 			return nil
 		}
 		norm, op := aliasOp(addr)
@@ -405,9 +438,19 @@ func (m *Machine) step() (bool, error) {
 	if m.dma.timerActive != 0 {
 		m.dma.tickTimers()
 	}
+	// The XIP stream DREQ is level-like: while the streamer holds data,
+	// re-grant a credit to any drained listener (a trigger clears
+	// banked credit on silicon, but the hardware request line simply
+	// re-asserts — one-shot pulses would deadlock the copier).
+	if m.v.DreqXIPStream != 0 && m.streamCtr > 0 {
+		m.dma.levelDreq(m.v.DreqXIPStream)
+	}
 	// Channel selection over the cached ready set: high-priority
-	// channels first, lowest index within a class (same order as the
-	// two-pass scan this replaces).
+	// channels first, ROUND-ROBIN within a class — the hardware
+	// arbiter rotates, and a strict lowest-index pick starves high
+	// channels behind a busy machine (the LP scanout copier never ran
+	// while the machine polled it, a livelock real silicon does not
+	// have).
 	r := m.dma.ready
 	if r == 0 {
 		return false, nil
@@ -416,7 +459,17 @@ func (m *Machine) step() (bool, error) {
 	if pick == 0 {
 		pick = r
 	}
-	return true, m.transfer(bits.TrailingZeros32(pick))
+	// Rotate: first ready channel strictly after the last grant, else
+	// wrap to the lowest.
+	after := pick &^ (uint32(1)<<(m.rrLast+1) - 1)
+	var ch int
+	if after != 0 {
+		ch = bits.TrailingZeros32(after)
+	} else {
+		ch = bits.TrailingZeros32(pick)
+	}
+	m.rrLast = uint(ch)
+	return true, m.transfer(ch)
 }
 
 // transfer issues one datum move for the given channel and handles

@@ -30,7 +30,9 @@
 #include "hardware/pll.h"
 #include "hardware/psram.h"
 #include "hardware/structs/hstx_ctrl.h"
+#include "hardware/structs/hstx_fifo.h"
 #include "hardware/structs/qmi.h"
+#include "pico/multicore.h"
 #endif
 
 #include "dmx.h"
@@ -880,6 +882,83 @@ static void shell_start(void)
  * executor's end-of-sync restore (feather_video_init fills it). */
 static volatile uint32_t boot_m0[3];
 static volatile uint32_t boot_m0_saved;
+
+/* --- The core-1 video feeder (prompts/036). ---
+ * The display is fed by CPU stores from core 1, not by DMA: the
+ * machine IS the DMA controller, and any DMA-side feed shares the
+ * single read master with the machine's XIP cache misses — a one-
+ * microsecond stall drains the 8-word HSTX FIFO and the monitor
+ * "struggles to sync" whenever the kernel is busy (measured on
+ * silicon). Core 1 runs this loop from SRAM, reads only SRAM and the
+ * HSTX FIFO, and therefore cannot be stalled by anything: not the
+ * machine, not flash sync, not PSRAM traffic. The FIFO's FULL flag
+ * paces it, so the wire format is exactly the VESA 640x480@60 the
+ * HSTX command words describe.
+ *
+ * Shared state with the machine's kernel (kfb.c): one control word
+ * at HIL_XSH_FBCTL — the vertical pan in framebuffer rows. The
+ * framebuffer is 640x240 bytes at HIL_XSH_FBBUF; every row is
+ * scanned twice. */
+#define VF_W      640
+#define VF_ROWS   240
+#define VF_LINES  480
+#define VF_CMD_RAW_REPEAT (0x1u << 12)
+#define VF_CMD_TMDS       (0x2u << 12)
+#define VF_CMD_NOP        (0xFu << 12)
+#define VF_CTRL_00 0x354u
+#define VF_CTRL_01 0x0ABu
+#define VF_CTRL_10 0x154u
+#define VF_CTRL_11 0x2ABu
+#define VF_L12 (VF_CTRL_00 << 10 | VF_CTRL_00 << 20)
+
+static void __attribute__((noinline, section(".time_critical.vfeed"))) video_feeder(void)
+{
+    volatile uint32_t *fifo = &hstx_fifo_hw->fifo;
+    volatile uint32_t *stat = &hstx_fifo_hw->stat;
+    volatile uint32_t *ctl = (volatile uint32_t *)HIL_XSH_FBCTL;
+    const uint32_t vactive[9] = {
+        VF_CMD_RAW_REPEAT | 16, VF_CTRL_11 | VF_L12, VF_CMD_NOP,
+        VF_CMD_RAW_REPEAT | 96, VF_CTRL_10 | VF_L12, VF_CMD_NOP,
+        VF_CMD_RAW_REPEAT | 48, VF_CTRL_11 | VF_L12, VF_CMD_TMDS | VF_W,
+    };
+    const uint32_t vblank_off[7] = {
+        VF_CMD_RAW_REPEAT | 16, VF_CTRL_11 | VF_L12,
+        VF_CMD_RAW_REPEAT | 96, VF_CTRL_10 | VF_L12,
+        VF_CMD_RAW_REPEAT | (48 + VF_W), VF_CTRL_11 | VF_L12, VF_CMD_NOP,
+    };
+    const uint32_t vblank_on[7] = {
+        VF_CMD_RAW_REPEAT | 16, VF_CTRL_01 | VF_L12,
+        VF_CMD_RAW_REPEAT | 96, VF_CTRL_00 | VF_L12,
+        VF_CMD_RAW_REPEAT | (48 + VF_W), VF_CTRL_01 | VF_L12, VF_CMD_NOP,
+    };
+    for (;;) {
+        for (uint32_t line = 0; line < VF_LINES; line++) {
+            for (int i = 0; i < 9; i++) {
+                while (*stat & HSTX_FIFO_STAT_FULL_BITS)
+                    ;
+                *fifo = vactive[i];
+            }
+            uint32_t row = (line >> 1) + *ctl;
+            if (row >= VF_ROWS)
+                row -= VF_ROWS;
+            const uint32_t *px =
+                (const uint32_t *)(HIL_XSH_FBBUF + row * VF_W);
+            for (int i = 0; i < VF_W / 4; i++) {
+                while (*stat & HSTX_FIFO_STAT_FULL_BITS)
+                    ;
+                *fifo = px[i];
+            }
+        }
+        for (uint32_t bl = 0; bl < 45; bl++) {
+            const uint32_t *seq = (bl >= 10 && bl < 12) ? vblank_on : vblank_off;
+            for (int i = 0; i < 7; i++) {
+                while (*stat & HSTX_FIFO_STAT_FULL_BITS)
+                    ;
+                *fifo = seq[i];
+            }
+        }
+    }
+}
 #endif
 
 static void __attribute__((noinline, section(".time_critical.park"))) park_forever(void)
@@ -1118,6 +1197,30 @@ static void feather_video_init(void)
 
     printf("feather: psram %u KiB, clk_hstx 126 MHz, hstx dvi ready\n",
            (unsigned)(psram_get_size() / 1024));
+    /* MEASURED clocks via the hardware frequency counter — the video
+     * timing is only as good as the physical clk_hstx (126000 kHz
+     * wanted: 25.2 MHz pixel clock at 5 clocks per pixel). */
+    /* CPU-side PSRAM window speed: 4096 word writes + reads through
+     * the uncached alias, microseconds via the us timer. */
+    {
+        volatile uint32_t *t = (volatile uint32_t *)0x400b0028; /* TIMERAWL */
+        volatile uint32_t *p = (volatile uint32_t *)0x15100000;
+        uint32_t t0 = *t;
+        for (int i = 0; i < 4096; i++)
+            p[i] = i;
+        uint32_t t1 = *t;
+        uint32_t acc = 0;
+        for (int i = 0; i < 4096; i++)
+            acc += p[i];
+        uint32_t t2 = *t;
+        printf("feather: cpu psram 4096w wr=%lu us rd=%lu us (acc=%08lx)\n",
+               (unsigned long)(t1 - t0), (unsigned long)(t2 - t1),
+               (unsigned long)acc);
+    }
+    printf("feather: fc0 clk_sys=%lu kHz clk_hstx=%lu kHz pll_usb=%lu kHz\n",
+           (unsigned long)frequency_count_khz(CLOCKS_FC0_SRC_VALUE_CLK_SYS),
+           (unsigned long)frequency_count_khz(CLOCKS_FC0_SRC_VALUE_CLK_HSTX),
+           (unsigned long)frequency_count_khz(CLOCKS_FC0_SRC_VALUE_PLL_USB_CLKSRC_PRIMARY));
     /* The boot-time QMI window configs, for comparing against the
      * post-sync state (the executor must restore these exactly). */
     printf("feather: qmi m0 timing=%08lx rfmt=%08lx rcmd=%08lx\n",
@@ -1153,10 +1256,19 @@ int main(void)
      * has no ACCESSCTRL — its DMA already reaches everything. */
     accessctrl_hw->xip_qmi = ACCESSCTRL_PASSWORD_BITS | 0xFC;
     accessctrl_hw->xip_ctrl = ACCESSCTRL_PASSWORD_BITS | 0xFC;
+    /* The scanout's line copier drains the XIP streamer through the
+     * XIP_AUX port (prompts/036). */
+    accessctrl_hw->xip_aux = ACCESSCTRL_PASSWORD_BITS | 0xFC;
 #endif
 
 #if defined(ADAFRUIT_FEATHER_RP2350)
     feather_video_init();
+    /* Blank the framebuffer and start the core-1 feeder: the display
+     * carries a clean 640x480@60 signal from here on, machine or not. */
+    for (uint32_t a = HIL_XSH_FBBUF; a < HIL_XSH_FBBUF + VF_ROWS * VF_W; a += 4)
+        *(volatile uint32_t *)a = 0;
+    *(volatile uint32_t *)HIL_XSH_FBCTL = 0;
+    multicore_launch_core1(video_feeder);
 #endif
 
     /* GPIO2: input from the firmware's view; the DMA machine drives it

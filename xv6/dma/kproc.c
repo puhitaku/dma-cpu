@@ -696,7 +696,7 @@ kenter(void)
     int fbkb = kfb_init();
     if (fbkb > 0) {
       kfbcon_reset();
-      kconswrite("fb: 640x480x8 on\n", 17);
+      kconswrite("fb: 640x240x8 on\n", 17);
     } else if (fbkb < 0) {
       kconswrite("fb: psram fail\n", 15);
     }

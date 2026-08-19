@@ -52,7 +52,8 @@ type Board struct {
 	// to keep coherent.
 	PSRAMBase uint32
 	PSRAMSize uint32
-	FbHome    uint32
+	FbBuf     uint32 // the SRAM framebuffer itself
+	FbHome    uint32 // scanout working area (ring, command buffers)
 	FbEnd     uint32
 
 	// --- behavior and apps ---
@@ -96,7 +97,7 @@ var Pico2 = &Board{
 	KernCRText: 0x20004000, KernCData: 0x2000C000,
 	ShRText: 0x20019800, ShData: 0x2001C000,
 	IdleText: 0x20024000, IdleData: 0x20025000,
-	DiskHome: 0x20026000, DiskMax: 0x18000, // 96 KiB
+	DiskHome: 0x20026000, DiskMax: 0x1A000, // 104 KiB (to the arena)
 	Arena: 0x20040000, ArenaEnd: 0x2007FC00,
 	Scratch: 0x2007FE00,
 
@@ -108,7 +109,7 @@ var Pico2 = &Board{
 	ViHome:      0x102C0000, ViEnd: 0x10310000,
 
 	MachineFlashExec: true,
-	DiskBlocks:       96,
+	DiskBlocks:       104,
 	DiskApps:         stdApps,
 	ToolboxLinks:     stdLinks,
 	Bundles:          []string{"shell", "syscall", "exec", "xsh"},
@@ -150,7 +151,7 @@ var Pico = &Board{
 // GPIO12-19 on the 22-pin DVI port. The Pico2 experience plus an
 // HDMI console: the framebuffer lives at the start of PSRAM and a
 // pure-DMA ring scans it out (prompts/036). The scanout working set
-// is carved off the top of the arena (24 KiB).
+// is carved off the top of the arena (32 KiB).
 var Feather = &Board{
 	Name:      "feather",
 	SKU:       "rp2350",
@@ -163,8 +164,8 @@ var Feather = &Board{
 	KernCRText: 0x20004000, KernCData: 0x2000C000,
 	ShRText: 0x20019800, ShData: 0x2001C000,
 	IdleText: 0x20024000, IdleData: 0x20025000,
-	DiskHome: 0x20026000, DiskMax: 0x18000, // 96 KiB
-	Arena: 0x20040000, ArenaEnd: 0x20079C00,
+	DiskHome: 0x20026000, DiskMax: 0x1A000, // 104 KiB (to the arena)
+	Arena: 0x20040000, ArenaEnd: 0x20054000, // 80 KiB: the fb ate the rest
 	Scratch: 0x2007FE00,
 
 	// Flash sections sit in the upper 4 MiB: the feather firmware ELF
@@ -176,10 +177,16 @@ var Feather = &Board{
 	FatVol:      0x10440000,
 	KernTextXIP: 0x10460000,
 	ShTextXIP:   0x104A0000,
-	ViHome:      0x104C0000, ViEnd: 0x10510000,
+	// No vi: the SRAM framebuffer shrank the arena below what the
+	// editor needs. (A presentation device edits nothing.)
 
+	// The framebuffer is SRAM: DMA-master accesses through the QMI
+	// PSRAM window cost ~1000x a CPU access on silicon (prompts/036),
+	// and this machine IS DMA. 640x240 bytes, scanned double; PSRAM
+	// stays for bulk storage the ARM handles (slides over USB).
 	PSRAMBase: 0x15000000, PSRAMSize: 0x800000,
-	FbHome: 0x20079C00, FbEnd: 0x2007FC00,
+	FbBuf:  0x20054000,                    // 640x240 = 150 KiB, to 0x20079800
+	FbHome: 0x20079800, FbEnd: 0x2007FC00, // ring + buffers
 
 	// Flash sync goes through the parked ARM's mailbox executor, NOT
 	// the machine's QMI direct-mode driver: that driver leaves XIP in
@@ -193,7 +200,7 @@ var Feather = &Board{
 	// USB, not the fs). The sync machinery itself remains validated
 	// (silicon + TestXv6ShFeather re-arms it in the emulator).
 	ReadOnlyFS:   true,
-	DiskBlocks:   96,
+	DiskBlocks:   104,
 	DiskApps:     stdApps,
 	ToolboxLinks: fbLinks,
 	Bundles:      []string{"shell", "syscall", "exec", "xsh"},

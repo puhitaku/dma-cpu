@@ -61,6 +61,13 @@ type Variant struct {
 	// scanout channel streams into, and its pacing DREQ.
 	HSTXFifoBase uint32
 	DreqHSTX     uint32
+
+	// XIP streamer (RP2350 values; the scanout's line copier drains
+	// it): STREAM_ADDR/STREAM_CTR in the XIP_CTRL block, the
+	// high-bandwidth drain port in XIP_AUX, and its DREQ.
+	XIPStreamAddr uint32 // STREAM_ADDR; STREAM_CTR at +4
+	XIPAuxBase    uint32
+	DreqXIPStream uint32
 }
 
 // RP2040: datasheet §2.5 (doc/rp2040-datasheet.pdf).
@@ -150,6 +157,10 @@ var RP2350 = &Variant{
 	// saturates the bus (a real silicon episode, prompts/036).
 	HSTXFifoBase: 0x50600004,
 	DreqHSTX:     52,
+
+	XIPStreamAddr: 0x400C8014, // RP2350 datasheet §4.4 (XIP_CTRL)
+	XIPAuxBase:    0x50500000,
+	DreqXIPStream: 49,
 }
 
 // Variants lists all supported SKUs.

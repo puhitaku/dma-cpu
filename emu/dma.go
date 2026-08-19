@@ -290,6 +290,18 @@ func (d *dma) pulseDreq(dreq uint32) {
 	}
 }
 
+// levelDreq models a level-type request: any listening channel with no
+// banked credit gets exactly one, so a post-trigger clear self-heals
+// the way a re-asserting hardware request line does.
+func (d *dma) levelDreq(dreq uint32) {
+	for i := 0; i < d.v.NChannels; i++ {
+		if d.v.ctrlTreqSel(d.ch[i].ctrl) == dreq && d.ch[i].busy && d.ch[i].credit == 0 {
+			d.ch[i].credit = 1
+			d.updateReady(i)
+		}
+	}
+}
+
 // pulseTimer is pulseDreq for a pacing timer, over the cached listener
 // set (tickTimers runs every cycle; the generic scan was the hot path).
 func (d *dma) pulseTimer(i int) {

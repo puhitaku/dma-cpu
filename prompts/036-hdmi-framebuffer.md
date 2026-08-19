@@ -188,3 +188,80 @@ TestXv6ShFeather re-arms the slot in the emulator.
 Open items: 320x240 double-scan mode table entry; DisplayLink USB
 output sharing the same framebuffer + FB_ACQUIRE contract; a
 presentation app on SYS_fb.
+
+## The framebuffer moves to SRAM (third silicon round)
+
+The display held sync only while the machine idled. The chain of
+measurements that explained it, in order:
+
+- The scanout's vblank lines carried one padding NOP beyond the
+  pico-examples sequence (a leftover of an abandoned read-ring
+  layout); the display held sync for seconds and dropped it, over and
+  over. Vblank lines are the 7-word example sequence verbatim now,
+  one block per line — no DMA read ring anywhere in the engine.
+- clk_hstx measured EXACTLY 126000 kHz by the on-chip frequency
+  counter (fc0 prints at boot): clocking exonerated with data.
+- The line copier could not hold its line budget once other QMI
+  traffic broke its PSRAM bursts, and at HIGH_PRIORITY +
+  TREQ_PERMANENT a perpetually-behind channel monopolizes the DMA
+  arbiter. Demoting it and even feeding it from the QMI's XIP
+  STREAMER (merged internal fetches, DREQ-paced FIFO drain — the
+  emulator now models STREAM_ADDR/CTR/the XIP_AUX port, with the
+  stream DREQ as a LEVEL request, and arbitrates round-robin within a
+  priority tier like the hardware) fixed the starvation but not the
+  renders.
+- The decisive dual-layer benchmark: the ARM writes the PSRAM window
+  at 0.15 us/word; THE MACHINE writes it at ~1 ms/word — DMA-master
+  accesses through the QMI memory-mapped window are ~1000x slower
+  than CPU accesses on silicon, reads and writes alike. This machine
+  IS DMA: PSRAM can never be its framebuffer.
+
+Final architecture: the framebuffer is 640x240 RGB332 IN SRAM
+(150 KiB, boards.FbBuf), every row scanned twice — the wire format
+stays exactly VESA 640x480@60. The scanout is two channels streaming
+command words and pixels straight from SRAM: no copier, no line
+buffers, nothing in the video path that can touch the QSPI bus. Sync
+integrity is structural; renders run at SRAM speed (full-screen test
+card: 0.4 s, was 70+ s). The terminal is 80x30 with 8x16-shaped
+glyphs. PSRAM remains for bulk storage on the ARM's fast path
+(slides over USB). Cost: vi comes off the feather (80 KiB arena).
+
+Extra lore bought by this round: CHAN_ABORT on a RUNNING scanout
+corrupts it (~50% wedge, prompts/006 applies to any channel) — pause
+parks the ring at a frame boundary via a redirected tail block; the
+bootrom's saved XIP-setup pointer in boot RAM goes stale (calling it
+hard-faulted the ARM mid-sync); flash_start_xip on RP2350 ends in
+slow 03h serial mode, so the mailbox executor restores the M0 window
+registers snapshotted at boot (per-burst EB quad, no continuous-read
+mode — register restore is exact and cannot fault).
+
+## Final architecture: the core-1 video feeder (fourth silicon round)
+
+The SRAM framebuffer alone was not enough. With the console at the
+prompt, sh retries its read every tick — hundreds of wide kernel
+round-trips per second through XIP-resident code — and every XIP
+cache miss parks the SINGLE SHARED DMA READ MASTER for over a
+microsecond. The HSTX FIFO holds 8 words (~1.3 us): one miss at the
+wrong moment drops a sync word. That is why fbtest's held card
+(process asleep, machine quiet) was rock solid while the text console
+"struggled to sync" no matter how the scanout was built: EVERY
+DMA-fed design shares that master with the machine itself.
+
+The fix uses the one component with a private path to memory: ARM
+core 1, parked and idle since Phase 1. The firmware's video_feeder
+(SRAM-resident, ~15 instructions of hot loop) pushes the HSTX command
+words and SRAM framebuffer pixels with CPU stores, paced by the
+FIFO's FULL flag. It reads nothing but SRAM and the FIFO: the machine
+cannot stall it, flash sync cannot stall it, PSRAM traffic cannot
+stall it. Silicon: text console AND fbtest hold sync indefinitely,
+under load, across resets (user-confirmed on the display).
+
+The machine's whole video interface is now memory: the 640x240 fb
+(boards.FbBuf) and ONE control word (boards.FbHome) — the vertical
+pan in fb rows, sampled by the feeder once per scan line. Scroll
+became O(1). kfb.c shrank to state-keeping; DMA channels 13-15 are
+free again; kfb_pause/resume are vestigial no-ops (nothing to
+protect). The pure-DMA scanout rings above remain as the record of
+why they cannot work on this machine: the display is the one hard
+real-time consumer in the system, and the machine's own bus traffic
+is unschedulable around it.

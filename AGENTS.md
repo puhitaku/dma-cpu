@@ -107,15 +107,19 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   at link addresses only). When touching lowering, keep the
   differential suite bit-exact — it caught the phase's only miscompile.
 
-- The HDMI display (prompts/036, Feather board): the scanout is a
-  pure-DMA ring on channels 13-15 (`boards.FbChan*`; the compact
-  machine owns 0-10). kfb.c/kfbcon.c ride only PSRAM boards' kernels;
-  every other build links the no-op `kfbstub.c` (kfsstub-style) — a
-  kernel list that links kproc must include one of the two. The HSTX
-  FIFO write port is base+4 (base+0 is STAT; +0 silently discards and
-  the unpaced ring saturates the bus). Boards with PSRAM sync flash
-  through the ARM mailbox executor, never QMI direct mode: serial-XIP
-  interleaved with QPI PSRAM scanout corrupts machine fetches.
+- The HDMI display (prompts/036, Feather board): ARM core 1 feeds
+  the HSTX FIFO from the SRAM framebuffer (`boards.FbBuf`) with CPU
+  stores — NEVER build a DMA-fed scanout: every DMA design shares
+  the single read master with the machine's own XIP misses and drops
+  sync (a full silicon post-mortem lives in prompts/036). Also
+  measured there: DMA-master accesses through the QMI PSRAM window
+  are ~1000x slower than CPU accesses — the machine must not use
+  PSRAM as working memory; it is the ARM's bulk store. kfb.c/kfbcon.c
+  ride only framebuffer boards' kernels; every other build links the
+  no-op `kfbstub.c` (kfsstub-style) — a kernel list that links kproc
+  must include one of the two. The HSTX FIFO write port is base+4
+  (base+0 is STAT and discards silently). Framebuffer boards sync
+  flash through the ARM mailbox executor, never QMI direct mode.
 
 ## Build, test, hardware
 

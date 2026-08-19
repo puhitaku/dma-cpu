@@ -717,11 +717,11 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Boards without PSRAM can never light the display: they take the
-	// no-op fb stub, keeping ~25 KiB of fbcon machine text out of
-	// their kernels (and the RP2040 has no HSTX at all).
+	// Boards without a framebuffer take the no-op fb stub, keeping
+	// ~25 KiB of fbcon machine text out of their kernels (the RP2040
+	// has no HSTX at all).
 	fbMods := []string{"xv6/ll/kfbstub.ll"}
-	if bd.PSRAMSize != 0 {
+	if bd.FbBuf != 0 {
 		fbMods = []string{"xv6/ll/kfb.ll", "xv6/ll/kfbcon.ll"}
 	}
 	kcDasm, err := compileLL(append(append([]string{"xv6/ll/kproc.ll", "xv6/ll/kgpio.ll"},
@@ -891,23 +891,18 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		}
 	}
 	// HDMI framebuffer driver globals (kfb.c, prompts/036) — only on
-	// boards with PSRAM; the others link the stub, which has none.
+	// boards with a framebuffer; the others link the stub.
 	var fbGlobals []struct {
 		name string
 		val  uint32
 	}
-	if bd.PSRAMSize != 0 {
-		fbWalk, fbKick, fbStrm, fbVbl, fbTail, fbCopy := boards.FbCtrls(v)
+	if bd.FbBuf != 0 {
 		fbGlobals = []struct {
 			name string
 			val  uint32
 		}{
-			{"g_fb_psram", bd.PSRAMBase}, {"g_fb_psram_sz", bd.PSRAMSize},
-			{"g_fb_sram", bd.FbHome}, {"g_fb_hstx", v.HSTXFifoBase},
-			{"g_fb_dmabase", emu.DMABase}, {"g_fb_abort", v.ChanAbortAddr()},
-			{"g_fb_ctrl_walk", fbWalk}, {"g_fb_ctrl_kick", fbKick},
-			{"g_fb_ctrl_strm", fbStrm}, {"g_fb_ctrl_vbl", fbVbl},
-			{"g_fb_ctrl_tail", fbTail}, {"g_fb_ctrl_copy", fbCopy},
+			{"g_fb_base", bd.FbBuf},
+			{"g_fb_ctl", bd.FbHome},
 		}
 	}
 	for _, g := range fbGlobals {
@@ -1026,6 +1021,8 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	b.sym["FSSLOT"] = roFSSlot(bd)
 	b.sym["DISK_LEN"] = uint32(len(disk))
 	b.sym["FLASHREQ"] = bd.Scratch + 0x10
+	b.sym["FBBUF"] = bd.FbBuf /* the core-1 video feeder's inputs */
+	b.sym["FBCTL"] = bd.FbHome
 	b.sym["GOLDSUM"] = checksum32(disk)
 	b.vec, b.disp0, b.inj = sy(kern, "vecSched"), sy(sh, "dispatch"), kernInjCtrlCh(v, inj)
 	b.ticks = sy(kernC, "g_ticks")
