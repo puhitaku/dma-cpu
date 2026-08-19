@@ -85,7 +85,7 @@ func (b *Board) HasBundle(name string) bool {
 var stdApps = []string{"echo", "cat", "ls", "toolbox"}
 var stdLinks = []string{"kill", "spin", "trap", "free", "sync", "mount",
 	"umount", "wc", "mkdir", "rm", "gpio", "mux", "blink"}
-var fbLinks = append(append([]string{}, stdLinks...), "fbtest")
+var fbLinks = append(append([]string{}, stdLinks...), "fbtest", "show")
 
 // Pico2: RP2350, 520 KiB SRAM, 4 MiB flash. The full experience —
 // everything including vi and the machine-driven flash executor.
@@ -97,8 +97,8 @@ var Pico2 = &Board{
 	KernCRText: 0x20004000, KernCData: 0x2000C000,
 	ShRText: 0x20019800, ShData: 0x2001C000,
 	IdleText: 0x20024000, IdleData: 0x20025000,
-	DiskHome: 0x20026000, DiskMax: 0x1A000, // 104 KiB (to the arena)
-	Arena: 0x20040000, ArenaEnd: 0x2007FC00,
+	DiskHome: 0x20026000, DiskMax: 0x6000, // 24 KiB: data only — apps in flash
+	Arena: 0x2002C000, ArenaEnd: 0x2007FC00, // ~335 KiB
 	Scratch: 0x2007FE00,
 
 	FlashSize:   0x400000,
@@ -107,9 +107,10 @@ var Pico2 = &Board{
 	KernTextXIP: 0x10260000,
 	ShTextXIP:   0x102A0000,
 	ViHome:      0x102C0000, ViEnd: 0x10310000,
+	AppsHome: 0x10310000, AppsEnd: 0x10390000,
 
 	MachineFlashExec: true,
-	DiskBlocks:       104,
+	DiskBlocks:       24,
 	DiskApps:         stdApps,
 	ToolboxLinks:     stdLinks,
 	Bundles:          []string{"shell", "syscall", "exec", "xsh"},
@@ -164,8 +165,8 @@ var Feather = &Board{
 	KernCRText: 0x20004000, KernCData: 0x2000C000,
 	ShRText: 0x20019800, ShData: 0x2001C000,
 	IdleText: 0x20024000, IdleData: 0x20025000,
-	DiskHome: 0x20026000, DiskMax: 0x1A000, // 104 KiB (to the arena)
-	Arena: 0x20040000, ArenaEnd: 0x20054000, // 80 KiB: the fb ate the rest
+	DiskHome: 0x20026000, DiskMax: 0x6000, // 24 KiB: data only — apps in flash
+	Arena: 0x2002C000, ArenaEnd: 0x20054000, // 160 KiB
 	Scratch: 0x2007FE00,
 
 	// Flash sections sit in the upper 4 MiB: the feather firmware ELF
@@ -177,8 +178,11 @@ var Feather = &Board{
 	FatVol:      0x10440000,
 	KernTextXIP: 0x10460000,
 	ShTextXIP:   0x104A0000,
+	AppsHome:    0x104C0000, AppsEnd: 0x10540000,
 	// No vi: the SRAM framebuffer shrank the arena below what the
-	// editor needs. (A presentation device edits nothing.)
+	// editor needs. (A presentation device edits nothing.) Apps are
+	// flash-resident registry rows (the pico pattern): the toolbox
+	// with the slide viewer outgrew any reasonable RAM disk.
 
 	// The framebuffer is SRAM: DMA-master accesses through the QMI
 	// PSRAM window cost ~1000x a CPU access on silicon (prompts/036),
@@ -200,7 +204,7 @@ var Feather = &Board{
 	// USB, not the fs). The sync machinery itself remains validated
 	// (silicon + TestXv6ShFeather re-arms it in the emulator).
 	ReadOnlyFS:   true,
-	DiskBlocks:   104,
+	DiskBlocks:   24,
 	DiskApps:     stdApps,
 	ToolboxLinks: fbLinks,
 	Bundles:      []string{"shell", "syscall", "exec", "xsh"},

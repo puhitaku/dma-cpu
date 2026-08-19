@@ -56,7 +56,11 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kcDasm := compileKernel(t, true)
+	// The XIP fs kernel (the deployable shape): its text executes from
+	// the flash model, freeing ~100 KiB of SRAM the RAM-resident
+	// variant burned — the usertests image, a 72-block disk and a
+	// roomy arena all fit without window tetris.
+	kcDasm := compileKernelXsh(t, false)
 	idleDasm, err := dmacc.Compile(parseLL(t, "testdata/proc.ll"), dmacc.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -76,12 +80,18 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 		return res
 	}
 	kern := casm(ksrc, 0x20002000, 0x20003000)
-	kernC := casm(kcDasm, 0x20004000, 0x20031800)
-	ut := casm(utDasm, 0x2003B800, 0x20056000)
-	idle := casm(idleDasm, 0x20064800, 0x20065800)
+	kernC, err := dmaasm.Assemble(kcDasm, dmaasm.Options{
+		Variant: v, Compact: true, CompactScratch: 0x2007FE00,
+		TextBase: 0x10260000, DataBase: 0x2000C000, RAMTextBase: 0x20004000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ut := casm(utDasm, 0x2001A000, 0x20035000)
+	idle := casm(idleDasm, 0x20044000, 0x20045000)
 
 	m := emu.NewMachine(v)
-	m.TXPace = 0 // the exam prints a lot; run the console at full speed
+	m.TXPace = 0                     // the exam prints a lot; run the console at full speed
+	m.Flash = make([]byte, 0x400000) // XIP kernel text lives here
 	entryU, err := ut.Image.Load(m, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -120,13 +130,13 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 	fb.AddFile("README", []byte("exam disk\n"))
 	fb.AddFile("echo", blob)
 	disk := fb.Bytes()
-	const diskBase = 0x20066800
+	const diskBase = 0x20046000
 	for i := 0; i < len(disk); i += 4 {
 		m.Poke32(uint32(diskBase+i), binary.LittleEndian.Uint32(disk[i:]))
 	}
 	m.Poke32(mustSym(t, kernC, "g_dma_disk"), diskBase)
 	m.Poke32(mustSym(t, kernC, "g_dma_disksize"), uint32(len(disk)))
-	m.Poke32(mustSym(t, kernC, "g_arena"), 0x20078800)
+	m.Poke32(mustSym(t, kernC, "g_arena"), 0x20058000)
 	m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2007F000)
 	m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 	m.Poke32(mustSym(t, kernC, "g_initpid"), 2)

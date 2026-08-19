@@ -3,18 +3,59 @@ source_filename = "kflash.c"
 target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
+@kflash_arm = dso_local local_unnamed_addr global i32 0, align 4
 @fsslot = dso_local local_unnamed_addr global i32 0, align 4
 @dma_disksize = external dso_local local_unnamed_addr global i32, align 4
 @goldsum = dso_local local_unnamed_addr global i32 0, align 4
 @fs_gen = internal unnamed_addr global i32 0, align 4
 @kflash_cal.pat = internal unnamed_addr constant [4 x i8] c"\11\CE\A0\0D", align 1
 @fs_dirty = external dso_local local_unnamed_addr global i32, align 4
-@kflash_arm = dso_local local_unnamed_addr global i32 0, align 4
 @dma_disk = external dso_local local_unnamed_addr global i32, align 4
 @kflash_phase = dso_local local_unnamed_addr global i32 0, align 4
 
+; Function Attrs: minsize nofree norecurse nounwind optsize
+define dso_local range(i32 -1, 1) i32 @kflash_sd(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = load i32, ptr @kflash_arm, align 4, !tbaa !3
+  %5 = icmp eq i32 %4, 0
+  br i1 %5, label %7, label %6
+
+6:                                                ; preds = %3
+  tail call fastcc void @arm_request(i32 noundef %0, i32 noundef %1, i32 noundef %2) #4
+  br label %7
+
+7:                                                ; preds = %3, %6
+  %8 = phi i32 [ 0, %6 ], [ -1, %3 ]
+  ret i32 %8
+}
+
+; Function Attrs: minsize nofree norecurse nounwind optsize
+define internal fastcc void @arm_request(i32 noundef %0, i32 noundef %1, i32 noundef %2) unnamed_addr #0 {
+  %4 = load i32, ptr @kflash_arm, align 4, !tbaa !3
+  %5 = inttoptr i32 %4 to ptr
+  store volatile i32 %0, ptr %5, align 4, !tbaa !7
+  %6 = getelementptr inbounds nuw i8, ptr %5, i32 4
+  store volatile i32 %1, ptr %6, align 4, !tbaa !9
+  %7 = getelementptr inbounds nuw i8, ptr %5, i32 8
+  store volatile i32 %2, ptr %7, align 4, !tbaa !10
+  %8 = getelementptr inbounds nuw i8, ptr %5, i32 12
+  %9 = load volatile i32, ptr %8, align 4, !tbaa !11
+  %10 = add i32 %9, 1
+  store volatile i32 %10, ptr %8, align 4, !tbaa !11
+  %11 = getelementptr inbounds nuw i8, ptr %5, i32 16
+  br label %12
+
+12:                                               ; preds = %12, %3
+  %13 = load volatile i32, ptr %11, align 4, !tbaa !12
+  %14 = load volatile i32, ptr %8, align 4, !tbaa !11
+  %15 = icmp eq i32 %13, %14
+  br i1 %15, label %16, label %12, !llvm.loop !13
+
+16:                                               ; preds = %12
+  ret void
+}
+
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, inaccessiblemem: none)
-define dso_local i32 @kflash_slot_gen() local_unnamed_addr #0 {
+define dso_local i32 @kflash_slot_gen() local_unnamed_addr #1 {
   %1 = load i32, ptr @fsslot, align 4, !tbaa !3
   %2 = icmp eq i32 %1, 0
   br i1 %2, label %21, label %3
@@ -51,20 +92,20 @@ define dso_local i32 @kflash_slot_gen() local_unnamed_addr #0 {
 }
 
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
-declare void @llvm.lifetime.start.p0(i64 immarg, ptr captures(none)) #1
+declare void @llvm.lifetime.start.p0(i64 immarg, ptr captures(none)) #2
 
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
-declare void @llvm.lifetime.end.p0(i64 immarg, ptr captures(none)) #1
+declare void @llvm.lifetime.end.p0(i64 immarg, ptr captures(none)) #2
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(readwrite, argmem: read, inaccessiblemem: none)
-define dso_local void @kflash_init() local_unnamed_addr #2 {
+define dso_local void @kflash_init() local_unnamed_addr #3 {
   %1 = tail call i32 @kflash_slot_gen() #4
   store i32 %1, ptr @fs_gen, align 4, !tbaa !3
   ret void
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define dso_local void @kflash_cal(ptr noundef %0) local_unnamed_addr #3 {
+define dso_local void @kflash_cal(ptr noundef %0) local_unnamed_addr #0 {
   %2 = alloca [256 x i8], align 1
   %3 = getelementptr inbounds nuw i8, ptr %0, i32 48
   br label %4
@@ -72,7 +113,7 @@ define dso_local void @kflash_cal(ptr noundef %0) local_unnamed_addr #3 {
 4:                                                ; preds = %4, %1
   %5 = load volatile i32, ptr %3, align 4, !tbaa !3
   %6 = icmp eq i32 %5, 1611489293
-  br i1 %6, label %7, label %4, !llvm.loop !7
+  br i1 %6, label %7, label %4, !llvm.loop !16
 
 7:                                                ; preds = %4
   store volatile i32 1, ptr %0, align 4, !tbaa !3
@@ -158,15 +199,15 @@ define dso_local void @kflash_cal(ptr noundef %0) local_unnamed_addr #3 {
 48:                                               ; preds = %39
   %49 = and i32 %40, 3
   %50 = getelementptr inbounds nuw [4 x i8], ptr @kflash_cal.pat, i32 0, i32 %49
-  %51 = load i8, ptr %50, align 1, !tbaa !10
+  %51 = load i8, ptr %50, align 1, !tbaa !17
   %52 = getelementptr inbounds nuw [256 x i8], ptr %2, i32 0, i32 %40
-  store i8 %51, ptr %52, align 1, !tbaa !10
+  store i8 %51, ptr %52, align 1, !tbaa !17
   %53 = add nuw nsw i32 %40, 1
-  br label %39, !llvm.loop !11
+  br label %39, !llvm.loop !18
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @flash_exit_xip() unnamed_addr #3 {
+define internal fastcc void @flash_exit_xip() unnamed_addr #0 {
   store i32 10, ptr @kflash_phase, align 4, !tbaa !3
   %1 = load volatile i32, ptr inttoptr (i32 1074003976 to ptr), align 8, !tbaa !3
   %2 = load volatile i32, ptr inttoptr (i32 1074003980 to ptr), align 4, !tbaa !3
@@ -209,7 +250,7 @@ define internal fastcc void @flash_exit_xip() unnamed_addr #3 {
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc range(i32 0, 256) i32 @qmi_xfer(i32 noundef %0) unnamed_addr #3 {
+define internal fastcc range(i32 0, 256) i32 @qmi_xfer(i32 noundef %0) unnamed_addr #0 {
   %2 = and i32 %0, 255
   store volatile i32 %2, ptr inttoptr (i32 1074593796 to ptr), align 4, !tbaa !3
   br label %3
@@ -218,7 +259,7 @@ define internal fastcc range(i32 0, 256) i32 @qmi_xfer(i32 noundef %0) unnamed_a
   %4 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
   %5 = and i32 %4, 65536
   %6 = icmp eq i32 %5, 0
-  br i1 %6, label %7, label %3, !llvm.loop !12
+  br i1 %6, label %7, label %3, !llvm.loop !19
 
 7:                                                ; preds = %3
   %8 = load volatile i32, ptr inttoptr (i32 1074593800 to ptr), align 8, !tbaa !3
@@ -227,7 +268,7 @@ define internal fastcc range(i32 0, 256) i32 @qmi_xfer(i32 noundef %0) unnamed_a
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @qmi_end() unnamed_addr #3 {
+define internal fastcc void @qmi_end() unnamed_addr #0 {
   %1 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
   %2 = and i32 %1, -5
   store volatile i32 %2, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
@@ -237,7 +278,7 @@ define internal fastcc void @qmi_end() unnamed_addr #3 {
   %4 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
   %5 = and i32 %4, 2
   %6 = icmp eq i32 %5, 0
-  br i1 %6, label %7, label %3, !llvm.loop !13
+  br i1 %6, label %7, label %3, !llvm.loop !20
 
 7:                                                ; preds = %3
   %8 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
@@ -247,7 +288,7 @@ define internal fastcc void @qmi_end() unnamed_addr #3 {
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @flash_wren() unnamed_addr #3 {
+define internal fastcc void @flash_wren() unnamed_addr #0 {
   %1 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
   %2 = or i32 %1, 16777221
   store volatile i32 %2, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
@@ -257,7 +298,7 @@ define internal fastcc void @flash_wren() unnamed_addr #3 {
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @flash_erase4k(i32 noundef %0) unnamed_addr #3 {
+define internal fastcc void @flash_erase4k(i32 noundef %0) unnamed_addr #0 {
   %2 = load i32, ptr @kflash_arm, align 4, !tbaa !3
   %3 = icmp eq i32 %2, 0
   br i1 %3, label %5, label %4
@@ -286,7 +327,7 @@ define internal fastcc void @flash_erase4k(i32 noundef %0) unnamed_addr #3 {
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc i32 @qmi_read32() unnamed_addr #3 {
+define internal fastcc i32 @qmi_read32() unnamed_addr #0 {
   %1 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
   %2 = or i32 %1, 16777221
   store volatile i32 %2, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
@@ -312,11 +353,11 @@ define internal fastcc i32 @qmi_read32() unnamed_addr #3 {
   %15 = shl nuw i32 %13, %14
   %16 = or i32 %15, %8
   %17 = add nuw nsw i32 %9, 1
-  br label %7, !llvm.loop !14
+  br label %7, !llvm.loop !21
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @flash_prog_page(i32 noundef %0, ptr noundef %1) unnamed_addr #3 {
+define internal fastcc void @flash_prog_page(i32 noundef %0, ptr noundef %1) unnamed_addr #0 {
   %3 = load i32, ptr @kflash_arm, align 4, !tbaa !3
   %4 = icmp eq i32 %3, 0
   br i1 %4, label %7, label %5
@@ -351,18 +392,18 @@ define internal fastcc void @flash_prog_page(i32 noundef %0, ptr noundef %1) unn
 
 20:                                               ; preds = %16
   %21 = getelementptr inbounds nuw i8, ptr %1, i32 %17
-  %22 = load i8, ptr %21, align 1, !tbaa !10
+  %22 = load i8, ptr %21, align 1, !tbaa !17
   %23 = zext i8 %22 to i32
   %24 = tail call fastcc i32 @qmi_xfer(i32 noundef %23) #4
   %25 = add nuw nsw i32 %17, 1
-  br label %16, !llvm.loop !15
+  br label %16, !llvm.loop !22
 
 26:                                               ; preds = %19, %5
   ret void
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #3 {
+define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #0 {
   %1 = alloca [64 x i32], align 4
   %2 = load i32, ptr @fsslot, align 4, !tbaa !3
   %3 = icmp eq i32 %2, 0
@@ -434,11 +475,11 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #3 {
   %43 = getelementptr inbounds nuw i8, ptr %37, i32 %39
   tail call fastcc void @flash_prog_page(i32 noundef %42, ptr noundef %43) #4
   %44 = add nuw nsw i32 %39, 256
-  br label %38, !llvm.loop !16
+  br label %38, !llvm.loop !23
 
 45:                                               ; preds = %38, %27
   %46 = add nuw nsw i32 %23, 1
-  br label %22, !llvm.loop !17
+  br label %22, !llvm.loop !24
 
 47:                                               ; preds = %74, %25
   %48 = phi i32 [ 0, %25 ], [ %76, %74 ]
@@ -470,7 +511,7 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #3 {
   %65 = load i32, ptr %64, align 4, !tbaa !3
   %66 = add i32 %65, %60
   %67 = add nuw nsw i32 %61, 1
-  br label %59, !llvm.loop !18
+  br label %59, !llvm.loop !25
 
 68:                                               ; preds = %59
   %69 = getelementptr inbounds nuw i8, ptr %1, i32 12
@@ -487,7 +528,7 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #3 {
   %75 = getelementptr inbounds nuw [64 x i32], ptr %1, i32 0, i32 %48
   store i32 -1, ptr %75, align 4, !tbaa !3
   %76 = add nuw nsw i32 %48, 1
-  br label %47, !llvm.loop !19
+  br label %47, !llvm.loop !26
 
 77:                                               ; preds = %68
   store volatile i32 4096, ptr inttoptr (i32 1074593808 to ptr), align 16, !tbaa !3
@@ -513,33 +554,7 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #3 {
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @arm_request(i32 noundef range(i32 1, 4) %0, i32 noundef %1, i32 noundef %2) unnamed_addr #3 {
-  %4 = load i32, ptr @kflash_arm, align 4, !tbaa !3
-  %5 = inttoptr i32 %4 to ptr
-  store volatile i32 %0, ptr %5, align 4, !tbaa !20
-  %6 = getelementptr inbounds nuw i8, ptr %5, i32 4
-  store volatile i32 %1, ptr %6, align 4, !tbaa !22
-  %7 = getelementptr inbounds nuw i8, ptr %5, i32 8
-  store volatile i32 %2, ptr %7, align 4, !tbaa !23
-  %8 = getelementptr inbounds nuw i8, ptr %5, i32 12
-  %9 = load volatile i32, ptr %8, align 4, !tbaa !24
-  %10 = add i32 %9, 1
-  store volatile i32 %10, ptr %8, align 4, !tbaa !24
-  %11 = getelementptr inbounds nuw i8, ptr %5, i32 16
-  br label %12
-
-12:                                               ; preds = %12, %3
-  %13 = load volatile i32, ptr %11, align 4, !tbaa !25
-  %14 = load volatile i32, ptr %8, align 4, !tbaa !24
-  %15 = icmp eq i32 %13, %14
-  br i1 %15, label %16, label %12, !llvm.loop !26
-
-16:                                               ; preds = %12
-  ret void
-}
-
-; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @qspi_clocks(i32 noundef range(i32 16, 33) %0) unnamed_addr #3 {
+define internal fastcc void @qspi_clocks(i32 noundef range(i32 16, 33) %0) unnamed_addr #0 {
   br label %2
 
 2:                                                ; preds = %6, %1
@@ -558,7 +573,7 @@ define internal fastcc void @qspi_clocks(i32 noundef range(i32 16, 33) %0) unnam
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @flash_wait_wip() unnamed_addr #3 {
+define internal fastcc void @flash_wait_wip() unnamed_addr #0 {
   br label %1
 
 1:                                                ; preds = %1, %0
@@ -576,10 +591,10 @@ define internal fastcc void @flash_wait_wip() unnamed_addr #3 {
   ret void
 }
 
-attributes #0 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
-attributes #2 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(readwrite, argmem: read, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #3 = { minsize nofree norecurse nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #0 = { minsize nofree norecurse nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #1 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #2 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
+attributes #3 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(readwrite, argmem: read, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #4 = { minsize nobuiltin optsize "no-builtins" }
 attributes #5 = { nounwind }
 
@@ -593,24 +608,24 @@ attributes #5 = { nounwind }
 !4 = !{!"int", !5, i64 0}
 !5 = !{!"omnipotent char", !6, i64 0}
 !6 = !{!"Simple C/C++ TBAA"}
-!7 = distinct !{!7, !8, !9}
-!8 = !{!"llvm.loop.mustprogress"}
-!9 = !{!"llvm.loop.unroll.disable"}
-!10 = !{!5, !5, i64 0}
-!11 = distinct !{!11, !8, !9}
-!12 = distinct !{!12, !8, !9}
-!13 = distinct !{!13, !8, !9}
-!14 = distinct !{!14, !8, !9}
-!15 = distinct !{!15, !8, !9}
-!16 = distinct !{!16, !8, !9}
-!17 = distinct !{!17, !8, !9}
-!18 = distinct !{!18, !8, !9}
-!19 = distinct !{!19, !8, !9}
-!20 = !{!21, !4, i64 0}
-!21 = !{!"flashreq", !4, i64 0, !4, i64 4, !4, i64 8, !4, i64 12, !4, i64 16}
-!22 = !{!21, !4, i64 4}
-!23 = !{!21, !4, i64 8}
-!24 = !{!21, !4, i64 12}
-!25 = !{!21, !4, i64 16}
-!26 = distinct !{!26, !8, !9}
-!27 = distinct !{!27, !8, !9}
+!7 = !{!8, !4, i64 0}
+!8 = !{!"flashreq", !4, i64 0, !4, i64 4, !4, i64 8, !4, i64 12, !4, i64 16}
+!9 = !{!8, !4, i64 4}
+!10 = !{!8, !4, i64 8}
+!11 = !{!8, !4, i64 12}
+!12 = !{!8, !4, i64 16}
+!13 = distinct !{!13, !14, !15}
+!14 = !{!"llvm.loop.mustprogress"}
+!15 = !{!"llvm.loop.unroll.disable"}
+!16 = distinct !{!16, !14, !15}
+!17 = !{!5, !5, i64 0}
+!18 = distinct !{!18, !14, !15}
+!19 = distinct !{!19, !14, !15}
+!20 = distinct !{!20, !14, !15}
+!21 = distinct !{!21, !14, !15}
+!22 = distinct !{!22, !14, !15}
+!23 = distinct !{!23, !14, !15}
+!24 = distinct !{!24, !14, !15}
+!25 = distinct !{!25, !14, !15}
+!26 = distinct !{!26, !14, !15}
+!27 = distinct !{!27, !14, !15}

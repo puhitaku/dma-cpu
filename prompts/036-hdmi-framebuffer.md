@@ -265,3 +265,14 @@ protect). The pure-DMA scanout rings above remain as the record of
 why they cannot work on this machine: the display is the one hard
 real-time consumer in the system, and the machine's own bus traffic
 is unschedulable around it.
+
+## Noted for later: the slide converter
+
+A host-side tool (Go, stdlib-only per the repo rules) that converts
+images into the display's native format: 640x240 RGB332 bytes per
+slide. Two outputs: individual slide files for the vfat card, and —
+the fast path — one preallocated CONTIGUOUS `slides.bin` (slide N at
+byte offset N*153600) so the viewer can resolve the file's start LBA
+once and then issue raw multi-block SD reads; drag-and-drop
+convenience with raw-read speed. Scaling + RGB332 quantization
+(optionally dithered) happens on the host, never on the device.

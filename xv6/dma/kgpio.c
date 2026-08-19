@@ -50,6 +50,11 @@ kgpio(uint op, uint pin, uint val)
   }
   if (op == 1) /* read: the pad's input buffer */
     return (int)((W32(iobank0 + 8 * pin) >> 17) & 1);
+  if (op == 2) { /* read with the internal pull-up (idle-high inputs;
+                  * a floating pin then reads 1, not noise) */
+    W32(padsbank0 + 4 + 4 * pin) = PAD_INIT | 0x8; /* PUE */
+    return (int)((W32(iobank0 + 8 * pin) >> 17) & 1);
+  }
   return -1;
 }
 

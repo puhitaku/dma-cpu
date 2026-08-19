@@ -240,6 +240,8 @@ kfs_exit(int slot)
 extern int fat_is(struct inode *ip);
 extern int fat_active(void);
 extern int fat_mount(uint xipbase);
+extern int fat_mount_sd(void);
+extern int fat_is_sd(void);
 extern int fat_busy(void);
 extern void fat_unmount(void);
 extern struct inode *fat_root(void);
@@ -495,7 +497,7 @@ kfs_mount(uint srcaddr, uint tgtaddr)
     char *o = (char *)tgtaddr;
     int n = 0;
     if (fatmnt[0]) {
-      const char *a = "fat0 on ";
+      const char *a = fat_is_sd() ? "sd0 on " : "fat0 on ";
       while (*a)
         o[n++] = *a++;
       for (int i = 0; fatmnt[i]; i++)
@@ -514,10 +516,13 @@ kfs_mount(uint srcaddr, uint tgtaddr)
   }
   const char *src = (const char *)srcaddr;
   char *tgt = (char *)tgtaddr;
-  if (fatvol == 0 || fatmnt[0] != 0)
+  if (fatmnt[0] != 0)
     return -1;
-  if (!(src[0] == 'f' && src[1] == 'a' && src[2] == 't' && src[3] == '0' &&
-        src[4] == 0))
+  int sd = src[0] == 's' && src[1] == 'd' && src[2] == '0' && src[3] == 0;
+  if (!sd && !(src[0] == 'f' && src[1] == 'a' && src[2] == 't' &&
+               src[3] == '0' && src[4] == 0))
+    return -1;
+  if (!sd && fatvol == 0)
     return -1;
   if (tgt[0] != '/' || tgt[1] == 0)
     return -1;
@@ -530,7 +535,7 @@ kfs_mount(uint srcaddr, uint tgtaddr)
   iunlockput(mp);
   if (!isdir)
     return -1;
-  if (fat_mount(fatvol) < 0)
+  if (sd ? fat_mount_sd() < 0 : fat_mount(fatvol) < 0)
     return -1;
   fatmnt_dev = mdev;
   fatmnt_inum = minum;

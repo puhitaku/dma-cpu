@@ -235,6 +235,21 @@ arm_request(uint op, uint off, uint src)
     ;
 }
 
+/* kflash_sd posts an SD-card request to the parked ARM (ops 4: read
+ * one 512-byte sector `off` into machine SRAM at `src`; 5: initialize
+ * the card, writing {status, sectors} at `src`). -1 without an
+ * executor (machine-flash boards have no ARM in the loop). The
+ * mailbox is strictly serial — the machine is single-threaded and
+ * sync never interleaves with fs reads. */
+int
+kflash_sd(uint op, uint off, uint src)
+{
+  if (kflash_arm == 0)
+    return -1;
+  arm_request(op, off, src);
+  return 0;
+}
+
 /* --- Executor-dispatched primitives --- */
 
 static void

@@ -1,5 +1,10 @@
 /* Read-only FAT32 (vfat) driver over an XIP-resident volume
- * (prompts/029). The mount mechanism lives in kfsglue.c: paths under
+ * (prompts/029) or, since prompts/037, an SD card in SPI mode: the
+ * parked ARM executes single-sector reads through the same mailbox
+ * as the flash executor (kflash.c op 4/5), and this driver reads the
+ * volume through a small SRAM sector cache — every byte access
+ * funnels through rd8(), so the two backends differ only in vmap().
+ * SD volumes may carry an MBR; partition 0 is used when present. The mount mechanism lives in kfsglue.c: paths under
  * the mount point route here instead of namei, and file.c's verbatim
  * fd operations reach these nodes through the vfs_* dispatch shims
  * (shim defs.h renames its calls when compiling file.c). FAT nodes
@@ -29,12 +34,41 @@
 #define ATTR_DIR 0x10
 #define ATTR_LFN 0x0F
 
-static uint fbase;    /* XIP address of the volume; 0 = not mounted */
+static uint fbase;    /* XIP address of the volume; 0 = not mounted.
+                       * SD backend: the SDBASE sentinel. */
 static uint secsz;    /* 512 */
 static uint clussz;   /* bytes per cluster */
 static uint fatoff;   /* byte offset of the FAT */
 static uint dataoff;  /* byte offset of cluster 2 */
 static uint rootclus;
+
+/* --- SD backend: a 2-sector LRU cache over ARM-mailbox reads --- */
+extern int kflash_sd(uint op, uint off, uint src); /* kflash.c */
+#define SDBASE 0x08000000u /* fake volume base; never dereferenced */
+#define NSDCACHE 2
+static uint fat_sd;   /* volume lives on SD, not XIP */
+static uint sdpart;   /* partition start LBA */
+static uchar sdcache[NSDCACHE][512];
+static uint sdtag[NSDCACHE]; /* LBA + 1; 0 = empty */
+static uint sdvict;          /* round-robin victim */
+
+/* sdsec returns the cache slot holding the given volume sector. */
+static uchar *
+sdsec(uint sec)
+{
+  uint tag = sdpart + sec + 1;
+  for (int i = 0; i < NSDCACHE; i++) {
+    if (sdtag[i] == tag)
+      return sdcache[i];
+  }
+  uint v = sdvict;
+  sdvict = (sdvict + 1) % NSDCACHE;
+  sdtag[v] = 0;
+  if (kflash_sd(4, sdpart + sec, (uint)sdcache[v]) < 0)
+    return sdcache[v]; /* no executor: stale bytes, mount gates this */
+  sdtag[v] = tag;
+  return sdcache[v];
+}
 
 struct fatmeta {
   uint clus;  /* first cluster (0 = empty file) */
@@ -58,6 +92,10 @@ fat_active(void)
 static uint
 rd8(uint a)
 {
+  if (fat_sd) {
+    uint off = a - SDBASE;
+    return sdsec(off >> 9)[off & 511];
+  }
   return *(volatile uchar *)a;
 }
 static uint
@@ -71,11 +109,55 @@ rd32(uint a)
   return rd16(a) | (rd16(a + 2) << 16);
 }
 
+/* fat_mount_sd: bring the card up through the ARM executor and mount
+ * the vfat volume on it (partition 0 when an MBR is present, else a
+ * superfloppy BPB at sector 0). Returns 0 on success. */
+int fat_mount(uint base);
+
+int
+fat_mount_sd(void)
+{
+  volatile uint res[2]; /* volatile: keeps clang from fusing the pair
+                         * into an i64 store dmacc cannot lower */
+  res[0] = 0xFFFFFFFFu;
+  res[1] = 0;
+  if (kflash_sd(5, 0, (uint)res) < 0 || res[0] != 0)
+    return -1;
+  for (int i = 0; i < NSDCACHE; i++)
+    sdtag[i] = 0;
+  fat_sd = 1;
+  sdpart = 0;
+  /* MBR or BPB? A BPB has a jump opcode and 512 bytes/sector at +11;
+   * an MBR has partition entries at +446. Both end 0x55AA. */
+  if (rd8(SDBASE + 510) != 0x55 || rd8(SDBASE + 511) != 0xAA) {
+    fat_sd = 0;
+    return -1;
+  }
+  uint bps = rd8(SDBASE + 11) | (rd8(SDBASE + 12) << 8);
+  if (bps != 512) { /* not a BPB: take MBR partition 0 */
+    uint pe = SDBASE + 446;
+    uint type = rd8(pe + 4);
+    if (type != 0x0B && type != 0x0C) {
+      fat_sd = 0;
+      return -1;
+    }
+    sdpart = rd8(pe + 8) | (rd8(pe + 9) << 8) | (rd8(pe + 10) << 16) |
+             (rd8(pe + 11) << 24);
+    for (int i = 0; i < NSDCACHE; i++)
+      sdtag[i] = 0; /* sector 0 now means the partition's sector 0 */
+  }
+  if (fat_mount(SDBASE) < 0) {
+    fat_sd = 0;
+    return -1;
+  }
+  return 0;
+}
+
 /* Parse + validate the BPB; returns 0 on success. */
 int
-fat_mount(uint xipbase)
+fat_mount(uint base)
 {
-  uint b = xipbase;
+  uint b = base;
   if (rd16(b + 510) != 0xAA55)
     return -1;
   secsz = rd16(b + 11);
@@ -89,7 +171,7 @@ fat_mount(uint xipbase)
   clussz = secsz * spc;
   fatoff = rsvd * secsz;
   dataoff = (rsvd + nfats * fatsz) * secsz;
-  fbase = xipbase;
+  fbase = base;
   for (int i = 0; i < NFATNODE; i++)
     fatnodes[i].ref = 0;
   return 0;
@@ -110,6 +192,13 @@ void
 fat_unmount(void)
 {
   fbase = 0;
+  fat_sd = 0;
+}
+
+int
+fat_is_sd(void)
+{
+  return fat_sd;
 }
 
 static uint
@@ -387,7 +476,25 @@ fat_readi(struct inode *ip, uint dst, uint off, uint n)
     uint take = clussz - pos;
     if (take > n - done)
       take = n - done;
-    memmove((void *)(dst + done), (const void *)(clusaddr(cl) + pos), take);
+    if (fat_sd) {
+      /* Copy per cached sector: memmove from the SRAM cache slot, so
+       * bulk reads run at memcpy speed plus one mailbox round-trip
+       * per 512 bytes. */
+      uint voff = clusaddr(cl) + pos - SDBASE;
+      uint left = take, d = dst + done;
+      while (left) {
+        uint in = voff & 511;
+        uint chunk = 512 - in;
+        if (chunk > left)
+          chunk = left;
+        memmove((void *)d, sdsec(voff >> 9) + in, chunk);
+        voff += chunk;
+        d += chunk;
+        left -= chunk;
+      }
+    } else {
+      memmove((void *)(dst + done), (const void *)(clusaddr(cl) + pos), take);
+    }
     done += take;
     pos = 0;
     cl = fat_next(cl);

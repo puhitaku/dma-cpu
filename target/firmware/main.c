@@ -32,6 +32,7 @@
 #include "hardware/structs/hstx_ctrl.h"
 #include "hardware/structs/hstx_fifo.h"
 #include "hardware/structs/qmi.h"
+#include "hardware/spi.h"
 #include "pico/multicore.h"
 #endif
 
@@ -883,6 +884,137 @@ static void shell_start(void)
 static volatile uint32_t boot_m0[3];
 static volatile uint32_t boot_m0_saved;
 
+/* --- MicroSD in SPI mode (prompts/037). ---
+ * Wiring: SCK=GPIO22, MOSI=GPIO23, MISO=GPIO20 (the Feather's SPI0
+ * pins), CS=GPIO10 (D10, the Adalogger FeatherWing convention). The
+ * machine's kernel reads the card one 512-byte sector at a time
+ * through the park executor's mailbox (op 4; op 5 initializes),
+ * and mounts the vfat partition with its own read-only driver. */
+#define SD_SPI  spi0
+#define SD_SCK  22
+#define SD_MOSI 23
+#define SD_MISO 20
+#define SD_CS   10
+
+static int sd_ready;
+
+static void sd_cs(int assert) { gpio_put(SD_CS, !assert); }
+
+static uint8_t sd_xfer(uint8_t b)
+{
+    uint8_t r;
+    spi_write_read_blocking(SD_SPI, &b, &r, 1);
+    return r;
+}
+
+/* Send a command, return R1 (0xFF on response timeout). */
+static uint8_t sd_cmd(uint8_t cmd, uint32_t arg, uint8_t crc)
+{
+    sd_xfer(0xFF);
+    sd_xfer(0x40 | cmd);
+    sd_xfer(arg >> 24);
+    sd_xfer(arg >> 16);
+    sd_xfer(arg >> 8);
+    sd_xfer(arg);
+    sd_xfer(crc);
+    for (int i = 0; i < 16; i++) {
+        uint8_t r = sd_xfer(0xFF);
+        if (!(r & 0x80))
+            return r;
+    }
+    return 0xFF;
+}
+
+static int sd_hc; /* SDHC/SDXC: block addressing */
+
+static int sd_init_card(void)
+{
+    sd_ready = 0;
+    spi_init(SD_SPI, 400 * 1000);
+    gpio_set_function(SD_SCK, GPIO_FUNC_SPI);
+    gpio_set_function(SD_MOSI, GPIO_FUNC_SPI);
+    gpio_set_function(SD_MISO, GPIO_FUNC_SPI);
+    gpio_init(SD_CS);
+    gpio_set_dir(SD_CS, true);
+    sd_cs(0);
+    for (int i = 0; i < 10; i++) /* 80 clocks, CS high: SPI mode entry */
+        sd_xfer(0xFF);
+    sd_cs(1);
+    if (sd_cmd(0, 0, 0x95) != 0x01) { /* GO_IDLE */
+        sd_cs(0);
+        return -1;
+    }
+    int v2 = 0;
+    if (sd_cmd(8, 0x1AA, 0x87) == 0x01) { /* SEND_IF_COND */
+        uint32_t r7 = 0;
+        for (int i = 0; i < 4; i++)
+            r7 = (r7 << 8) | sd_xfer(0xFF);
+        if ((r7 & 0xFFF) == 0x1AA)
+            v2 = 1;
+    }
+    /* ACMD41 until ready (~1 s worst case). */
+    int ok = 0;
+    for (int i = 0; i < 20000; i++) {
+        sd_cmd(55, 0, 0x01);
+        if (sd_cmd(41, v2 ? (1u << 30) : 0, 0x01) == 0x00) {
+            ok = 1;
+            break;
+        }
+    }
+    if (!ok) {
+        sd_cs(0);
+        return -2;
+    }
+    sd_hc = 0;
+    if (v2 && sd_cmd(58, 0, 0x01) == 0x00) { /* READ_OCR: CCS */
+        uint32_t ocr = 0;
+        for (int i = 0; i < 4; i++)
+            ocr = (ocr << 8) | sd_xfer(0xFF);
+        sd_hc = (ocr >> 30) & 1;
+    }
+    if (!sd_hc)
+        sd_cmd(16, 512, 0x01); /* byte-addressed cards: block size 512 */
+    sd_cs(0);
+    sd_xfer(0xFF);
+    spi_set_baudrate(SD_SPI, 20 * 1000 * 1000);
+    sd_ready = 1;
+    return 0;
+}
+
+static int sd_read_sector(uint32_t lba, uint8_t *dst)
+{
+    if (!sd_ready)
+        return -1;
+    sd_cs(1);
+    if (sd_cmd(17, sd_hc ? lba : lba * 512, 0x01) != 0x00) {
+        sd_cs(0);
+        return -2;
+    }
+    int tok = -3; /* wait for the 0xFE data token (~100 ms cap) */
+    for (int i = 0; i < 200000; i++) {
+        uint8_t r = sd_xfer(0xFF);
+        if (r == 0xFE) {
+            tok = 0;
+            break;
+        }
+        if (r != 0xFF && (r & 0xF0) == 0) { /* data error token */
+            tok = -4;
+            break;
+        }
+    }
+    if (tok != 0) {
+        sd_cs(0);
+        return tok;
+    }
+    for (int i = 0; i < 512; i++)
+        dst[i] = sd_xfer(0xFF);
+    sd_xfer(0xFF); /* CRC */
+    sd_xfer(0xFF);
+    sd_cs(0);
+    sd_xfer(0xFF);
+    return 0;
+}
+
 /* --- The core-1 video feeder (prompts/036). ---
  * The display is fed by CPU stores from core 1, not by DMA: the
  * machine IS the DMA controller, and any DMA-side feed shares the
@@ -973,6 +1105,15 @@ static void __attribute__((noinline, section(".time_critical.park"))) park_forev
                 flash_range_erase(off, 4096);
             } else if (op == 2) {
                 flash_range_program(off, (const uint8_t *)src, 256);
+#if defined(ADAFRUIT_FEATHER_RP2350)
+            } else if (op == 4) { /* SD: read sector `off` to `src` */
+                if (sd_read_sector(off, (uint8_t *)src) != 0)
+                    for (int i = 0; i < 512; i++) /* poison, never stale */
+                        ((uint8_t *)src)[i] = 0xFF;
+            } else if (op == 5) { /* SD: (re)initialize; {status,0} at src */
+                ((uint32_t *)src)[0] = (uint32_t)sd_init_card();
+                ((uint32_t *)src)[1] = 0;
+#endif
             } else if (op == 3) {
                 /* End-of-sync XIP restore, once per sync. The SDK's
                  * per-op path leaves XIP in the bootrom's slow serial

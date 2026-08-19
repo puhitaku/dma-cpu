@@ -4,6 +4,8 @@
  * AddLink), so usys/ulib are paid for once instead of per tool
  * (prompts/029; the disk budget is real memory too). Printf-free. */
 #include "kernel/types.h"
+#include "kernel/stat.h"
+#include "kernel/fs.h"
 #include "user/user.h"
 
 static int
@@ -490,6 +492,185 @@ t_fbtest(void)
   return 0;
 }
 
+/* show: the full-screen slide viewer (prompts/037). Slides are raw
+ * framebuffer images (fi.w * fi.h RGB332 bytes, .sld). Navigation:
+ * UART keys n/space/l or Right-arrow = next, p/h or Left-arrow =
+ * prev, q = quit; and a self-pulled-up digital joystick on GPIO
+ * 26(up) 27(down) 28(left) 29(right) 24(press), active low —
+ * right/down = next, left/up = prev, press = quit. */
+#define JOY_UP 26
+#define JOY_DOWN 27
+#define JOY_LEFT 28
+#define JOY_RIGHT 29
+#define JOY_PRESS 24
+
+static char shownames[32][64];
+static int nshow;
+
+static int
+sldsuffix(const char *n)
+{
+  int l = 0;
+  while (n[l])
+    l++;
+  if (l < 4)
+    return 0;
+  const char *e = n + l - 4;
+  return e[0] == '.' && (e[1] == 's' || e[1] == 'S') &&
+         (e[2] == 'l' || e[2] == 'L') && (e[3] == 'd' || e[3] == 'D');
+}
+
+static void
+show_load(const char *dir, const char *name, uint fb, uint fbsz)
+{
+  char path[96];
+  int n = 0;
+  if (dir) {
+    for (int i = 0; dir[i]; i++)
+      path[n++] = dir[i];
+    if (n && path[n - 1] != '/')
+      path[n++] = '/';
+  }
+  for (int i = 0; name[i] && n < 94; i++)
+    path[n++] = name[i];
+  path[n] = 0;
+  int fd = open(path, 0);
+  if (fd < 0)
+    return;
+  uint got = 0;
+  while (got < fbsz) {
+    int r = read(fd, (void *)(fb + got), (int)(fbsz - got));
+    if (r <= 0)
+      break;
+    got += (uint)r;
+  }
+  close(fd);
+}
+
+static int
+t_show(int argc, char **argv)
+{
+  struct fbinfo fi;
+  if (fbctl(FB_INFO, &fi) < 0) {
+    write(2, "show: no fb\n", 12);
+    return 1;
+  }
+  const char *dir = 0;
+  nshow = 0;
+  if (argc == 2) { /* a directory: every *.sld in it, sorted */
+    struct stat st;
+    int fd = open(argv[1], 0);
+    if (fd < 0 || fstat(fd, &st) < 0) {
+      write(2, "show: cannot open\n", 18);
+      return 1;
+    }
+    if (st.type == T_DIR) {
+      dir = argv[1];
+      struct dirent de;
+      while (read(fd, &de, sizeof(de)) == sizeof(de)) {
+        if (de.inum == 0 || !sldsuffix(de.name))
+          continue;
+        if (nshow < 32) {
+          for (int i = 0; i < 62; i++)
+            shownames[nshow][i] = de.name[i];
+          shownames[nshow][62] = 0;
+          nshow++;
+        }
+      }
+      close(fd);
+      /* insertion sort by name: the converter numbers slides */
+      for (int i = 1; i < nshow; i++) {
+        char tmp[64];
+        for (int k = 0; k < 64; k++)
+          tmp[k] = shownames[i][k];
+        int j = i - 1;
+        while (j >= 0 && strcmp(shownames[j], tmp) > 0) {
+          for (int k = 0; k < 64; k++)
+            shownames[j + 1][k] = shownames[j][k];
+          j--;
+        }
+        for (int k = 0; k < 64; k++)
+          shownames[j + 1][k] = tmp[k];
+      }
+    } else {
+      close(fd);
+      for (int i = 0; argv[1][i] && i < 63; i++)
+        shownames[0][i] = argv[1][i];
+      nshow = 1;
+    }
+  } else if (argc > 2) {
+    for (int a = 1; a < argc && nshow < 32; a++) {
+      int i = 0;
+      for (; argv[a][i] && i < 63; i++)
+        shownames[nshow][i] = argv[a][i];
+      shownames[nshow][i] = 0;
+      nshow++;
+    }
+  }
+  if (nshow == 0) {
+    write(2, "show: no slides (usage: show DIR | show FILE...)\n", 49);
+    return 1;
+  }
+  if (fbctl(FB_ACQUIRE, 0) < 0) {
+    write(2, "show: fb busy\n", 14);
+    return 1;
+  }
+  ttyraw(1);
+  uint fbsz = fi.h * fi.pitch;
+  int cur = 0, prevmask = 0x1F; /* all released (pulled up) */
+  show_load(dir, shownames[cur], fi.base, fbsz);
+  for (;;) {
+    int step = 0, quit = 0;
+    char c;
+    while (read_nb(0, &c, 1) == 1) {
+      if (c == 'q' || c == 3)
+        quit = 1;
+      else if (c == 'n' || c == ' ' || c == 'l')
+        step = 1;
+      else if (c == 'p' || c == 'h')
+        step = -1;
+      else if (c == 0x1B) { /* arrows: ESC [ C / D */
+        char b1 = 0, b2 = 0;
+        read_nb(0, &b1, 1);
+        read_nb(0, &b2, 1);
+        if (b1 == '[' && b2 == 'C')
+          step = 1;
+        else if (b1 == '[' && b2 == 'D')
+          step = -1;
+      }
+    }
+    int mask = 0; /* op 2: read with pull-up — unwired pins idle 1 */
+    mask |= gpioctl(2, JOY_UP, 0) << 0;
+    mask |= gpioctl(2, JOY_DOWN, 0) << 1;
+    mask |= gpioctl(2, JOY_LEFT, 0) << 2;
+    mask |= gpioctl(2, JOY_RIGHT, 0) << 3;
+    mask |= gpioctl(2, JOY_PRESS, 0) << 4;
+    int fell = prevmask & ~mask; /* 1 -> 0 transitions (active low) */
+    prevmask = mask;
+    if (fell & ((1 << 1) | (1 << 3))) /* down or right */
+      step = 1;
+    else if (fell & ((1 << 0) | (1 << 2))) /* up or left */
+      step = -1;
+    if (fell & (1 << 4))
+      quit = 1;
+    if (quit)
+      break;
+    if (step) {
+      cur += step;
+      if (cur < 0)
+        cur = nshow - 1;
+      if (cur >= nshow)
+        cur = 0;
+      show_load(dir, shownames[cur], fi.base, fbsz);
+      pause(8); /* debounce the stick */
+    }
+    pause(2);
+  }
+  ttyraw(0);
+  fbctl(FB_RELEASE, 0);
+  return 0;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -528,7 +709,9 @@ main(int argc, char **argv)
     exit(t_blink(argc, argv));
   if (streq(base, "fbtest"))
     exit(t_fbtest());
+  if (streq(base, "show"))
+    exit(t_show(argc, argv));
   write(2, "toolbox: kill spin trap free sync mount umount wc mkdir rm "
-           "gpio mux blink fbtest\n", 82);
+           "gpio mux blink fbtest show\n", 87);
   exit(1);
 }

@@ -90,6 +90,12 @@ const flashMailbox = 0x2007FE10
 // erase/program request to the flash slice and acks it. Returns
 // whether a request was served.
 func serviceFlashMailbox(m *emu.Machine, flash []byte) bool {
+	return serviceMailbox(m, flash, nil)
+}
+
+// serviceMailbox additionally plays the SD card side of the executor
+// (op 4: read sector, op 5: init) against the given card image.
+func serviceMailbox(m *emu.Machine, flash, sd []byte) bool {
 	seq := m.Peek32(flashMailbox + 12)
 	ack := m.Peek32(flashMailbox + 16)
 	if seq == ack {
@@ -107,6 +113,25 @@ func serviceFlashMailbox(m *emu.Machine, flash []byte) bool {
 		for i := uint32(0); i < 256 && off+i < uint32(len(flash)); i++ {
 			flash[off+i] &= byte(m.Peek32((src+i)&^3) >> (8 * ((src + i) % 4)))
 		}
+	case 4: // SD: one 512-byte sector at LBA `off` into machine RAM
+		for i := uint32(0); i < 512; i += 4 {
+			var w uint32
+			for k := uint32(0); k < 4; k++ {
+				b := byte(0xFF)
+				if p := int(off*512 + i + k); sd != nil && p < len(sd) {
+					b = sd[p]
+				}
+				w |= uint32(b) << (8 * k)
+			}
+			m.Poke32(src+i, w)
+		}
+	case 5: // SD: initialize; {status, sectors} at src
+		if sd == nil {
+			m.Poke32(src, ^uint32(0))
+		} else {
+			m.Poke32(src, 0)
+		}
+		m.Poke32(src+4, uint32(len(sd)/512))
 	}
 	m.Poke32(flashMailbox+16, seq)
 	return true
@@ -234,11 +259,6 @@ func bootXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, *
 		}
 		m.Poke32(mustSym(t, kernC, "g_fsslot"), slotXIP)
 		m.Poke32(mustSym(t, kernC, "g_fatvol"), bd.FatVol)
-		if !bd.MachineFlashExec {
-			/* boards without the QMI machine executor sync through
-			 * the ARM mailbox (serviceFlashMailbox plays the ARM) */
-			m.Poke32(mustSym(t, kernC, "g_kflash_arm"), bd.Scratch+0x10)
-		}
 		// The kernel posts erase/program requests to the ARM-executor
 		// mailbox; emulator tests service it via serviceFlashMailbox,
 		// playing the parked ARM (kflash.c explains why).
@@ -269,6 +289,12 @@ func bootXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, *
 	m.Poke32(mustSym(t, kernC, "g_gpiopins"), uint32(v.GPIOPins))
 	m.Poke32(mustSym(t, kernC, "g_gpio_hi"), v.GPIOOutCtrl(true))
 	m.Poke32(mustSym(t, kernC, "g_gpio_lo"), v.GPIOOutCtrl(false))
+	if !bd.MachineFlashExec {
+		/* Boards without the QMI machine executor use the parked
+		 * ARM's mailbox for flash sync AND SD reads — the executor
+		 * exists regardless of persistence (serviceMailbox plays it). */
+		m.Poke32(mustSym(t, kernC, "g_kflash_arm"), bd.Scratch+0x10)
+	}
 	// HDMI framebuffer (kfb.c, prompts/036): framebuffer boards get
 	// the fb globals (and a PSRAM model for the storage side);
 	// g_fb_base stays 0 elsewhere.
@@ -341,10 +367,7 @@ func registerFlashApps(t *testing.T, m *emu.Machine, v *emu.Variant,
 	kernC *dmaasm.Result, bd *boards.Board) {
 	t.Helper()
 	cursor := bd.AppsHome
-	idx := 0
-	if bd.ViHome != 0 {
-		idx = 1 /* row 0 belongs to vi */
-	}
+	idx := 0 /* vi tests claim the first free row afterwards */
 	for _, name := range bd.DiskApps {
 		res := buildUserScratch(t, v, bd.Scratch, name)
 		text, data := res.Image.Segments[0].Data, res.Image.Segments[1].Data
@@ -388,7 +411,15 @@ func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result) {
 	}
 	text, data := res.Image.Segments[0].Data, res.Image.Segments[1].Data
 	dHome, rHome, _ := stageFlashImage(m, res, bd.ViHome)
-	registerRow(t, m, kernC, 0, "vi", res, bd.ViHome, uint32(len(text)),
+	// Claim the first free registry row (flash apps filled the front).
+	base := mustSym(t, kernC, "g_kimages")
+	idx := 0
+	for ; idx < 20; idx++ {
+		if m.Peek32(base+uint32(idx)*72)&0xFF == 0 {
+			break
+		}
+	}
+	registerRow(t, m, kernC, idx, "vi", res, bd.ViHome, uint32(len(text)),
 		dHome, uint32(len(data)), rHome, uint32(len(res.Image.Relocs)))
 }
 
@@ -427,6 +458,17 @@ func TestXv6Vi(t *testing.T) {
 	// consume it as ordinary type-ahead (two harmless j's, one x on an
 	// empty buffer) — the user-reported "i needs Enter" bug.
 	settle("vi note.txt\rjjx", 600_000_000)
+	// Flash-resident exec loads vi with a long silent stretch, so the
+	// quiet heuristic can return before vi runs: wait for the
+	// alternate-screen switch before probing raw mode.
+	for spent := uint64(0); spent < 1_000_000_000 &&
+		!strings.Contains(string(m.ConsoleOut), "\x1b[?1049h"); {
+		rr, err := m.Run(emu.RunConfig{MaxCycles: 2_000_000})
+		if err != nil {
+			t.Fatal(err)
+		}
+		spent += rr.Cycles
+	}
 	// A lone ESC after startup must be handled by vi in raw mode, not
 	// cooked-echoed as ^[ — the discriminating check for SYS_ttyraw
 	// actually engaging.
@@ -599,6 +641,113 @@ func TestXv6Fbcon(t *testing.T) {
 	if got := countZQZQ(); got < 1 {
 		t.Errorf("no rendered zqzq after scrolling")
 	}
+}
+
+// TestXv6SD mounts a vfat SD card end to end: the kernel's fat
+// driver reads the card sector-by-sector through the ARM-executor
+// mailbox (played by serviceMailbox), for both a superfloppy card
+// (BPB at sector 0) and an MBR-partitioned one. Then the slide
+// viewer: `show /sd` loads .sld files straight into the framebuffer,
+// navigates on a console key, and quits on 'q' — fb content is
+// asserted against the card's bytes.
+func TestXv6SD(t *testing.T) {
+	slideA := make([]byte, 4096)
+	slideB := make([]byte, 4096)
+	for i := range slideA {
+		slideA[i] = byte(i*7 + 3)
+		slideB[i] = byte(i*13 + 5)
+	}
+	fatb := fsimg.NewFAT32(2048)
+	fatb.AddFile("HELLO.TXT", []byte("hello from the sd card\n"))
+	fatb.AddFile("A.SLD", slideA)
+	fatb.AddFile("B.SLD", slideB)
+	vol := fatb.Bytes()
+
+	run := func(name string, sd []byte) {
+		t.Run(name, func(t *testing.T) {
+			m, kernC := bootXshBoard(t, nil, boards.Feather)
+			_ = kernC
+			// Joystick pins idle high (self-pulled-up): drive the
+			// emulator's loopback levels so the viewer sees releases.
+			v := m.Variant()
+			for _, pin := range []int{24, 26, 27, 28, 29} {
+				m.Poke32(v.GPIOCtrlAddr(pin), v.GPIOOutCtrl(true))
+			}
+			feed := "mkdir /sd\rmount sd0 /sd\rls /sd\rcat /sd/HELLO.TXT\r" +
+				"mount\rshow /sd\r"
+			m.FeedConsole(feed)
+			fed2 := false
+			deadline := uint64(3_000_000_000)
+			for used := uint64(0); used < deadline; used += 200_000 {
+				if _, err := m.Run(emu.RunConfig{MaxCycles: 200_000}); err != nil {
+					t.Fatalf("%v\nconsole:\n%s", err, m.ConsoleOut)
+				}
+				for serviceMailbox(m, m.Flash, sd) {
+				}
+				out := string(m.ConsoleOut)
+				if !fed2 && strings.Contains(out, "show /sd") &&
+					strings.Contains(out, "hello from the sd card") {
+					// Give the viewer time to load slide A, check the
+					// fb, page to B, check, then quit.
+					fbBuf := boards.Feather.FbBuf
+					ok := true
+					for i := 0; i < 4096; i += 4 {
+						if m.Peek32(fbBuf+uint32(i)) == 0 {
+							ok = false
+							break
+						}
+					}
+					if ok { // slide A landed
+						got := m.Peek32(fbBuf)
+						want := uint32(slideA[0]) | uint32(slideA[1])<<8 |
+							uint32(slideA[2])<<16 | uint32(slideA[3])<<24
+						if got != want {
+							t.Fatalf("fb: got %#x want %#x (slide A)", got, want)
+						}
+						m.FeedConsole("n")
+						fed2 = true
+					}
+				}
+				if fed2 {
+					got := m.Peek32(boards.Feather.FbBuf)
+					wantB := uint32(slideB[0]) | uint32(slideB[1])<<8 |
+						uint32(slideB[2])<<16 | uint32(slideB[3])<<24
+					if got == wantB {
+						m.FeedConsole("q")
+					}
+				}
+				if strings.Contains(string(m.ConsoleOut), "sd0 on /sd") &&
+					fed2 && strings.HasSuffix(string(m.ConsoleOut), "$ ") &&
+					strings.Count(string(m.ConsoleOut), "$ ") > 6 {
+					break
+				}
+			}
+			out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
+			t.Logf("console:\n%s", out)
+			for _, want := range []string{
+				"hello from the sd card", // cat through the sector cache
+				"a.sld",                  // ls (lowercased 8.3)
+				"sd0 on /sd type vfat (ro)",
+			} {
+				if !strings.Contains(out, want) {
+					t.Errorf("missing %q", want)
+				}
+			}
+			if !fed2 {
+				t.Errorf("the viewer never displayed slide A")
+			}
+		})
+	}
+	run("superfloppy", vol)
+	// MBR-partitioned: partition 0 (type 0x0C) at LBA 64.
+	mbr := make([]byte, 64*512)
+	pe := 446
+	mbr[pe+4] = 0x0C
+	binary.LittleEndian.PutUint32(mbr[pe+8:], 64)
+	binary.LittleEndian.PutUint32(mbr[pe+12:], uint32(len(vol)/512))
+	mbr[510] = 0x55
+	mbr[511] = 0xAA
+	run("mbr", append(mbr, vol...))
 }
 
 // TestXv6GpioMux: the gpio/mux commands drive IO_BANK0 through the

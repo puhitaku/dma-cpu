@@ -6,8 +6,8 @@ target triple = "thumbv6m-unknown-none-eabi"
 @gpio_hi = dso_local local_unnamed_addr global i32 0, align 4
 @gpio_lo = dso_local local_unnamed_addr global i32 0, align 4
 @iobank0 = dso_local local_unnamed_addr global i32 0, align 4
-@pio0base = dso_local local_unnamed_addr global i32 0, align 4
 @padsbank0 = dso_local local_unnamed_addr global i32 0, align 4
+@pio0base = dso_local local_unnamed_addr global i32 0, align 4
 @gpiopins = dso_local local_unnamed_addr global i32 0, align 4
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
@@ -17,7 +17,7 @@ define dso_local range(i32 -1, 2) i32 @kgpio(i32 noundef %0, i32 noundef %1, i32
   %6 = load i32, ptr @gpiopins, align 4
   %7 = icmp uge i32 %1, %6
   %8 = select i1 %5, i1 true, i1 %7
-  br i1 %8, label %33, label %9
+  br i1 %8, label %44, label %9
 
 9:                                                ; preds = %3
   %10 = load i32, ptr @padsbank0, align 4, !tbaa !3
@@ -26,9 +26,10 @@ define dso_local range(i32 -1, 2) i32 @kgpio(i32 noundef %0, i32 noundef %1, i32
   %13 = add i32 %12, %10
   %14 = inttoptr i32 %13 to ptr
   store volatile i32 82, ptr %14, align 4, !tbaa !3
-  switch i32 %0, label %33 [
+  switch i32 %0, label %44 [
     i32 0, label %15
     i32 1, label %25
+    i32 2, label %33
   ]
 
 15:                                               ; preds = %9
@@ -42,7 +43,7 @@ define dso_local range(i32 -1, 2) i32 @kgpio(i32 noundef %0, i32 noundef %1, i32
   %23 = add i32 %22, %20
   %24 = inttoptr i32 %23 to ptr
   store volatile i32 %19, ptr %24, align 4, !tbaa !3
-  br label %33
+  br label %44
 
 25:                                               ; preds = %9
   %26 = load i32, ptr @iobank0, align 4, !tbaa !3
@@ -52,11 +53,25 @@ define dso_local range(i32 -1, 2) i32 @kgpio(i32 noundef %0, i32 noundef %1, i32
   %30 = load volatile i32, ptr %29, align 4, !tbaa !3
   %31 = lshr i32 %30, 17
   %32 = and i32 %31, 1
-  br label %33
+  br label %44
 
-33:                                               ; preds = %9, %3, %25, %15
-  %34 = phi i32 [ 0, %15 ], [ %32, %25 ], [ -1, %3 ], [ -1, %9 ]
-  ret i32 %34
+33:                                               ; preds = %9
+  %34 = load i32, ptr @padsbank0, align 4, !tbaa !3
+  %35 = add i32 %12, %34
+  %36 = inttoptr i32 %35 to ptr
+  store volatile i32 90, ptr %36, align 4, !tbaa !3
+  %37 = load i32, ptr @iobank0, align 4, !tbaa !3
+  %38 = shl i32 %1, 3
+  %39 = add i32 %37, %38
+  %40 = inttoptr i32 %39 to ptr
+  %41 = load volatile i32, ptr %40, align 4, !tbaa !3
+  %42 = lshr i32 %41, 17
+  %43 = and i32 %42, 1
+  br label %44
+
+44:                                               ; preds = %9, %3, %33, %25, %15
+  %45 = phi i32 [ 0, %15 ], [ %32, %25 ], [ %43, %33 ], [ -1, %3 ], [ -1, %9 ]
+  ret i32 %45
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
