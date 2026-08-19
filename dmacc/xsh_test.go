@@ -749,6 +749,12 @@ func TestXv6SD(t *testing.T) {
 				"hello from the sd card", // cat through the sector cache
 				"a.sld",                  // ls (lowercased 8.3)
 				"sd0 on /sd type vfat (ro)",
+				"2 slides found", // the viewer's log (dotfile skipped)
+				"Opened /sd/a.sld",
+				"Done drawing /sd/b.sld",
+				"UART: right", // the fed "n"
+				"UART: quit",
+				"Opened /dev/sd0", // the raw-read probe
 			} {
 				if !strings.Contains(out, want) {
 					t.Errorf("missing %q", want)

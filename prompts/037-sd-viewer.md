@@ -101,6 +101,14 @@ as -512), and macOS strews AppleDouble `._*.sld` droppings that
 match the viewer's suffix filter AND sort first — show now skips
 dotfiles. Both are pinned by emulator tests.
 
+## Viewer telemetry
+
+show now narrates to the UART: "N slides found", Opened / Start
+drawing / Done drawing per slide, and one line per input event
+(UART: left/right/quit, Joystick: up/down/left/right/push). The
+fbcon console tee is muted while the fb is acquired, so the log
+reaches the serial side without scribbling on the slide.
+
 ## Still open
 
 - The contiguous-LBA raw read path for slides.bin (mount resolves

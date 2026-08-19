@@ -102,7 +102,21 @@ target triple = "thumbv6m-unknown-none-eabi"
 @.str.80 = private unnamed_addr constant [19 x i8] c"show: cannot open\0A\00", align 1
 @shownames = internal global [32 x [64 x i8]] zeroinitializer, align 1
 @.str.81 = private unnamed_addr constant [50 x i8] c"show: no slides (usage: show DIR | show FILE...)\0A\00", align 1
-@.str.82 = private unnamed_addr constant [15 x i8] c"show: fb busy\0A\00", align 1
+@.str.82 = private unnamed_addr constant [15 x i8] c" slides found\0A\00", align 1
+@.str.83 = private unnamed_addr constant [15 x i8] c"show: fb busy\0A\00", align 1
+@.str.84 = private unnamed_addr constant [11 x i8] c"UART: quit\00", align 1
+@.str.85 = private unnamed_addr constant [12 x i8] c"UART: right\00", align 1
+@.str.86 = private unnamed_addr constant [11 x i8] c"UART: left\00", align 1
+@.str.87 = private unnamed_addr constant [13 x i8] c"Joystick: up\00", align 1
+@.str.88 = private unnamed_addr constant [15 x i8] c"Joystick: down\00", align 1
+@.str.89 = private unnamed_addr constant [15 x i8] c"Joystick: left\00", align 1
+@.str.90 = private unnamed_addr constant [16 x i8] c"Joystick: right\00", align 1
+@.str.91 = private unnamed_addr constant [15 x i8] c"Joystick: push\00", align 1
+@.str.92 = private unnamed_addr constant [19 x i8] c"show: cannot open \00", align 1
+@.str.93 = private unnamed_addr constant [8 x i8] c"Opened \00", align 1
+@.str.94 = private unnamed_addr constant [15 x i8] c"Start drawing \00", align 1
+@.str.95 = private unnamed_addr constant [7 x i8] c" on FB\00", align 1
+@.str.96 = private unnamed_addr constant [14 x i8] c"Done drawing \00", align 1
 
 ; Function Attrs: minsize noreturn nounwind optsize
 define dso_local noundef i32 @main(i32 noundef %0, ptr noundef readonly captures(none) %1) local_unnamed_addr #0 {
@@ -1294,7 +1308,7 @@ define internal fastcc range(i32 0, 2) i32 @t_show(i32 noundef %0, ptr noundef r
 
 12:                                               ; preds = %2
   %13 = call i32 @write(i32 noundef 2, ptr noundef nonnull @.str.79, i32 noundef 12) #10
-  br label %257
+  br label %280
 
 14:                                               ; preds = %2
   store i32 0, ptr @nshow, align 4, !tbaa !16
@@ -1523,7 +1537,7 @@ define internal fastcc range(i32 0, 2) i32 @t_show(i32 noundef %0, ptr noundef r
 138:                                              ; preds = %16, %21
   %139 = call i32 @write(i32 noundef 2, ptr noundef nonnull @.str.80, i32 noundef 18) #10
   call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #11
-  br label %257
+  br label %280
 
 140:                                              ; preds = %14
   %141 = icmp sgt i32 %0, 2
@@ -1572,16 +1586,19 @@ define internal fastcc range(i32 0, 2) i32 @t_show(i32 noundef %0, ptr noundef r
 
 168:                                              ; preds = %140, %164
   %169 = call i32 @write(i32 noundef 2, ptr noundef nonnull @.str.81, i32 noundef 49) #10
-  br label %257
+  br label %280
 
 170:                                              ; preds = %164
+  call fastcc void @emitn(i32 noundef %165) #8
+  call fastcc void @emit(ptr noundef nonnull @.str.82) #8
+  call fastcc void @flush() #8
   %171 = call i32 @fbctl(i32 noundef 1, ptr noundef null) #10
   %172 = icmp slt i32 %171, 0
   br i1 %172, label %173, label %175
 
 173:                                              ; preds = %170
-  %174 = call i32 @write(i32 noundef 2, ptr noundef nonnull @.str.82, i32 noundef 14) #10
-  br label %257
+  %174 = call i32 @write(i32 noundef 2, ptr noundef nonnull @.str.83, i32 noundef 14) #10
+  br label %280
 
 175:                                              ; preds = %170
   %176 = call i32 @ttyraw(i32 noundef 1) #10
@@ -1594,133 +1611,191 @@ define internal fastcc range(i32 0, 2) i32 @t_show(i32 noundef %0, ptr noundef r
   call fastcc void @show_load(ptr noundef %166, ptr noundef nonnull @shownames, i32 noundef %182, i32 noundef %181) #8
   br label %183
 
-183:                                              ; preds = %251, %175
-  %184 = phi i32 [ 0, %175 ], [ %252, %251 ]
-  %185 = phi i32 [ 31, %175 ], [ %226, %251 ]
+183:                                              ; preds = %274, %175
+  %184 = phi i32 [ 0, %175 ], [ %275, %274 ]
+  %185 = phi i32 [ 31, %175 ], [ %230, %274 ]
   call void @llvm.lifetime.start.p0(i64 1, ptr nonnull %7) #11
   br label %186
 
-186:                                              ; preds = %197, %183
-  %187 = phi i32 [ 0, %183 ], [ %198, %197 ]
-  %188 = phi i32 [ 0, %183 ], [ %191, %197 ]
-  br label %190
+186:                                              ; preds = %198, %183
+  %187 = phi i32 [ 0, %183 ], [ %199, %198 ]
+  %188 = phi i32 [ 0, %183 ], [ %190, %198 ]
+  br label %189
 
-189:                                              ; preds = %195, %195
-  br label %190
+189:                                              ; preds = %186, %196
+  %190 = phi i32 [ %188, %186 ], [ 1, %196 ]
+  br label %191
 
-190:                                              ; preds = %189, %186
-  %191 = phi i32 [ %188, %186 ], [ 1, %189 ]
-  br label %192
+191:                                              ; preds = %189, %194
+  %192 = call i32 @read_nb(i32 noundef 0, ptr noundef nonnull %7, i32 noundef 1) #10
+  %193 = icmp eq i32 %192, 1
+  br i1 %193, label %194, label %217
 
-192:                                              ; preds = %190, %212
-  %193 = call i32 @read_nb(i32 noundef 0, ptr noundef nonnull %7, i32 noundef 1) #10
-  %194 = icmp eq i32 %193, 1
-  br i1 %194, label %195, label %213
-
-195:                                              ; preds = %192
-  %196 = load i8, ptr %7, align 1, !tbaa !8
-  switch i8 %196, label %212 [
-    i8 113, label %189
-    i8 3, label %189
+194:                                              ; preds = %191
+  %195 = load i8, ptr %7, align 1, !tbaa !8
+  switch i8 %195, label %191 [
+    i8 113, label %196
+    i8 3, label %196
     i8 110, label %197
     i8 32, label %197
     i8 108, label %197
-    i8 112, label %199
-    i8 104, label %199
-    i8 27, label %200
+    i8 112, label %200
+    i8 104, label %200
+    i8 27, label %201
   ], !llvm.loop !70
 
-197:                                              ; preds = %195, %195, %195, %199, %200
-  %198 = phi i32 [ %211, %200 ], [ -1, %199 ], [ 1, %195 ], [ 1, %195 ], [ 1, %195 ]
+196:                                              ; preds = %194, %194
+  call fastcc void @show_log(ptr noundef nonnull @.str.84, ptr noundef null, ptr noundef null) #8
+  br label %189, !llvm.loop !70
+
+197:                                              ; preds = %194, %194, %194
+  call fastcc void @show_log(ptr noundef nonnull @.str.85, ptr noundef null, ptr noundef null) #8
+  br label %198
+
+198:                                              ; preds = %197, %200, %215
+  %199 = phi i32 [ %216, %215 ], [ -1, %200 ], [ 1, %197 ]
   br label %186, !llvm.loop !70
 
-199:                                              ; preds = %195, %195
-  br label %197
+200:                                              ; preds = %194, %194
+  call fastcc void @show_log(ptr noundef nonnull @.str.86, ptr noundef null, ptr noundef null) #8
+  br label %198
 
-200:                                              ; preds = %195
+201:                                              ; preds = %194
   call void @llvm.lifetime.start.p0(i64 1, ptr nonnull %8) #11
   store i8 0, ptr %8, align 1, !tbaa !8
   call void @llvm.lifetime.start.p0(i64 1, ptr nonnull %9) #11
   store i8 0, ptr %9, align 1, !tbaa !8
-  %201 = call i32 @read_nb(i32 noundef 0, ptr noundef nonnull %8, i32 noundef 1) #10
-  %202 = call i32 @read_nb(i32 noundef 0, ptr noundef nonnull %9, i32 noundef 1) #10
-  %203 = load i8, ptr %8, align 1, !tbaa !8
-  %204 = icmp eq i8 %203, 91
-  %205 = load i8, ptr %9, align 1
-  %206 = icmp eq i8 %205, 67
-  %207 = select i1 %204, i1 %206, i1 false
-  %208 = icmp eq i8 %205, 68
-  %209 = select i1 %204, i1 %208, i1 false
-  %210 = select i1 %209, i32 -1, i32 %187
-  %211 = select i1 %207, i32 1, i32 %210
+  %202 = call i32 @read_nb(i32 noundef 0, ptr noundef nonnull %8, i32 noundef 1) #10
+  %203 = call i32 @read_nb(i32 noundef 0, ptr noundef nonnull %9, i32 noundef 1) #10
+  %204 = load i8, ptr %8, align 1, !tbaa !8
+  %205 = icmp eq i8 %204, 91
+  %206 = load i8, ptr %9, align 1
+  %207 = icmp eq i8 %206, 67
+  %208 = select i1 %205, i1 %207, i1 false
+  br i1 %208, label %212, label %209
+
+209:                                              ; preds = %201
+  %210 = icmp eq i8 %206, 68
+  %211 = select i1 %205, i1 %210, i1 false
+  br i1 %211, label %212, label %215
+
+212:                                              ; preds = %209, %201
+  %213 = phi ptr [ @.str.85, %201 ], [ @.str.86, %209 ]
+  %214 = phi i32 [ 1, %201 ], [ -1, %209 ]
+  call fastcc void @show_log(ptr noundef nonnull %213, ptr noundef null, ptr noundef null) #8
+  br label %215
+
+215:                                              ; preds = %212, %209
+  %216 = phi i32 [ %187, %209 ], [ %214, %212 ]
   call void @llvm.lifetime.end.p0(i64 1, ptr nonnull %9) #11
   call void @llvm.lifetime.end.p0(i64 1, ptr nonnull %8) #11
-  br label %197
+  br label %198
 
-212:                                              ; preds = %195
-  br label %192, !llvm.loop !70
+217:                                              ; preds = %191
+  %218 = call i32 @gpioctl(i32 noundef 2, i32 noundef 26, i32 noundef 0) #10
+  %219 = call i32 @gpioctl(i32 noundef 2, i32 noundef 27, i32 noundef 0) #10
+  %220 = shl i32 %219, 1
+  %221 = or i32 %220, %218
+  %222 = call i32 @gpioctl(i32 noundef 2, i32 noundef 28, i32 noundef 0) #10
+  %223 = shl i32 %222, 2
+  %224 = or i32 %221, %223
+  %225 = call i32 @gpioctl(i32 noundef 2, i32 noundef 29, i32 noundef 0) #10
+  %226 = shl i32 %225, 3
+  %227 = or i32 %224, %226
+  %228 = call i32 @gpioctl(i32 noundef 2, i32 noundef 24, i32 noundef 0) #10
+  %229 = shl i32 %228, 4
+  %230 = or i32 %227, %229
+  %231 = xor i32 %230, -1
+  %232 = and i32 %185, %231
+  %233 = and i32 %232, 1
+  %234 = icmp eq i32 %233, 0
+  br i1 %234, label %236, label %235
 
-213:                                              ; preds = %192
-  %214 = call i32 @gpioctl(i32 noundef 2, i32 noundef 26, i32 noundef 0) #10
-  %215 = call i32 @gpioctl(i32 noundef 2, i32 noundef 27, i32 noundef 0) #10
-  %216 = shl i32 %215, 1
-  %217 = or i32 %216, %214
-  %218 = call i32 @gpioctl(i32 noundef 2, i32 noundef 28, i32 noundef 0) #10
-  %219 = shl i32 %218, 2
-  %220 = or i32 %217, %219
-  %221 = call i32 @gpioctl(i32 noundef 2, i32 noundef 29, i32 noundef 0) #10
-  %222 = shl i32 %221, 3
-  %223 = or i32 %220, %222
-  %224 = call i32 @gpioctl(i32 noundef 2, i32 noundef 24, i32 noundef 0) #10
-  %225 = shl i32 %224, 4
-  %226 = or i32 %223, %225
-  %227 = xor i32 %226, -1
-  %228 = and i32 %185, %227
-  %229 = and i32 %228, 10
-  %230 = icmp eq i32 %229, 0
-  %231 = and i32 %228, 5
-  %232 = icmp eq i32 %231, 0
-  %233 = select i1 %232, i32 %187, i32 -1
-  %234 = select i1 %230, i32 %233, i32 1
-  %235 = and i32 %228, 16
-  %236 = or disjoint i32 %235, %191
-  %237 = icmp eq i32 %236, 0
-  br i1 %237, label %238, label %254
+235:                                              ; preds = %217
+  call fastcc void @show_log(ptr noundef nonnull @.str.87, ptr noundef null, ptr noundef null) #8
+  br label %236
 
-238:                                              ; preds = %213
-  %239 = icmp eq i32 %234, 0
-  br i1 %239, label %251, label %240
+236:                                              ; preds = %235, %217
+  %237 = and i32 %232, 2
+  %238 = icmp eq i32 %237, 0
+  br i1 %238, label %240, label %239
 
-240:                                              ; preds = %238
-  %241 = add nsw i32 %234, %184
-  %242 = icmp slt i32 %241, 0
-  %243 = load i32, ptr @nshow, align 4
-  %244 = add nsw i32 %243, -1
-  %245 = select i1 %242, i32 %244, i32 %241
-  %246 = icmp slt i32 %245, %243
-  %247 = select i1 %246, i32 %245, i32 0
-  %248 = getelementptr inbounds [32 x [64 x i8]], ptr @shownames, i32 0, i32 %247
-  %249 = load i32, ptr %3, align 4, !tbaa !41
-  call fastcc void @show_load(ptr noundef %166, ptr noundef nonnull %248, i32 noundef %249, i32 noundef %181) #8
-  %250 = call i32 @pause(i32 noundef 8) #10
-  br label %251
+239:                                              ; preds = %236
+  call fastcc void @show_log(ptr noundef nonnull @.str.88, ptr noundef null, ptr noundef null) #8
+  br label %240
 
-251:                                              ; preds = %238, %240
-  %252 = phi i32 [ %247, %240 ], [ %184, %238 ]
-  %253 = call i32 @pause(i32 noundef 2) #10
+240:                                              ; preds = %239, %236
+  %241 = and i32 %232, 4
+  %242 = icmp eq i32 %241, 0
+  br i1 %242, label %244, label %243
+
+243:                                              ; preds = %240
+  call fastcc void @show_log(ptr noundef nonnull @.str.89, ptr noundef null, ptr noundef null) #8
+  br label %244
+
+244:                                              ; preds = %243, %240
+  %245 = and i32 %232, 8
+  %246 = icmp eq i32 %245, 0
+  br i1 %246, label %248, label %247
+
+247:                                              ; preds = %244
+  call fastcc void @show_log(ptr noundef nonnull @.str.90, ptr noundef null, ptr noundef null) #8
+  br label %248
+
+248:                                              ; preds = %247, %244
+  %249 = and i32 %232, 16
+  %250 = icmp eq i32 %249, 0
+  br i1 %250, label %252, label %251
+
+251:                                              ; preds = %248
+  call fastcc void @show_log(ptr noundef nonnull @.str.91, ptr noundef null, ptr noundef null) #8
+  br label %252
+
+252:                                              ; preds = %251, %248
+  %253 = phi i32 [ 1, %251 ], [ %190, %248 ]
+  %254 = and i32 %232, 10
+  %255 = icmp eq i32 %254, 0
+  %256 = and i32 %232, 5
+  %257 = icmp eq i32 %256, 0
+  %258 = select i1 %257, i32 %187, i32 -1
+  %259 = select i1 %255, i32 %258, i32 1
+  %260 = icmp eq i32 %253, 0
+  br i1 %260, label %261, label %277
+
+261:                                              ; preds = %252
+  %262 = icmp eq i32 %259, 0
+  br i1 %262, label %274, label %263
+
+263:                                              ; preds = %261
+  %264 = add nsw i32 %259, %184
+  %265 = icmp slt i32 %264, 0
+  %266 = load i32, ptr @nshow, align 4
+  %267 = add nsw i32 %266, -1
+  %268 = select i1 %265, i32 %267, i32 %264
+  %269 = icmp slt i32 %268, %266
+  %270 = select i1 %269, i32 %268, i32 0
+  %271 = getelementptr inbounds [32 x [64 x i8]], ptr @shownames, i32 0, i32 %270
+  %272 = load i32, ptr %3, align 4, !tbaa !41
+  call fastcc void @show_load(ptr noundef %166, ptr noundef nonnull %271, i32 noundef %272, i32 noundef %181) #8
+  %273 = call i32 @pause(i32 noundef 8) #10
+  br label %274
+
+274:                                              ; preds = %261, %263
+  %275 = phi i32 [ %270, %263 ], [ %184, %261 ]
+  %276 = call i32 @pause(i32 noundef 2) #10
   call void @llvm.lifetime.end.p0(i64 1, ptr nonnull %7) #11
   br label %183
 
-254:                                              ; preds = %213
+277:                                              ; preds = %252
   call void @llvm.lifetime.end.p0(i64 1, ptr nonnull %7) #11
-  %255 = call i32 @ttyraw(i32 noundef 0) #10
-  %256 = call i32 @fbctl(i32 noundef 2, ptr noundef null) #10
-  br label %257
+  %278 = call i32 @ttyraw(i32 noundef 0) #10
+  %279 = call i32 @fbctl(i32 noundef 2, ptr noundef null) #10
+  br label %280
 
-257:                                              ; preds = %138, %168, %173, %254, %12
-  %258 = phi i32 [ 1, %12 ], [ 1, %168 ], [ 1, %173 ], [ 0, %254 ], [ 1, %138 ]
+280:                                              ; preds = %138, %168, %173, %277, %12
+  %281 = phi i32 [ 1, %12 ], [ 1, %168 ], [ 1, %173 ], [ 0, %277 ], [ 1, %138 ]
   call void @llvm.lifetime.end.p0(i64 20, ptr nonnull %3) #11
-  ret i32 %258
+  ret i32 %281
 }
 
 ; Function Attrs: minsize optsize
@@ -2037,7 +2112,7 @@ define internal fastcc void @show_load(ptr noundef readonly captures(address_is_
   store i8 0, ptr %36, align 1, !tbaa !8
   %37 = call i32 @open(ptr noundef nonnull %5, i32 noundef 0) #10
   %38 = icmp slt i32 %37, 0
-  br i1 %38, label %55, label %43
+  br i1 %38, label %56, label %43
 
 39:                                               ; preds = %27
   %40 = add nsw i32 %29, 1
@@ -2046,31 +2121,62 @@ define internal fastcc void @show_load(ptr noundef readonly captures(address_is_
   %42 = add nuw nsw i32 %28, 1
   br label %27, !llvm.loop !78
 
-43:                                               ; preds = %35, %46
-  %44 = phi i32 [ %52, %46 ], [ 0, %35 ]
-  %45 = icmp ult i32 %44, %3
-  br i1 %45, label %46, label %53
+43:                                               ; preds = %35
+  call fastcc void @show_log(ptr noundef nonnull @.str.93, ptr noundef nonnull %5, ptr noundef null) #8
+  call fastcc void @show_log(ptr noundef nonnull @.str.94, ptr noundef nonnull %5, ptr noundef nonnull @.str.95) #8
+  br label %44
 
-46:                                               ; preds = %43
-  %47 = add i32 %44, %2
-  %48 = inttoptr i32 %47 to ptr
-  %49 = sub nuw i32 %3, %44
-  %50 = call i32 @read(i32 noundef %37, ptr noundef %48, i32 noundef %49) #10
-  %51 = icmp slt i32 %50, 1
-  %52 = add i32 %50, %44
-  br i1 %51, label %53, label %43
+44:                                               ; preds = %47, %43
+  %45 = phi i32 [ 0, %43 ], [ %53, %47 ]
+  %46 = icmp ult i32 %45, %3
+  br i1 %46, label %47, label %54
 
-53:                                               ; preds = %46, %43
-  %54 = call i32 @close(i32 noundef %37) #10
-  br label %55
+47:                                               ; preds = %44
+  %48 = add i32 %45, %2
+  %49 = inttoptr i32 %48 to ptr
+  %50 = sub nuw i32 %3, %45
+  %51 = call i32 @read(i32 noundef %37, ptr noundef %49, i32 noundef %50) #10
+  %52 = icmp slt i32 %51, 1
+  %53 = add i32 %51, %45
+  br i1 %52, label %54, label %44
 
-55:                                               ; preds = %35, %53
+54:                                               ; preds = %47, %44
+  %55 = call i32 @close(i32 noundef %37) #10
+  br label %56
+
+56:                                               ; preds = %35, %54
+  %57 = phi ptr [ @.str.96, %54 ], [ @.str.92, %35 ]
+  call fastcc void @show_log(ptr noundef nonnull %57, ptr noundef nonnull %5, ptr noundef null) #8
   call void @llvm.lifetime.end.p0(i64 96, ptr nonnull %5) #11
   ret void
 }
 
 ; Function Attrs: minsize optsize
 declare dso_local i32 @read_nb(i32 noundef, ptr noundef, i32 noundef) local_unnamed_addr #5
+
+; Function Attrs: minsize nounwind optsize
+define internal fastcc void @show_log(ptr noundef readonly captures(none) %0, ptr noundef readonly captures(address_is_null) %1, ptr noundef readonly captures(address_is_null) %2) unnamed_addr #4 {
+  tail call fastcc void @emit(ptr noundef %0) #8
+  %4 = icmp eq ptr %1, null
+  br i1 %4, label %6, label %5
+
+5:                                                ; preds = %3
+  tail call fastcc void @emit(ptr noundef nonnull %1) #8
+  br label %6
+
+6:                                                ; preds = %5, %3
+  %7 = icmp eq ptr %2, null
+  br i1 %7, label %9, label %8
+
+8:                                                ; preds = %6
+  tail call fastcc void @emit(ptr noundef nonnull %2) #8
+  br label %9
+
+9:                                                ; preds = %8, %6
+  tail call fastcc void @emit(ptr noundef nonnull @.str.20) #8
+  tail call fastcc void @flush() #8
+  ret void
+}
 
 attributes #0 = { minsize noreturn nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }

@@ -563,6 +563,20 @@ sldsuffix(const char *n)
          (e[2] == 'l' || e[2] == 'L') && (e[3] == 'd' || e[3] == 'D');
 }
 
+/* One log line to the console; the fbcon tee is muted while the fb
+ * is acquired, so these reach the UART without touching the slide. */
+static void
+show_log(const char *a, const char *b, const char *c)
+{
+  emit(a);
+  if (b)
+    emit(b);
+  if (c)
+    emit(c);
+  emit("\n");
+  flush();
+}
+
 static void
 show_load(const char *dir, const char *name, uint fb, uint fbsz)
 {
@@ -578,8 +592,12 @@ show_load(const char *dir, const char *name, uint fb, uint fbsz)
     path[n++] = name[i];
   path[n] = 0;
   int fd = open(path, 0);
-  if (fd < 0)
+  if (fd < 0) {
+    show_log("show: cannot open ", path, 0);
     return;
+  }
+  show_log("Opened ", path, 0);
+  show_log("Start drawing ", path, " on FB");
   uint got = 0;
   while (got < fbsz) {
     int r = read(fd, (void *)(fb + got), (int)(fbsz - got));
@@ -588,6 +606,7 @@ show_load(const char *dir, const char *name, uint fb, uint fbsz)
     got += (uint)r;
   }
   close(fd);
+  show_log("Done drawing ", path, 0);
 }
 
 static int
@@ -657,6 +676,9 @@ t_show(int argc, char **argv)
     write(2, "show: no slides (usage: show DIR | show FILE...)\n", 49);
     return 1;
   }
+  emitn((uint)nshow);
+  emit(" slides found\n");
+  flush();
   if (fbctl(FB_ACQUIRE, 0) < 0) {
     write(2, "show: fb busy\n", 14);
     return 1;
@@ -669,20 +691,26 @@ t_show(int argc, char **argv)
     int step = 0, quit = 0;
     char c;
     while (read_nb(0, &c, 1) == 1) {
-      if (c == 'q' || c == 3)
+      if (c == 'q' || c == 3) {
+        show_log("UART: quit", 0, 0);
         quit = 1;
-      else if (c == 'n' || c == ' ' || c == 'l')
+      } else if (c == 'n' || c == ' ' || c == 'l') {
+        show_log("UART: right", 0, 0);
         step = 1;
-      else if (c == 'p' || c == 'h')
+      } else if (c == 'p' || c == 'h') {
+        show_log("UART: left", 0, 0);
         step = -1;
-      else if (c == 0x1B) { /* arrows: ESC [ C / D */
+      } else if (c == 0x1B) { /* arrows: ESC [ C / D */
         char b1 = 0, b2 = 0;
         read_nb(0, &b1, 1);
         read_nb(0, &b2, 1);
-        if (b1 == '[' && b2 == 'C')
+        if (b1 == '[' && b2 == 'C') {
+          show_log("UART: right", 0, 0);
           step = 1;
-        else if (b1 == '[' && b2 == 'D')
+        } else if (b1 == '[' && b2 == 'D') {
+          show_log("UART: left", 0, 0);
           step = -1;
+        }
       }
     }
     int mask = 0; /* op 2: read with pull-up — unwired pins idle 1 */
@@ -693,6 +721,16 @@ t_show(int argc, char **argv)
     mask |= gpioctl(2, JOY_PRESS, 0) << 4;
     int fell = prevmask & ~mask; /* 1 -> 0 transitions (active low) */
     prevmask = mask;
+    if (fell & (1 << 0))
+      show_log("Joystick: up", 0, 0);
+    if (fell & (1 << 1))
+      show_log("Joystick: down", 0, 0);
+    if (fell & (1 << 2))
+      show_log("Joystick: left", 0, 0);
+    if (fell & (1 << 3))
+      show_log("Joystick: right", 0, 0);
+    if (fell & (1 << 4))
+      show_log("Joystick: push", 0, 0);
     if (fell & ((1 << 1) | (1 << 3))) /* down or right */
       step = 1;
     else if (fell & ((1 << 0) | (1 << 2))) /* up or left */
