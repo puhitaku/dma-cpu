@@ -53,9 +53,24 @@ are 24 KiB data-only now, pico2's arena grew to ~335 KiB), and
 usertests moved to the XIP kernel — the RAM-resident fs kernel was
 the last of its kind, and its 185 KiB made every window a fight.
 
+## The converter: `sldgen`
+
+Silicon confirmed the mount (the card's macOS Spotlight droppings
+listed fine), so the deck tooling followed: `go run ./cmd/sldgen -o
+deck img1.png img2.jpg ...` emits NN-<stem>.sld in argument order
+(the numeric prefix makes the viewer's name sort replay it) plus
+slides.bin, slide N at offset N*153600, for the future raw fast
+path.
+
+Conversion respects the wire geometry: sources letterbox-fit a
+virtual 640x480 canvas (fb pixels are 1:2 — a naive 640x240 resize
+would squash circles into eggs), area-average down, and
+Floyd-Steinberg dither into RGB332 — on 256 colors dithering is the
+difference between gradients and bands. Stdlib only; png/jpeg/gif.
+
 ## Still open
 
-- The slide converter (host-side Go): images -> 640x240 RGB332 .sld
-  files, plus the contiguous slides.bin fast path (resolve the start
-  LBA once, then raw multi-block reads) noted in prompts/036.
-- Silicon validation of the SD path awaits the slot being wired.
+- The contiguous-LBA raw read path for slides.bin (mount resolves
+  the start sector once, then raw multi-block reads skip the FAT
+  walk), noted in prompts/036 — worth it only if per-slide load
+  times bother in practice.
