@@ -16,12 +16,10 @@ main(void)
 {
   int pid, wpid;
 
-  if (open("console", O_RDWR) < 0) {
-    mknod("console", CONSOLE, 0);
-    open("console", O_RDWR);
-  }
-  dup(0); // stdout
-  dup(0); // stderr
+  /* Upstream init opens (or mknods) /console for fds 0/1/2. This
+   * kernel pre-opens all three from the devfs console for every
+   * process, and the mknod fallback would recreate the /console file
+   * the RAM disk no longer carries — /dev/console is the console. */
 
   for (;;) {
     printf("init: starting sh\n");

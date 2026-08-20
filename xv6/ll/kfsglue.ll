@@ -12,12 +12,12 @@ target triple = "thumbv6m-unknown-none-eabi"
 @fsproc = dso_local global [8 x %struct.proc] zeroinitializer, align 4
 @curr = external dso_local local_unnamed_addr global i32, align 4
 @devsw = external dso_local local_unnamed_addr global [0 x %struct.devsw], align 4
-@.str.2 = private unnamed_addr constant [9 x i8] c"/console\00", align 1
-@.str.3 = private unnamed_addr constant [22 x i8] c"kfs_start: no console\00", align 1
-@.str.4 = private unnamed_addr constant [5 x i8] c"/dev\00", align 1
+@.str.2 = private unnamed_addr constant [5 x i8] c"/dev\00", align 1
 @devmnt_dev = internal unnamed_addr global i32 -1, align 4
 @devmnt_inum = internal unnamed_addr global i32 0, align 4
 @devmnt = internal unnamed_addr global [8 x i8] zeroinitializer, align 1
+@.str.3 = private unnamed_addr constant [8 x i8] c"console\00", align 1
+@.str.4 = private unnamed_addr constant [22 x i8] c"kfs_start: no console\00", align 1
 @.str.5 = private unnamed_addr constant [2 x i8] c"/\00", align 1
 @fsready = dso_local local_unnamed_addr global i32 0, align 4
 @fatmnt = internal unnamed_addr global [28 x i8] zeroinitializer, align 1
@@ -165,89 +165,92 @@ define dso_local void @kfs_start() local_unnamed_addr #1 {
   store ptr @consolewrite, ptr getelementptr inbounds nuw (i8, ptr @devsw, i32 12), align 4, !tbaa !16
   %1 = tail call ptr @namei(ptr noundef nonnull @.str.2) #9
   %2 = icmp eq ptr %1, null
-  br i1 %2, label %3, label %4
+  br i1 %2, label %3, label %7
 
 3:                                                ; preds = %0
-  tail call void @panic(ptr noundef nonnull @.str.3) #10
-  unreachable
+  %4 = tail call fastcc ptr @create(ptr noundef nonnull @.str.2, i16 noundef signext 1) #10
+  %5 = icmp eq ptr %4, null
+  br i1 %5, label %12, label %6
 
-4:                                                ; preds = %0
-  %5 = tail call ptr @namei(ptr noundef nonnull @.str.4) #9
-  %6 = icmp eq ptr %5, null
-  br i1 %6, label %7, label %11
+6:                                                ; preds = %3
+  tail call void @iunlock(ptr noundef nonnull %4) #9
+  br label %7
 
-7:                                                ; preds = %4
-  %8 = tail call fastcc ptr @create(ptr noundef nonnull @.str.4, i16 noundef signext 1) #11
-  %9 = icmp eq ptr %8, null
-  br i1 %9, label %16, label %10
-
-10:                                               ; preds = %7
-  tail call void @iunlock(ptr noundef nonnull %8) #9
-  br label %11
-
-11:                                               ; preds = %10, %4
-  %12 = phi ptr [ %5, %4 ], [ %8, %10 ]
-  %13 = load i32, ptr %12, align 4, !tbaa !17
-  store i32 %13, ptr @devmnt_dev, align 4, !tbaa !11
-  %14 = getelementptr inbounds nuw i8, ptr %12, i32 4
-  %15 = load i32, ptr %14, align 4, !tbaa !21
-  store i32 %15, ptr @devmnt_inum, align 4, !tbaa !11
-  tail call void @iput(ptr noundef nonnull %12) #9
+7:                                                ; preds = %6, %0
+  %8 = phi ptr [ %1, %0 ], [ %4, %6 ]
+  %9 = load i32, ptr %8, align 4, !tbaa !17
+  store i32 %9, ptr @devmnt_dev, align 4, !tbaa !11
+  %10 = getelementptr inbounds nuw i8, ptr %8, i32 4
+  %11 = load i32, ptr %10, align 4, !tbaa !21
+  store i32 %11, ptr @devmnt_inum, align 4, !tbaa !11
+  tail call void @iput(ptr noundef nonnull %8) #9
   store i8 47, ptr @devmnt, align 1, !tbaa !3
   store i8 100, ptr getelementptr inbounds nuw (i8, ptr @devmnt, i32 1), align 1, !tbaa !3
   store i8 101, ptr getelementptr inbounds nuw (i8, ptr @devmnt, i32 2), align 1, !tbaa !3
   store i8 118, ptr getelementptr inbounds nuw (i8, ptr @devmnt, i32 3), align 1, !tbaa !3
   store i8 0, ptr getelementptr inbounds nuw (i8, ptr @devmnt, i32 4), align 1, !tbaa !3
-  br label %16
+  br label %12
 
-16:                                               ; preds = %7, %11
-  br label %17
+12:                                               ; preds = %3, %7
+  %13 = tail call ptr @dev_root() #9
+  %14 = icmp eq ptr %13, null
+  br i1 %14, label %18, label %15
 
-17:                                               ; preds = %16, %30
-  %18 = phi i32 [ %31, %30 ], [ 0, %16 ]
-  %19 = icmp eq i32 %18, 8
-  br i1 %19, label %20, label %21
+15:                                               ; preds = %12
+  %16 = tail call ptr @dev_lookup(ptr noundef nonnull %13, ptr noundef nonnull @.str.3) #9
+  tail call void @dev_put(ptr noundef nonnull %13) #9
+  %17 = icmp eq ptr %16, null
+  br i1 %17, label %18, label %19
 
-20:                                               ; preds = %17
-  tail call void @iput(ptr noundef nonnull %1) #9
+18:                                               ; preds = %12, %15
+  tail call void @panic(ptr noundef nonnull @.str.4) #11
+  unreachable
+
+19:                                               ; preds = %15, %32
+  %20 = phi i32 [ %33, %32 ], [ 0, %15 ]
+  %21 = icmp eq i32 %20, 8
+  br i1 %21, label %22, label %23
+
+22:                                               ; preds = %19
+  tail call void @dev_put(ptr noundef nonnull %16) #9
   store i32 1, ptr @fsready, align 4, !tbaa !11
   ret void
 
-21:                                               ; preds = %17
-  %22 = getelementptr inbounds nuw [8 x %struct.proc], ptr @fsproc, i32 0, i32 %18
-  %23 = getelementptr inbounds nuw i8, ptr %22, i32 4
-  store i32 -1, ptr %23, align 4, !tbaa !22
-  %24 = tail call ptr @namei(ptr noundef nonnull @.str.5) #9
-  %25 = getelementptr inbounds nuw i8, ptr %22, i32 8
-  store ptr %24, ptr %25, align 4, !tbaa !26
-  %26 = getelementptr inbounds nuw i8, ptr %22, i32 12
-  br label %27
+23:                                               ; preds = %19
+  %24 = getelementptr inbounds nuw [8 x %struct.proc], ptr @fsproc, i32 0, i32 %20
+  %25 = getelementptr inbounds nuw i8, ptr %24, i32 4
+  store i32 -1, ptr %25, align 4, !tbaa !22
+  %26 = tail call ptr @namei(ptr noundef nonnull @.str.5) #9
+  %27 = getelementptr inbounds nuw i8, ptr %24, i32 8
+  store ptr %26, ptr %27, align 4, !tbaa !26
+  %28 = getelementptr inbounds nuw i8, ptr %24, i32 12
+  br label %29
 
-27:                                               ; preds = %32, %21
-  %28 = phi i32 [ 0, %21 ], [ %40, %32 ]
-  %29 = icmp eq i32 %28, 3
-  br i1 %29, label %30, label %32
+29:                                               ; preds = %34, %23
+  %30 = phi i32 [ 0, %23 ], [ %41, %34 ]
+  %31 = icmp eq i32 %30, 3
+  br i1 %31, label %32, label %34
 
-30:                                               ; preds = %27
-  %31 = add nuw nsw i32 %18, 1
-  br label %17, !llvm.loop !27
+32:                                               ; preds = %29
+  %33 = add nuw nsw i32 %20, 1
+  br label %19, !llvm.loop !27
 
-32:                                               ; preds = %27
-  %33 = tail call ptr @filealloc() #9
-  store i32 3, ptr %33, align 4, !tbaa !28
-  %34 = getelementptr inbounds nuw i8, ptr %33, i32 24
-  store i16 1, ptr %34, align 4, !tbaa !31
-  %35 = getelementptr inbounds nuw i8, ptr %33, i32 8
-  store i8 1, ptr %35, align 4, !tbaa !32
-  %36 = getelementptr inbounds nuw i8, ptr %33, i32 9
-  store i8 1, ptr %36, align 1, !tbaa !33
-  %37 = tail call ptr @idup(ptr noundef nonnull %1) #9
-  %38 = getelementptr inbounds nuw i8, ptr %33, i32 16
-  store ptr %37, ptr %38, align 4, !tbaa !34
-  %39 = getelementptr inbounds nuw [16 x ptr], ptr %26, i32 0, i32 %28
-  store ptr %33, ptr %39, align 4, !tbaa !35
-  %40 = add nuw nsw i32 %28, 1
-  br label %27, !llvm.loop !37
+34:                                               ; preds = %29
+  %35 = tail call ptr @filealloc() #9
+  store i32 3, ptr %35, align 4, !tbaa !28
+  %36 = getelementptr inbounds nuw i8, ptr %35, i32 24
+  store i16 1, ptr %36, align 4, !tbaa !31
+  %37 = getelementptr inbounds nuw i8, ptr %35, i32 8
+  store i8 1, ptr %37, align 4, !tbaa !32
+  %38 = getelementptr inbounds nuw i8, ptr %35, i32 9
+  store i8 1, ptr %38, align 1, !tbaa !33
+  tail call void @dev_dup(ptr noundef nonnull %16) #9
+  %39 = getelementptr inbounds nuw i8, ptr %35, i32 16
+  store ptr %16, ptr %39, align 4, !tbaa !34
+  %40 = getelementptr inbounds nuw [16 x ptr], ptr %28, i32 0, i32 %30
+  store ptr %35, ptr %40, align 4, !tbaa !35
+  %41 = add nuw nsw i32 %30, 1
+  br label %29, !llvm.loop !37
 }
 
 ; Function Attrs: minsize optsize
@@ -332,7 +335,7 @@ define internal fastcc ptr @create(ptr noundef %0, i16 noundef signext range(i16
   br i1 %34, label %35, label %36
 
 35:                                               ; preds = %30, %25
-  call void @panic(ptr noundef nonnull @.str.14) #10
+  call void @panic(ptr noundef nonnull @.str.14) #11
   unreachable
 
 36:                                               ; preds = %30, %20
@@ -343,7 +346,7 @@ define internal fastcc ptr @create(ptr noundef %0, i16 noundef signext range(i16
   br i1 %40, label %41, label %42
 
 41:                                               ; preds = %36
-  call void @panic(ptr noundef nonnull @.str.15) #10
+  call void @panic(ptr noundef nonnull @.str.15) #11
   unreachable
 
 42:                                               ; preds = %36
@@ -376,10 +379,19 @@ declare dso_local void @iunlock(ptr noundef) local_unnamed_addr #3
 declare dso_local void @iput(ptr noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize optsize
+declare dso_local ptr @dev_root() local_unnamed_addr #3
+
+; Function Attrs: minsize optsize
+declare dso_local ptr @dev_lookup(ptr noundef, ptr noundef) local_unnamed_addr #3
+
+; Function Attrs: minsize optsize
+declare dso_local void @dev_put(ptr noundef) local_unnamed_addr #3
+
+; Function Attrs: minsize optsize
 declare dso_local ptr @filealloc() local_unnamed_addr #3
 
 ; Function Attrs: minsize optsize
-declare dso_local ptr @idup(ptr noundef) local_unnamed_addr #3
+declare dso_local void @dev_dup(ptr noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @kfs_forkcopy(i32 noundef %0, i32 noundef %1) local_unnamed_addr #1 {
@@ -435,6 +447,9 @@ define dso_local void @kfs_forkcopy(i32 noundef %0, i32 noundef %1) local_unname
 ; Function Attrs: minsize optsize
 declare dso_local ptr @filedup(ptr noundef) local_unnamed_addr #3
 
+; Function Attrs: minsize optsize
+declare dso_local ptr @idup(ptr noundef) local_unnamed_addr #3
+
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @kfs_exit(i32 noundef %0) local_unnamed_addr #1 {
   %2 = getelementptr inbounds [8 x %struct.proc], ptr @fsproc, i32 0, i32 %0
@@ -468,7 +483,7 @@ define dso_local void @kfs_exit(i32 noundef %0) local_unnamed_addr #1 {
   br label %4, !llvm.loop !43
 
 18:                                               ; preds = %7
-  tail call void @vfs_iput(ptr noundef nonnull %9) #11
+  tail call void @vfs_iput(ptr noundef nonnull %9) #10
   store ptr null, ptr %8, align 4, !tbaa !26
   br label %19
 
@@ -615,9 +630,6 @@ define dso_local void @vfs_iunlock(ptr noundef %0) local_unnamed_addr #1 {
 
 ; Function Attrs: minsize optsize
 declare dso_local void @fat_put(ptr noundef) local_unnamed_addr #3
-
-; Function Attrs: minsize optsize
-declare dso_local void @dev_put(ptr noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @vfs_stati(ptr noundef %0, ptr noundef %1) local_unnamed_addr #1 {
@@ -1166,7 +1178,7 @@ define dso_local range(i32 -1, 16) i32 @kfs_dup(i32 noundef %0) local_unnamed_ad
   br i1 %9, label %15, label %10
 
 10:                                               ; preds = %5
-  %11 = tail call fastcc i32 @fdalloc(ptr noundef nonnull %8) #11
+  %11 = tail call fastcc i32 @fdalloc(ptr noundef nonnull %8) #10
   %12 = icmp slt i32 %11, 0
   br i1 %12, label %15, label %13
 
@@ -1279,13 +1291,13 @@ define dso_local range(i32 -1, 1) i32 @kfs_pipe(i32 noundef %0) local_unnamed_ad
 
 6:                                                ; preds = %1
   %7 = load ptr, ptr %2, align 4, !tbaa !35
-  %8 = call fastcc i32 @fdalloc(ptr noundef %7) #11
+  %8 = call fastcc i32 @fdalloc(ptr noundef %7) #10
   %9 = icmp sgt i32 %8, -1
   br i1 %9, label %10, label %17
 
 10:                                               ; preds = %6
   %11 = load ptr, ptr %3, align 4, !tbaa !35
-  %12 = call fastcc i32 @fdalloc(ptr noundef %11) #11
+  %12 = call fastcc i32 @fdalloc(ptr noundef %11) #10
   %13 = icmp slt i32 %12, 0
   br i1 %13, label %14, label %20
 
@@ -1324,7 +1336,7 @@ define dso_local range(i32 -1, 16) i32 @kfs_open(i32 noundef %0, i32 noundef %1)
   %3 = inttoptr i32 %0 to ptr
   %4 = and i32 %1, 512
   %5 = icmp eq i32 %4, 0
-  %6 = tail call fastcc i32 @fat_writepath(ptr noundef %3) #11
+  %6 = tail call fastcc i32 @fat_writepath(ptr noundef %3) #10
   br i1 %5, label %12, label %7
 
 7:                                                ; preds = %2
@@ -1332,7 +1344,7 @@ define dso_local range(i32 -1, 16) i32 @kfs_open(i32 noundef %0, i32 noundef %1)
   br i1 %8, label %9, label %100
 
 9:                                                ; preds = %7
-  %10 = tail call fastcc ptr @create(ptr noundef %3, i16 noundef signext 2) #11
+  %10 = tail call fastcc ptr @create(ptr noundef %3, i16 noundef signext 2) #10
   %11 = icmp eq ptr %10, null
   br i1 %11, label %100, label %64
 
@@ -1343,7 +1355,7 @@ define dso_local range(i32 -1, 16) i32 @kfs_open(i32 noundef %0, i32 noundef %1)
   br i1 %15, label %100, label %16
 
 16:                                               ; preds = %12
-  %17 = tail call fastcc ptr @vfs_resolve(ptr noundef %3) #11
+  %17 = tail call fastcc ptr @vfs_resolve(ptr noundef %3) #10
   %18 = icmp eq ptr %17, null
   br i1 %18, label %100, label %19
 
@@ -1363,7 +1375,7 @@ define dso_local range(i32 -1, 16) i32 @kfs_open(i32 noundef %0, i32 noundef %1)
   br i1 %27, label %32, label %28
 
 28:                                               ; preds = %25
-  %29 = tail call fastcc i32 @fdalloc(ptr noundef nonnull %26) #11
+  %29 = tail call fastcc i32 @fdalloc(ptr noundef nonnull %26) #10
   %30 = icmp slt i32 %29, 0
   br i1 %30, label %31, label %33
 
@@ -1372,7 +1384,7 @@ define dso_local range(i32 -1, 16) i32 @kfs_open(i32 noundef %0, i32 noundef %1)
   br label %32
 
 32:                                               ; preds = %25, %31
-  tail call void @vfs_iput(ptr noundef nonnull %17) #11
+  tail call void @vfs_iput(ptr noundef nonnull %17) #10
   br label %100
 
 33:                                               ; preds = %28
@@ -1437,7 +1449,7 @@ define dso_local range(i32 -1, 16) i32 @kfs_open(i32 noundef %0, i32 noundef %1)
   br i1 %67, label %72, label %68
 
 68:                                               ; preds = %64
-  %69 = tail call fastcc i32 @fdalloc(ptr noundef nonnull %66) #11
+  %69 = tail call fastcc i32 @fdalloc(ptr noundef nonnull %66) #10
   %70 = icmp slt i32 %69, 0
   br i1 %70, label %71, label %73
 
@@ -1503,12 +1515,12 @@ define dso_local range(i32 -1, 16) i32 @kfs_open(i32 noundef %0, i32 noundef %1)
 
 ; Function Attrs: minsize nounwind optsize
 define internal fastcc range(i32 0, 2) i32 @fat_writepath(ptr noundef readonly captures(address) %0) unnamed_addr #1 {
-  %2 = tail call fastcc ptr @fat_prefix(ptr noundef %0) #11
+  %2 = tail call fastcc ptr @fat_prefix(ptr noundef %0) #10
   %3 = icmp eq ptr %2, null
   br i1 %3, label %4, label %23
 
 4:                                                ; preds = %1
-  %5 = tail call fastcc ptr @dev_prefix(ptr noundef %0) #11
+  %5 = tail call fastcc ptr @dev_prefix(ptr noundef %0) #10
   %6 = icmp eq ptr %5, null
   br i1 %6, label %7, label %23
 
@@ -1591,7 +1603,7 @@ define internal fastcc ptr @vfs_resolve(ptr noundef %0) unnamed_addr #1 {
   br i1 %32, label %35, label %33
 
 33:                                               ; preds = %29, %26
-  %34 = tail call fastcc ptr @vfs_walk(ptr noundef %0) #11
+  %34 = tail call fastcc ptr @vfs_walk(ptr noundef %0) #10
   br label %80
 
 35:                                               ; preds = %29, %22
@@ -1600,17 +1612,17 @@ define internal fastcc ptr @vfs_resolve(ptr noundef %0) unnamed_addr #1 {
   br i1 %37, label %38, label %46
 
 38:                                               ; preds = %35
-  %39 = tail call fastcc ptr @fat_prefix(ptr noundef nonnull %0) #11
+  %39 = tail call fastcc ptr @fat_prefix(ptr noundef nonnull %0) #10
   %40 = icmp eq ptr %39, null
   br i1 %40, label %41, label %44
 
 41:                                               ; preds = %38
-  %42 = tail call fastcc ptr @dev_prefix(ptr noundef nonnull %0) #11
+  %42 = tail call fastcc ptr @dev_prefix(ptr noundef nonnull %0) #10
   %43 = icmp eq ptr %42, null
   br i1 %43, label %46, label %44
 
 44:                                               ; preds = %41, %38
-  %45 = tail call fastcc ptr @vfs_walk(ptr noundef nonnull %0) #11
+  %45 = tail call fastcc ptr @vfs_walk(ptr noundef nonnull %0) #10
   br label %80
 
 46:                                               ; preds = %41, %35
@@ -1619,7 +1631,7 @@ define internal fastcc ptr @vfs_resolve(ptr noundef %0) unnamed_addr #1 {
   br i1 %48, label %49, label %59
 
 49:                                               ; preds = %46
-  %50 = tail call fastcc ptr @vfs_walk(ptr noundef nonnull %0) #11
+  %50 = tail call fastcc ptr @vfs_walk(ptr noundef nonnull %0) #10
   %51 = icmp eq ptr %50, null
   br i1 %51, label %80, label %52
 
@@ -1684,7 +1696,7 @@ declare dso_local void @itrunc(ptr noundef) local_unnamed_addr #3
 define dso_local range(i32 -1, 1) i32 @kfs_chdir(i32 noundef %0) local_unnamed_addr #1 {
   %2 = load i32, ptr @curr, align 4, !tbaa !11
   %3 = inttoptr i32 %0 to ptr
-  %4 = tail call fastcc ptr @vfs_resolve(ptr noundef %3) #11
+  %4 = tail call fastcc ptr @vfs_resolve(ptr noundef %3) #10
   %5 = icmp eq ptr %4, null
   br i1 %5, label %26, label %6
 
@@ -1725,7 +1737,7 @@ define dso_local range(i32 -1, 1) i32 @kfs_chdir(i32 noundef %0) local_unnamed_a
   br i1 %23, label %25, label %24
 
 24:                                               ; preds = %20
-  tail call void @vfs_iput(ptr noundef nonnull %22) #11
+  tail call void @vfs_iput(ptr noundef nonnull %22) #10
   br label %25
 
 25:                                               ; preds = %24, %20
@@ -1740,12 +1752,12 @@ define dso_local range(i32 -1, 1) i32 @kfs_chdir(i32 noundef %0) local_unnamed_a
 ; Function Attrs: minsize nounwind optsize
 define dso_local range(i32 -1, 1) i32 @kfs_mkdir(i32 noundef %0) local_unnamed_addr #1 {
   %2 = inttoptr i32 %0 to ptr
-  %3 = tail call fastcc i32 @fat_writepath(ptr noundef %2) #11
+  %3 = tail call fastcc i32 @fat_writepath(ptr noundef %2) #10
   %4 = icmp eq i32 %3, 0
   br i1 %4, label %5, label %9
 
 5:                                                ; preds = %1
-  %6 = tail call fastcc ptr @create(ptr noundef %2, i16 noundef signext 1) #11
+  %6 = tail call fastcc ptr @create(ptr noundef %2, i16 noundef signext 1) #10
   %7 = icmp eq ptr %6, null
   br i1 %7, label %9, label %8
 
@@ -1762,13 +1774,13 @@ define dso_local range(i32 -1, 1) i32 @kfs_mkdir(i32 noundef %0) local_unnamed_a
 define dso_local range(i32 -1, 1) i32 @kfs_link(i32 noundef %0, i32 noundef %1) local_unnamed_addr #1 {
   %3 = alloca [62 x i8], align 1
   %4 = inttoptr i32 %0 to ptr
-  %5 = tail call fastcc i32 @fat_writepath(ptr noundef %4) #11
+  %5 = tail call fastcc i32 @fat_writepath(ptr noundef %4) #10
   %6 = icmp eq i32 %5, 0
   br i1 %6, label %7, label %41
 
 7:                                                ; preds = %2
   %8 = inttoptr i32 %1 to ptr
-  %9 = tail call fastcc i32 @fat_writepath(ptr noundef %8) #11
+  %9 = tail call fastcc i32 @fat_writepath(ptr noundef %8) #10
   %10 = icmp eq i32 %9, 0
   br i1 %10, label %11, label %41
 
@@ -1858,7 +1870,7 @@ define dso_local range(i32 -1, 1) i32 @kfs_unlink(i32 noundef %0) local_unnamed_
   %4 = alloca [62 x i8], align 1
   %5 = alloca i32, align 4
   %6 = inttoptr i32 %0 to ptr
-  %7 = tail call fastcc i32 @fat_writepath(ptr noundef %6) #11
+  %7 = tail call fastcc i32 @fat_writepath(ptr noundef %6) #10
   %8 = icmp eq i32 %7, 0
   br i1 %8, label %9, label %69
 
@@ -1894,7 +1906,7 @@ define dso_local range(i32 -1, 1) i32 @kfs_unlink(i32 noundef %0) local_unnamed_
   br i1 %24, label %25, label %26
 
 25:                                               ; preds = %21
-  call void @panic(ptr noundef nonnull @.str.12) #10
+  call void @panic(ptr noundef nonnull @.str.12) #11
   unreachable
 
 26:                                               ; preds = %21
@@ -1921,7 +1933,7 @@ define dso_local range(i32 -1, 1) i32 @kfs_unlink(i32 noundef %0) local_unnamed_
   br i1 %39, label %41, label %40
 
 40:                                               ; preds = %37
-  call void @panic(ptr noundef nonnull @.str.16) #10
+  call void @panic(ptr noundef nonnull @.str.16) #11
   unreachable
 
 41:                                               ; preds = %37
@@ -1948,7 +1960,7 @@ define dso_local range(i32 -1, 1) i32 @kfs_unlink(i32 noundef %0) local_unnamed_
   br i1 %52, label %54, label %53
 
 53:                                               ; preds = %47
-  call void @panic(ptr noundef nonnull @.str.13) #10
+  call void @panic(ptr noundef nonnull @.str.13) #11
   unreachable
 
 54:                                               ; preds = %47
@@ -2402,19 +2414,10 @@ define internal fastcc ptr @vfs_walk(ptr noundef readonly captures(none) %0) unn
 declare dso_local ptr @fat_root() local_unnamed_addr #3
 
 ; Function Attrs: minsize optsize
-declare dso_local ptr @dev_root() local_unnamed_addr #3
-
-; Function Attrs: minsize optsize
 declare dso_local void @fat_dup(ptr noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize optsize
-declare dso_local void @dev_dup(ptr noundef) local_unnamed_addr #3
-
-; Function Attrs: minsize optsize
 declare dso_local ptr @fat_lookup(ptr noundef, ptr noundef) local_unnamed_addr #3
-
-; Function Attrs: minsize optsize
-declare dso_local ptr @dev_lookup(ptr noundef, ptr noundef) local_unnamed_addr #3
 
 attributes #0 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
@@ -2426,8 +2429,8 @@ attributes #6 = { minsize nofree norecurse nosync nounwind optsize memory(readwr
 attributes #7 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(readwrite, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #8 = { minsize nofree norecurse nosync nounwind optsize memory(read, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #9 = { minsize nobuiltin nounwind optsize "no-builtins" }
-attributes #10 = { minsize nobuiltin noreturn optsize "no-builtins" }
-attributes #11 = { minsize nobuiltin optsize "no-builtins" }
+attributes #10 = { minsize nobuiltin optsize "no-builtins" }
+attributes #11 = { minsize nobuiltin noreturn optsize "no-builtins" }
 attributes #12 = { nounwind }
 
 !llvm.module.flags = !{!0, !1}

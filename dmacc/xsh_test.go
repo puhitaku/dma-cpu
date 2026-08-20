@@ -58,7 +58,6 @@ func buildDisk(t *testing.T, v *emu.Variant) []byte {
 func buildDiskBoard(t *testing.T, v *emu.Variant, bd *boards.Board) []byte {
 	t.Helper()
 	b := fsimg.New(uint32(bd.DiskBlocks), bd.Inodes())
-	b.AddDevice("console", 1, 0)
 	b.AddFile("README", []byte("the DMA machine runs upstream xv6.\n"))
 	if bd.AppsHome == 0 {
 		for _, name := range bd.DiskApps {
@@ -718,6 +717,12 @@ func TestXv6Fbcon(t *testing.T) {
 	}
 	if got := countZQZQ(); got < 1 {
 		t.Errorf("no rendered zqzq after scrolling")
+	}
+	// clear wipes the terminal: ESC[2J + ESC[H through the tee.
+	m.FeedConsole("clear")
+	runScript(t, m, 400_000_000)
+	if got := countZQZQ(); got != 0 {
+		t.Errorf("zqzq still rendered after clear: %d", got)
 	}
 }
 

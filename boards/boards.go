@@ -112,7 +112,7 @@ func (b *Board) HasBundle(name string) bool {
 var stdApps = []string{"echo", "cat", "ls", "toolbox", "hwtools"}
 var fbApps = append(append([]string{}, stdApps...), "fbtest", "show")
 var stdLinks = []string{"kill", "spin", "trap", "free", "sync", "mount",
-	"umount", "wc", "mkdir", "rm", "help"}
+	"umount", "wc", "mkdir", "rm", "help", "clear"}
 
 // LinksFor returns the multi-call names linked onto the given app
 // image (busybox-style argv[0] dispatch): the toolbox carries the

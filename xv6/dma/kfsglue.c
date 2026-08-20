@@ -153,6 +153,12 @@ static uint devmnt_dev = (uint)-1, devmnt_inum;
 
 /* Mounts the RAM disk, installs the console device, and gives every
  * live process a root cwd and console fds 0/1/2. */
+struct inode *dev_root(void); /* kdev.c (full decls with the vfat
+                               * block below; needed here for boot) */
+struct inode *dev_lookup(struct inode *dir, const char *name);
+void dev_put(struct inode *ip);
+void dev_dup(struct inode *ip);
+
 void
 kfs_start(void)
 {
@@ -160,12 +166,6 @@ kfs_start(void)
   fileinit();
   devsw[CONSOLE].read = consoleread;
   devsw[CONSOLE].write = consolewrite;
-  /* fds 0/1/2 come from the disk's console device inode, exactly as
-   * upstream init does with open("console") — so fileclose's iput has
-   * a real inode to release. */
-  struct inode *cons = namei("/console");
-  if (cons == 0)
-    panic("kfs_start: no console");
   /* devfs: ensure the /dev mountpoint exists on the RAM disk, then
    * record its identity so vfs_resolve crosses into kdev.c. */
   {
@@ -186,6 +186,15 @@ kfs_start(void)
       devmnt[4] = 0;
     }
   }
+  /* fds 0/1/2 hold the DEVFS console node (so fileclose's iput has a
+   * real inode to release) — the RAM disk no longer carries a
+   * /console file: /dev/console is the one console. */
+  struct inode *devdir = dev_root();
+  struct inode *cons = devdir ? dev_lookup(devdir, "console") : 0;
+  if (devdir)
+    dev_put(devdir);
+  if (cons == 0)
+    panic("kfs_start: no console");
   for (int i = 0; i < KNPROC; i++) {
     struct proc *p = &fsproc[i];
     p->sz = (uint64)-1;
@@ -196,11 +205,12 @@ kfs_start(void)
       f->major = CONSOLE;
       f->readable = 1;
       f->writable = 1;
-      f->ip = idup(cons);
+      dev_dup(cons);
+      f->ip = cons;
       p->ofile[fd] = f;
     }
   }
-  iput(cons);
+  dev_put(cons);
   fsready = 1;
 }
 

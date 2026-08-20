@@ -222,6 +222,16 @@ t_rm(int argc, char **argv)
   return 0;
 }
 
+/* --- clear: wipe the terminal --- ESC[2J + ESC[H work on both
+ * consumers of the console tee: fbcon implements exactly this VT
+ * subset, and any real terminal on the UART understands it. --- */
+static int
+t_clear(void)
+{
+  write(1, "\x1b[2J\x1b[H", 7);
+  return 0;
+}
+
 /* --- help: what can be run --- The commands live in the flash
  * image registry, not on any disk (ls cannot see them), so this
  * lists /dev/apps in columns. */
@@ -330,6 +340,8 @@ main(int argc, char **argv)
     exit(t_sync());
   if (streq(base, "help"))
     exit(t_help());
+  if (streq(base, "clear"))
+    exit(t_clear());
   if (streq(base, "mount"))
     exit(t_mount(argc, argv));
   if (streq(base, "umount"))
