@@ -60,3 +60,60 @@ side needs a prompts/004-style calibration campaign on RP2040 —
 trigger semantics, CTRL encodings, DREQ behavior, whatever the
 emulator's uncalibrated RP2040 model got wrong. That campaign is
 the real M1.5, ahead of any game.
+
+## M1.5: the RP2040 calibration campaign (silicon PASS)
+
+The hunt ran over SWD (openocd `read_memory`/`write_memory` replays
+of exact emulator state) and ended with 17/17 HIL PASS at 200 MHz
+and the game machine drawing its test card on metal. Five distinct
+bugs, none of them the emulator's instruction semantics:
+
+1. **`DMX_TARGET_RP2350` was defined unconditionally** in the
+   firmware CMakeLists, so dmx_start armed RP2350 CTRL words
+   (chain/treq/quiet fields shifted 2 bits) on RP2040 silicon —
+   the machine never fetched a single record. The SWD replay that
+   proved the classic tier runs fine on metal was the wedge that
+   cracked it. Fix: `if(PICO_RP2350)`. 0/17 → 15/17.
+2. **UART wedge on the clk_peri switch**: a byte in flight when
+   clk_peri moves to the USB PLL wedges the PL011 state machine and
+   every later printf blocks on TXFF forever (intermittent boot
+   hang). Flush + `uart_default_tx_wait_blocking()` before the
+   overclock; same discipline before the game handover.
+3. **The self-TRANS_COUNT wedge** — the big one. A channel that
+   writes its OWN TRANS_COUNT (any alias) mid-transfer wedges after
+   that beat on RP2040: stuck busy, immune to CHAN_ABORT and
+   re-trigger, surviving core resets; only a RESETS-level DMA block
+   reset revives it. (RP2350 latches the write as reload-only —
+   which is what the emulator modelled, and why ccc_* passed on the
+   Feather.) The compact tier's mulc/jbool used exactly this as the
+   "in-bank count restore" trick: the sniff bank restoring its own
+   reload to 1 while sniff-summing k ones. Busy-channel readback
+   also lies (rd/wr read ~12 bytes low), which cost a day of
+   red-herring numerology. Fixes:
+   - dmaasm: mulc is now a binary-method multiply on the
+     accumulator (S += S by the sniff bank reading SNIFF_DATA —
+     doubling in one count-1 beat; S += v on set bits of k), and
+     jbool's 8*v is v plus three doublings. Every record stays
+     count-1, so the deferred sniff-read fast path holds and the
+     count machinery never runs. jbool text size is unchanged.
+   - emu: `Variant.SelfCountWedge` (RP2040 true) wedges the channel
+     in the model exactly as measured, so this class of program can
+     never pass emulation again.
+4. **SSPDMACR.TXDMAE was never set**: the PL022 only raises its TX
+   DREQ with the DMA enable bit on; the paced pixel channel starved
+   with a full TRANS_COUNT and an empty FIFO at flush row 0. The
+   emulator's "SPI TX always drains" level DREQ now gates on the
+   DMACR write, and lcd_init sets it.
+5. **The freeze/abort experiments leave wedged channels behind**
+   ("wedges=N/500" is literal): whether the game booted after them
+   was luck of the draw. The firmware now does a full DMA block
+   reset at startup (insurance — wedges survive resets) and again
+   at game handover before dmx_load.
+
+Diagnostic notes for the next campaign: openocd `reset halt` does
+NOT reset peripherals — un-reset via RESETS and remember a wedged
+channel's state survives it, so "pristine" reads can be last week's
+crash; assert+release RESETS bit 2 for a true DMA reset. The
+minimal wedge repro is a 4-word no-increment transfer targeting the
+channel's own AL2_TRANS_COUNT — completes on 11 channels, wedges on
+the one that is its own destination, sniff on or off.
