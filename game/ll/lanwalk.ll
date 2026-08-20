@@ -183,6 +183,7 @@ define dso_local void @lanwalk_run() local_unnamed_addr #0 {
   tail call void @gfx_text(i32 noundef 111, i32 noundef 222, ptr noundef nonnull @.str.1, i16 noundef zeroext -21063, i16 noundef zeroext 2148) #6
   tail call fastcc void @draw_moves(i32 noundef 0) #8
   tail call void @gfx_present() #6
+  tail call void @led(i32 noundef 5140, i32 noundef 5140) #6
   br label %97
 
 97:                                               ; preds = %197, %96
@@ -281,6 +282,7 @@ define dso_local void @lanwalk_run() local_unnamed_addr #0 {
   br i1 %154, label %105, label %155, !llvm.loop !16
 
 155:                                              ; preds = %151
+  tail call void @snd_play(i32 noundef 600, i32 noundef 35, i32 noundef 2) #6
   %156 = getelementptr inbounds [49 x i8], ptr @mask, i32 0, i32 %140
   %157 = load i8, ptr %156, align 1, !tbaa !3
   %158 = shl i8 %157, 1
@@ -349,6 +351,8 @@ define dso_local void @lanwalk_run() local_unnamed_addr #0 {
   tail call void @gfx_text2(i32 noundef 48, i32 noundef 108, ptr noundef nonnull @.str.3, i16 noundef zeroext 16175, i16 noundef zeroext 2148) #6
   tail call void @gfx_text(i32 noundef 74, i32 noundef 128, ptr noundef nonnull @.str.4, i16 noundef zeroext -21063, i16 noundef zeroext 2148) #6
   tail call void @gfx_present() #6
+  tail call void @snd_play(i32 noundef 880, i32 noundef 60, i32 noundef 20) #6
+  tail call void @led(i32 noundef 65312, i32 noundef 65312) #6
   tail call void @uputs(ptr noundef nonnull @.str.5) #6
   tail call void @uputn(i32 noundef %175) #6
   tail call void @uputs(ptr noundef nonnull @.str.6) #6
@@ -621,6 +625,9 @@ define internal fastcc void @draw_moves(i32 noundef %0) unnamed_addr #0 {
 declare dso_local void @gfx_present() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
+declare dso_local void @led(i32 noundef, i32 noundef) local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
 declare dso_local void @frame_sync(i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
@@ -666,6 +673,9 @@ define internal fastcc range(i32 -1, 49) i32 @neigh(i32 noundef range(i32 -1, 25
   %28 = phi i32 [ %26, %24 ], [ -1, %22 ], [ -1, %20 ], [ -1, %18 ], [ -1, %2 ]
   ret i32 %28
 }
+
+; Function Attrs: minsize optsize
+declare dso_local void @snd_play(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @gfx_fill(i32 noundef, i32 noundef, i32 noundef, i32 noundef, i16 noundef zeroext) local_unnamed_addr #1

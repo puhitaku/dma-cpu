@@ -88,6 +88,16 @@ type Machine struct {
 	// (found on silicon: the LCD flush hung at row 0).
 	spiDmacr uint32
 
+	// PIO0 TX stub (not a PIO emulator): words written to TXF0..3 are
+	// captured per SM, and each SM's TX DREQ is granted at a rate
+	// derived from its CLKDIV as if the SM consumed one FIFO word per
+	// 64 PIO cycles — the cadence of the gamepico I2S program (32
+	// bits x 2 cycles). Other PIO registers live in the generic mmio
+	// map: config writes are remembered, FSTAT reads zero (TX never
+	// full), and instructions are never executed.
+	PIO0TX  [4][]uint32
+	pioNext [4]uint64
+
 	// TraceW, when non-nil, receives one line per DMA transfer.
 	TraceW io.Writer
 
@@ -359,6 +369,14 @@ func (m *Machine) Write(addr uint32, val uint32, size int) error {
 			m.spiDmacr = val
 			return nil
 		}
+		if m.v.PIO0Base != 0 && addr >= m.v.PIO0Base+0x10 &&
+			addr < m.v.PIO0Base+0x20 { /* TXF0..TXF3 */
+			sm := (addr - m.v.PIO0Base - 0x10) / 4
+			if len(m.PIO0TX[sm]) < 1<<21 {
+				m.PIO0TX[sm] = append(m.PIO0TX[sm], val)
+			}
+			return nil
+		}
 		if m.v.XIPStreamAddr != 0 && addr == m.v.XIPStreamAddr {
 			m.streamAddr = val &^ 3
 			return nil
@@ -508,6 +526,24 @@ func (m *Machine) step() (bool, error) {
 	// like the PL022. Masked so non-SPI workloads never scan.
 	if m.dma.spiListen != 0 && m.spiDmacr&0x2 != 0 {
 		m.dma.levelDreqMask(m.dma.spiListen)
+	}
+	// PIO0 TX pacing stub: one word per 64 PIO cycles at the SM's
+	// CLKDIV (the gamepico I2S cadence), gated on the SM enable bit
+	// in the CTRL word remembered by the mmio map.
+	if m.dma.pioListen != 0 {
+		ctrl := m.mmio[m.v.PIO0Base]
+		for sm := 0; sm < 4; sm++ {
+			lst := m.dma.pioTx[sm]
+			if lst == 0 || ctrl&(1<<uint(sm)) == 0 || m.Cycle < m.pioNext[sm] {
+				continue
+			}
+			m.dma.levelDreqMask(lst)
+			div := m.mmio[m.v.PIO0Base+0xC8+uint32(sm)*0x18] >> 16
+			if div == 0 {
+				div = 1
+			}
+			m.pioNext[sm] = m.Cycle + uint64(div)*64
+		}
 	}
 	// Channel selection over the cached ready set: high-priority
 	// channels first, ROUND-ROBIN within a class — the hardware
@@ -917,6 +953,9 @@ func (m *Machine) Clone() *Machine {
 		n.mmio[k] = v
 	}
 	n.GPIOEvents = append([]GPIOEvent(nil), m.GPIOEvents...)
+	for i := range m.PIO0TX {
+		n.PIO0TX[i] = append([]uint32(nil), m.PIO0TX[i]...)
+	}
 	n.ConsoleOut = append([]byte(nil), m.ConsoleOut...)
 	n.ConsoleIn = append([]byte(nil), m.ConsoleIn...)
 	if m.Flash != nil {

@@ -36,6 +36,7 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
   tail call void @gfx_text(i32 noundef 48, i32 noundef 200, ptr noundef nonnull @.str.2, i16 noundef zeroext 23344, i16 noundef zeroext 2181) #2
   tail call void @gfx_text(i32 noundef 48, i32 noundef 212, ptr noundef nonnull @.str.3, i16 noundef zeroext 23344, i16 noundef zeroext 2181) #2
   tail call void @gfx_present() #2
+  tail call void @led(i32 noundef 1048, i32 noundef 1048) #2
   tail call void @uputs(ptr noundef nonnull @.str.4) #2
   %5 = tail call i32 @now_us() #2
   br label %6
@@ -77,6 +78,7 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
   tail call fastcc void @draw_item(i32 noundef %15, i32 noundef 0) #3
   tail call fastcc void @draw_item(i32 noundef %28, i32 noundef 1) #3
   tail call void @gfx_present() #2
+  tail call void @snd_play(i32 noundef 700, i32 noundef 40, i32 noundef 2) #2
   tail call void @uputs(ptr noundef nonnull @.str.5) #2
   %31 = getelementptr inbounds [3 x ptr], ptr @names, i32 0, i32 %28
   %32 = load ptr, ptr %31, align 4, !tbaa !10
@@ -106,6 +108,8 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
   br label %6, !llvm.loop !13
 
 45:                                               ; preds = %34
+  tail call void @snd_play(i32 noundef 1000, i32 noundef 60, i32 noundef 4) #2
+  tail call void @led(i32 noundef 65344, i32 noundef 65344) #2
   tail call void @uputs(ptr noundef nonnull @.str.7) #2
   %46 = getelementptr inbounds [3 x ptr], ptr @names, i32 0, i32 %28
   %47 = load ptr, ptr %46, align 4, !tbaa !10
@@ -152,6 +156,9 @@ define internal fastcc void @draw_item(i32 noundef %0, i32 noundef range(i32 0, 
 declare dso_local void @gfx_present() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
+declare dso_local void @led(i32 noundef, i32 noundef) local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
 declare dso_local void @uputs(ptr noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
@@ -162,6 +169,9 @@ declare dso_local void @frame_sync(i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @in_poll() local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @snd_play(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @uputn(i32 noundef) local_unnamed_addr #1

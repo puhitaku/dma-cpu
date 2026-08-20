@@ -95,6 +95,7 @@ define dso_local range(i32 0, -1) i32 @rng_below(i32 noundef %0) local_unnamed_a
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @frame_sync(i32 noundef %0) local_unnamed_addr #0 {
+  tail call void @snd_tick() #5
   %2 = tail call i32 @now_us() #5
   %3 = load i32, ptr @frame_sync.next, align 4, !tbaa !3
   %4 = icmp eq i32 %3, 0
@@ -125,6 +126,9 @@ define dso_local void @frame_sync(i32 noundef %0) local_unnamed_addr #0 {
 18:                                               ; preds = %13
   ret void
 }
+
+; Function Attrs: minsize optsize
+declare dso_local void @snd_tick() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local i32 @gpio_in_pu(i32 noundef) local_unnamed_addr #1

@@ -79,6 +79,14 @@ uint rng(void);           /* xorshift32, mixed with input timing */
 uint rng_below(uint n);   /* uniform-ish 0..n-1 */
 void frame_sync(uint us); /* pace the caller's loop to one tick per us */
 
+/* fx.c: sound (PIO0 SM0 I2S + ring-streaming DMA) and light (PIO0
+ * SM1 WS2811). snd_tick runs from frame_sync, so a tone's frame
+ * budget counts in every loop that paces itself. */
+void fx_init(void);
+void snd_play(uint hz, uint vol, uint frames); /* vol 0..255 */
+void snd_tick(void);
+void led(uint rgb0, uint rgb1); /* 0xRRGGBB each */
+
 /* the games (each returns when the player exits to the menu) */
 int menu_run(void); /* 0 = Dinosaur, 1 = LANWalk, 2 = Yacht */
 void dino_run(void);

@@ -39,6 +39,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 define dso_local void @yacht_run() local_unnamed_addr #0 {
   %1 = alloca [4 x i8], align 1
   tail call void @uputs(ptr noundef nonnull @.str) #6
+  tail call void @led(i32 noundef 1052680, i32 noundef 1052680) #6
   br label %2
 
 2:                                                ; preds = %7, %0
@@ -243,6 +244,8 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   br i1 %97, label %98, label %111
 
 98:                                               ; preds = %95
+  tail call void @snd_play(i32 noundef 450, i32 noundef 45, i32 noundef 4) #6
+  tail call void @led(i32 noundef 3158064, i32 noundef 3158064) #6
   tail call fastcc void @roll_dice() #7
   br label %99
 
@@ -387,6 +390,7 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   br label %44
 
 170:                                              ; preds = %161
+  tail call void @snd_play(i32 noundef 800, i32 noundef 45, i32 noundef 4) #6
   %171 = tail call fastcc i32 @cat_score(i32 noundef %163) #7
   %172 = getelementptr inbounds [12 x i32], ptr @scores, i32 0, i32 %163
   store i32 %171, ptr %172, align 4, !tbaa !3
@@ -425,6 +429,8 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   call void @gfx_text(i32 noundef 124, i32 noundef 124, ptr noundef nonnull %1, i16 noundef zeroext -1, i16 noundef zeroext 2532) #6
   call void @gfx_text(i32 noundef 74, i32 noundef 136, ptr noundef nonnull @.str.8, i16 noundef zeroext -12615, i16 noundef zeroext 2532) #6
   call void @gfx_present() #6
+  call void @snd_play(i32 noundef 990, i32 noundef 60, i32 noundef 30) #6
+  call void @led(i32 noundef 2162464, i32 noundef 2162464) #6
   call void @uputs(ptr noundef nonnull @.str.9) #6
   %185 = call fastcc i32 @total() #7
   call void @uputn(i32 noundef %185) #6
@@ -446,6 +452,9 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 
 ; Function Attrs: minsize optsize
 declare dso_local void @uputs(ptr noundef) local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @led(i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
 declare void @llvm.lifetime.start.p0(i64 immarg, ptr captures(none)) #2
@@ -663,6 +672,9 @@ declare dso_local void @frame_sync(i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @in_poll() local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @snd_play(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(read, argmem: none, inaccessiblemem: none)
 define internal fastcc i32 @cat_score(i32 noundef %0) unnamed_addr #3 {

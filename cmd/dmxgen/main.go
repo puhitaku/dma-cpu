@@ -698,8 +698,8 @@ const PinJoyAUp = 2
 func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	dasm, err := compileLL([]string{"game/ll/gmain.ll", "game/ll/menu.ll",
 		"game/ll/dino.ll", "game/ll/lanwalk.ll", "game/ll/yacht.ll",
-		"game/ll/input.ll", "game/ll/gfx.ll", "game/ll/lcd.ll",
-		"game/ll/grt.ll"},
+		"game/ll/input.ll", "game/ll/fx.ll", "game/ll/gfx.ll",
+		"game/ll/lcd.ll", "game/ll/grt.ll"},
 		dmacc.Options{Entry: "gmain", NoSafepoints: true, XIPText: true})
 	if err != nil {
 		return nil, err
@@ -717,16 +717,31 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		v.CtrlTreq(emu.TreqPermanent) | v.CtrlIRQQuiet
 	spictrl := emu.CtrlEN | emu.CtrlSize16 | emu.CtrlIncrRead |
 		v.CtrlChainTo(11) | v.CtrlTreq(v.DreqSPI0TX) | v.CtrlIRQQuiet
+	// The audio streamer (fx.c): ch9 reads the 4 KiB ring (RING on the
+	// read side) into PIO0 TXF0, paced by DREQ 0 = PIO0 TX0.
+	sndctrl := emu.CtrlEN | emu.CtrlSize32 | emu.CtrlIncrRead |
+		v.CtrlRingSize(12) | v.CtrlChainTo(9) | v.CtrlTreq(0) |
+		v.CtrlIRQQuiet
 	for _, g := range []struct {
 		name string
 		val  uint32
-	}{{"g_memctrl", memctrl}, {"g_spictrl", spictrl}} {
+	}{{"g_memctrl", memctrl}, {"g_spictrl", spictrl}, {"g_sndctrl", sndctrl}} {
 		addr, err := sy(g.name)
 		if err != nil {
 			return nil, err
 		}
 		if err := patchData(prog.Image, bd.GameData, addr, g.val); err != nil {
 			return nil, err
+		}
+	}
+	// The audio ring lives at a fixed 4096-aligned address (fx.c);
+	// nothing in the image may grow into it.
+	const auRing, auRingEnd = 0x2003C000, 0x2003D000
+	for _, seg := range prog.Image.Segments {
+		end := seg.LinkAddr + uint32(len(seg.Data))
+		if seg.LinkAddr < auRingEnd && end > auRing {
+			return nil, fmt.Errorf("game segment %#x..%#x overlaps the audio ring %#x",
+				seg.LinkAddr, end, auRing)
 		}
 	}
 	// Emulator verification: boot to the menu. Image.Load also

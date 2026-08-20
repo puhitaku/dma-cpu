@@ -174,6 +174,7 @@ lanwalk_run(void)
   gfx_text(OX + 96, 222, "hold press: quit", C_TEXT, C_BG);
   draw_moves(0);
   gfx_present();
+  led(0x001414, 0x001414); /* dim cyan: LAN dark */
 
   uint hold = 0;
   for (;;) {
@@ -202,6 +203,7 @@ lanwalk_run(void)
       return;
     }
     if (in_edge & BTN_A) {
+      snd_play(600, 35, 2);
       mask[cur] = (uchar)rotcw(mask[cur]);
       moves++;
       uchar was[CELLS];
@@ -219,6 +221,8 @@ lanwalk_run(void)
         gfx_text2(48, 108, "CONNECTED", C_LIT, C_BG);
         gfx_text(74, 128, "press: menu", C_TEXT, C_BG);
         gfx_present();
+        snd_play(880, 60, 20);
+        led(0x00FF20, 0x00FF20);
         uputs("lanwalk: solved moves=");
         uputn(moves);
         uputs("\n");

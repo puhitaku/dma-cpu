@@ -163,6 +163,7 @@ void
 yacht_run(void)
 {
   uputs("yacht: start\n");
+  led(0x101008, 0x101008); /* felt-table warm white */
   for (int c = 0; c < NCAT; c++)
     scores[c] = -1;
   turn = 0;
@@ -226,6 +227,8 @@ yacht_run(void)
             draw_die(cur, 1);
             gfx_present();
           } else if (rolls_left > 0) {
+            snd_play(450, 45, 4);
+            led(0x303030, 0x303030);
             roll_dice();
             for (int i = 0; i < 5; i++)
               draw_die(i, 0);
@@ -274,6 +277,7 @@ yacht_run(void)
           gfx_present();
         }
         if (in_edge & BTN_A) {
+          snd_play(800, 45, 4);
           scores[catc] = cat_score(catc);
           booked = catc;
           uputs("yacht: cat=");
@@ -300,6 +304,8 @@ yacht_run(void)
   gfx_text(124, 124, b, C_SCORE, C_PANEL);
   gfx_text(74, 136, "press: menu", C_TEXT, C_PANEL);
   gfx_present();
+  snd_play(990, 60, 30);
+  led(0x20FF20, 0x20FF20);
   uputs("yacht: total=");
   uputn((uint)total());
   uputs("\n");

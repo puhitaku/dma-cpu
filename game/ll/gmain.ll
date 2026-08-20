@@ -5,12 +5,15 @@ target triple = "thumbv6m-unknown-none-eabi"
 
 @.str = private unnamed_addr constant [16 x i8] c"GAMEPICO: boot\0A\00", align 1
 @.str.1 = private unnamed_addr constant [18 x i8] c"GAMEPICO: lcd up\0A\00", align 1
+@.str.2 = private unnamed_addr constant [17 x i8] c"GAMEPICO: fx up\0A\00", align 1
 
 ; Function Attrs: minsize noreturn nounwind optsize
 define dso_local noundef i32 @gmain() local_unnamed_addr #0 {
   tail call void @uputs(ptr noundef nonnull @.str) #2
   tail call void @lcd_init() #2
   tail call void @uputs(ptr noundef nonnull @.str.1) #2
+  tail call void @fx_init() #2
+  tail call void @uputs(ptr noundef nonnull @.str.2) #2
   br label %1
 
 1:                                                ; preds = %5, %0
@@ -41,6 +44,9 @@ declare dso_local void @uputs(ptr noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @lcd_init() local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @fx_init() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local i32 @menu_run() local_unnamed_addr #1

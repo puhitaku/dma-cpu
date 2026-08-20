@@ -160,3 +160,39 @@ vaulting three cacti before dying on purpose.
 Still open for M3: PIO I2S audio (MAX98357) and the two WS2811
 LEDs, wiring permitting; a hardware gameplay session needs the
 sticks soldered.
+
+## M3: sound and light
+
+PIO0 runs both effects, and the machine does its own PIO bring-up —
+instruction memory and SM config are plain APB registers, so the DMA
+CPU loads the hand-assembled programs (I2S on SM0, WS2811 on SM1),
+sets the wraps/shifts/pins, force-executes the entry jumps, and
+enables the block. No ARM involvement at any point.
+
+- Audio: SM0 clocks 16-bit-stereo I2S to the MAX98357 (GP13..15) at
+  2 PIO cycles per bit. Channel 9 — the compact machine's IRQ
+  injector, never armed by the game build — streams a 4 KiB ring of
+  frames into TXF0 with a ~54-hour TRANS_COUNT, ring-wrapped on the
+  read side, paced by DREQ 0. Once armed, audio costs the machine
+  zero attention: silence is a zeroed ring (the amp's SD_MODE is
+  strapped on, so frames never stop and nothing pops). Tones are a
+  fixed 64-frame square wave in the ring — written once, doubled out
+  by log2 gdma copies — and pitch is pure clock math on SM0 CLKDIV
+  (div_fp8 = 12.5e6/Hz at 200 MHz, ~200 Hz to 48 kHz). snd_play
+  takes (hz, vol, frames); frame_sync ticks the countdown and zeroes
+  the ring when it expires.
+- Light: SM1 shifts WS2811 800 kHz frames out of GP12; two LEDs are
+  two FIFO words written directly (autopull 24, shift left, GRB).
+  The >50 us inter-frame gap latches for free at game frame rates.
+- Emulator: a PIO stub, not a PIO emulator — TXF writes are captured
+  per SM, config lands in the generic mmio map (FSTAT reads zero =
+  never full), and each SM's TX DREQ is granted once per CLKDIV*64
+  cycles, the I2S program's cadence. The pioListen gate requires
+  CtrlEN so idle channels (ctrl=0 decodes TREQ_SEL=0 = PIO0 TX0!)
+  do not defeat it.
+- Verified: emulator tests assert silence at boot, the exact GRB LED
+  words, blips that sound and decay; on silicon 17/17 + "fx up",
+  and a live SWD probe measured ch9 draining 22071 frames/s —
+  22.05 kHz on the nose, with the machine's beats still ticking.
+- Games got starter hooks (menu blips, jump/death/milestone,
+  rotate/solved, roll/book/finale + LED moods) for the user to tune.

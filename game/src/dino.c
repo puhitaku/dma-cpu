@@ -213,6 +213,7 @@ dino_run(void)
 
 restart:
   uputs("dino: start\n");
+  led(0x104010, 0x000000); /* runner green, second dark */
   gfx_clear(C_BG);
   draw_ground();
   draw_score(0);
@@ -231,8 +232,10 @@ restart:
 
     /* physics: press or up jumps from the ground. Apex ~55 px keeps
      * the sprite inside the redrawn strip (no ghosting above it). */
-    if ((in_edge & (BTN_A | BTN_UP)) && y_fp == 0)
+    if ((in_edge & (BTN_A | BTN_UP)) && y_fp == 0) {
       vy_fp = 2688; /* 10.5 px/frame */
+      snd_play(900, 35, 3);
+    }
     if (y_fp > 0 || vy_fp > 0) {
       y_fp += vy_fp;
       vy_fp -= 256; /* gravity: 1 px/frame^2 */
@@ -262,8 +265,13 @@ restart:
     }
 
     /* score + difficulty */
-    if ((frame & 1) == 0)
+    if ((frame & 1) == 0) {
       score++;
+      if (score % 100 == 0) { /* milestone chirp + flash */
+        snd_play(1200, 40, 3);
+        led(0x404040, 0x104010);
+      }
+    }
     if (score == 150 || score == 400 || score == 800)
       if (speed < 10)
         speed += 2;
@@ -298,6 +306,8 @@ restart:
     continue;
 
   dead:
+    snd_play(220, 70, 18);
+    led(0x600000, 0x600000);
     gfx_blit(DINO_X, dy, cell_dead, DW, DH);
     gfx_text2(48, 130, "GAME OVER", C_OVER, C_BG);
     gfx_text(24, 154, "press: retry  down: menu", C_FG, C_BG);

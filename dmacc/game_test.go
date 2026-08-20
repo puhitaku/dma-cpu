@@ -37,7 +37,7 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	}
 	var mods []*llir.Module
 	for _, p := range []string{"gmain", "menu", "dino", "lanwalk", "yacht",
-		"input", "gfx", "lcd", "grt"} {
+		"input", "fx", "gfx", "lcd", "grt"} {
 		mods = append(mods, parseLL(t, "../game/ll/"+p+".ll"))
 	}
 	mod, err := llir.Merge(mods...)
@@ -70,8 +70,12 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 		v.CtrlTreq(emu.TreqPermanent) | v.CtrlIRQQuiet
 	spictrl := emu.CtrlEN | emu.CtrlSize16 | emu.CtrlIncrRead |
 		v.CtrlChainTo(11) | v.CtrlTreq(v.DreqSPI0TX) | v.CtrlIRQQuiet
+	sndctrl := emu.CtrlEN | emu.CtrlSize32 | emu.CtrlIncrRead |
+		v.CtrlRingSize(12) | v.CtrlChainTo(9) | v.CtrlTreq(0) |
+		v.CtrlIRQQuiet
 	m.Poke32(mustSym(t, prog, "g_memctrl"), memctrl)
 	m.Poke32(mustSym(t, prog, "g_spictrl"), spictrl)
+	m.Poke32(mustSym(t, prog, "g_sndctrl"), sndctrl)
 	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
 		Compact: true, Entry: entry, Scratch: bd.Scratch,
 	}); err != nil {
@@ -284,11 +288,55 @@ func TestGameMenu(t *testing.T) {
 	if n := p.countColor(32, 92, 207, 115, selbg); n < 500 {
 		t.Errorf("selected item background: %d pixels", n)
 	}
-	// cursor moves narrate
+	// fx: the machine armed the audio streamer at boot — silence is
+	// zeros flowing into TXF0 — and lit both LEDs dim blue.
+	if !strings.Contains(out, "GAMEPICO: fx up") {
+		t.Errorf("missing fx up marker")
+	}
+	if len(m.PIO0TX[0]) == 0 {
+		t.Errorf("no audio frames streamed to TXF0")
+	}
+	for _, w := range m.PIO0TX[0] {
+		if w != 0 {
+			t.Errorf("audio not silent at boot: frame %#x", w)
+			break
+		}
+	}
+	if n := len(m.PIO0TX[1]); n != 2 {
+		t.Errorf("LED words = %d, want 2", n)
+	} else {
+		want := uint32(0x04<<16|0x00<<8|0x18) << 8 // GRB of 0x000418
+		if m.PIO0TX[1][0] != want || m.PIO0TX[1][1] != want {
+			t.Errorf("LED frames %#x,%#x want %#x",
+				m.PIO0TX[1][0], m.PIO0TX[1][1], want)
+		}
+	}
+	// cursor moves narrate — and blip: nonzero samples appear, then
+	// the tone times out back to silence.
+	audio0 := len(m.PIO0TX[0])
 	press(t, m, prog, pinDown)
 	at = runUntil(t, m, "menu: LANWalk", at, 100_000_000)
 	press(t, m, prog, pinDown)
 	runUntil(t, m, "menu: Yacht", at, 100_000_000)
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 60_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	loud := 0
+	for _, w := range m.PIO0TX[0][audio0:] {
+		if w != 0 {
+			loud++
+		}
+	}
+	if loud == 0 {
+		t.Errorf("menu blip made no sound")
+	}
+	tail := m.PIO0TX[0][len(m.PIO0TX[0])-8:]
+	for _, w := range tail {
+		if w != 0 {
+			t.Errorf("tone did not decay to silence: tail %#x", tail)
+			break
+		}
+	}
 	dumpPNG(t, decodeLCD(m, 16), "menu.png")
 }
 

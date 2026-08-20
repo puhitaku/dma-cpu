@@ -32,8 +32,9 @@ define dso_local void @dino_run() local_unnamed_addr #0 {
   tail call void @gfx_sprite(ptr noundef nonnull @art_cact_l, i32 noundef 18, i32 noundef 30, i16 noundef zeroext 1031, i16 noundef zeroext -1, ptr noundef nonnull @cell_cact_l) #4
   br label %1
 
-1:                                                ; preds = %138, %0
+1:                                                ; preds = %147, %0
   tail call void @uputs(ptr noundef nonnull @.str) #4
+  tail call void @led(i32 noundef 1064976, i32 noundef 0) #4
   tail call void @gfx_clear(i16 noundef zeroext -1) #4
   tail call void @gfx_fill(i32 noundef 0, i32 noundef 190, i32 noundef 240, i32 noundef 2, i16 noundef zeroext 14823) #4
   br label %2
@@ -55,13 +56,13 @@ define dso_local void @dino_run() local_unnamed_addr #0 {
   store i32 -1000, ptr @obs, align 4, !tbaa !6
   br label %8
 
-8:                                                ; preds = %117, %7
-  %9 = phi i32 [ 45, %7 ], [ %39, %117 ]
-  %10 = phi i32 [ 4, %7 ], [ %86, %117 ]
-  %11 = phi i32 [ 0, %7 ], [ %15, %117 ]
-  %12 = phi i32 [ 0, %7 ], [ %43, %117 ]
-  %13 = phi i32 [ 0, %7 ], [ %30, %117 ]
-  %14 = phi i32 [ 0, %7 ], [ %31, %117 ]
+8:                                                ; preds = %126, %7
+  %9 = phi i32 [ 45, %7 ], [ %41, %126 ]
+  %10 = phi i32 [ 4, %7 ], [ %95, %126 ]
+  %11 = phi i32 [ 0, %7 ], [ %15, %126 ]
+  %12 = phi i32 [ 0, %7 ], [ %85, %126 ]
+  %13 = phi i32 [ 0, %7 ], [ %32, %126 ]
+  %14 = phi i32 [ 0, %7 ], [ %33, %126 ]
   tail call void @frame_sync(i32 noundef 33000) #4
   tail call void @in_poll() #4
   %15 = add i32 %11, 1
@@ -70,219 +71,243 @@ define dso_local void @dino_run() local_unnamed_addr #0 {
   %18 = icmp ne i32 %17, 0
   %19 = icmp eq i32 %14, 0
   %20 = and i1 %18, %19
-  %21 = select i1 %20, i32 2688, i32 %13
-  br i1 %19, label %22, label %24
+  br i1 %20, label %21, label %22
+
+21:                                               ; preds = %8
+  tail call void @snd_play(i32 noundef 900, i32 noundef 35, i32 noundef 3) #4
+  br label %25
 
 22:                                               ; preds = %8
-  %23 = icmp sgt i32 %21, 0
-  br i1 %23, label %24, label %29
+  br i1 %19, label %23, label %25
 
-24:                                               ; preds = %22, %8
-  %25 = add nsw i32 %21, %14
-  %26 = add nsw i32 %21, -256
-  %27 = icmp slt i32 %25, 1
-  br i1 %27, label %28, label %29
+23:                                               ; preds = %22
+  %24 = icmp sgt i32 %13, 0
+  br i1 %24, label %25, label %31
 
-28:                                               ; preds = %24
-  br label %29
+25:                                               ; preds = %21, %23, %22
+  %26 = phi i32 [ %13, %23 ], [ %13, %22 ], [ 2688, %21 ]
+  %27 = add nsw i32 %26, %14
+  %28 = add nsw i32 %26, -256
+  %29 = icmp slt i32 %27, 1
+  br i1 %29, label %30, label %31
 
-29:                                               ; preds = %24, %28, %22
-  %30 = phi i32 [ 0, %28 ], [ %26, %24 ], [ %13, %22 ]
-  %31 = phi i32 [ 0, %28 ], [ %25, %24 ], [ 0, %22 ]
-  %32 = icmp sgt i32 %9, 0
-  %33 = sext i1 %32 to i32
-  %34 = add nsw i32 %9, %33
-  %35 = icmp ugt i32 %12, 100
-  %36 = shl i32 %10, 1
-  br label %37
+30:                                               ; preds = %25
+  br label %31
 
-37:                                               ; preds = %74, %29
-  %38 = phi i32 [ 0, %29 ], [ %76, %74 ]
-  %39 = phi i32 [ %34, %29 ], [ %75, %74 ]
-  %40 = icmp eq i32 %38, 2
-  br i1 %40, label %41, label %44
+31:                                               ; preds = %25, %30, %23
+  %32 = phi i32 [ 0, %30 ], [ %28, %25 ], [ %13, %23 ]
+  %33 = phi i32 [ 0, %30 ], [ %27, %25 ], [ 0, %23 ]
+  %34 = icmp sgt i32 %9, 0
+  %35 = sext i1 %34 to i32
+  %36 = add nsw i32 %9, %35
+  %37 = icmp ugt i32 %12, 100
+  %38 = shl i32 %10, 1
+  br label %39
 
-41:                                               ; preds = %37
-  %42 = and i32 %11, 1
-  %43 = add i32 %12, %42
-  switch i32 %43, label %77 [
-    i32 150, label %81
-    i32 400, label %81
+39:                                               ; preds = %76, %31
+  %40 = phi i32 [ 0, %31 ], [ %78, %76 ]
+  %41 = phi i32 [ %36, %31 ], [ %77, %76 ]
+  %42 = icmp eq i32 %40, 2
+  br i1 %42, label %43, label %46
+
+43:                                               ; preds = %39
+  %44 = and i32 %11, 1
+  %45 = icmp eq i32 %44, 0
+  br i1 %45, label %84, label %79
+
+46:                                               ; preds = %39
+  %47 = getelementptr inbounds nuw [2 x %struct.obst], ptr @obs, i32 0, i32 %40
+  %48 = load i32, ptr %47, align 4, !tbaa !6
+  %49 = icmp slt i32 %48, -100
+  br i1 %49, label %50, label %69
+
+50:                                               ; preds = %46
+  %51 = icmp eq i32 %41, 0
+  br i1 %51, label %52, label %76
+
+52:                                               ; preds = %50
+  br i1 %37, label %53, label %57
+
+53:                                               ; preds = %52
+  %54 = tail call i32 @rng() #4
+  %55 = and i32 %54, 3
+  %56 = icmp eq i32 %55, 0
+  br i1 %56, label %58, label %57
+
+57:                                               ; preds = %53, %52
+  br label %58
+
+58:                                               ; preds = %53, %57
+  %59 = phi i32 [ 12, %57 ], [ 18, %53 ]
+  %60 = phi i32 [ 24, %57 ], [ 30, %53 ]
+  %61 = phi ptr [ @cell_cact_s, %57 ], [ @cell_cact_l, %53 ]
+  %62 = getelementptr inbounds nuw i8, ptr %47, i32 4
+  store i32 %59, ptr %62, align 4, !tbaa !14
+  %63 = getelementptr inbounds nuw i8, ptr %47, i32 8
+  store i32 %60, ptr %63, align 4, !tbaa !15
+  %64 = getelementptr inbounds nuw i8, ptr %47, i32 12
+  store ptr %61, ptr %64, align 4, !tbaa !16
+  store i32 240, ptr %47, align 4, !tbaa !6
+  %65 = tail call i32 @rng_below(i32 noundef 40) #4
+  %66 = sub i32 %65, %38
+  %67 = add i32 %66, 30
+  %68 = tail call i32 @llvm.smax.i32(i32 %67, i32 18)
+  br label %76
+
+69:                                               ; preds = %46
+  %70 = sub nsw i32 %48, %10
+  %71 = getelementptr inbounds nuw i8, ptr %47, i32 4
+  %72 = load i32, ptr %71, align 4, !tbaa !14
+  %73 = add nsw i32 %72, %70
+  %74 = icmp slt i32 %73, 1
+  %75 = select i1 %74, i32 -1000, i32 %70
+  store i32 %75, ptr %47, align 4
+  br label %76
+
+76:                                               ; preds = %50, %58, %69
+  %77 = phi i32 [ %41, %69 ], [ %68, %58 ], [ %41, %50 ]
+  %78 = add nuw nsw i32 %40, 1
+  br label %39, !llvm.loop !17
+
+79:                                               ; preds = %43
+  %80 = add i32 %12, 1
+  %81 = urem i32 %80, 100
+  %82 = icmp eq i32 %81, 0
+  br i1 %82, label %83, label %84
+
+83:                                               ; preds = %79
+  tail call void @snd_play(i32 noundef 1200, i32 noundef 40, i32 noundef 3) #4
+  tail call void @led(i32 noundef 4210752, i32 noundef 1064976) #4
+  br label %84
+
+84:                                               ; preds = %79, %83, %43
+  %85 = phi i32 [ %80, %83 ], [ %80, %79 ], [ %12, %43 ]
+  switch i32 %85, label %86 [
+    i32 150, label %90
+    i32 400, label %90
   ]
 
-44:                                               ; preds = %37
-  %45 = getelementptr inbounds nuw [2 x %struct.obst], ptr @obs, i32 0, i32 %38
-  %46 = load i32, ptr %45, align 4, !tbaa !6
-  %47 = icmp slt i32 %46, -100
-  br i1 %47, label %48, label %67
+86:                                               ; preds = %84
+  %87 = icmp eq i32 %85, 800
+  %88 = icmp slt i32 %10, 10
+  %89 = select i1 %87, i1 %88, i1 false
+  br i1 %89, label %92, label %94
 
-48:                                               ; preds = %44
-  %49 = icmp eq i32 %39, 0
-  br i1 %49, label %50, label %74
+90:                                               ; preds = %84, %84
+  %91 = icmp slt i32 %10, 10
+  br i1 %91, label %92, label %94
 
-50:                                               ; preds = %48
-  br i1 %35, label %51, label %55
-
-51:                                               ; preds = %50
-  %52 = tail call i32 @rng() #4
-  %53 = and i32 %52, 3
-  %54 = icmp eq i32 %53, 0
-  br i1 %54, label %56, label %55
-
-55:                                               ; preds = %51, %50
-  br label %56
-
-56:                                               ; preds = %51, %55
-  %57 = phi i32 [ 12, %55 ], [ 18, %51 ]
-  %58 = phi i32 [ 24, %55 ], [ 30, %51 ]
-  %59 = phi ptr [ @cell_cact_s, %55 ], [ @cell_cact_l, %51 ]
-  %60 = getelementptr inbounds nuw i8, ptr %45, i32 4
-  store i32 %57, ptr %60, align 4, !tbaa !14
-  %61 = getelementptr inbounds nuw i8, ptr %45, i32 8
-  store i32 %58, ptr %61, align 4, !tbaa !15
-  %62 = getelementptr inbounds nuw i8, ptr %45, i32 12
-  store ptr %59, ptr %62, align 4, !tbaa !16
-  store i32 240, ptr %45, align 4, !tbaa !6
-  %63 = tail call i32 @rng_below(i32 noundef 40) #4
-  %64 = sub i32 %63, %36
-  %65 = add i32 %64, 30
-  %66 = tail call i32 @llvm.smax.i32(i32 %65, i32 18)
-  br label %74
-
-67:                                               ; preds = %44
-  %68 = sub nsw i32 %46, %10
-  %69 = getelementptr inbounds nuw i8, ptr %45, i32 4
-  %70 = load i32, ptr %69, align 4, !tbaa !14
-  %71 = add nsw i32 %70, %68
-  %72 = icmp slt i32 %71, 1
-  %73 = select i1 %72, i32 -1000, i32 %68
-  store i32 %73, ptr %45, align 4
-  br label %74
-
-74:                                               ; preds = %48, %56, %67
-  %75 = phi i32 [ %39, %67 ], [ %66, %56 ], [ %39, %48 ]
-  %76 = add nuw nsw i32 %38, 1
-  br label %37, !llvm.loop !17
-
-77:                                               ; preds = %41
-  %78 = icmp eq i32 %43, 800
-  %79 = icmp slt i32 %10, 10
-  %80 = select i1 %78, i1 %79, i1 false
-  br i1 %80, label %83, label %85
-
-81:                                               ; preds = %41, %41
-  %82 = icmp slt i32 %10, 10
-  br i1 %82, label %83, label %85
-
-83:                                               ; preds = %77, %81
-  %84 = add nsw i32 %10, 2
-  br label %85
-
-85:                                               ; preds = %81, %83, %77
-  %86 = phi i32 [ %84, %83 ], [ %10, %81 ], [ %10, %77 ]
-  tail call void @gfx_fill(i32 noundef 0, i32 noundef 100, i32 noundef 240, i32 noundef 90, i16 noundef zeroext -1) #4
-  %87 = lshr i32 %31, 8
-  %88 = sub nsw i32 168, %87
-  %89 = and i32 %15, 4
-  %90 = icmp eq i32 %89, 0
-  %91 = icmp eq i32 %31, 0
-  %92 = select i1 %91, i1 %90, i1 false
-  %93 = select i1 %92, ptr @cell_run_b, ptr @cell_run_a
-  tail call void @gfx_blit(i32 noundef 30, i32 noundef %88, ptr noundef nonnull %93, i32 noundef 20, i32 noundef 22) #4
+92:                                               ; preds = %86, %90
+  %93 = add nsw i32 %10, 2
   br label %94
 
-94:                                               ; preds = %112, %85
-  %95 = phi i32 [ 0, %85 ], [ %113, %112 ]
-  %96 = icmp eq i32 %95, 2
-  br i1 %96, label %97, label %100
-
-97:                                               ; preds = %94
-  %98 = and i32 %15, 7
+94:                                               ; preds = %90, %92, %86
+  %95 = phi i32 [ %93, %92 ], [ %10, %90 ], [ %10, %86 ]
+  tail call void @gfx_fill(i32 noundef 0, i32 noundef 100, i32 noundef 240, i32 noundef 90, i16 noundef zeroext -1) #4
+  %96 = lshr i32 %33, 8
+  %97 = sub nsw i32 168, %96
+  %98 = and i32 %15, 4
   %99 = icmp eq i32 %98, 0
-  br i1 %99, label %114, label %115
+  %100 = icmp eq i32 %33, 0
+  %101 = select i1 %100, i1 %99, i1 false
+  %102 = select i1 %101, ptr @cell_run_b, ptr @cell_run_a
+  tail call void @gfx_blit(i32 noundef 30, i32 noundef %97, ptr noundef nonnull %102, i32 noundef 20, i32 noundef 22) #4
+  br label %103
 
-100:                                              ; preds = %94
-  %101 = getelementptr inbounds nuw [2 x %struct.obst], ptr @obs, i32 0, i32 %95
-  %102 = load i32, ptr %101, align 4, !tbaa !6
-  %103 = icmp sgt i32 %102, -100
-  br i1 %103, label %104, label %112
+103:                                              ; preds = %121, %94
+  %104 = phi i32 [ 0, %94 ], [ %122, %121 ]
+  %105 = icmp eq i32 %104, 2
+  br i1 %105, label %106, label %109
 
-104:                                              ; preds = %100
-  %105 = getelementptr inbounds nuw i8, ptr %101, i32 8
-  %106 = load i32, ptr %105, align 4, !tbaa !15
-  %107 = sub nsw i32 190, %106
-  %108 = getelementptr inbounds nuw i8, ptr %101, i32 12
-  %109 = load ptr, ptr %108, align 4, !tbaa !16
-  %110 = getelementptr inbounds nuw i8, ptr %101, i32 4
-  %111 = load i32, ptr %110, align 4, !tbaa !14
-  tail call void @gfx_blit(i32 noundef %102, i32 noundef %107, ptr noundef %109, i32 noundef %111, i32 noundef %106) #4
-  br label %112
+106:                                              ; preds = %103
+  %107 = and i32 %15, 7
+  %108 = icmp eq i32 %107, 0
+  br i1 %108, label %123, label %124
 
-112:                                              ; preds = %100, %104
-  %113 = add nuw nsw i32 %95, 1
-  br label %94, !llvm.loop !18
+109:                                              ; preds = %103
+  %110 = getelementptr inbounds nuw [2 x %struct.obst], ptr @obs, i32 0, i32 %104
+  %111 = load i32, ptr %110, align 4, !tbaa !6
+  %112 = icmp sgt i32 %111, -100
+  br i1 %112, label %113, label %121
 
-114:                                              ; preds = %97
-  tail call fastcc void @draw_score(i32 noundef %43) #5
-  br label %115
+113:                                              ; preds = %109
+  %114 = getelementptr inbounds nuw i8, ptr %110, i32 8
+  %115 = load i32, ptr %114, align 4, !tbaa !15
+  %116 = sub nsw i32 190, %115
+  %117 = getelementptr inbounds nuw i8, ptr %110, i32 12
+  %118 = load ptr, ptr %117, align 4, !tbaa !16
+  %119 = getelementptr inbounds nuw i8, ptr %110, i32 4
+  %120 = load i32, ptr %119, align 4, !tbaa !14
+  tail call void @gfx_blit(i32 noundef %111, i32 noundef %116, ptr noundef %118, i32 noundef %120, i32 noundef %115) #4
+  br label %121
 
-115:                                              ; preds = %114, %97
+121:                                              ; preds = %109, %113
+  %122 = add nuw nsw i32 %104, 1
+  br label %103, !llvm.loop !18
+
+123:                                              ; preds = %106
+  tail call fastcc void @draw_score(i32 noundef %85) #5
+  br label %124
+
+124:                                              ; preds = %123, %106
   tail call void @gfx_present() #4
-  %116 = sub nsw i32 189, %87
-  br label %117
+  %125 = sub nsw i32 189, %96
+  br label %126
 
-117:                                              ; preds = %135, %115
-  %118 = phi i32 [ 0, %115 ], [ %136, %135 ]
-  %119 = icmp eq i32 %118, 2
-  br i1 %119, label %8, label %120, !llvm.loop !19
+126:                                              ; preds = %144, %124
+  %127 = phi i32 [ 0, %124 ], [ %145, %144 ]
+  %128 = icmp eq i32 %127, 2
+  br i1 %128, label %8, label %129, !llvm.loop !19
 
-120:                                              ; preds = %117
-  %121 = getelementptr inbounds nuw [2 x %struct.obst], ptr @obs, i32 0, i32 %118
-  %122 = load i32, ptr %121, align 4, !tbaa !6
-  %123 = add i32 %122, 100
-  %124 = icmp ult i32 %123, 145
-  br i1 %124, label %125, label %135
+129:                                              ; preds = %126
+  %130 = getelementptr inbounds nuw [2 x %struct.obst], ptr @obs, i32 0, i32 %127
+  %131 = load i32, ptr %130, align 4, !tbaa !6
+  %132 = add i32 %131, 100
+  %133 = icmp ult i32 %132, 145
+  br i1 %133, label %134, label %144
 
-125:                                              ; preds = %120
-  %126 = getelementptr inbounds nuw i8, ptr %121, i32 8
-  %127 = load i32, ptr %126, align 4, !tbaa !15
-  %128 = sub i32 192, %127
-  %129 = getelementptr inbounds nuw i8, ptr %121, i32 4
-  %130 = load i32, ptr %129, align 4, !tbaa !14
-  %131 = add nsw i32 %130, %122
-  %132 = icmp sgt i32 %131, 35
-  %133 = icmp sgt i32 %116, %128
-  %134 = select i1 %132, i1 %133, i1 false
-  br i1 %134, label %137, label %135
+134:                                              ; preds = %129
+  %135 = getelementptr inbounds nuw i8, ptr %130, i32 8
+  %136 = load i32, ptr %135, align 4, !tbaa !15
+  %137 = sub i32 192, %136
+  %138 = getelementptr inbounds nuw i8, ptr %130, i32 4
+  %139 = load i32, ptr %138, align 4, !tbaa !14
+  %140 = add nsw i32 %139, %131
+  %141 = icmp sgt i32 %140, 35
+  %142 = icmp sgt i32 %125, %137
+  %143 = select i1 %141, i1 %142, i1 false
+  br i1 %143, label %146, label %144
 
-135:                                              ; preds = %125, %120
-  %136 = add nuw nsw i32 %118, 1
-  br label %117, !llvm.loop !20
+144:                                              ; preds = %134, %129
+  %145 = add nuw nsw i32 %127, 1
+  br label %126, !llvm.loop !20
 
-137:                                              ; preds = %125
-  tail call void @gfx_blit(i32 noundef 30, i32 noundef %88, ptr noundef nonnull @cell_dead, i32 noundef 20, i32 noundef 22) #4
+146:                                              ; preds = %134
+  tail call void @snd_play(i32 noundef 220, i32 noundef 70, i32 noundef 18) #4
+  tail call void @led(i32 noundef 6291456, i32 noundef 6291456) #4
+  tail call void @gfx_blit(i32 noundef 30, i32 noundef %97, ptr noundef nonnull @cell_dead, i32 noundef 20, i32 noundef 22) #4
   tail call void @gfx_text2(i32 noundef 48, i32 noundef 130, ptr noundef nonnull @.str.1, i16 noundef zeroext -14011, i16 noundef zeroext -1) #4
   tail call void @gfx_text(i32 noundef 24, i32 noundef 154, ptr noundef nonnull @.str.2, i16 noundef zeroext 14823, i16 noundef zeroext -1) #4
   tail call void @gfx_present() #4
   tail call void @uputs(ptr noundef nonnull @.str.3) #4
-  tail call void @uputn(i32 noundef %43) #4
+  tail call void @uputn(i32 noundef %85) #4
   tail call void @uputs(ptr noundef nonnull @.str.4) #4
-  br label %138
+  br label %147
 
-138:                                              ; preds = %142, %137
+147:                                              ; preds = %151, %146
   tail call void @frame_sync(i32 noundef 33000) #4
   tail call void @in_poll() #4
-  %139 = load i32, ptr @in_edge, align 4, !tbaa !13
-  %140 = and i32 %139, 17
-  %141 = icmp eq i32 %140, 0
-  br i1 %141, label %142, label %1
+  %148 = load i32, ptr @in_edge, align 4, !tbaa !13
+  %149 = and i32 %148, 17
+  %150 = icmp eq i32 %149, 0
+  br i1 %150, label %151, label %1
 
-142:                                              ; preds = %138
-  %143 = and i32 %139, 2
-  %144 = icmp eq i32 %143, 0
-  br i1 %144, label %138, label %145, !llvm.loop !21
+151:                                              ; preds = %147
+  %152 = and i32 %148, 2
+  %153 = icmp eq i32 %152, 0
+  br i1 %153, label %147, label %154, !llvm.loop !21
 
-145:                                              ; preds = %142
+154:                                              ; preds = %151
   ret void
 }
 
@@ -291,6 +316,9 @@ declare dso_local void @gfx_sprite(ptr noundef, i32 noundef, i32 noundef, i16 no
 
 ; Function Attrs: minsize optsize
 declare dso_local void @uputs(ptr noundef) local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @led(i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @gfx_clear(i16 noundef zeroext) local_unnamed_addr #1
@@ -313,6 +341,9 @@ declare dso_local void @frame_sync(i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @in_poll() local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @snd_play(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
 declare void @llvm.lifetime.start.p0(i64 immarg, ptr captures(none)) #2

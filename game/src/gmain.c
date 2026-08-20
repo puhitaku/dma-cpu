@@ -9,6 +9,8 @@ gmain(void)
   uputs("GAMEPICO: boot\n");
   lcd_init();
   uputs("GAMEPICO: lcd up\n");
+  fx_init();
+  uputs("GAMEPICO: fx up\n");
   for (;;) {
     int g = menu_run();
     if (g == 0)

@@ -58,11 +58,13 @@ rng_below(uint n)
 }
 
 /* frame_sync: sleep until the next us-tick boundary; resets its phase
- * after a long stall (a game that blew its budget just runs flat out). */
+ * after a long stall (a game that blew its budget just runs flat out).
+ * Doubles as the sound engine's clock — every paced loop ticks it. */
 void
 frame_sync(uint us)
 {
   static uint next;
+  snd_tick();
   uint now = now_us();
   if (next == 0 || now - next > us * 8)
     next = now;

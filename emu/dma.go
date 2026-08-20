@@ -76,7 +76,9 @@ type dma struct {
 	hp          uint32
 	timerActive uint32
 	timerListen [4]uint32
-	spiListen   uint32 // channels whose TREQ_SEL is the SPI0 TX DREQ
+	spiListen   uint32    // channels whose TREQ_SEL is the SPI0 TX DREQ
+	pioTx       [4]uint32 // channels on PIO0 TX0..3 (DREQ 0..3)
+	pioListen   uint32    // union of pioTx, the fast gate
 
 	// Timer next-fire schedule: ticking four fractional accumulators
 	// every cycle was ~8% of the suite, so each active timer instead
@@ -211,6 +213,18 @@ func (d *dma) ctrlChanged(chIdx int) {
 		d.spiListen |= bit
 	} else {
 		d.spiListen &^= bit
+	}
+	// PIO0 TX DREQs are 0..3 on both SKUs. A zeroed CTRL decodes to
+	// TREQ_SEL 0 too, so require EN — otherwise every idle channel
+	// would land in pioTx[0] and defeat the pioListen fast gate.
+	d.pioListen = 0
+	for i := range d.pioTx {
+		if c.ctrl&CtrlEN != 0 && c.treq == uint32(i) {
+			d.pioTx[i] |= bit
+		} else {
+			d.pioTx[i] &^= bit
+		}
+		d.pioListen |= d.pioTx[i]
 	}
 	d.updateReady(chIdx)
 }
