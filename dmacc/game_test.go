@@ -268,7 +268,7 @@ func (p *lcdPanel) countColor(x0, y0, x1, y1 int, c uint16) int {
 func TestGameMenu(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
-	at := runUntil(t, m, "menu up\n", 0, 300_000_000)
+	at := runUntil(t, m, "menu up", 0, 300_000_000)
 	out := string(m.ConsoleOut)
 	for _, want := range []string{"GAMEPICO: boot", "GAMEPICO: lcd up"} {
 		if !strings.Contains(out, want) {
@@ -343,9 +343,9 @@ func TestGameMenu(t *testing.T) {
 func TestGameDino(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
-	at := runUntil(t, m, "menu up\n", 0, 300_000_000)
+	at := runUntil(t, m, "menu up", 0, 300_000_000)
 	press(t, m, prog, pinA) // Dinosaur is the default selection
-	at = runUntil(t, m, "dino: start\n", at, 100_000_000)
+	at = runUntil(t, m, "dino: start", at, 100_000_000)
 	// one jump, then let the first cactus win
 	press(t, m, prog, pinUp)
 	at = runUntil(t, m, "dino: over score=", at, 2_000_000_000)
@@ -357,7 +357,7 @@ func TestGameDino(t *testing.T) {
 	dumpPNG(t, p, "dino.png")
 	// press restarts
 	press(t, m, prog, pinA)
-	runUntil(t, m, "dino: start\n", at, 100_000_000)
+	runUntil(t, m, "dino: start", at, 100_000_000)
 	// down exits to the menu... after the restart dies again someday;
 	// just verify the restart marker arrived (above).
 }
@@ -365,11 +365,11 @@ func TestGameDino(t *testing.T) {
 func TestGameLANWalk(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
-	at := runUntil(t, m, "menu up\n", 0, 300_000_000)
+	at := runUntil(t, m, "menu up", 0, 300_000_000)
 	press(t, m, prog, pinDown)
 	at = runUntil(t, m, "menu: LANWalk", at, 100_000_000)
 	press(t, m, prog, pinA)
-	at = runUntil(t, m, "lanwalk: start\n", at, 100_000_000)
+	at = runUntil(t, m, "lanwalk: start", at, 100_000_000)
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 30_000_000}); err != nil {
 		t.Fatal(err) // let the board draw
 	}
@@ -416,14 +416,14 @@ func TestGameLANWalk(t *testing.T) {
 func TestGameYacht(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
-	at := runUntil(t, m, "menu up\n", 0, 300_000_000)
+	at := runUntil(t, m, "menu up", 0, 300_000_000)
 	press(t, m, prog, pinUp) // wraps to Yacht
 	at = runUntil(t, m, "menu: Yacht", at, 100_000_000)
 	press(t, m, prog, pinA)
-	at = runUntil(t, m, "yacht: start\n", at, 100_000_000)
+	at = runUntil(t, m, "yacht: start", at, 100_000_000)
 	// the cursor starts on ROLL: reroll once, then book Aces
 	press(t, m, prog, pinA) // ROLL
-	at = runUntil(t, m, "yacht: roll\n", at, 100_000_000)
+	at = runUntil(t, m, "yacht: roll", at, 100_000_000)
 	press(t, m, prog, pinDown) // into the sheet
 	press(t, m, prog, pinA)    // book
 	at = runUntil(t, m, "yacht: cat=0 score=", at, 100_000_000)

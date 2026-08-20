@@ -17,7 +17,15 @@ uint spictrl;   /* fb->SPI0 DR: SIZE16, INCR read, TREQ SPI0_TX */
 static void
 uputc(int c)
 {
-  while (__dma_uart_fr & 0x20) /* TXFF */
+  /* Terminals expect CRLF: the ARM's stdio translates, the machine
+   * writes the UART raw — so LF grows its CR here. (No recursion:
+   * dmacc frames are static, a self-call clobbers the saved lr.) */
+  if (c == '\n') {
+    while (__dma_uart_fr & 0x20) /* TXFF */
+      ;
+    __dma_uart_dr = (uint)'\r';
+  }
+  while (__dma_uart_fr & 0x20)
     ;
   __dma_uart_dr = (uint)c;
 }
