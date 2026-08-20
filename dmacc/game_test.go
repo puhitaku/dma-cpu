@@ -15,9 +15,20 @@ import (
 	"github.com/puhitaku/dma-cpu/llir"
 )
 
+// The joystick pins (GP2..GP6 = up/down/left/right/press; second
+// stick GP7..GP11 mirrors them).
+const (
+	pinUp    = 2
+	pinDown  = 3
+	pinLeft  = 4
+	pinRight = 5
+	pinA     = 6
+)
+
 // bootGame compiles and boots the gamepico bare-metal image exactly
 // as dmxgen ships it (XIP text, SRAM data+ramtext, baked ctrl words).
-func bootGame(t *testing.T) *emu.Machine {
+// All ten joystick pins start high: pulled up means released.
+func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	t.Helper()
 	bd := boards.GamePico
 	v, err := emu.VariantByName(bd.SKU)
@@ -25,7 +36,8 @@ func bootGame(t *testing.T) *emu.Machine {
 		t.Fatal(err)
 	}
 	var mods []*llir.Module
-	for _, p := range []string{"gmain", "gfx", "lcd", "grt"} {
+	for _, p := range []string{"gmain", "menu", "dino", "lanwalk", "yacht",
+		"input", "gfx", "lcd", "grt"} {
 		mods = append(mods, parseLL(t, "../game/ll/"+p+".ll"))
 	}
 	mod, err := llir.Merge(mods...)
@@ -46,6 +58,9 @@ func bootGame(t *testing.T) *emu.Machine {
 	}
 	m := emu.NewMachine(v)
 	m.Flash = make([]byte, bd.FlashSize)
+	for pin := pinUp; pin <= pinUp+9; pin++ {
+		m.SetPadIn(pin, true)
+	}
 	entry, err := prog.Image.Load(m, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -57,32 +72,59 @@ func bootGame(t *testing.T) *emu.Machine {
 		v.CtrlChainTo(11) | v.CtrlTreq(v.DreqSPI0TX) | v.CtrlIRQQuiet
 	m.Poke32(mustSym(t, prog, "g_memctrl"), memctrl)
 	m.Poke32(mustSym(t, prog, "g_spictrl"), spictrl)
-	t.Logf("entry %#x (seg %d off %#x)", entry, prog.Image.EntrySeg, prog.Image.EntryOff)
 	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
 		Compact: true, Entry: entry, Scratch: bd.Scratch,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	return m
+	return m, prog
 }
 
-func TestGameBoot(t *testing.T) {
-	t.Parallel()
-	m := bootGame(t)
-	rr, err := m.Run(emu.RunConfig{MaxCycles: 400_000_000})
-	if err != nil {
-		t.Fatalf("%v\nconsole:\n%s", err, m.ConsoleOut)
-	}
-	t.Logf("stop %v after %d cycles; console %d bytes, spi %d writes",
-		rr.Reason, rr.Cycles, len(m.ConsoleOut), len(m.SPIOut))
-	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
-	t.Logf("console:\n%s", out)
-	for _, want := range []string{"GAMEPICO: boot", "GAMEPICO: lcd up",
-		"GAMEPICO: test card shown"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("missing %q", want)
+// runUntil advances the machine in slices until the console contains
+// marker (counted from offset from0) or the cycle budget runs out.
+// Returns the offset just past the marker for chaining.
+func runUntil(t *testing.T, m *emu.Machine, marker string, from0 int,
+	budget uint64) int {
+	t.Helper()
+	spent := uint64(0)
+	for spent < budget {
+		if i := strings.Index(string(m.ConsoleOut[from0:]), marker); i >= 0 {
+			return from0 + i + len(marker)
 		}
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 10_000_000}); err != nil {
+			t.Fatalf("run: %v\nconsole:\n%s", err, m.ConsoleOut)
+		}
+		spent += 10_000_000
 	}
+	t.Fatalf("marker %q not seen in %d cycles; console:\n%s",
+		marker, budget, m.ConsoleOut)
+	return 0
+}
+
+// press taps a button adaptively: hold the pin low until the game's
+// input state (g_in_down) observes it, then release until it clears.
+// Fixed-length presses get swallowed when they start during a long
+// draw (in_prev still holds the previous press across a 16M-cycle
+// flush), and overstayed holds trip hold-to-quit gestures.
+func press(t *testing.T, m *emu.Machine, prog *dmaasm.Result, pin int) {
+	t.Helper()
+	bit := uint32(1) << ((pin - 2) % 5)
+	down := mustSym(t, prog, "g_in_down")
+	wait := func(want bool) {
+		for spent := 0; spent < 400; spent++ {
+			if (m.Peek32(down)&bit != 0) == want {
+				return
+			}
+			if _, err := m.Run(emu.RunConfig{MaxCycles: 1_000_000}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		t.Fatalf("pin %d: in_down bit %#x never became %v", pin, bit, want)
+	}
+	m.SetPadIn(pin, false)
+	wait(true)
+	m.SetPadIn(pin, true)
+	wait(false)
 }
 
 // lcdPanel reconstructs the ST7789's GRAM from the captured SPI
@@ -178,48 +220,170 @@ func decodeLCD(m *emu.Machine, dcPin int) *lcdPanel {
 	return p
 }
 
-func TestGameTestCard(t *testing.T) {
+func dumpPNG(t *testing.T, p *lcdPanel, name string) {
+	dir := os.Getenv("GAME_LCD_PNG")
+	if dir == "" {
+		return
+	}
+	img := image.NewNRGBA(image.Rect(0, 0, 240, 240))
+	for y := 0; y < 240; y++ {
+		for x := 0; x < 240; x++ {
+			c := p.px[y*240+x]
+			r := uint8((c >> 11) << 3)
+			g := uint8(((c >> 5) & 0x3F) << 2)
+			b := uint8((c & 0x1F) << 3)
+			img.Set(x, y, color.NRGBA{r, g, b, 255})
+		}
+	}
+	f, err := os.Create(dir + "/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = png.Encode(f, img)
+	f.Close()
+	t.Logf("wrote %s/%s", dir, name)
+}
+
+func rgb565(r, g, b int) uint16 {
+	return uint16(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3))
+}
+
+// countColor counts pixels of exactly c inside the inclusive rect.
+func (p *lcdPanel) countColor(x0, y0, x1, y1 int, c uint16) int {
+	n := 0
+	for y := y0; y <= y1; y++ {
+		for x := x0; x <= x1; x++ {
+			if p.px[y*240+x] == c {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+func TestGameMenu(t *testing.T) {
 	t.Parallel()
-	m := bootGame(t)
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 400_000_000}); err != nil {
-		t.Fatalf("%v", err)
+	m, prog := bootGame(t)
+	at := runUntil(t, m, "menu up\n", 0, 300_000_000)
+	out := string(m.ConsoleOut)
+	for _, want := range []string{"GAMEPICO: boot", "GAMEPICO: lcd up"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q", want)
+		}
 	}
 	p := decodeLCD(m, 16 /* PIN_LCD_DC */)
 	if !p.sawSlpout || !p.sawDispon || !p.sawInvon || p.colmod != 0x55 {
 		t.Fatalf("init sequence: slpout=%v dispon=%v invon=%v colmod=%#x",
 			p.sawSlpout, p.sawDispon, p.sawInvon, p.colmod)
 	}
-	// test card: 8 bars of 30px; sample bar centers on row 90
-	rgb := func(r, g, b int) uint16 {
-		return uint16(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3))
+	title := rgb565(255, 210, 60)
+	if n := p.countColor(56, 44, 183, 45, title); n < 200 {
+		t.Errorf("title underline: %d pixels of %#04x", n, title)
 	}
-	wants := []uint16{rgb(255, 255, 255), rgb(255, 255, 0), rgb(0, 255, 255),
-		rgb(0, 255, 0), rgb(255, 0, 255), rgb(255, 0, 0), rgb(0, 0, 255), rgb(0, 0, 0)}
-	for i, want := range wants {
-		got := p.px[90*240+i*30+15]
-		if got != want {
-			t.Errorf("bar %d: got %#04x want %#04x", i, got, want)
+	selbg := rgb565(40, 70, 140)
+	if n := p.countColor(32, 92, 207, 115, selbg); n < 500 {
+		t.Errorf("selected item background: %d pixels", n)
+	}
+	// cursor moves narrate
+	press(t, m, prog, pinDown)
+	at = runUntil(t, m, "menu: LANWalk", at, 100_000_000)
+	press(t, m, prog, pinDown)
+	runUntil(t, m, "menu: Yacht", at, 100_000_000)
+	dumpPNG(t, decodeLCD(m, 16), "menu.png")
+}
+
+func TestGameDino(t *testing.T) {
+	t.Parallel()
+	m, prog := bootGame(t)
+	at := runUntil(t, m, "menu up\n", 0, 300_000_000)
+	press(t, m, prog, pinA) // Dinosaur is the default selection
+	at = runUntil(t, m, "dino: start\n", at, 100_000_000)
+	// one jump, then let the first cactus win
+	press(t, m, prog, pinUp)
+	at = runUntil(t, m, "dino: over score=", at, 2_000_000_000)
+	p := decodeLCD(m, 16)
+	over := rgb565(200, 40, 40)
+	if n := p.countColor(48, 130, 192, 146, over); n < 100 {
+		t.Errorf("GAME OVER text: %d red pixels", n)
+	}
+	dumpPNG(t, p, "dino.png")
+	// press restarts
+	press(t, m, prog, pinA)
+	runUntil(t, m, "dino: start\n", at, 100_000_000)
+	// down exits to the menu... after the restart dies again someday;
+	// just verify the restart marker arrived (above).
+}
+
+func TestGameLANWalk(t *testing.T) {
+	t.Parallel()
+	m, prog := bootGame(t)
+	at := runUntil(t, m, "menu up\n", 0, 300_000_000)
+	press(t, m, prog, pinDown)
+	at = runUntil(t, m, "menu: LANWalk", at, 100_000_000)
+	press(t, m, prog, pinA)
+	at = runUntil(t, m, "lanwalk: start\n", at, 100_000_000)
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 30_000_000}); err != nil {
+		t.Fatal(err) // let the board draw
+	}
+
+	// The board is a spanning tree: every cell reachable in the
+	// solved orientation. Verify the generated masks are sane and
+	// that four rotations of the cursor tile return it to its start.
+	maskAddr := mustSym(t, prog, "g_mask")
+	readMask := func() []byte {
+		mk := make([]byte, 49)
+		for i := 0; i < 49; i++ {
+			w := m.Peek32(maskAddr + uint32(i&^3))
+			mk[i] = byte(w >> ((uint(i) & 3) * 8))
+		}
+		return mk
+	}
+	before := readMask()
+	nonzero := 0
+	for _, v := range before {
+		if v != 0 {
+			nonzero++
 		}
 	}
-	// footer text row has both fg and bg pixels
-	if p.px[220*240+2] == 0 {
-		t.Errorf("footer background missing")
+	if nonzero < 40 {
+		t.Fatalf("board looks empty: %d wired cells of 49", nonzero)
 	}
-	// optional PNG for human eyes
-	if dir := os.Getenv("GAME_LCD_PNG"); dir != "" {
-		img := image.NewNRGBA(image.Rect(0, 0, 240, 240))
-		for y := 0; y < 240; y++ {
-			for x := 0; x < 240; x++ {
-				c := p.px[y*240+x]
-				r := uint8((c >> 11) << 3)
-				g := uint8(((c >> 5) & 0x3F) << 2)
-				b := uint8((c & 0x1F) << 3)
-				img.Set(x, y, color.NRGBA{r, g, b, 255})
-			}
-		}
-		f, _ := os.Create(dir + "/lcd.png")
-		_ = png.Encode(f, img)
-		f.Close()
-		t.Logf("wrote %s/lcd.png", dir)
+	for i := 0; i < 4; i++ {
+		press(t, m, prog, pinA)
 	}
+	after := readMask()
+	if string(before) != string(after) {
+		t.Errorf("four rotations did not return the tile: %v -> %v",
+			before[24], after[24])
+	}
+	p := decodeLCD(m, 16)
+	server := rgb565(255, 170, 40)
+	if n := p.countColor(15+3*30, 8+3*30, 15+4*30-1, 8+4*30-1, server); n < 100 {
+		t.Errorf("server tile: %d orange pixels", n)
+	}
+	dumpPNG(t, p, "lanwalk.png")
+	_ = at
+}
+
+func TestGameYacht(t *testing.T) {
+	t.Parallel()
+	m, prog := bootGame(t)
+	at := runUntil(t, m, "menu up\n", 0, 300_000_000)
+	press(t, m, prog, pinUp) // wraps to Yacht
+	at = runUntil(t, m, "menu: Yacht", at, 100_000_000)
+	press(t, m, prog, pinA)
+	at = runUntil(t, m, "yacht: start\n", at, 100_000_000)
+	// the cursor starts on ROLL: reroll once, then book Aces
+	press(t, m, prog, pinA) // ROLL
+	at = runUntil(t, m, "yacht: roll\n", at, 100_000_000)
+	press(t, m, prog, pinDown) // into the sheet
+	press(t, m, prog, pinA)    // book
+	at = runUntil(t, m, "yacht: cat=0 score=", at, 100_000_000)
+	p := decodeLCD(m, 16)
+	die := rgb565(245, 245, 235)
+	if n := p.countColor(6, 18, 173, 45, die); n < 1000 {
+		t.Errorf("dice row: %d white pixels", n)
+	}
+	dumpPNG(t, p, "yacht.png")
+	_ = at
 }

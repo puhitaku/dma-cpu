@@ -39,6 +39,7 @@ typedef unsigned char uchar;
 void uputs(const char *s);
 void uputn(uint v);
 void uputhex(uint v);
+void numstr(char *buf, int width, uint v); /* zero-padded decimal */
 uint now_us(void);
 void delay_us(uint us);
 void gpio_fn(int pin, uint funcsel);
@@ -56,9 +57,33 @@ void lcd_flush(int x0, int y0, int x1, int y1); /* inclusive rect */
 extern ushort fb[LCD_W * LCD_H];
 void gfx_clear(ushort c);
 void gfx_fill(int x0, int y0, int w, int h, ushort c);
+void gfx_rect(int x0, int y0, int w, int h, int t, ushort c); /* outline */
 void gfx_text(int x, int y, const char *s, ushort fg, ushort bg);
+void gfx_text2(int x, int y, const char *s, ushort fg, ushort bg); /* 2x */
+void gfx_blit(int x, int y, const ushort *src, int w, int h); /* opaque */
+void gfx_sprite(const uint *rows, int w, int h, ushort fg, ushort bg,
+                ushort *dst); /* 1bpp rows (MSB left) -> RGB565 */
 void gfx_damage(int x0, int y0, int x1, int y1);
 void gfx_present(void); /* flush the damage rect, reset it */
+
+/* input.c: both joysticks merged, active-high bit set = engaged */
+#define BTN_UP 0x01
+#define BTN_DOWN 0x02
+#define BTN_LEFT 0x04
+#define BTN_RIGHT 0x08
+#define BTN_A 0x10
+extern uint in_down; /* held buttons */
+extern uint in_edge; /* newly pressed since the previous poll */
+void in_poll(void);
+uint rng(void);           /* xorshift32, mixed with input timing */
+uint rng_below(uint n);   /* uniform-ish 0..n-1 */
+void frame_sync(uint us); /* pace the caller's loop to one tick per us */
+
+/* the games (each returns when the player exits to the menu) */
+int menu_run(void); /* 0 = Dinosaur, 1 = LANWalk, 2 = Yacht */
+void dino_run(void);
+void lanwalk_run(void);
+void yacht_run(void);
 
 #define RGB(r, g, b) \
   ((ushort)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | (((b) & 0xF8) >> 3)))

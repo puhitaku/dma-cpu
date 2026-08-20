@@ -117,3 +117,46 @@ crash; assert+release RESETS bit 2 for a true DMA reset. The
 minimal wedge repro is a 4-word no-increment transfer targeting the
 channel's own AL2_TRANS_COUNT — completes on 11 channels, wedges on
 the one that is its own destination, sniff on or off.
+
+## M2: the console is a console
+
+Menu plus all three games, written in C, compiled by dmacc, and run
+entirely by the compact machine — the ARM stays in wfi. Verified on
+silicon (17/17 HIL + boot to "menu up" with heartbeats; the sticks
+are not wired yet, so gameplay ran in the emulator) and end-to-end
+in emulation: every screen decoded from the SPI stream and eyeballed
+as PNG, a full 12-turn Yacht game, a LANWalk board solved by a Go
+backtracking solver driving the cursor, and a dino auto-player
+vaulting three cacti before dying on purpose.
+
+- input.c: both sticks merged, active-low edges, first-poll baseline
+  (no phantom edges on boot), xorshift32 RNG entropy-fed by input
+  timing. frame_sync paces every loop at one tick per 33 ms.
+- menu.c: picker with the once-a-second "beat N" heartbeat kept as
+  the HIL scripts' sync point.
+- dino.c: Chrome-runner. 1bpp sprite art pre-rendered to RGB565
+  cells (background baked in), so each frame is opaque word-aligned
+  gdma blits; movers step 2 px to stay aligned. Fixed-point jump
+  physics tuned so the apex stays inside the redrawn strip.
+- lanwalk.c: NetWalk. Randomized-DFS spanning tree over 7x7, server
+  at center, leaves drawn as terminals; scramble by random rotation;
+  relight = BFS over mutually-agreed edges; only tiles whose lit
+  state changed redraw.
+- yacht.c: traditional scoring, hold bars, roll counter, score
+  preview in the sheet, endgame panel.
+- gfx: 2x text, outline rects, clipped blits, sprite renderer, and
+  clipped text (an unclipped footer wrote past x=239 into the next
+  fb row).
+- emu: Machine.SetPadIn drives pad input levels for tests; the fast
+  TIMERAWL model (Cycle<<16) makes emulated games free-run, so the
+  tests' press() is adaptive — hold until g_in_down reflects the
+  state, release until it clears. Fixed-length presses got swallowed
+  whenever they started inside a long flush.
+- dmacc bug found by the menu's colors: negative narrow constants
+  rendered sign-extended (see the "canonicalize narrow constants"
+  commit) — any RGB565 with red >= 128 was one LSB off on odd
+  pixels of word-filled rects.
+
+Still open for M3: PIO I2S audio (MAX98357) and the two WS2811
+LEDs, wiring permitting; a hardware gameplay session needs the
+sticks soldered.

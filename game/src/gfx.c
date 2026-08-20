@@ -78,7 +78,7 @@ void
 gfx_text(int x, int y, const char *s, ushort fg, ushort bg)
 {
   int cx = x;
-  for (; *s; s++, cx += 8) {
+  for (; *s && cx + 8 <= LCD_W; s++, cx += 8) {
     const uchar *g = &fbfont[(uint)(*s & 0x7F) * 8];
     for (int r = 0; r < 8; r++) {
       ushort *p = &fb[(y + r) * LCD_W + cx];
@@ -88,4 +88,84 @@ gfx_text(int x, int y, const char *s, ushort fg, ushort bg)
     }
   }
   gfx_damage(x, y, cx - 1, y + 7);
+}
+
+void
+gfx_text2(int x, int y, const char *s, ushort fg, ushort bg)
+{
+  int cx = x;
+  for (; *s && cx + 16 <= LCD_W; s++, cx += 16) {
+    const uchar *g = &fbfont[(uint)(*s & 0x7F) * 8];
+    for (int r = 0; r < 8; r++) {
+      ushort *p = &fb[(y + r * 2) * LCD_W + cx];
+      uint bits = g[r];
+      for (int i = 0; i < 8; i++) {
+        ushort c = (bits & (0x80u >> i)) ? fg : bg;
+        p[i * 2] = c;
+        p[i * 2 + 1] = c;
+        p[LCD_W + i * 2] = c;
+        p[LCD_W + i * 2 + 1] = c;
+      }
+    }
+  }
+  gfx_damage(x, y, cx - 1, y + 15);
+}
+
+void
+gfx_rect(int x, int y, int w, int h, int t, ushort c)
+{
+  gfx_fill(x, y, w, t, c);
+  gfx_fill(x, y + h - t, w, t, c);
+  gfx_fill(x, y + t, t, h - 2 * t, c);
+  gfx_fill(x + w - t, y + t, t, h - 2 * t, c);
+}
+
+/* Opaque blit; clips to the screen. Copies stay word-wide when the
+ * caller keeps x and w even (gdma_copy falls back to a slow byte loop
+ * otherwise, so sprite movers should move in 2 px steps). */
+void
+gfx_blit(int x, int y, const ushort *src, int w, int h)
+{
+  int sx = 0, sy = 0;
+  if (x < 0) {
+    sx = -x;
+    sx += sx & 1; /* keep the copy 4-byte aligned */
+    x += sx;
+    w -= sx;
+  }
+  if (y < 0) {
+    sy = -y;
+    y = 0;
+    h -= sy;
+  }
+  int cw = w, ch = h;
+  if (x + cw > LCD_W)
+    cw = LCD_W - x;
+  cw &= ~1;
+  if (y + ch > LCD_H)
+    ch = LCD_H - y;
+  if (cw <= 0 || ch <= 0)
+    return;
+  const ushort *row = src + sx;
+  for (int r = 0; r < sy; r++)
+    row += w + sx; /* original stride is the unclipped width */
+  for (int r = 0; r < ch; r++) {
+    gdma_copy((uint)&fb[(y + r) * LCD_W + x], (uint)row, (uint)cw * 2);
+    row += w + sx;
+  }
+  gfx_damage(x, y, x + cw - 1, y + ch - 1);
+}
+
+/* Render a 1bpp bitmap (each row a 32-bit word, MSB = leftmost pixel)
+ * into an RGB565 buffer with the background baked in, so blits stay
+ * opaque rectangle copies. */
+void
+gfx_sprite(const uint *rows, int w, int h, ushort fg, ushort bg, ushort *dst)
+{
+  int idx = 0;
+  for (int r = 0; r < h; r++) {
+    uint bits = rows[r];
+    for (int c = 0; c < w; c++)
+      dst[idx++] = (bits & (0x80000000u >> c)) ? fg : bg;
+  }
 }

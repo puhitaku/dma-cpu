@@ -51,6 +51,17 @@ uputhex(uint v)
   }
 }
 
+/* numstr: v as zero-padded decimal into buf[0..width-1] + NUL. */
+void
+numstr(char *buf, int width, uint v)
+{
+  buf[width] = 0;
+  for (int i = width - 1; i >= 0; i--) {
+    buf[i] = '0' + (char)(v % 10);
+    v /= 10;
+  }
+}
+
 uint
 now_us(void)
 {

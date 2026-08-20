@@ -683,6 +683,10 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	return b, nil
 }
 
+// PinJoyAUp is the first of the ten joystick pins (GP2..GP11, two
+// sticks of five, pulled up on the real board).
+const PinJoyAUp = 2
+
 // buildGame: the gamepico bare-metal image (prompts/040) — one
 // dmacc-compiled program, no xv6: text executes from flash, .ramtext
 // and data (framebuffer included) in SRAM, entry straight into
@@ -692,8 +696,10 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 // the LCD decoder's preconditions (SPI init + DISPON + a full-frame
 // CASET/RASET window) checked from the captured SPI stream.
 func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
-	dasm, err := compileLL([]string{"game/ll/gmain.ll", "game/ll/gfx.ll",
-		"game/ll/lcd.ll", "game/ll/grt.ll"},
+	dasm, err := compileLL([]string{"game/ll/gmain.ll", "game/ll/menu.ll",
+		"game/ll/dino.ll", "game/ll/lanwalk.ll", "game/ll/yacht.ll",
+		"game/ll/input.ll", "game/ll/gfx.ll", "game/ll/lcd.ll",
+		"game/ll/grt.ll"},
 		dmacc.Options{Entry: "gmain", NoSafepoints: true, XIPText: true})
 	if err != nil {
 		return nil, err
@@ -723,11 +729,14 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			return nil, err
 		}
 	}
-	// Emulator verification: boot to the test card. Image.Load also
+	// Emulator verification: boot to the menu. Image.Load also
 	// applies the init Writes (register banks, dispatch presets) —
 	// exactly what the firmware's dmx_load replays.
 	m := emu.NewMachine(v)
 	m.Flash = make([]byte, bd.FlashSize)
+	for pin := PinJoyAUp; pin < PinJoyAUp+10; pin++ {
+		m.SetPadIn(pin, true) // pulled-up joysticks read released
+	}
 	entry, err := prog.Image.Load(m, nil)
 	if err != nil {
 		return nil, err
@@ -741,8 +750,8 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		return nil, fmt.Errorf("game boot: %w\nconsole:\n%s", err, m.ConsoleOut)
 	}
 	out := string(m.ConsoleOut)
-	if !strings.Contains(out, "GAMEPICO: test card shown") {
-		return nil, fmt.Errorf("game boot: no test card; console:\n%s", out)
+	if !strings.Contains(out, "menu up") {
+		return nil, fmt.Errorf("game boot: no menu; console:\n%s", out)
 	}
 	if len(m.SPIOut) < 100 {
 		return nil, fmt.Errorf("game boot: only %d SPI writes", len(m.SPIOut))

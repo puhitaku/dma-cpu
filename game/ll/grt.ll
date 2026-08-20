@@ -22,7 +22,7 @@ define dso_local void @uputs(ptr noundef readonly captures(none) %0) local_unnam
 6:                                                ; preds = %2
   %7 = getelementptr inbounds nuw i8, ptr %3, i32 1
   %8 = sext i8 %4 to i32
-  tail call fastcc void @uputc(i32 noundef %8) #4
+  tail call fastcc void @uputc(i32 noundef %8) #5
   br label %2, !llvm.loop !6
 
 9:                                                ; preds = %2
@@ -47,7 +47,7 @@ define internal fastcc void @uputc(i32 noundef range(i32 -128, 128) %0) unnamed_
 ; Function Attrs: minsize nofree norecurse nounwind optsize
 define dso_local void @uputn(i32 noundef %0) local_unnamed_addr #0 {
   %2 = alloca [12 x i8], align 1
-  call void @llvm.lifetime.start.p0(i64 12, ptr nonnull %2) #5
+  call void @llvm.lifetime.start.p0(i64 12, ptr nonnull %2) #6
   br label %3
 
 3:                                                ; preds = %3, %1
@@ -75,11 +75,11 @@ define dso_local void @uputn(i32 noundef %0) local_unnamed_addr #0 {
   %20 = getelementptr inbounds [12 x i8], ptr %2, i32 0, i32 %19
   %21 = load i8, ptr %20, align 1, !tbaa !3
   %22 = sext i8 %21 to i32
-  tail call fastcc void @uputc(i32 noundef %22) #4
+  tail call fastcc void @uputc(i32 noundef %22) #5
   br label %15, !llvm.loop !13
 
 23:                                               ; preds = %15
-  call void @llvm.lifetime.end.p0(i64 12, ptr nonnull %2) #5
+  call void @llvm.lifetime.end.p0(i64 12, ptr nonnull %2) #6
   ret void
 }
 
@@ -108,13 +108,41 @@ define dso_local void @uputhex(i32 noundef %0) local_unnamed_addr #0 {
   %10 = or disjoint i32 %8, 48
   %11 = add nuw nsw i32 %8, 87
   %12 = select i1 %9, i32 %10, i32 %11
-  tail call fastcc void @uputc(i32 noundef %12) #4
+  tail call fastcc void @uputc(i32 noundef %12) #5
   %13 = add nsw i32 %3, -4
   br label %2, !llvm.loop !14
 }
 
+; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: write)
+define dso_local void @numstr(ptr noundef writeonly captures(none) %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #3 {
+  %4 = getelementptr inbounds i8, ptr %0, i32 %1
+  store i8 0, ptr %4, align 1, !tbaa !3
+  br label %5
+
+5:                                                ; preds = %10, %3
+  %6 = phi i32 [ %2, %3 ], [ %13, %10 ]
+  %7 = phi i32 [ %1, %3 ], [ %11, %10 ]
+  %8 = icmp sgt i32 %7, 0
+  br i1 %8, label %10, label %9
+
+9:                                                ; preds = %5
+  ret void
+
+10:                                               ; preds = %5
+  %11 = add nsw i32 %7, -1
+  %12 = freeze i32 %6
+  %13 = udiv i32 %12, 10
+  %14 = mul i32 %13, 10
+  %15 = sub i32 %12, %14
+  %16 = trunc nuw nsw i32 %15 to i8
+  %17 = or disjoint i8 %16, 48
+  %18 = getelementptr inbounds nuw i8, ptr %0, i32 %11
+  store i8 %17, ptr %18, align 1, !tbaa !3
+  br label %5, !llvm.loop !15
+}
+
 ; Function Attrs: minsize mustprogress nofree norecurse nounwind optsize willreturn
-define dso_local i32 @now_us() local_unnamed_addr #3 {
+define dso_local i32 @now_us() local_unnamed_addr #4 {
   %1 = load volatile i32, ptr inttoptr (i32 1074085928 to ptr), align 8, !tbaa !9
   ret i32 %1
 }
@@ -128,7 +156,7 @@ define dso_local void @delay_us(i32 noundef %0) local_unnamed_addr #0 {
   %4 = load volatile i32, ptr inttoptr (i32 1074085928 to ptr), align 8, !tbaa !9
   %5 = sub i32 %4, %2
   %6 = icmp ult i32 %5, %0
-  br i1 %6, label %3, label %7, !llvm.loop !15
+  br i1 %6, label %3, label %7, !llvm.loop !16
 
 7:                                                ; preds = %3
   ret void
@@ -190,7 +218,7 @@ define dso_local void @gdma_copy(i32 noundef %0, i32 noundef %1, i32 noundef %2)
 
 13:                                               ; preds = %5
   %14 = lshr i32 %2, 2
-  tail call fastcc void @gd_run(i32 noundef %1, i32 noundef %0, i32 noundef %14, i32 noundef %10) #4
+  tail call fastcc void @gd_run(i32 noundef %1, i32 noundef %0, i32 noundef %14, i32 noundef %10) #5
   br label %26
 
 15:                                               ; preds = %5
@@ -209,7 +237,7 @@ define dso_local void @gdma_copy(i32 noundef %0, i32 noundef %1, i32 noundef %2)
   %24 = getelementptr inbounds nuw i8, ptr %17, i32 %19
   store i8 %23, ptr %24, align 1, !tbaa !3
   %25 = add i32 %19, 1
-  br label %18, !llvm.loop !16
+  br label %18, !llvm.loop !17
 
 26:                                               ; preds = %18, %3, %13
   ret void
@@ -226,7 +254,7 @@ define internal fastcc void @gd_run(i32 noundef %0, i32 noundef %1, i32 noundef 
 5:                                                ; preds = %5, %4
   %6 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !9
   %7 = icmp eq i32 %6, 0
-  br i1 %7, label %8, label %5, !llvm.loop !17
+  br i1 %7, label %8, label %5, !llvm.loop !18
 
 8:                                                ; preds = %5
   ret void
@@ -254,7 +282,7 @@ define dso_local void @gdma_fill(i32 noundef %0, i32 noundef %1, i32 noundef %2)
   store i32 %1, ptr @gdma_fill.fill, align 4, !tbaa !9
   %15 = lshr i32 %2, 2
   %16 = and i32 %9, -17
-  tail call fastcc void @gd_run(i32 noundef ptrtoint (ptr @gdma_fill.fill to i32), i32 noundef %0, i32 noundef %15, i32 noundef %16) #4
+  tail call fastcc void @gd_run(i32 noundef ptrtoint (ptr @gdma_fill.fill to i32), i32 noundef %0, i32 noundef %15, i32 noundef %16) #5
   br label %23
 
 17:                                               ; preds = %12, %20
@@ -266,7 +294,7 @@ define dso_local void @gdma_fill(i32 noundef %0, i32 noundef %1, i32 noundef %2)
   %21 = inttoptr i32 %18 to ptr
   store volatile i32 %1, ptr %21, align 4, !tbaa !9
   %22 = add i32 %18, 4
-  br label %17, !llvm.loop !18
+  br label %17, !llvm.loop !19
 
 23:                                               ; preds = %17, %3, %14
   ret void
@@ -275,14 +303,14 @@ define dso_local void @gdma_fill(i32 noundef %0, i32 noundef %1, i32 noundef %2)
 ; Function Attrs: minsize nofree norecurse nounwind optsize
 define dso_local void @gdma_spi16(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
   %3 = load i32, ptr @spictrl, align 4, !tbaa !9
-  tail call fastcc void @gd_run(i32 noundef %0, i32 noundef 1073987592, i32 noundef %1, i32 noundef %3) #4
+  tail call fastcc void @gd_run(i32 noundef %0, i32 noundef 1073987592, i32 noundef %1, i32 noundef %3) #5
   br label %4
 
 4:                                                ; preds = %4, %2
   %5 = load volatile i32, ptr inttoptr (i32 1073987596 to ptr), align 4, !tbaa !9
   %6 = and i32 %5, 16
   %7 = icmp eq i32 %6, 0
-  br i1 %7, label %8, label %4, !llvm.loop !19
+  br i1 %7, label %8, label %4, !llvm.loop !20
 
 8:                                                ; preds = %4
   ret void
@@ -291,9 +319,10 @@ define dso_local void @gdma_spi16(i32 noundef %0, i32 noundef %1) local_unnamed_
 attributes #0 = { minsize nofree norecurse nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { minsize nofree norecurse nounwind optsize memory(readwrite, argmem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #2 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
-attributes #3 = { minsize mustprogress nofree norecurse nounwind optsize willreturn "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #4 = { minsize nobuiltin optsize "no-builtins" }
-attributes #5 = { nounwind }
+attributes #3 = { minsize nofree norecurse nosync nounwind optsize memory(argmem: write) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #4 = { minsize mustprogress nofree norecurse nounwind optsize willreturn "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #5 = { minsize nobuiltin optsize "no-builtins" }
+attributes #6 = { nounwind }
 
 !llvm.module.flags = !{!0, !1}
 !llvm.ident = !{!2}
@@ -318,3 +347,4 @@ attributes #5 = { nounwind }
 !17 = distinct !{!17, !7, !8}
 !18 = distinct !{!18, !7, !8}
 !19 = distinct !{!19, !7, !8}
+!20 = distinct !{!20, !7, !8}

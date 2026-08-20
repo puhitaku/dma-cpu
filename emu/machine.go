@@ -380,6 +380,21 @@ func (m *Machine) Write(addr uint32, val uint32, size int) error {
 	return fmt.Errorf("bus fault: write at %#08x", addr)
 }
 
+// SetPadIn drives a GPIO pad's input level, as external wiring (a
+// joystick, a pull-up) would: GPIOx_STATUS reads reflect it until an
+// OUTOVER write overrides the pin. Pins default low, so tests that
+// model pulled-up buttons must set them high before the machine runs.
+func (m *Machine) SetPadIn(pin int, high bool) {
+	if pin < 0 || pin >= len(m.gpioLevel) {
+		return
+	}
+	if high {
+		m.gpioLevel[pin] = 1
+	} else {
+		m.gpioLevel[pin] = 0
+	}
+}
+
 func (m *Machine) decodeGPIO(normAddr, val uint32) {
 	base := m.v.IOBank0Base
 	if normAddr < base+4 || normAddr >= base+uint32(m.v.GPIOPins)*8 {
