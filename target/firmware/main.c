@@ -71,6 +71,21 @@ static inline uint32_t cal_reg(uint32_t off) { return HIL_CAL_CH_BASE + off; }
 #define CAL_SRC (HIL_MACHINE_RAM_START + 0x0u)
 #define CAL_DST (HIL_MACHINE_RAM_START + 0x100u)
 
+/* dma_block_reset: RESETS-level reset of the whole DMA block. A channel
+ * CHAN_ABORTed mid-transfer can WEDGE: stuck busy, ignoring further
+ * aborts and re-triggers, surviving core resets — only this revives it
+ * (measured over SWD on RP2040). Call only while no other subsystem
+ * owns a channel. */
+static void dma_block_reset(void)
+{
+    hw_set_bits(&resets_hw->reset, RESETS_RESET_DMA_BITS);
+    busy_wait_us(10);
+    hw_clear_bits(&resets_hw->reset, RESETS_RESET_DMA_BITS);
+    while (!(resets_hw->reset_done & RESETS_RESET_DMA_BITS)) {
+        tight_loop_contents();
+    }
+}
+
 static void machine_reset(void)
 {
     reg_wr(HIL_CHAN_ABORT_ADDR, (1u << HIL_NCHANNELS) - 1);
@@ -1182,6 +1197,11 @@ static uint8_t game_sect[4096];
 
 static void game_start(void)
 {
+    /* Full block reset, not just machine_reset(): the freeze/abort
+     * experiments leave channels wedged ("wedges=N/500" above). Safe
+     * here: nothing else on this board owns a DMA channel, and the
+     * game programs its own from scratch. */
+    dma_block_reset();
     machine_reset();
     const uint8_t *blob = hil_game_blob_text;
     uint32_t len = (uint32_t)sizeof hil_game_blob_text;
@@ -1201,12 +1221,17 @@ static void game_start(void)
         printf("GAME: FAIL load\n");
         return;
     }
+    /* Announce BEFORE starting the machine and drain the FIFO: once
+     * dmx_start returns, the machine's own uputs bytes interleave
+     * with anything the ARM still has in flight. */
+    printf("=== handing over to the GAMEPICO machine (ARM -> wfi) ===\n");
+    stdio_flush();
+    uart_default_tx_wait_blocking();
     dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 1};
     if (dmx_start(&cfg, HIL_GAME_ENTRY) != DMX_OK) {
         printf("GAME: FAIL start\n");
         return;
     }
-    printf("=== handing over to the GAMEPICO machine (ARM -> wfi) ===\n");
     park_forever();
 }
 #endif
@@ -1549,9 +1574,7 @@ static void overclock_init(void)
 #else /* RP2040 (gamepico: 200 MHz) */
     vreg_set_voltage(VREG_VOLTAGE_1_20); /* headroom over 1.10 V */
     sleep_ms(10);
-    printf("oc: sys\n");
     set_sys_clock_khz(HIL_CLK_SYS_KHZ, true);
-    printf("oc: pll_usb\n");
     /* The RP2040 has NO clk_peri divider and its peripherals are not
      * rated for 200 MHz (the RP2350's UART at 2x taught that lesson).
      * USB is unused: repurpose pll_usb at 125 MHz for clk_peri — the
@@ -1575,12 +1598,25 @@ int main(void)
      * the overclock itself can narrate. */
     stdio_init_all();
 #if HIL_CLK_SYS_KHZ
-    printf("oc: vreg\n");
+    /* No prints DURING the clock dance: a byte in flight when
+     * clk_peri switches wedges the UART state machine, and every
+     * later printf then blocks on TXFF forever (an intermittent
+     * boot hang bisected on gamepico silicon). Flush, switch, then
+     * report. */
+    stdio_flush();
+    uart_default_tx_wait_blocking();
     overclock_init();
-    printf("oc: clk_sys=%lu kHz\n",
-           (unsigned long)(clock_get_hz(clk_sys) / 1000));
+    printf("oc: clk_sys=%lu kHz clk_peri=%lu kHz\n",
+           (unsigned long)(clock_get_hz(clk_sys) / 1000),
+           (unsigned long)(clock_get_hz(clk_peri) / 1000));
 #endif
     sleep_ms(3000);
+
+    /* Startup insurance: begin from a virgin DMA block. The SDK
+     * runtime resets peripherals at boot, but a debugger-resumed or
+     * wedged channel state has been seen to survive resets — nothing
+     * owns a channel yet, so a block reset here is free. */
+    dma_block_reset();
 
 #if PICO_RP2350
     /* ACCESSCTRL: XIP_QMI and XIP_CTRL reset to 0xB8 — DMA access

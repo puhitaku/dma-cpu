@@ -27,7 +27,13 @@ target_include_directories(dma_hil PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/generated
 )
 
-target_compile_definitions(dma_hil PRIVATE DMX_TARGET_RP2350)
+# The dmx loader's CTRL bit layout is SKU-specific. This define was
+# unconditional for months — harmless while all silicon was RP2350,
+# and the reason the machine never started on the first real RP2040
+# (prompts/040: every CAL passed, every dmx-loaded TEST timed out).
+if(PICO_RP2350)
+    target_compile_definitions(dma_hil PRIVATE DMX_TARGET_RP2350)
+endif()
 
 target_link_libraries(dma_hil pico_stdlib hardware_pio
         hardware_flash)
