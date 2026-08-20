@@ -1059,10 +1059,10 @@ static int sd_read_sector(uint32_t lba, uint8_t *dst)
  *
  * Shared state with the machine's kernel (kfb.c): one control word
  * at HIL_XSH_FBCTL — the vertical pan in framebuffer rows. The
- * framebuffer is 640x240 bytes at HIL_XSH_FBBUF; every row is
- * scanned twice. */
+ * framebuffer is 640x480 bytes at HIL_XSH_FBBUF; one row per
+ * scanline (prompts/039: the 480p squeeze). */
 #define VF_W      640
-#define VF_ROWS   240
+#define VF_ROWS   480
 #define VF_LINES  480
 #define VF_CMD_RAW_REPEAT (0x1u << 12)
 #define VF_CMD_TMDS       (0x2u << 12)
@@ -1100,7 +1100,7 @@ static void __attribute__((noinline, section(".time_critical.vfeed"))) video_fee
                     ;
                 *fifo = vactive[i];
             }
-            uint32_t row = (line >> 1) + *ctl;
+            uint32_t row = line + *ctl; /* 480p: one fb row per scanline */
             if (row >= VF_ROWS)
                 row -= VF_ROWS;
             const uint32_t *px =

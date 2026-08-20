@@ -133,7 +133,7 @@ func TestSqueeze169(t *testing.T) {
 	}
 	// vertical extent identical: both fill the full 240 rows
 	for _, sld := range [][]byte{normal, wide} {
-		if sld[0*fbW+320] == 0 || sld[239*fbW+320] == 0 {
+		if sld[0*fbW+320] == 0 || sld[(fbH-1)*fbW+320] == 0 {
 			t.Errorf("square source should span the full height")
 		}
 	}

@@ -1,12 +1,10 @@
 /*
  * sldgen converts images into slides for the `show` viewer.
  *
- * A slide (.sld) is a raw framebuffer image: 640x240 bytes of RGB332
- * (RRRGGGBB), 153600 bytes exactly. The framebuffer's rows are each
- * scanned twice on the wire, so the displayed picture is 640x480 with
- * 1:2 pixels: sources of ANY size are fitted (letterboxed, aspect
- * preserved) into a virtual 640x480 canvas and every destination row
- * integrates two canvas rows.
+ * A slide (.sld) is a raw framebuffer image: 640x480 bytes of RGB332
+ * (RRRGGGBB), 307200 bytes exactly — square pixels since the 480p
+ * squeeze (prompts/039). Sources of ANY size are fitted (letterboxed,
+ * aspect preserved). The viewer row-doubles old 640x240 slides.
  *
  * Usage: sldgen [-o dir] [-deck name] [-nodither] image...
  *
@@ -50,8 +48,8 @@ import (
 
 const (
 	fbW        = 640
-	fbH        = 240
-	dispH      = 2 * fbH // each fb row scans out twice
+	fbH        = 480
+	dispH      = fbH // square pixels: the fb is the display canvas
 	slideBytes = fbW * fbH
 	maxSlides  = 32 // the viewer's directory cap
 	stemMax    = 32 // keep "/sd/NN-stem.sld" well under the 63-char path cap
@@ -184,9 +182,8 @@ func convert(path string, dither bool) ([]byte, error) {
 	return render(src, 1, dither), nil
 }
 
-// resample letterbox-fits src onto the 640x480 display canvas and
-// area-averages it down to the 640x240 framebuffer grid (each fb
-// pixel covers a 1x2 canvas box). hsqueeze < 1 additionally narrows
+// resample letterbox-fits src onto the 640x480 framebuffer (square
+// pixels). hsqueeze < 1 additionally narrows
 // the content horizontally (anamorphic pre-compensation for displays
 // that stretch the frame). Returns per-channel planes in [0,255];
 // the letterbox stays exactly 0.
@@ -203,8 +200,8 @@ func resample(src *image.NRGBA, hsqueeze float64) (r, g, b []float64) {
 
 	for y := 0; y < fbH; y++ {
 		// the fb row's canvas span, mapped into source rows
-		sy0 := (float64(2*y) - oy) / scale
-		sy1 := (float64(2*y+2) - oy) / scale
+		sy0 := (float64(y) - oy) / scale
+		sy1 := (float64(y+1) - oy) / scale
 		for x := 0; x < fbW; x++ {
 			sx0 := (float64(x) - ox) / hscale
 			sx1 := (float64(x+1) - ox) / hscale

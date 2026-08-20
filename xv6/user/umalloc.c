@@ -49,8 +49,11 @@ morecore(uint nu)
   char *p;
   Header *hp;
 
-  if (nu < 4096)
-    nu = 4096;
+  if (nu < 512) /* was 4096 (32 KB): the first ask sizes the process's
+                 * whole heap chunk, and 32 KB of resident sh heap was
+                 * most of the feather's 480p arena (the kernel still
+                 * rounds small asks up to its 16 KB HEAPCHUNK) */
+    nu = 512;
   p = sbrk(nu * sizeof(Header));
   if (p == SBRK_ERROR)
     return 0;

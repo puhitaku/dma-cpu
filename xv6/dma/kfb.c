@@ -7,7 +7,7 @@
  * rings that preceded this are chronicled in prompts/036). The
  * machine's whole interface to video is memory:
  *
- *   - the framebuffer: 640x240 RGB332 bytes in SRAM (fb_base), each
+ *   - the framebuffer: 640x480 RGB332 bytes in SRAM (fb_base), one
  *     row scanned twice — the wire format is VESA 640x480@60;
  *   - one control word (fb_ctl): the vertical pan in fb rows, read
  *     by the feeder once per scan line. Scroll is O(1).
@@ -26,7 +26,7 @@ uint fb_base; /* loader-patched: the SRAM framebuffer; 0 = none */
 uint fb_ctl;  /* loader-patched: the feeder's pan word */
 
 #define FB_W     640
-#define FB_ROWS  240
+#define FB_ROWS  480
 #define FB_PITCH FB_W
 
 static uint fb_owner; /* pid holding the fb; 0 = fbcon renders */
