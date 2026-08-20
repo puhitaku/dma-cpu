@@ -57,7 +57,7 @@ func buildDisk(t *testing.T, v *emu.Variant) []byte {
 // data-only disk; the apps become registry rows (registerFlashApps).
 func buildDiskBoard(t *testing.T, v *emu.Variant, bd *boards.Board) []byte {
 	t.Helper()
-	b := fsimg.New(uint32(bd.DiskBlocks), 64)
+	b := fsimg.New(uint32(bd.DiskBlocks), bd.Inodes())
 	b.AddDevice("console", 1, 0)
 	b.AddFile("README", []byte("the DMA machine runs upstream xv6.\n"))
 	if bd.AppsHome == 0 {
@@ -645,10 +645,10 @@ func TestXv6ShFeather(t *testing.T) {
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
 	t.Logf("console:\n%s", out)
 	for _, want := range []string{
-		"fb: 640x240x8 on",  // kfb_init on the boot path
+		"fb: 640x480x8 on",  // kfb_init on the boot path
 		"fb0",               // devfs node
-		"640x240x8 owner=0", // fb0 text after release
-		"fb ok 640x240x8",   // fbtest acquired, wrote, verified
+		"640x480x8 owner=0", // fb0 text after release
+		"fb ok 640x480x8",   // fbtest acquired, wrote, verified
 		"\npersists\n",      // written, synced, read back
 		"\ndone\n",          // still alive after pause/resume
 	} {

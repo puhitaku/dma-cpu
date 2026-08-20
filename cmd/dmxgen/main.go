@@ -775,7 +775,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	}
 
 	// The disk: upstream user programs as compact DMX-exec files.
-	fb := fsimg.New(uint32(bd.DiskBlocks), 64)
+	fb := fsimg.New(uint32(bd.DiskBlocks), bd.Inodes())
 	fb.AddDevice("console", 1, 0)
 	fb.AddFile("README", []byte("the DMA machine runs upstream xv6.\n"))
 	// Apps: either DMX-exec files on the RAM disk, or (small-RAM

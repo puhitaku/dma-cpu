@@ -92,7 +92,7 @@ define dso_local ptr @malloc(i32 noundef %0) local_unnamed_addr #1 {
 
 8:                                                ; preds = %7, %1
   %9 = phi ptr [ @base, %7 ], [ %5, %1 ]
-  %10 = tail call i32 @llvm.umax.i32(i32 range(i32 1, 536870913) %4, i32 4096)
+  %10 = tail call i32 @llvm.umax.i32(i32 range(i32 1, 536870913) %4, i32 512)
   %11 = shl i32 %10, 3
   br label %12
 

@@ -74,9 +74,19 @@ type Board struct {
 	// disturb the display path.
 	ReadOnlyFS   bool
 	DiskBlocks   int      // fsimg.New size (1 KiB blocks)
+	DiskInodes   int      // fsimg.New inodes (0 = the 64 default)
 	DiskApps     []string // user programs baked into the RAM disk
 	ToolboxLinks []string // multi-call names linked onto toolbox
 	Bundles      []string // dmxgen bundles beyond the HIL suite
+}
+
+// Inodes is the RAM disk's inode count (16 inodes fit one block;
+// the 64 default costs four — real weight on a 10-block disk).
+func (b *Board) Inodes() uint32 {
+	if b.DiskInodes == 0 {
+		return 64
+	}
+	return uint32(b.DiskInodes)
 }
 
 // TickCycles is the scheduler tick period in clk_sys cycles: 100 us
@@ -99,10 +109,10 @@ func (b *Board) HasBundle(name string) bool {
 	return false
 }
 
-var stdApps = []string{"echo", "cat", "ls", "toolbox"}
-var fbApps = append(append([]string{}, stdApps...), "fbtools")
+var stdApps = []string{"echo", "cat", "ls", "toolbox", "hwtools"}
+var fbApps = append(append([]string{}, stdApps...), "fbtest", "show")
 var stdLinks = []string{"kill", "spin", "trap", "free", "sync", "mount",
-	"umount", "wc", "mkdir", "rm", "gpio", "mux", "blink", "help"}
+	"umount", "wc", "mkdir", "rm", "help"}
 
 // LinksFor returns the multi-call names linked onto the given app
 // image (busybox-style argv[0] dispatch): the toolbox carries the
@@ -111,8 +121,8 @@ func (b *Board) LinksFor(app string) []string {
 	switch app {
 	case "toolbox":
 		return b.ToolboxLinks
-	case "fbtools":
-		return []string{"fbtest", "show"}
+	case "hwtools":
+		return []string{"gpio", "mux", "blink"}
 	}
 	return nil
 }
@@ -196,9 +206,15 @@ var Feather = &Board{
 	// ShRText sits 2 KiB above the pico2 map: the fb kernel's data
 	// (LUTs + the 24-row image registry) outgrew the 0xD800 window.
 	ShRText: 0x2001A000, ShData: 0x2001C000,
-	IdleText: 0x20024000, IdleData: 0x20025000,
-	DiskHome: 0x20026000, DiskMax: 0x6000, // 24 KiB: data only — apps in flash
-	Arena: 0x2002C000, ArenaEnd: 0x20054000, // 160 KiB
+	// 480p squeeze (prompts/039): the disk shrinks to an echo-redirect
+	// showcase and the arena to one exec'd app (show, the largest at
+	// ~39 KiB, is the one binary a presentation needs) — the freed
+	// 126 KiB doubles the framebuffer's rows.
+	// idle and the disk tuck into sh-data's slack (sh uses ~17 KiB of
+	// its old 32 KiB window); every reclaimed KiB is arena.
+	IdleText: 0x20020800, IdleData: 0x20020C00,
+	DiskHome: 0x20021000, DiskMax: 0x2800, // 10 KiB: write showcase only
+	Arena: 0x20023800, ArenaEnd: 0x20034C00, // 69 KiB
 	Scratch: 0x2007FE00,
 
 	// Flash sections sit in the upper 4 MiB: the feather firmware ELF
@@ -226,8 +242,8 @@ var Feather = &Board{
 	// and this machine IS DMA. 640x240 bytes, scanned double; PSRAM
 	// stays for bulk storage the ARM handles (slides over USB).
 	PSRAMBase: 0x15000000, PSRAMSize: 0x800000,
-	FbBuf:  0x20054000,                    // 640x240 = 150 KiB, to 0x20079800
-	FbHome: 0x20079800, FbEnd: 0x2007FC00, // ring + buffers
+	FbBuf:  0x20034C00,                    // 640x480 = 300 KiB, to 0x2007FC00
+	FbHome: 0x2007FC00, FbEnd: 0x2007FE00, // the feeder's pan word
 
 	// Flash sync goes through the parked ARM's mailbox executor, NOT
 	// the machine's QMI direct-mode driver: that driver leaves XIP in
@@ -241,7 +257,8 @@ var Feather = &Board{
 	// USB, not the fs). The sync machinery itself remains validated
 	// (silicon + TestXv6ShFeather re-arms it in the emulator).
 	ReadOnlyFS:   true,
-	DiskBlocks:   24,
+	DiskBlocks:   10,
+	DiskInodes:   16,
 	DiskApps:     fbApps,
 	ToolboxLinks: stdLinks,
 	Bundles:      []string{"shell", "syscall", "exec", "xsh"},

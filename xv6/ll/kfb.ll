@@ -28,7 +28,7 @@ define dso_local noundef i32 @kfb_w() local_unnamed_addr #1 {
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none)
 define dso_local noundef i32 @kfb_h() local_unnamed_addr #1 {
-  ret i32 240
+  ret i32 480
 }
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, argmem: none, inaccessiblemem: none)
@@ -91,7 +91,7 @@ define dso_local range(i32 -1, 1) i32 @kfb_syscall(i32 noundef %0, i32 noundef %
   %12 = getelementptr inbounds nuw i8, ptr %10, i32 4
   store i32 640, ptr %12, align 4, !tbaa !3
   %13 = getelementptr inbounds nuw i8, ptr %10, i32 8
-  store i32 240, ptr %13, align 4, !tbaa !3
+  store i32 480, ptr %13, align 4, !tbaa !3
   %14 = getelementptr inbounds nuw i8, ptr %10, i32 12
   store i32 8, ptr %14, align 4, !tbaa !3
   %15 = getelementptr inbounds nuw i8, ptr %10, i32 16
@@ -131,7 +131,7 @@ define dso_local range(i32 -1, 1) i32 @kfb_syscall(i32 noundef %0, i32 noundef %
 declare dso_local void @kfbcon_reset() local_unnamed_addr #5
 
 ; Function Attrs: minsize nounwind optsize
-define dso_local range(i32 -1, 151) i32 @kfb_init() local_unnamed_addr #4 {
+define dso_local range(i32 -1, 301) i32 @kfb_init() local_unnamed_addr #4 {
   %1 = load i32, ptr @fb_base, align 4, !tbaa !3
   %2 = icmp eq i32 %1, 0
   br i1 %2, label %13, label %3
@@ -150,7 +150,7 @@ define dso_local range(i32 -1, 151) i32 @kfb_init() local_unnamed_addr #4 {
   br label %13
 
 10:                                               ; preds = %3
-  tail call void @kdmaset(i32 noundef %5, i32 noundef 0, i32 noundef 153600) #6
+  tail call void @kdmaset(i32 noundef %5, i32 noundef 0, i32 noundef 307200) #6
   %11 = load i32, ptr @fb_ctl, align 4, !tbaa !3
   %12 = inttoptr i32 %11 to ptr
   store volatile i32 0, ptr %12, align 4, !tbaa !3
@@ -158,7 +158,7 @@ define dso_local range(i32 -1, 151) i32 @kfb_init() local_unnamed_addr #4 {
   br label %13
 
 13:                                               ; preds = %0, %10, %9
-  %14 = phi i32 [ -1, %9 ], [ 150, %10 ], [ 0, %0 ]
+  %14 = phi i32 [ -1, %9 ], [ 300, %10 ], [ 0, %0 ]
   ret i32 %14
 }
 

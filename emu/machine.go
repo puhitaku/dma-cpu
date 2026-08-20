@@ -872,3 +872,6 @@ func (m *Machine) Clone() *Machine {
 	n.winsInvalidate() // cached windows point into the old machine
 	return n
 }
+
+// LoadedRanges exposes the LoadBytes bookkeeping (test/diagnostic use).
+func (m *Machine) LoadedRanges() [][2]uint32 { return m.loaded }

@@ -122,7 +122,7 @@ define internal fastcc void @clear_screen() unnamed_addr #0 {
 
 1:                                                ; preds = %5, %0
   %2 = phi i32 [ 0, %0 ], [ %6, %5 ]
-  %3 = icmp eq i32 %2, 30
+  %3 = icmp eq i32 %2, 60
   br i1 %3, label %4, label %5
 
 4:                                                ; preds = %1
@@ -273,7 +273,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
 54:                                               ; preds = %49
   %55 = load i32, ptr @fcy, align 4, !tbaa !3
   %56 = add nsw i32 %55, %43
-  %57 = tail call i32 @llvm.smin.i32(i32 %56, i32 29)
+  %57 = tail call i32 @llvm.smin.i32(i32 %56, i32 59)
   store i32 %57, ptr @fcy, align 4
   br label %274
 
@@ -299,7 +299,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   %71 = icmp ne i32 %70, 0
   %72 = select i1 %69, i1 %71, i1 false
   %73 = tail call i32 @llvm.smax.i32(i32 %67, i32 0)
-  %74 = tail call i32 @llvm.umin.i32(i32 %73, i32 29)
+  %74 = tail call i32 @llvm.umin.i32(i32 %73, i32 59)
   store i32 %74, ptr @fcy, align 4, !tbaa !3
   %75 = tail call i32 @llvm.smax.i32(i32 %70, i32 1)
   %76 = tail call i32 @llvm.umin.i32(i32 %75, i32 80)
@@ -345,7 +345,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
 
 95:                                               ; preds = %98, %90
   %96 = phi i32 [ %94, %90 ], [ %99, %98 ]
-  %97 = icmp slt i32 %96, 29
+  %97 = icmp slt i32 %96, 59
   br i1 %97, label %98, label %274
 
 98:                                               ; preds = %95
@@ -697,7 +697,7 @@ define internal fastcc void @cursor_xor() unnamed_addr #0 {
 define internal fastcc void @newline() unnamed_addr #0 {
   store i32 0, ptr @fcx, align 4, !tbaa !3
   %1 = load i32, ptr @fcy, align 4, !tbaa !3
-  %2 = icmp slt i32 %1, 29
+  %2 = icmp slt i32 %1, 59
   br i1 %2, label %3, label %5
 
 3:                                                ; preds = %0
@@ -708,12 +708,12 @@ define internal fastcc void @newline() unnamed_addr #0 {
 5:                                                ; preds = %0
   %6 = load i32, ptr @fpan, align 4, !tbaa !3
   %7 = add i32 %6, 1
-  %8 = icmp ugt i32 %7, 29
+  %8 = icmp ugt i32 %7, 59
   %9 = select i1 %8, i32 0, i32 %7
   store i32 %9, ptr @fpan, align 4
   %10 = shl i32 %9, 3
   tail call void @kfb_setpan(i32 noundef %10) #4
-  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef 29, i32 noundef 80) #5
+  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef 59, i32 noundef 80) #5
   br label %11
 
 11:                                               ; preds = %5, %3
@@ -788,8 +788,8 @@ define internal fastcc void @clear_cells(i32 noundef %0, i32 noundef %1, i32 nou
 define internal fastcc i32 @cell_addr(i32 noundef %0, i32 noundef %1) unnamed_addr #0 {
   %3 = load i32, ptr @fpan, align 4, !tbaa !3
   %4 = add i32 %3, %1
-  %5 = icmp ugt i32 %4, 29
-  %6 = add i32 %4, -30
+  %5 = icmp ugt i32 %4, 59
+  %6 = add i32 %4, -60
   %7 = select i1 %5, i32 %6, i32 %4
   %8 = tail call i32 @kfb_base() #4
   %9 = mul i32 %7, 5120
