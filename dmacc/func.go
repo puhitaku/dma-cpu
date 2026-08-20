@@ -440,7 +440,17 @@ func (fc *funcCtx) globalOperand(v *llir.Value) string {
 func (fc *funcCtx) op(v *llir.Value) (string, error) {
 	switch v.Kind {
 	case llir.VConst:
-		return fmt.Sprintf("$0x%x", uint32(v.Int)), nil
+		// Canonicalize to the operand's width: sub-32-bit words keep
+		// their high bits zero everywhere (zext is a pure forward on
+		// that assumption), but a negative narrow constant would
+		// otherwise render sign-extended — an i16 -377 became
+		// 0xFFFFFE87 and poisoned every use downstream of a zext
+		// (found as a one-bit color error in the gamepico menu).
+		c := uint32(v.Int)
+		if v.Typ != nil && v.Typ.Kind == llir.TInt && v.Typ.Bits < 32 {
+			c &= 1<<uint(v.Typ.Bits) - 1
+		}
+		return fmt.Sprintf("$0x%x", c), nil
 	case llir.VGlobal, llir.VFunc:
 		if uartMMIO(v.Name) != "" {
 			return "", fmt.Errorf("the address of %s cannot be taken (hardware register)", v.Name)
