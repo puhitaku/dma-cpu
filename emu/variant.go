@@ -24,6 +24,11 @@ type Variant struct {
 	DreqSPI0TX    uint32 // level-modeled: the TX FIFO always drains
 	GPIOPins      int
 
+	// SelfCountWedge: a channel writing its own TRANS_COUNT (any alias)
+	// mid-transfer wedges permanently after that beat (RP2040, measured
+	// on silicon; RP2350 latches the write as reload only).
+	SelfCountWedge bool
+
 	gpioOutoverLSB uint
 	gpioOeoverLSB  uint
 
@@ -75,18 +80,19 @@ type Variant struct {
 
 // RP2040: datasheet §2.5 (doc/rp2040-datasheet.pdf).
 var RP2040 = &Variant{
-	Name:          "rp2040",
-	NChannels:     12,
-	NIRQs:         2,
-	SRAMSize:      0x42000, // 256 KiB striped + 2 × 4 KiB scratch
-	IOBank0Base:   0x40014000,
-	PadsBank0Base: 0x4001C000,
-	PIO0Base:      0x50200000,
-	UART0Base:     0x40034000, // RP2040 datasheet §4.2
-	TimerRawL:     0x40054028,
-	SPI0Base:      0x4003C000,
-	DreqSPI0TX:    16,
-	GPIOPins:      30,
+	Name:           "rp2040",
+	SelfCountWedge: true,
+	NChannels:      12,
+	NIRQs:          2,
+	SRAMSize:       0x42000, // 256 KiB striped + 2 × 4 KiB scratch
+	IOBank0Base:    0x40014000,
+	PadsBank0Base:  0x4001C000,
+	PIO0Base:       0x50200000,
+	UART0Base:      0x40034000, // RP2040 datasheet §4.2
+	TimerRawL:      0x40054028,
+	SPI0Base:       0x4003C000,
+	DreqSPI0TX:     16,
+	GPIOPins:       30,
 
 	gpioOutoverLSB: 8,
 	gpioOeoverLSB:  12,

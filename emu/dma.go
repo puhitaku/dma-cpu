@@ -11,6 +11,7 @@ type channel struct {
 	remaining uint32 // transfers left in the current sequence
 	mode      uint32 // TRANS_COUNT mode latched at trigger (RP2350)
 	busy      bool
+	wedged    bool  // RP2040 self-TRANS_COUNT write: dead until block reset
 	credit    uint8 // DREQ credit counter (saturating; credit-based scheme)
 
 	// Decoded-CTRL cache (ctrlChanged is the single writer): the
@@ -422,6 +423,9 @@ func (d *dma) complete(chIdx int) {
 // runnable reports whether the channel can issue a transfer this cycle.
 func (d *dma) runnable(chIdx int) bool {
 	c := &d.ch[chIdx]
+	if c.wedged {
+		return false // survives CHAN_ABORT and re-trigger (silicon-measured)
+	}
 	if !c.busy || c.ctrl&CtrlEN == 0 {
 		return false
 	}

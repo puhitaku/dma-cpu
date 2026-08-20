@@ -875,13 +875,20 @@ func (a *asm) scanShapes(s *stmt, scan func(...string) error, needRegs func(stri
 			return fmt.Errorf("line %d: mulc constant %q must be a number", s.line, s.args[1])
 		}
 		if compact {
-			// Seed -k; the in-bank count-restore adds k back (compact.go).
-			a.internLit(operand{kind: opLit, num: -k, isNum: true})
-			a.internLit(operand{kind: opLit, num: 1, isNum: true})
-			*shapes = append(*shapes, sh(bP),
-				cshape{bank: bS, count: k},
-				cshape{bank: bS, count: k, cntAfter: 1},
-				rd(s.args[2]))
+			// Binary-method multiply: count-1 sniff records only — the
+			// old count-k form needed an in-bank count restore, which
+			// wedges RP2040 (emit.go).
+			*shapes = append(*shapes, sh(bP))
+			for started, bit := false, 31; bit >= 0; bit-- {
+				if started {
+					*shapes = append(*shapes, sh(bS))
+				}
+				if k&(1<<uint(bit)) != 0 {
+					*shapes = append(*shapes, sh(bS))
+					started = true
+				}
+			}
+			*shapes = append(*shapes, rd(s.args[2]))
 		}
 		return scan(s.args[0], s.args[2])
 	case "jump":
@@ -970,13 +977,11 @@ func (a *asm) scanShapes(s *stmt, scan func(...string) error, needRegs func(stri
 			return err
 		}
 		if compact {
-			// 8-byte slots: the dispatch adds 8*v for v in {0,1}. Seed
-			// -8; the in-bank count-restore adds 8 back.
-			a.internLit(operand{kind: opLit, num: ^uint32(8) + 1, isNum: true})
-			a.internLit(operand{kind: opLit, num: 1, isNum: true})
+			// 8-byte slots: the dispatch adds 8*v for v in {0,1} via
+			// count-1 records — v, three doublings, the pair base (see
+			// mulc on the RP2040 self-TRANS_COUNT wedge).
 			body := []cshape{sh(bP),
-				{bank: bS, count: 8},
-				{bank: bS, count: 8, cntAfter: 1},
+				sh(bS), sh(bS), sh(bS), sh(bS),
 				sh(bS), rdPc}
 			a.genTextLabel(a.textOff + planPrefix(body)*8)
 			*shapes = append(*shapes, body...)

@@ -745,6 +745,18 @@ func (m *Machine) transfer(chIdx int) error {
 	if c.remaining > 0 {
 		c.remaining--
 	}
+	// RP2040: a channel writing its OWN TRANS_COUNT (any alias) while
+	// running wedges after that beat — stuck busy, never completes,
+	// immune to CHAN_ABORT; only a DMA block reset revives it (measured
+	// on silicon, prompts/040). RP2350 latches the value as reload only.
+	if m.v.SelfCountWedge && writeAddr-ChanRegAddr(chIdx, 0) < ChanStride {
+		switch writeAddr - ChanRegAddr(chIdx, 0) {
+		case OffTransCount, OffAl1TransCountTrig, OffAl2TransCount, OffAl3TransCount:
+			c.wedged = true
+			m.dma.updateReady(chIdx)
+			return nil
+		}
+	}
 	if c.remaining == 0 && c.busy {
 		m.dma.complete(chIdx)
 	}

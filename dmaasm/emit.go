@@ -376,12 +376,25 @@ func (a *asm) emit() (*Result, error) {
 				return nil, err
 			}
 			if a.opts.Compact {
-				// Seed -k: the in-bank count-restore record adds k*1
-				// back while resetting the sniff channel's reload to 1.
-				mv(litNumP(-k), sniffP, 1, execCtrl)
-				mv(ops[0], nullP, k, execCtrl|a.v.CtrlSniffEn)
-				mvFull(litNumP(1), img.Abs(emu.ChanRegAddr(emu.CompactSniff, emu.OffAl2TransCount)),
-					k, execCtrl|a.v.CtrlSniffEn, false, 1)
+				// Binary-method multiply on the accumulator, count-1
+				// records only: S = 0; per bit of k (MSB first) S += S
+				// (the sniff bank reading SNIFF_DATA doubles it), plus
+				// S += v on set bits. The bank count never leaves 1, so
+				// the sniff read stays on the deferred fast path — and
+				// the old in-bank count restore (the sniff channel
+				// writing its own AL2_TRANS_COUNT mid-transfer) is gone:
+				// that write wedges the channel on RP2040 silicon.
+				// RP2350 latches it as reload only.
+				mv(zeroP, sniffP, 1, execCtrl)
+				for started, bit := false, 31; bit >= 0; bit-- {
+					if started {
+						mv(sniffP, nullP, 1, execCtrl|a.v.CtrlSniffEn)
+					}
+					if k&(1<<uint(bit)) != 0 {
+						mv(ops[0], nullP, 1, execCtrl|a.v.CtrlSniffEn)
+						started = true
+					}
+				}
 				mv(sniffP, ops[1], 1, execCtrl)
 				break
 			}
@@ -580,12 +593,15 @@ func (a *asm) emit() (*Result, error) {
 				return nil, err
 			}
 			if a.opts.Compact {
-				// 8-byte slots: seed -8, add 8*v, in-bank count restore
-				// (+8), add the pair base, dispatch.
-				mv(litNumP(^uint32(8)+1), sniffP, 1, execCtrl)
-				mv(ops[0], nullP, 8, execCtrl|a.v.CtrlSniffEn)
-				mvFull(litNumP(1), img.Abs(emu.ChanRegAddr(emu.CompactSniff, emu.OffAl2TransCount)),
-					8, execCtrl|a.v.CtrlSniffEn, false, 1)
+				// 8-byte slots: sniff = 8*v + pair base, all count-1
+				// records — v, three doublings (the sniff bank reading
+				// SNIFF_DATA), the pair base, dispatch. See mulc on the
+				// RP2040 self-TRANS_COUNT wedge.
+				mv(zeroP, sniffP, 1, execCtrl)
+				mv(ops[0], nullP, 1, execCtrl|a.v.CtrlSniffEn)
+				mv(sniffP, nullP, 1, execCtrl|a.v.CtrlSniffEn)
+				mv(sniffP, nullP, 1, execCtrl|a.v.CtrlSniffEn)
+				mv(sniffP, nullP, 1, execCtrl|a.v.CtrlSniffEn)
 				mv(trampP, nullP, 1, execCtrl|a.v.CtrlSniffEn)
 				mv(sniffP, pcP, 1, execCtrl)
 				mv(zeroLP, pcP, 1, execCtrl) // trampoline slot 0: v == 0
