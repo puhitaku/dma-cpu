@@ -176,9 +176,14 @@ enables the block. No ARM involvement at any point.
   read side, paced by DREQ 0. Once armed, audio costs the machine
   zero attention: silence is a zeroed ring (the amp's SD_MODE is
   strapped on, so frames never stop and nothing pops). Tones are a
-  fixed 64-frame square wave in the ring — written once, doubled out
-  by log2 gdma copies — and pitch is pure clock math on SM0 CLKDIV
-  (div_fp8 = 12.5e6/Hz at 200 MHz, ~200 Hz to 48 kHz). snd_play
+  power-of-two-period square wave in the ring — written once,
+  doubled out by log2 gdma copies, wrapping seamlessly — with fine
+  pitch from SM0 CLKDIV. The MAX98357 tracks LRCLK only in its
+  specified ranges (22.05 kHz is by name NOT supported, p.16 —
+  caught by the user), so fs stays clamped inside the continuous
+  30.4-50.4 kHz band and octaves come from the period: bands
+  118-196, 237-393, 475-787, 950-1575, 1900-3150, 3800-6300 Hz,
+  gaps landing on the nearest edge. Idle fs is 44.1 kHz. snd_play
   takes (hz, vol, frames); frame_sync ticks the countdown and zeroes
   the ring when it expires.
 - Light: SM1 shifts WS2811 800 kHz frames out of GP12; two LEDs are

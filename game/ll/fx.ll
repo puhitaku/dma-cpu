@@ -27,7 +27,7 @@ define dso_local void @fx_init() local_unnamed_addr #0 {
   br i1 %8, label %9, label %11
 
 9:                                                ; preds = %6
-  store volatile i32 9287680, ptr inttoptr (i32 1344274632 to ptr), align 8, !tbaa !6
+  store volatile i32 4643840, ptr inttoptr (i32 1344274632 to ptr), align 8, !tbaa !6
   store volatile i32 28672, ptr inttoptr (i32 1344274636 to ptr), align 4, !tbaa !6
   store volatile i32 131072, ptr inttoptr (i32 1344274640 to ptr), align 16, !tbaa !6
   store volatile i32 1074803727, ptr inttoptr (i32 1344274652 to ptr), align 4, !tbaa !6
@@ -72,57 +72,88 @@ declare dso_local void @gdma_fill(i32 noundef, i32 noundef, i32 noundef) local_u
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @snd_play(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #0 {
-  %4 = tail call i32 @llvm.umax.i32(i32 %0, i32 200)
-  %5 = udiv i32 12500000, %4
-  %6 = shl nuw nsw i32 %5, 8
-  store volatile i32 %6, ptr inttoptr (i32 1344274632 to ptr), align 8, !tbaa !6
-  %7 = shl i32 %1, 6
-  %8 = and i32 %7, 65472
-  %9 = mul nuw i32 %8, 65537
-  br label %10
+  %4 = icmp ult i32 %0, 217
+  br i1 %4, label %15, label %5
 
-10:                                               ; preds = %17, %3
-  %11 = phi i32 [ 0, %3 ], [ %19, %17 ]
-  %12 = icmp eq i32 %11, 32
-  br i1 %12, label %13, label %17
+5:                                                ; preds = %3
+  %6 = icmp ult i32 %0, 433
+  br i1 %6, label %15, label %7
 
-13:                                               ; preds = %10
-  %14 = sub i32 0, %7
-  %15 = and i32 %14, 65472
-  %16 = mul nuw i32 %15, 65537
-  br label %20
+7:                                                ; preds = %5
+  %8 = icmp ult i32 %0, 865
+  br i1 %8, label %15, label %9
 
-17:                                               ; preds = %10
-  %18 = getelementptr inbounds nuw i32, ptr inttoptr (i32 537116672 to ptr), i32 %11
-  store volatile i32 %9, ptr %18, align 4, !tbaa !6
-  %19 = add nuw nsw i32 %11, 1
-  br label %10, !llvm.loop !13
+9:                                                ; preds = %7
+  %10 = icmp ult i32 %0, 1728
+  br i1 %10, label %15, label %11
 
-20:                                               ; preds = %13, %23
-  %21 = phi i32 [ %25, %23 ], [ 32, %13 ]
-  %22 = icmp eq i32 %21, 64
-  br i1 %22, label %26, label %23
+11:                                               ; preds = %9
+  %12 = icmp ult i32 %0, 3455
+  %13 = select i1 %12, i32 4, i32 3
+  %14 = select i1 %12, i32 8, i32 4
+  br label %15
 
-23:                                               ; preds = %20
-  %24 = getelementptr inbounds nuw i32, ptr inttoptr (i32 537116672 to ptr), i32 %21
-  store volatile i32 %16, ptr %24, align 4, !tbaa !6
-  %25 = add nuw nsw i32 %21, 1
-  br label %20, !llvm.loop !14
+15:                                               ; preds = %11, %9, %7, %5, %3
+  %16 = phi i32 [ 8, %3 ], [ 7, %5 ], [ 6, %7 ], [ 5, %9 ], [ %13, %11 ]
+  %17 = phi i32 [ 128, %3 ], [ 64, %5 ], [ 32, %7 ], [ 16, %9 ], [ %14, %11 ]
+  %18 = lshr i32 800000000, %16
+  %19 = udiv i32 %18, %0
+  %20 = tail call i32 @llvm.umax.i32(i32 %19, i32 15900)
+  %21 = tail call i32 @llvm.umin.i32(i32 %20, i32 26300)
+  %22 = shl nuw nsw i32 %21, 8
+  store volatile i32 %22, ptr inttoptr (i32 1344274632 to ptr), align 8, !tbaa !6
+  %23 = shl i32 %1, 6
+  %24 = and i32 %23, 65472
+  %25 = mul nuw i32 %24, 65537
+  br label %26
 
-26:                                               ; preds = %20, %30
-  %27 = phi i32 [ %32, %30 ], [ 256, %20 ]
-  %28 = icmp ult i32 %27, 4096
-  br i1 %28, label %30, label %29
+26:                                               ; preds = %34, %15
+  %27 = phi i32 [ 0, %15 ], [ %36, %34 ]
+  %28 = icmp eq i32 %27, %17
+  br i1 %28, label %29, label %34
 
 29:                                               ; preds = %26
+  %30 = sub i32 0, %23
+  %31 = and i32 %30, 65472
+  %32 = mul nuw i32 %31, 65537
+  %33 = shl nuw nsw i32 %17, 1
+  br label %37
+
+34:                                               ; preds = %26
+  %35 = getelementptr inbounds nuw i32, ptr inttoptr (i32 537116672 to ptr), i32 %27
+  store volatile i32 %25, ptr %35, align 4, !tbaa !6
+  %36 = add nuw nsw i32 %27, 1
+  br label %26, !llvm.loop !13
+
+37:                                               ; preds = %29, %42
+  %38 = phi i32 [ %44, %42 ], [ %17, %29 ]
+  %39 = icmp samesign ult i32 %38, %33
+  br i1 %39, label %42, label %40
+
+40:                                               ; preds = %37
+  %41 = shl nuw nsw i32 %17, 3
+  br label %45
+
+42:                                               ; preds = %37
+  %43 = getelementptr inbounds nuw i32, ptr inttoptr (i32 537116672 to ptr), i32 %38
+  store volatile i32 %32, ptr %43, align 4, !tbaa !6
+  %44 = add nuw nsw i32 %38, 1
+  br label %37, !llvm.loop !14
+
+45:                                               ; preds = %49, %40
+  %46 = phi i32 [ %41, %40 ], [ %51, %49 ]
+  %47 = icmp ult i32 %46, 4096
+  br i1 %47, label %49, label %48
+
+48:                                               ; preds = %45
   store i32 %2, ptr @snd_frames, align 4, !tbaa !6
   ret void
 
-30:                                               ; preds = %26
-  %31 = or disjoint i32 %27, 537116672
-  tail call void @gdma_copy(i32 noundef %31, i32 noundef 537116672, i32 noundef %27) #5
-  %32 = shl nuw nsw i32 %27, 1
-  br label %26, !llvm.loop !15
+49:                                               ; preds = %45
+  %50 = or disjoint i32 %46, 537116672
+  tail call void @gdma_copy(i32 noundef %50, i32 noundef 537116672, i32 noundef %46) #5
+  %51 = shl nuw nsw i32 %46, 1
+  br label %45, !llvm.loop !15
 }
 
 ; Function Attrs: minsize optsize
@@ -190,6 +221,9 @@ define dso_local void @led(i32 noundef %0, i32 noundef %1) local_unnamed_addr #3
   %25 = add nuw nsw i32 %6, 1
   br label %5, !llvm.loop !17
 }
+
+; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+declare i32 @llvm.umin.i32(i32, i32) #4
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
 declare i32 @llvm.umax.i32(i32, i32) #4

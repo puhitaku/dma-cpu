@@ -71,8 +71,11 @@ fx_init(void)
     gpio_fn(pin, 6u | (3u << 12));
   for (int i = 0; i < 12; i++)
     W32(PIO_INSTR_MEM + 4u * (uint)i) = pioprog[i];
-  /* SM0: I2S. div = clk_sys / (fs * 64); 141.72 ~= 22.05 kHz. */
-  W32(SM0_CLKDIV) = (141u << 16) | (184u << 8);
+  /* SM0: I2S at fs = 44.1 kHz (div 70.86). The MAX98357 accepts
+   * LRCLK only in discrete ranges — 22.05 kHz is by name NOT
+   * supported (datasheet p.16) — and the widest range, 30.4-50.4
+   * kHz, is continuous; everything here stays inside it. */
+  W32(SM0_CLKDIV) = (70u << 16) | (220u << 8);
   W32(SM0_EXECCTRL) = 7u << 12; /* wrap 0..7 */
   W32(SM0_SHIFTCTRL) = 1u << 17; /* autopull, threshold 32, shift left */
   W32(SM0_PINCTRL) = (2u << 29) | (1u << 20) | ((uint)PIN_I2S_BCLK << 10) |
@@ -94,25 +97,51 @@ fx_init(void)
   W32(PIO_CTRL) = 0x3; /* SM0 | SM1 on */
 }
 
-/* snd_play: a square wave. The ring holds a fixed 64-frame period
- * (32 high, 32 low), so pitch is pure clock math: the frame rate is
- * clk_sys / (div * 64) and one period is 64 frames, hence
- * div_fp8 = clk_sys / (16 * hz) = 12.5e6 / hz at 200 MHz. */
+/* snd_play: a square wave, pitched inside the amp's clock window.
+ * The MAX98357 tracks LRCLK only within its specified ranges, so the
+ * sample rate fs = 800e6 / div_fp8 is clamped to the continuous
+ * 30.4-50.4 kHz band, and coarser pitch comes from the ring period P
+ * (a power of two, so the 1024-frame ring wraps seamlessly):
+ * f = fs / P. Bands touch at geometric midpoints; a requested pitch
+ * in a gap lands on the nearest band edge — bleep-grade tuning. */
 void
 snd_play(uint hz, uint vol, uint frames)
 {
-  if (hz < 200)
-    hz = 200; /* CLKDIV tops out (16-bit integer part) near here */
-  W32(SM0_CLKDIV) = (12500000u / hz) << 8;
+  uint half, shift; /* half period in frames; shift = log2(P) */
+  if (hz <= 216) {
+    half = 128; /* P=256: 118-196 Hz */
+    shift = 8;
+  } else if (hz <= 432) {
+    half = 64; /* P=128: 237-393 Hz */
+    shift = 7;
+  } else if (hz <= 864) {
+    half = 32; /* P=64: 475-787 Hz */
+    shift = 6;
+  } else if (hz <= 1727) {
+    half = 16; /* P=32: 950-1575 Hz */
+    shift = 5;
+  } else if (hz <= 3454) {
+    half = 8; /* P=16: 1900-3150 Hz */
+    shift = 4;
+  } else {
+    half = 4; /* P=8: 3800-6300 Hz */
+    shift = 3;
+  }
+  uint div_fp8 = (800000000u >> shift) / hz;
+  if (div_fp8 > 26300) /* fs floor: 30.4 kHz */
+    div_fp8 = 26300;
+  if (div_fp8 < 15900) /* fs ceiling: 50.4 kHz */
+    div_fp8 = 15900;
+  W32(SM0_CLKDIV) = div_fp8 << 8;
   int s = (int)(vol << 6);
   uint hi = ((uint)(ushort)s << 16) | (ushort)s; /* L|R, same both */
   uint lo = ((uint)(ushort)-s << 16) | (ushort)-s;
   volatile uint *r = (volatile uint *)AURING;
-  for (int i = 0; i < 32; i++)
+  for (uint i = 0; i < half; i++)
     r[i] = hi;
-  for (int i = 32; i < 64; i++)
+  for (uint i = half; i < 2u * half; i++)
     r[i] = lo;
-  for (uint sz = 256; sz < AURING_BYTES; sz <<= 1)
+  for (uint sz = 8u * half; sz < AURING_BYTES; sz <<= 1)
     gdma_copy(AURING + sz, AURING, sz); /* double out to the full ring */
   snd_frames = frames;
 }
