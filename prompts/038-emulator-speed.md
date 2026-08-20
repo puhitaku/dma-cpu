@@ -54,3 +54,22 @@ premise is type-ahead landing mid-boot, so it boots fresh
 370 s -> 16 s wall (23x); the pole is now vi's own settle loops.
 The lesson for the next round: profile the harness, not just the
 engine — the biggest waste was cycles nobody needed emulated at all.
+
+## Postscript: 300 MHz silicon (prompts/038.5, same session family)
+
+The machine IS the bus, so overclocking clk_sys is overclocking the
+CPU: 300 MHz (2x) with vreg at 1.30 V. Everything that derives from
+clk_sys moved with it — clk_peri divided back to a in-spec 150 MHz
+(the UART garbled both directions at the correct baud until it was),
+PSRAM QMI M1 retimed register-only (psram_reinitialize wedged the
+QPI-mode chip and dropped flash to serial XIP), flash M0 at
+CLKDIV=4/RXDELAY=4 (75 MHz quad, the 150 MHz map's margins), and the
+scheduler tick derives from Board.ClkSysKHz (100 us wall either
+way). The RP2350 vreg gotcha cost the afternoon: vreg_set_voltage
+alone is silently CLAMPED to 1.15 V; the chip ran but every logic
+path was marginal — deterministic garbage with per-run single-bit
+flips, which looked exactly like a baud mismatch until no baud in a
+sweep decoded it. Silicon score at 300 MHz: 21/21 HIL PASS,
+fc0-measured clk_sys=300000 kHz, video untouched (126 MHz HSTX
+PLL), fbtest 22 s -> 5 s, slide load 1.55 -> 1.04 s (SPI wire is
+the floor now), ticks 2x (kernel-bound, as always).

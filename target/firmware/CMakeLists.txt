@@ -36,7 +36,7 @@ target_link_libraries(dma_hil pico_stdlib hardware_pio
 # (prompts/036): the SDK runtime brings PSRAM up on QMI CS1, and the
 # firmware repurposes the USB PLL for clk_hstx.
 if(PICO_BOARD STREQUAL "adafruit_feather_rp2350")
-    target_link_libraries(dma_hil hardware_psram hardware_pll pico_multicore hardware_spi)
+    target_link_libraries(dma_hil hardware_psram hardware_pll hardware_vreg pico_multicore hardware_spi)
 endif()
 
 pico_enable_stdio_uart(dma_hil 1)

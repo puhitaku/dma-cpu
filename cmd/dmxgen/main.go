@@ -1640,7 +1640,7 @@ func calExpect(v *emu.Variant, sniffCtrl, seed, word uint32) uint32 {
 
 // --- C header emission ---
 
-func emitHeader(v *emu.Variant, lay layout, tests []*test, sched, shl, sys, exe, xsh *kernBundle) string {
+func emitHeader(bd *boards.Board, v *emu.Variant, lay layout, tests []*test, sched, shl, sys, exe, xsh *kernBundle) string {
 	var b strings.Builder
 	p := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 
@@ -1666,6 +1666,8 @@ func emitHeader(v *emu.Variant, lay layout, tests []*test, sched, shl, sys, exe,
 	p("#define HIL_INTR_ADDR 0x%08Xu", v.IntrAddr())
 	p("#define HIL_CHAN_ABORT_ADDR 0x%08Xu", v.ChanAbortAddr())
 	p("#define HIL_TIMER0_ADDR 0x%08Xu", v.TimerAddr(0))
+	p("#define HIL_CLK_SYS_KHZ %du /* 0 = SDK default */", bd.ClkSysKHz)
+	p("#define HIL_TICK_CYCLES %du /* 100 us of clk_sys */", bd.TickCycles())
 	p("#define HIL_SNIFF_CTRL_ADDR 0x%08Xu", v.SniffCtrlAddr())
 	p("#define HIL_SNIFF_DATA_ADDR 0x%08Xu", v.SniffDataAddr())
 	p("#define HIL_NCHANNELS %d", v.NChannels)
@@ -1963,7 +1965,7 @@ func run() error {
 	if err := os.MkdirAll(filepath.Dir(*out), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(*out, []byte(emitHeader(v, lay, tests, sched, shl, sys, exe, xsh)), 0o644); err != nil {
+	if err := os.WriteFile(*out, []byte(emitHeader(bd, v, lay, tests, sched, shl, sys, exe, xsh)), 0o644); err != nil {
 		return err
 	}
 	for _, t := range tests {

@@ -28,6 +28,7 @@
 #if defined(ADAFRUIT_FEATHER_RP2350)
 #include "hardware/clocks.h"
 #include "hardware/pll.h"
+#include "hardware/vreg.h"
 #include "hardware/psram.h"
 #include "hardware/structs/hstx_ctrl.h"
 #include "hardware/structs/hstx_fifo.h"
@@ -260,7 +261,7 @@ static inline uint32_t chreg(int ch, uint32_t off)
  * dmxgen; this only loads, arms, starts A, and samples the counters. */
 static void arm_tick_ch(int ch, uint32_t vec, uint32_t disp0, uint32_t ctrl)
 {
-    reg_wr(HIL_TIMER0_ADDR + 4, (1u << 16) | 15000u); /* TIMER1 tick */
+    reg_wr(HIL_TIMER0_ADDR + 4, (1u << 16) | HIL_TICK_CYCLES); /* TIMER1: 100 us tick */
     reg_wr(chreg(ch, CH_AL1_READ_ADDR), vec);
     reg_wr(chreg(ch, CH_AL1_WRITE_ADDR), disp0);
     reg_wr(chreg(ch, CH_TRANS_COUNT), 1);
@@ -1304,8 +1305,9 @@ static void xsh_start(void)
  *  - clk_hstx = 126 MHz from the otherwise-unused USB PLL (VCO
  *    1260 MHz / 5 / 2): 640x480@60 wants a 25.2 MHz pixel clock and
  *    HSTX shifts 2 TMDS bits per cycle, 5 shifts per pixel. clk_sys
- *    stays at the machine's calibrated 150 MHz and clk_peri stays on
- *    clk_sys, so the UART is unaffected (clk_usb/clk_adc die: unused).
+ *    runs at HIL_CLK_SYS_KHZ (300 MHz, overclock_init) independent of
+ *    clk_hstx; clk_peri follows clk_sys and every divisor-consumer
+ *    initializes after the switch (clk_usb/clk_adc die: unused).
  *  - HSTX TMDS encoder in RGB332, 4 pixels per FIFO word (the
  *    pico-examples dvi_out_hstx_encoder configuration).
  *  - Board pin map: HSTX bit N = GPIO 12+N; clock pair GPIO14/15,
@@ -1420,8 +1422,96 @@ static void feather_video_init(void)
 }
 #endif
 
+#if HIL_CLK_SYS_KHZ
+/* Flash XIP retiming for the overclock: the bootrom's M0 CLKDIV was
+ * chosen for the boot clock; at 300 MHz CLKDIV=3 would run the quad
+ * read at 100 MHz with a 2-cycle (6.7 ns) RXDELAY — right at the
+ * part's edge. CLKDIV=4 + RXDELAY=4 (75 MHz, 13 ns) keeps the same
+ * margins the 150 MHz map had. Runs from SRAM: it retunes the very
+ * window the CPU executes from. */
+static void __no_inline_not_in_flash_func(overclock_flash_retiming)(void)
+{
+    uint32_t t = qmi_hw->m[0].timing;
+    t &= ~(QMI_M0_TIMING_CLKDIV_BITS | QMI_M0_TIMING_RXDELAY_BITS);
+    t |= (4u << QMI_M0_TIMING_CLKDIV_LSB) | (4u << QMI_M0_TIMING_RXDELAY_LSB);
+    qmi_hw->m[0].timing = t;
+}
+
+#if defined(ADAFRUIT_FEATHER_RP2350)
+/* PSRAM QMI M1 retiming: the runtime init computed the divider at the
+ * boot 150 MHz; at 300 MHz that clocked the APS6404 at 150 (max 133).
+ * Only the TIMING register needs to change — psram_reinitialize() is
+ * NOT usable here: it re-sends the SPI-mode QUAD_ENABLE to a chip
+ * already in QPI mode (which wedged it; the first window access hung
+ * the bus mid-boot) and its flash_start_xip drops the flash M0 to
+ * slow serial mode (hardware law from prompts/036). Same math as the
+ * SDK's psram_configure_params, values recomputed for the new clock. */
+static void __no_inline_not_in_flash_func(overclock_psram_retiming)(void)
+{
+    uint32_t clock_hz = HIL_CLK_SYS_KHZ * 1000u;
+    uint32_t divisor = (clock_hz + PICO_DEFAULT_PSRAM_MAX_FREQ - 1) /
+                       PICO_DEFAULT_PSRAM_MAX_FREQ;
+    if (divisor == 1 && clock_hz > 100000000u)
+        divisor = 2;
+    uint32_t rxdelay = divisor;
+    if (clock_hz / divisor > 100000000u)
+        rxdelay += 1;
+    uint32_t period_fs = (uint32_t)(1000000000000000ull / clock_hz);
+    uint32_t max_select = (uint32_t)(((uint64_t)PICO_DEFAULT_PSRAM_MAX_SELECT *
+                                      1000000ull) / (64ull * period_fs));
+    uint32_t min_deselect =
+        (PICO_DEFAULT_PSRAM_MIN_DESELECT * 1000000u + (period_fs - 1)) /
+            period_fs -
+        (divisor + 1) / 2;
+    qmi_hw->m[1].timing = 1u << QMI_M1_TIMING_COOLDOWN_LSB |
+                          QMI_M1_TIMING_PAGEBREAK_VALUE_1024
+                              << QMI_M1_TIMING_PAGEBREAK_LSB |
+                          max_select << QMI_M1_TIMING_MAX_SELECT_LSB |
+                          min_deselect << QMI_M1_TIMING_MIN_DESELECT_LSB |
+                          rxdelay << QMI_M1_TIMING_RXDELAY_LSB |
+                          divisor << QMI_M1_TIMING_CLKDIV_LSB;
+}
+#endif
+
+/* Bring clk_sys to HIL_CLK_SYS_KHZ before anything derives timing
+ * from it: the UART divisor (stdio_init_all runs after), the SD SPI
+ * baud (spi_init runs per-op), the PSRAM QMI divider (register-only
+ * retiming — the SDK runtime computed it at the boot clock),
+ * and the machine itself (the DMA engine runs on clk_sys; the tick
+ * timer compensates via HIL_TICK_CYCLES). clk_hstx lives on the
+ * repurposed USB PLL, so the video signal never notices. */
+static void overclock_init(void)
+{
+    /* POWMAN clamps VREG to 1.15 V unless the limit is explicitly
+     * disabled — vreg_set_voltage alone was silently clamped, and
+     * 300 MHz at 1.15 V garbled logic chip-wide (mangled UART bytes
+     * at the correct baud). */
+    vreg_disable_voltage_limit();
+    vreg_set_voltage(VREG_VOLTAGE_1_30); /* 300 MHz wants headroom over
+                                          * the 1.10 V default */
+    sleep_ms(10); /* let the regulator settle before the PLL jump */
+    set_sys_clock_khz(HIL_CLK_SYS_KHZ, true);
+    /* set_sys_clock_khz points clk_peri at clk_sys with divider 1 —
+     * but clk_peri is specced to 150 MHz, and at 300 the UART mangled
+     * every byte in both directions (deterministic garble + marginal
+     * bit flips: overclocked peripheral logic, not a baud mismatch).
+     * RP2350 gave clk_peri a divider: run it at clk_sys/2 and let the
+     * UART/SPI divisors derive from the in-spec 150 MHz. */
+    clock_configure(clk_peri, 0,
+                    CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS,
+                    HIL_CLK_SYS_KHZ * 1000u, HIL_CLK_SYS_KHZ * 500u);
+#if defined(ADAFRUIT_FEATHER_RP2350)
+    overclock_psram_retiming();
+#endif
+    overclock_flash_retiming();
+}
+#endif
+
 int main(void)
 {
+#if HIL_CLK_SYS_KHZ
+    overclock_init();
+#endif
     stdio_init_all();
     sleep_ms(3000);
 

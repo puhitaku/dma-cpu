@@ -121,6 +121,20 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   (base+0 is STAT and discards silently). Framebuffer boards sync
   flash through the ARM mailbox executor, never QMI direct mode.
 
+- Overclocking (the Feather runs clk_sys at 300 MHz via
+  `boards.ClkSysKHz`), three silicon laws: (a) RP2350's POWMAN clamps
+  VREG to 1.15 V until `vreg_disable_voltage_limit()` — a plain
+  vreg_set_voltage is silently clamped and the chip garbles logic
+  chip-wide at speed; (b) clk_peri is specced to 150 MHz — divide it
+  back down (RP2350 gave it a divider) or the UART mangles bytes in
+  both directions at the correct baud; (c) never call the SDK's
+  `psram_reinitialize()` on a live card — it re-sends the SPI-mode
+  QUAD_ENABLE to a chip already in QPI (wedging it) and its
+  flash_start_xip drops flash to slow serial; rewrite QMI M1 TIMING
+  only. The scheduler tick derives from the clock via
+  `Board.TickCycles()` (100 us wall); the emulator keeps its own
+  15000-cycle tick — emulator cycles were never silicon cycles.
+
 ## Build, test, hardware
 
 - `make test` = `go vet` + all golden tests. Run it before committing.

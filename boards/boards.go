@@ -56,6 +56,13 @@ type Board struct {
 	FbHome    uint32 // scanout working area (ring, command buffers)
 	FbEnd     uint32
 
+	// --- clocking ---
+	// ClkSysKHz overclocks the ARM+bus clock at boot (0 = the SDK
+	// default). The DMA machine runs on clk_sys, so cycle-domain
+	// constants derive from it: TickCycles keeps the scheduler tick
+	// at 100 us wall time regardless.
+	ClkSysKHz uint32
+
 	// --- behavior and apps ---
 	// MachineFlashExec: the DMA machine drives the flash controller
 	// itself for sync (the RP2350 QMI direct-mode driver). Boards
@@ -70,6 +77,16 @@ type Board struct {
 	DiskApps     []string // user programs baked into the RAM disk
 	ToolboxLinks []string // multi-call names linked onto toolbox
 	Bundles      []string // dmxgen bundles beyond the HIL suite
+}
+
+// TickCycles is the scheduler tick period in clk_sys cycles: 100 us
+// of wall time at the board's clock (the silicon-calibrated 15000 at
+// the 150 MHz default).
+func (b *Board) TickCycles() uint32 {
+	if b.ClkSysKHz == 0 {
+		return 15000
+	}
+	return b.ClkSysKHz / 10
 }
 
 // HasBundle reports whether the board installs the named bundle.
@@ -198,6 +215,11 @@ var Feather = &Board{
 	// editor needs. (A presentation device edits nothing.) Apps are
 	// flash-resident registry rows (the pico pattern): the toolbox
 	// with the slide viewer outgrew any reasonable RAM disk.
+
+	// 300 MHz overclock (the machine IS the bus: clk_sys is machine
+	// speed; clk_hstx stays on the repurposed USB PLL, so video
+	// timing is untouched). Tick cycles scale via TickCycles().
+	ClkSysKHz: 300000,
 
 	// The framebuffer is SRAM: DMA-master accesses through the QMI
 	// PSRAM window cost ~1000x a CPU access on silicon (prompts/036),
