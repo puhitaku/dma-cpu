@@ -230,11 +230,38 @@ t_show(int argc, char **argv)
   nshow = 0;
   int deck = 0;
   deckfd = -1;
-  if (argc == 2 || argc == 3) { /* a deck? (argv[2] selects a series) */
+  if (argc >= 2 && argc <= 4) { /* a deck? args pick the series */
     struct stat st;
     int fd = open(argv[1], 0);
     if (fd >= 0 && fstat(fd, &st) == 0 && st.type == T_FILE) {
-      int n = deck_open(fd, argc == 3 ? argv[2] : 0);
+      /* Compose the series name from the args: a base ("43", "169";
+       * default 43) plus the "under" word for the overscan-shrunk
+       * flavor — "169 under" selects series "169u". No args at all
+       * keeps the deck's first series. */
+      char sname[13];
+      const char *want = 0;
+      int under = 0;
+      const char *sbase = 0;
+      for (int a = 2; a < argc; a++) {
+        if (streq(argv[a], "under"))
+          under = 1;
+        else
+          sbase = argv[a];
+      }
+      if (sbase || under) {
+        if (!sbase)
+          sbase = "43";
+        int sl = 0;
+        while (sbase[sl] && sl < 11) {
+          sname[sl] = sbase[sl];
+          sl++;
+        }
+        if (under)
+          sname[sl++] = 'u';
+        sname[sl] = 0;
+        want = sname;
+      }
+      int n = deck_open(fd, want);
       if (n > 0) {
         deck = 1;
         nshow = n;
@@ -303,7 +330,7 @@ t_show(int argc, char **argv)
     }
   }
   if (nshow == 0) {
-    write(2, "show: no slides (usage: show DIR|FILE...|DECK [series])\n", 56);
+    write(2, "show: no slides (usage: show DIR|FILE...|DECK [43|169] [under])\n", 64);
     return 1;
   }
   if (!deck) { /* deck_open already announced its series */

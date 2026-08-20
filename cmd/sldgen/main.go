@@ -14,12 +14,16 @@
  *
  * The deck (default deck.sldk) is the single-file form the viewer
  * pages with seek(): a small header, a series table, and fixed-size
- * slides back to back. It carries TWO series of every image:
+ * slides back to back. It carries FOUR series of every image:
  *
  *   43    the normal fit — for displays that show 4:3 as 4:3
  *   169   pre-squeezed horizontally by 3/4 — for projectors that
  *         stretch the 4:3 frame to 16:9; the stretch then restores
  *         the original aspect (`show deck.sldk 169`)
+ *   43u   \ the same two shrunk to -under (default 90%) inside a
+ *   169u  / black frame, for displays that overscan — the DMA CPU
+ *         cannot resize in real time, so every flavor is pre-baked
+ *         (`show deck.sldk under`, `show deck.sldk 169 under`)
  *
  * Layout (little-endian u32):
  *   0x00  "SLDK"        0x04  version (1)
@@ -97,6 +101,7 @@ func writeDeck(path string, all []series) error {
 func main() {
 	outdir := flag.String("o", ".", "output directory")
 	deckName := flag.String("deck", "deck.sldk", "multi-series deck output (empty to skip)")
+	under := flag.Float64("under", 0.9, "underscan content fraction for the *u series")
 	nodither := flag.Bool("nodither", false, "plain quantization instead of Floyd-Steinberg")
 	flag.Parse()
 	if flag.NArg() == 0 {
@@ -110,27 +115,29 @@ func main() {
 	if err := os.MkdirAll(*outdir, 0o755); err != nil {
 		fatal(err)
 	}
-	deck := []series{{name: "43"}, {name: "169"}}
+	deck := []series{{name: "43"}, {name: "169"}, {name: "43u"}, {name: "169u"}}
 	for i, path := range flag.Args() {
 		src, err := load(path)
 		if err != nil {
 			fatal(fmt.Errorf("%s: %w", path, err))
 		}
-		sld := render(src, 1, !*nodither)
+		sld := render(src, 1, 1, !*nodither)
 		name := fmt.Sprintf("%02d-%s.sld", i+1, stem(path))
 		if err := os.WriteFile(filepath.Join(*outdir, name), sld, 0o644); err != nil {
 			fatal(err)
 		}
 		fmt.Printf("  %s -> %s\n", path, name)
 		deck[0].slides = append(deck[0].slides, sld)
-		deck[1].slides = append(deck[1].slides, render(src, squeeze169, !*nodither))
+		deck[1].slides = append(deck[1].slides, render(src, squeeze169, 1, !*nodither))
+		deck[2].slides = append(deck[2].slides, render(src, 1, *under, !*nodither))
+		deck[3].slides = append(deck[3].slides, render(src, squeeze169, *under, !*nodither))
 	}
 	if *deckName != "" {
 		p := filepath.Join(*outdir, *deckName)
 		if err := writeDeck(p, deck); err != nil {
 			fatal(err)
 		}
-		fmt.Printf("  %d slides x {43, 169} -> %s\n", flag.NArg(), p)
+		fmt.Printf("  %d slides x {43, 169, 43u, 169u} -> %s\n", flag.NArg(), p)
 	}
 }
 
@@ -166,10 +173,10 @@ func load(path string) (*image.NRGBA, error) {
 	return src, nil
 }
 
-// render produces one slide: fit, optional horizontal pre-squeeze,
-// resample, quantize.
-func render(src *image.NRGBA, hsqueeze float64, dither bool) []byte {
-	r, g, b := resample(src, hsqueeze)
+// render produces one slide: fit, optional horizontal pre-squeeze
+// and underscan shrink, resample, quantize.
+func render(src *image.NRGBA, hsqueeze, under float64, dither bool) []byte {
+	r, g, b := resample(src, hsqueeze, under)
 	return quantize(r, g, b, dither)
 }
 
@@ -179,21 +186,22 @@ func convert(path string, dither bool) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return render(src, 1, dither), nil
+	return render(src, 1, 1, dither), nil
 }
 
 // resample letterbox-fits src onto the 640x480 framebuffer (square
-// pixels). hsqueeze < 1 additionally narrows
-// the content horizontally (anamorphic pre-compensation for displays
-// that stretch the frame). Returns per-channel planes in [0,255];
+// pixels). hsqueeze < 1 additionally narrows the content horizontally
+// (anamorphic pre-compensation for displays that stretch the frame);
+// under < 1 shrinks it in both dimensions inside a black frame
+// (overscan compensation). Returns per-channel planes in [0,255];
 // the letterbox stays exactly 0.
-func resample(src *image.NRGBA, hsqueeze float64) (r, g, b []float64) {
+func resample(src *image.NRGBA, hsqueeze, under float64) (r, g, b []float64) {
 	w, h := src.Bounds().Dx(), src.Bounds().Dy()
 	r = make([]float64, fbW*fbH)
 	g = make([]float64, fbW*fbH)
 	b = make([]float64, fbW*fbH)
 
-	scale := math.Min(fbW/float64(w), dispH/float64(h))
+	scale := math.Min(fbW/float64(w), dispH/float64(h)) * under
 	hscale := scale * hsqueeze
 	cw, ch := float64(w)*hscale, float64(h)*scale // content size on the canvas
 	ox, oy := (fbW-cw)/2, (dispH-ch)/2            // letterbox origin

@@ -719,7 +719,7 @@ func TestXv6Fbcon(t *testing.T) {
 		t.Errorf("no rendered zqzq after scrolling")
 	}
 	// clear wipes the terminal: ESC[2J + ESC[H through the tee.
-	m.FeedConsole("clear")
+	m.FeedConsole("clear\r")
 	runScript(t, m, 400_000_000)
 	if got := countZQZQ(); got != 0 {
 		t.Errorf("zqzq still rendered after clear: %d", got)
@@ -741,20 +741,23 @@ func TestXv6SD(t *testing.T) {
 		slideA[i] = byte(i*7 + 3)
 		slideB[i] = byte(i*13 + 5)
 	}
-	// A two-series deck (SLDK container) with SMALL 4096-byte slides:
-	// the bytes-per-slide header field must be honored, not assumed.
-	// Series 169 carries the slides in reverse so selection is provable.
+	// A three-series deck (SLDK container) with SMALL 4096-byte
+	// slides: the bytes-per-slide header field must be honored, not
+	// assumed. Only 169u carries the slides in reverse, so selecting
+	// "169 under" (composed name "169u") is provable — picking plain
+	// 169 by mistake would show A where B is expected.
 	deck := append([]byte(nil), "SLDK"...)
 	le := func(v uint32) []byte {
 		var w [4]byte
 		binary.LittleEndian.PutUint32(w[:], v)
 		return w[:]
 	}
+	names := []string{"43", "169", "169u"}
 	deck = append(deck, le(1)...)
-	deck = append(deck, le(2)...)
+	deck = append(deck, le(uint32(len(names)))...)
 	deck = append(deck, le(4096)...)
-	base := uint32(16 + 24*2)
-	for i, name := range []string{"43", "169"} {
+	base := uint32(16 + 24*uint32(len(names)))
+	for i, name := range names {
 		var nm [12]byte
 		copy(nm[:], name)
 		deck = append(deck, nm[:]...)
@@ -764,7 +767,9 @@ func TestXv6SD(t *testing.T) {
 	}
 	deck = append(deck, slideA...) // series 43: A, B
 	deck = append(deck, slideB...)
-	deck = append(deck, slideB...) // series 169: B, A
+	deck = append(deck, slideA...) // series 169: A, B
+	deck = append(deck, slideB...)
+	deck = append(deck, slideB...) // series 169u: B, A
 	deck = append(deck, slideA...)
 
 	fatb := fsimg.NewFAT32(2048)
@@ -857,7 +862,7 @@ func TestXv6SD(t *testing.T) {
 				// Deck phase: select series 169 (slides reversed: B then
 				// A) and page through it via seek().
 				if fed4 && !fed5 && strings.HasSuffix(out, "$ ") {
-					m.FeedConsole("show /sd/deck.sldk 169\r")
+					m.FeedConsole("show /sd/deck.sldk 169 under\r")
 					fed5 = true
 				}
 				wantA := binary.LittleEndian.Uint32(slideA[0:])
@@ -910,7 +915,7 @@ func TestXv6SD(t *testing.T) {
 				t.Errorf("deck series 169 never paged (fed5=%v fed6=%v)", fed5, fed6)
 			}
 			for _, want := range []string{
-				"2 slides found (series 169)",
+				"2 slides found (series 169u)",
 				"jump: 2",         // the entry prompt echoes the digit
 				"UART: jump -> 2", // and the executed jump is logged
 				"Start drawing slide 2 on FB",

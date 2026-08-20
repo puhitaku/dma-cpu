@@ -123,8 +123,8 @@ func TestSqueeze169(t *testing.T) {
 		}
 		return n
 	}
-	normal := render(img, 1, false)
-	wide := render(img, squeeze169, false)
+	normal := render(img, 1, 1, false)
+	wide := render(img, squeeze169, 1, false)
 	if got := span(normal); got < 478 || got > 482 {
 		t.Errorf("43 content span %d, want ~480", got)
 	}
@@ -144,7 +144,7 @@ func TestSqueeze169(t *testing.T) {
 func TestOddSizeFit(t *testing.T) {
 	img := image.NewNRGBA(image.Rect(0, 0, 1000, 3000))
 	draw.Draw(img, img.Bounds(), image.White, image.Point{}, draw.Src)
-	sld := render(img, 1, false)
+	sld := render(img, 1, 1, false)
 	row := sld[120*fbW : 121*fbW]
 	n := 0
 	for _, p := range row {
@@ -200,5 +200,35 @@ func TestDeckLayout(t *testing.T) {
 		if d[off] != want[1] || d[off+slideBytes] != want[1]+1 {
 			t.Errorf("series %d slides misplaced (first byte %d)", si, d[off])
 		}
+	}
+}
+
+// The under flavor shrinks both dimensions inside a black frame: a
+// 4:3 source that fills the frame at 43 spans ~576 columns and ~432
+// rows at 0.9, with black on all four edges.
+func TestUnderscan(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 320, 240))
+	draw.Draw(img, img.Bounds(), image.White, image.Point{}, draw.Src)
+	sld := render(img, 1, 0.9, false)
+	span := 0
+	for _, p := range sld[240*fbW : 241*fbW] {
+		if p != 0 {
+			span++
+		}
+	}
+	if span < 574 || span > 578 {
+		t.Errorf("under content width %d, want ~576", span)
+	}
+	rows := 0
+	for y := 0; y < fbH; y++ {
+		if sld[y*fbW+320] != 0 {
+			rows++
+		}
+	}
+	if rows < 430 || rows > 434 {
+		t.Errorf("under content height %d, want ~432", rows)
+	}
+	if sld[0] != 0 || sld[fbW*fbH-1] != 0 {
+		t.Errorf("under corners should be black")
 	}
 }
