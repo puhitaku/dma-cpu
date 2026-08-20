@@ -19,6 +19,9 @@ type Variant struct {
 	PadsBank0Base uint32
 	PIO0Base      uint32 // PIO1/PIO2 follow at +0x100000 strides
 	UART0Base     uint32
+	TimerRawL     uint32 // TIMERAWL: the free-running us counter
+	SPI0Base      uint32 // PL022; DR captured into Machine.SPIOut
+	DreqSPI0TX    uint32 // level-modeled: the TX FIFO always drains
 	GPIOPins      int
 
 	gpioOutoverLSB uint
@@ -80,6 +83,9 @@ var RP2040 = &Variant{
 	PadsBank0Base: 0x4001C000,
 	PIO0Base:      0x50200000,
 	UART0Base:     0x40034000, // RP2040 datasheet §4.2
+	TimerRawL:     0x40054028,
+	SPI0Base:      0x4003C000,
+	DreqSPI0TX:    16,
 	GPIOPins:      30,
 
 	gpioOutoverLSB: 8,
@@ -119,6 +125,9 @@ var RP2350 = &Variant{
 	PadsBank0Base: 0x40038000,
 	PIO0Base:      0x50200000,
 	UART0Base:     0x40070000, // RP2350 datasheet §12.1
+	TimerRawL:     0x400B0028, // TIMER0
+	SPI0Base:      0x40080000,
+	DreqSPI0TX:    26,
 	GPIOPins:      48,
 
 	gpioOutoverLSB: 12,

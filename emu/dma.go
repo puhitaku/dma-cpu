@@ -75,6 +75,7 @@ type dma struct {
 	hp          uint32
 	timerActive uint32
 	timerListen [4]uint32
+	spiListen   uint32 // channels whose TREQ_SEL is the SPI0 TX DREQ
 
 	// Timer next-fire schedule: ticking four fractional accumulators
 	// every cycle was ~8% of the suite, so each active timer instead
@@ -205,7 +206,23 @@ func (d *dma) ctrlChanged(chIdx int) {
 			d.timerListen[i] &^= bit
 		}
 	}
+	if v.DreqSPI0TX != 0 && c.treq == v.DreqSPI0TX {
+		d.spiListen |= bit
+	} else {
+		d.spiListen &^= bit
+	}
 	d.updateReady(chIdx)
+}
+
+// levelDreqMask is levelDreq over a cached listener set.
+func (d *dma) levelDreqMask(mask uint32) {
+	for m := mask; m != 0; m &= m - 1 {
+		i := bits.TrailingZeros32(m)
+		if d.ch[i].busy && d.ch[i].credit == 0 {
+			d.ch[i].credit = 1
+			d.updateReady(i)
+		}
+	}
 }
 
 // regRead returns the value of the register at offset (alias-op already

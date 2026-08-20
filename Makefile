@@ -89,6 +89,18 @@ xv6-ll:
 	  echo "  dma/$$f -> xv6/ll/$$(basename $$f .c).ll"; \
 	done
 
+# gamepico bare-metal sources -> IR (no xv6 headers; self-contained).
+GAME_SRCS = grt.c lcd.c gfx.c gmain.c
+
+.PHONY: game-ll
+game-ll:
+	@mkdir -p game/ll
+	@for f in $(GAME_SRCS); do \
+	  (cd game/src && clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding \
+	    -S -emit-llvm $$f -o $(CURDIR)/game/ll/$$(basename $$f .c).ll) || exit 1; \
+	  echo "  game/src/$$f -> game/ll/$$(basename $$f .c).ll"; \
+	done
+
 # --- Compiler goldens (Phase 4) ---
 # Regenerate the committed IR goldens and host-truth expectations for the
 # dmacc differential tests. Needs a host clang. The target IR and the
@@ -150,14 +162,18 @@ PICO_BOARD = $(HIL_BOARD)
 ifeq ($(HIL_BOARD),feather)
 PICO_BOARD = adafruit_feather_rp2350
 endif
+ifeq ($(HIL_BOARD),gamepico)
+PICO_BOARD = pico
+endif
 BUILD_DIR = target/firmware/build-$(HIL_BOARD)
 OPENOCD_TARGET_pico2 = target/rp2350.cfg
 OPENOCD_TARGET_pico = target/rp2040.cfg
+OPENOCD_TARGET_gamepico = target/rp2040.cfg
 
 .PHONY: images firmware
 
 # Regenerate the embedded test images + expectations from the emulator.
-images:
+images: game-ll
 	go run ./cmd/dmxgen -board $(HIL_BOARD) -o target/firmware/generated/images.h
 
 firmware: images

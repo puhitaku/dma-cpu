@@ -683,6 +683,90 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	return b, nil
 }
 
+// buildGame: the gamepico bare-metal image (prompts/040) — one
+// dmacc-compiled program, no xv6: text executes from flash, .ramtext
+// and data (framebuffer included) in SRAM, entry straight into
+// gmain's crt0. The helper-channel CTRL words (the kdma pattern,
+// channel 11) are baked into the data segment at generation time.
+// Verified end to end in the emulator: boot to the test card, then
+// the LCD decoder's preconditions (SPI init + DISPON + a full-frame
+// CASET/RASET window) checked from the captured SPI stream.
+func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
+	dasm, err := compileLL([]string{"game/ll/gmain.ll", "game/ll/gfx.ll",
+		"game/ll/lcd.ll", "game/ll/grt.ll"},
+		dmacc.Options{Entry: "gmain", NoSafepoints: true, XIPText: true})
+	if err != nil {
+		return nil, err
+	}
+	prog, err := dmaasm.Assemble(dasm, dmaasm.Options{
+		Variant: v, Compact: true, CompactScratch: bd.Scratch,
+		TextBase: bd.GameTextXIP, DataBase: bd.GameData,
+		RAMTextBase: bd.GameRAMText})
+	if err != nil {
+		return nil, err
+	}
+	sy := func(name string) (uint32, error) { return prog.Symbol(name) }
+	memctrl := emu.CtrlEN | emu.CtrlHighPriority | emu.CtrlSize32 |
+		emu.CtrlIncrRead | v.CtrlIncrWrite | v.CtrlChainTo(11) |
+		v.CtrlTreq(emu.TreqPermanent) | v.CtrlIRQQuiet
+	spictrl := emu.CtrlEN | emu.CtrlSize16 | emu.CtrlIncrRead |
+		v.CtrlChainTo(11) | v.CtrlTreq(v.DreqSPI0TX) | v.CtrlIRQQuiet
+	for _, g := range []struct {
+		name string
+		val  uint32
+	}{{"g_memctrl", memctrl}, {"g_spictrl", spictrl}} {
+		addr, err := sy(g.name)
+		if err != nil {
+			return nil, err
+		}
+		if err := patchData(prog.Image, bd.GameData, addr, g.val); err != nil {
+			return nil, err
+		}
+	}
+	// Emulator verification: boot to the test card. Image.Load also
+	// applies the init Writes (register banks, dispatch presets) —
+	// exactly what the firmware's dmx_load replays.
+	m := emu.NewMachine(v)
+	m.Flash = make([]byte, bd.FlashSize)
+	entry, err := prog.Image.Load(m, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
+		Compact: true, Entry: entry, Scratch: bd.Scratch,
+	}); err != nil {
+		return nil, err
+	}
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 400_000_000}); err != nil {
+		return nil, fmt.Errorf("game boot: %w\nconsole:\n%s", err, m.ConsoleOut)
+	}
+	out := string(m.ConsoleOut)
+	if !strings.Contains(out, "GAMEPICO: test card shown") {
+		return nil, fmt.Errorf("game boot: no test card; console:\n%s", out)
+	}
+	if len(m.SPIOut) < 100 {
+		return nil, fmt.Errorf("game boot: only %d SPI writes", len(m.SPIOut))
+	}
+
+	b := &kernBundle{sym: map[string]uint32{}}
+	b.entry0 = entry
+	segs := prog.Image.Segments
+	textBlob := pad4(segs[0].Data)
+	prog.Image.Segments = segs[1:]
+	for i := range prog.Image.Writes {
+		prog.Image.Writes[i].Ref = img.RefAbs
+	}
+	prog.Image.EntrySeg, prog.Image.EntryOff = 0, 0
+	b.blobs = append(b.blobs, textBlob)
+	b.blobNames = append(b.blobNames, "text")
+	b.sym["TEXT_HOME"] = bd.GameTextXIP
+	if err := finishBundle(b, []*dmaasm.Result{prog}); err != nil {
+		return nil, err
+	}
+	b.names = []string{"prog"}
+	return b, nil
+}
+
 // buildXsh: UPSTREAM user/sh.c as the boot shell on the FULL
 // filesystem kernel, the WHOLE SYSTEM in Tier-C compact encoding
 // (Phase 8, prompts/020): 8-byte records halve text, the tick
@@ -1639,7 +1723,7 @@ func calExpect(v *emu.Variant, sniffCtrl, seed, word uint32) uint32 {
 
 // --- C header emission ---
 
-func emitHeader(bd *boards.Board, v *emu.Variant, lay layout, tests []*test, sched, shl, sys, exe, xsh *kernBundle) string {
+func emitHeader(bd *boards.Board, v *emu.Variant, lay layout, tests []*test, sched, shl, sys, exe, xsh, game *kernBundle) string {
 	var b strings.Builder
 	p := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 
@@ -1840,6 +1924,14 @@ func emitHeader(bd *boards.Board, v *emu.Variant, lay layout, tests []*test, sch
 		p("#define HIL_HAS_XSH 1")
 		emitBundle("xsh", xsh)
 	}
+	if game != nil {
+		p("")
+		p("/* gamepico bundle (prompts/040): the bare-metal game console —")
+		p(" * text staged to flash (XIP), data+ramtext via dmx_load, the")
+		p(" * machine started at gmain and the ARM parked. */")
+		p("#define HIL_HAS_GAME 1")
+		emitBundle("game", game)
+	}
 	p("")
 	p("#endif /* DMX_HIL_IMAGES_H */")
 	return b.String()
@@ -1940,7 +2032,12 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("sched bundle: %w", err)
 	}
-	var shl, sys, exe, xsh *kernBundle
+	var shl, sys, exe, xsh, game *kernBundle
+	if bd.HasBundle("game") {
+		if game, err = buildGame(v, bd); err != nil {
+			return fmt.Errorf("game bundle: %w", err)
+		}
+	}
 	if bd.HasBundle("shell") {
 		if shl, err = buildShell(v, lay); err != nil {
 			return fmt.Errorf("shell bundle: %w", err)
@@ -1964,7 +2061,7 @@ func run() error {
 	if err := os.MkdirAll(filepath.Dir(*out), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(*out, []byte(emitHeader(bd, v, lay, tests, sched, shl, sys, exe, xsh)), 0o644); err != nil {
+	if err := os.WriteFile(*out, []byte(emitHeader(bd, v, lay, tests, sched, shl, sys, exe, xsh, game)), 0o644); err != nil {
 		return err
 	}
 	for _, t := range tests {

@@ -25,10 +25,10 @@
 #include "hardware/gpio.h"
 #include "hardware/pio.h"
 
-#if defined(ADAFRUIT_FEATHER_RP2350)
 #include "hardware/clocks.h"
 #include "hardware/pll.h"
 #include "hardware/vreg.h"
+#if defined(ADAFRUIT_FEATHER_RP2350)
 #include "hardware/psram.h"
 #include "hardware/structs/hstx_ctrl.h"
 #include "hardware/structs/hstx_fifo.h"
@@ -1174,6 +1174,43 @@ static void __attribute__((noinline, section(".time_critical.park"))) park_forev
 #endif
 }
 
+#ifdef HIL_HAS_GAME
+/* gamepico (prompts/040): stage the game's XIP text, load its SRAM
+ * segments, start the machine at gmain, and go to sleep — the DMA
+ * CPU runs the whole console from here. */
+static uint8_t game_sect[4096];
+
+static void game_start(void)
+{
+    machine_reset();
+    const uint8_t *blob = hil_game_blob_text;
+    uint32_t len = (uint32_t)sizeof hil_game_blob_text;
+    if (memcmp((const void *)(uintptr_t)HIL_GAME_TEXT_HOME, blob, len) != 0) {
+        uint32_t off = HIL_GAME_TEXT_HOME - 0x10000000u;
+        for (uint32_t o = 0; o < len; o += 4096) {
+            uint32_t n = len - o > 4096 ? 4096 : len - o;
+            memcpy(game_sect, blob + o, n);
+            memset(game_sect + n, 0xFF, 4096 - n);
+            flash_range_erase(off + o, 4096);
+            flash_range_program(off + o, game_sect, 4096);
+        }
+        printf("GAME: staged text (%u bytes)\n", (unsigned)len);
+    }
+    uint32_t e;
+    if (dmx_load(hil_game_prog_dmx, sizeof hil_game_prog_dmx, NULL, &e) != DMX_OK) {
+        printf("GAME: FAIL load\n");
+        return;
+    }
+    dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 1};
+    if (dmx_start(&cfg, HIL_GAME_ENTRY) != DMX_OK) {
+        printf("GAME: FAIL start\n");
+        return;
+    }
+    printf("=== handing over to the GAMEPICO machine (ARM -> wfi) ===\n");
+    park_forever();
+}
+#endif
+
 #ifdef HIL_HAS_XSH
 /* Phase 7 (prompts/019): hand the console to UPSTREAM xv6 sh.c on the
  * full filesystem kernel. The RAM disk (echo, cat, wc, README as an
@@ -1205,6 +1242,7 @@ static void stage_xip_text(uint32_t dst, const uint8_t *blob, uint32_t len,
     printf("XSH: staged %s text (%u bytes)\n", what, (unsigned)len);
 }
 #endif
+
 
 static void xsh_start(void)
 {
@@ -1422,7 +1460,7 @@ static void feather_video_init(void)
 }
 #endif
 
-#if HIL_CLK_SYS_KHZ
+#if HIL_CLK_SYS_KHZ && PICO_RP2350
 /* Flash XIP retiming for the overclock: the bootrom's M0 CLKDIV was
  * chosen for the boot clock; at 300 MHz CLKDIV=3 would run the quad
  * read at 100 MHz with a 2-cycle (6.7 ns) RXDELAY — right at the
@@ -1480,8 +1518,12 @@ static void __no_inline_not_in_flash_func(overclock_psram_retiming)(void)
  * and the machine itself (the DMA engine runs on clk_sys; the tick
  * timer compensates via HIL_TICK_CYCLES). clk_hstx lives on the
  * repurposed USB PLL, so the video signal never notices. */
+#endif /* HIL_CLK_SYS_KHZ && PICO_RP2350 */
+
+#if HIL_CLK_SYS_KHZ
 static void overclock_init(void)
 {
+#if PICO_RP2350
     /* POWMAN clamps VREG to 1.15 V unless the limit is explicitly
      * disabled — vreg_set_voltage alone was silently clamped, and
      * 300 MHz at 1.15 V garbled logic chip-wide (mangled UART bytes
@@ -1504,15 +1546,40 @@ static void overclock_init(void)
     overclock_psram_retiming();
 #endif
     overclock_flash_retiming();
+#else /* RP2040 (gamepico: 200 MHz) */
+    vreg_set_voltage(VREG_VOLTAGE_1_20); /* headroom over 1.10 V */
+    sleep_ms(10);
+    printf("oc: sys\n");
+    set_sys_clock_khz(HIL_CLK_SYS_KHZ, true);
+    printf("oc: pll_usb\n");
+    /* The RP2040 has NO clk_peri divider and its peripherals are not
+     * rated for 200 MHz (the RP2350's UART at 2x taught that lesson).
+     * USB is unused: repurpose pll_usb at 125 MHz for clk_peri — the
+     * UART stays in spec and SPI0 lands exactly on the ST7789V's
+     * 62.5 MHz serial-write ceiling (the Feather pulls the same trick
+     * for clk_hstx). Boot2's XIP divider of 2 gives 100 MHz flash
+     * reads at 200 MHz — inside the W25Q's 104/133 MHz quad spec. */
+    pll_init(pll_usb, 1, 1500 * MHZ, 6, 2); /* 125 MHz */
+    clock_configure(clk_peri, 0,
+                    CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLKSRC_PLL_USB,
+                    125 * MHZ, 125 * MHZ);
+#endif
 }
 #endif
 
 int main(void)
 {
-#if HIL_CLK_SYS_KHZ
-    overclock_init();
-#endif
+    /* stdio first: both overclocked boards keep clk_peri at its boot
+     * frequency (feather 150 = 300/2; gamepico 125 via the repurposed
+     * USB PLL), so the UART divisor stays valid across the switch and
+     * the overclock itself can narrate. */
     stdio_init_all();
+#if HIL_CLK_SYS_KHZ
+    printf("oc: vreg\n");
+    overclock_init();
+    printf("oc: clk_sys=%lu kHz\n",
+           (unsigned long)(clock_get_hz(clk_sys) / 1000));
+#endif
     sleep_ms(3000);
 
 #if PICO_RP2350
@@ -1596,7 +1663,9 @@ int main(void)
         exp_exec();
 #endif
         printf("=== END iter=%u\n", iter);
-#ifdef HIL_HAS_XSH
+#ifdef HIL_HAS_GAME
+        game_start(); /* the machine IS the console from here */
+#elif defined(HIL_HAS_XSH)
         xsh_start(); /* one validation pass, then the console belongs to xv6 sh */
 #elif defined(HIL_HAS_SHELL)
         shell_start();

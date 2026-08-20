@@ -68,6 +68,13 @@ type Machine struct {
 	// the video scanout stream, captured for tests.
 	HSTXOut []uint32
 
+	// SPIOut collects frames written to SPI0's data register — the
+	// LCD stream on the gamepico board. Size is the bus access width
+	// (the ST7789 path mixes 8-bit command and 16-bit pixel frames);
+	// Cycle lets tests interleave the stream with GPIOEvents (the
+	// D/C pin) to tell commands from parameters.
+	SPIOut []SPIWrite
+
 	// XIP streamer model (RP2350): STREAM_ADDR/STREAM_CTR writes arm a
 	// linear fetch; reads of the XIP_AUX drain port pop words from the
 	// XIP backing (flash or PSRAM). The stream DREQ self-sustains: one
@@ -249,6 +256,9 @@ func (m *Machine) Read(addr uint32, size int) (uint32, error) {
 			lv := uint32(m.gpioLevel[(norm-m.v.IOBank0Base)/8])
 			return lv<<17 | lv<<9, nil
 		}
+		if m.v.SPI0Base != 0 && norm == m.v.SPI0Base+0xC { /* SSPSR */
+			return 0x3, nil /* TFE|TNF: FIFO empty, not busy */
+		}
 		switch norm {
 		case m.v.UARTDRAddr():
 			if len(m.ConsoleIn) == 0 {
@@ -334,6 +344,10 @@ func (m *Machine) Write(addr uint32, val uint32, size int) error {
 		}
 		if m.v.HSTXFifoBase != 0 && addr == m.v.HSTXFifoBase {
 			m.HSTXOut = append(m.HSTXOut, val)
+			return nil
+		}
+		if m.v.SPI0Base != 0 && addr == m.v.SPI0Base+0x8 { /* SSPDR */
+			m.SPIOut = append(m.SPIOut, SPIWrite{m.Cycle, val, uint8(size)})
 			return nil
 		}
 		if m.v.XIPStreamAddr != 0 && addr == m.v.XIPStreamAddr {
@@ -435,6 +449,13 @@ func (m *Machine) WriteBlocks(addr uint32, blocks []Block) uint32 {
 	return addr
 }
 
+// SPIWrite is one captured SPI0 data-register write.
+type SPIWrite struct {
+	Cycle uint64
+	Val   uint32
+	Size  uint8 // bus access width in bytes (1 or 2 for the LCD path)
+}
+
 // PulseDREQ injects one external DREQ pulse (e.g. a PIO RX-FIFO push).
 func (m *Machine) PulseDREQ(dreq uint32) { m.dma.pulseDreq(dreq) }
 
@@ -457,6 +478,11 @@ func (m *Machine) step() (bool, error) {
 	// re-asserts — one-shot pulses would deadlock the copier).
 	if m.v.DreqXIPStream != 0 && m.streamCtr > 0 {
 		m.dma.levelDreq(m.v.DreqXIPStream)
+	}
+	// SPI0 TX drains continuously: a level request for any listener
+	// (the LCD pixel stream). Masked so non-SPI workloads never scan.
+	if m.dma.spiListen != 0 {
+		m.dma.levelDreqMask(m.dma.spiListen)
 	}
 	// Channel selection over the cached ready set: high-priority
 	// channels first, ROUND-ROBIN within a class — the hardware

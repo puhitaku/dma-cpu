@@ -56,6 +56,13 @@ type Board struct {
 	FbHome    uint32 // scanout working area (ring, command buffers)
 	FbEnd     uint32
 
+	// --- bare-metal game console (Bundles ["game"]; no xv6) ---
+	// One dmacc-compiled image: text executes from flash (XIP), the
+	// .ramtext records and data (framebuffer included) live in SRAM.
+	GameTextXIP uint32
+	GameRAMText uint32
+	GameData    uint32
+
 	// --- clocking ---
 	// ClkSysKHz overclocks the ARM+bus clock at boot (0 = the SDK
 	// default). The DMA machine runs on clk_sys, so cycle-domain
@@ -264,11 +271,35 @@ var Feather = &Board{
 	Bundles:      []string{"shell", "syscall", "exec", "xsh"},
 }
 
+// GamePico: the original Pi Pico (RP2040) as a bare-metal game
+// console — no xv6, both ARM cores asleep after boot. Peripherals:
+// a 240x240 ST7789 LCD on SPI0 (write-only 8-pin module: no TE, no
+// MISO), two joysticks, two chained WS2811 LEDs (PIO), a MAX98357A
+// I2S amp (PIO; SD_MODE strapped high = (L+R)/2, GAIN strapped).
+// clk_sys overclocks to 200 MHz for machine headroom; clk_peri moves
+// to a repurposed 125 MHz USB PLL (the RP2040 has no peri divider),
+// keeping UART in spec and SPI0 at the ST7789's 62.5 MHz ceiling.
+var GamePico = &Board{
+	Name: "gamepico",
+	SKU:  "rp2040",
+
+	GameRAMText: 0x20002000, // self-modifying records: 24 KiB window
+	GameData:    0x20008000, // data + the 240x240 RGB565 framebuffer
+	Scratch:     0x2003FE00,
+
+	FlashSize:   0x200000,
+	GameTextXIP: 0x10100000, // upper half: clear of the firmware image
+
+	ClkSysKHz: 200000,
+	Bundles:   []string{"game"},
+}
+
 // All maps board names to definitions.
 var All = map[string]*Board{
-	Pico2.Name:   Pico2,
-	Pico.Name:    Pico,
-	Feather.Name: Feather,
+	Pico2.Name:    Pico2,
+	Pico.Name:     Pico,
+	Feather.Name:  Feather,
+	GamePico.Name: GamePico,
 }
 
 // Default returns the canonical board for a SKU (the -sku flag's
