@@ -319,10 +319,58 @@ t_show(int argc, char **argv)
   uint fbsz = fi.h * fi.pitch;
   int cur = 0, prevmask = 0x1F; /* all released (pulled up) */
   show_slide(deck, dir, cur, fi.base, fbsz);
+  int jlen = -1, jbad = 0; /* jump-command entry: -1 = not entering */
+  uint jnum = 0;
+  int jumpto = -1;
   for (;;) {
     int step = 0, quit = 0;
     char c;
     while (read_nb(0, &c, 1) == 1) {
+      /* Page jump: digits then Enter. "5<Enter>" -> slide 5,
+       * "1 1 <Enter>" -> slide 11; <=1 clamps to the first slide,
+       * past the end clamps to the last; any non-digit typed during
+       * entry invalidates the command (Enter then does nothing). A
+       * "jump: " prompt with digit echo marks the mode on the UART. */
+      if (jlen >= 0 || (c >= '0' && c <= '9')) {
+        if (c >= '0' && c <= '9') {
+          if (jlen < 0) {
+            jlen = 0;
+            jbad = 0;
+            jnum = 0;
+            emit("jump: ");
+            flush();
+          }
+          if (jlen < 6) {
+            jlen++;
+            jnum = jnum * 10 + (uint)(c - '0');
+          }
+          obuf[olen++] = c; /* echo the digit */
+          flush();
+          continue;
+        }
+        if (c == '\r' || c == '\n') {
+          emit("\n");
+          if (!jbad && jlen > 0) {
+            int tgt = (jnum <= 1) ? 0 : (int)jnum - 1;
+            if (tgt >= nshow)
+              tgt = nshow - 1;
+            jumpto = tgt;
+            emit("UART: jump -> ");
+            emitn((uint)tgt + 1);
+            emit("\n");
+          } else {
+            emit("jump: invalid\n");
+          }
+          flush();
+          jlen = -1;
+          continue;
+        }
+        /* a non-digit during entry: the command is spoiled */
+        jbad = 1;
+        continue;
+      }
+      if (c == '\r' || c == '\n')
+        continue; /* Enter outside jump entry: nothing */
       if (c == 'q' || c == 3) {
         show_log("UART: quit", 0, 0);
         quit = 1;
@@ -371,6 +419,13 @@ t_show(int argc, char **argv)
       quit = 1;
     if (quit)
       break;
+    if (jumpto >= 0) {
+      if (jumpto != cur) {
+        cur = jumpto;
+        show_slide(deck, dir, cur, fi.base, fbsz);
+      }
+      jumpto = -1;
+    }
     if (step) {
       cur += step;
       if (cur < 0)

@@ -671,10 +671,10 @@ func TestXv6Fbcon(t *testing.T) {
 	m.FeedConsole("echo zqzq\r")
 	runScript(t, m, 900_000_000)
 	fbBuf := boards.Feather.FbBuf
-	cell := func(r, c int) []byte {
+	cell := func(r, c int) []byte { // 8x16 cells (each font row doubled)
 		var b []byte
-		for y := 0; y < 8; y++ {
-			off := uint32((r*8+y)*640 + c*8)
+		for y := 0; y < 16; y++ {
+			off := uint32((r*16+y)*640 + c*8)
 			for k := uint32(0); k < 8; k += 4 {
 				w := m.Peek32(fbBuf + off + k)
 				b = append(b, byte(w), byte(w>>8), byte(w>>16), byte(w>>24))
@@ -682,7 +682,7 @@ func TestXv6Fbcon(t *testing.T) {
 		}
 		return b
 	}
-	blank := make([]byte, 64)
+	blank := make([]byte, 128)
 	countZQZQ := func() int {
 		n := 0
 		for r := 0; r < 30; r++ {
@@ -858,7 +858,7 @@ func TestXv6SD(t *testing.T) {
 				wantA := binary.LittleEndian.Uint32(slideA[0:])
 				wantB := binary.LittleEndian.Uint32(slideB[0:])
 				if fed5 && !fed6 && m.Peek32(fbBuf) == wantB {
-					m.FeedConsole("n")
+					m.FeedConsole("2\r") // page JUMP to slide 2 (series 169: A)
 					fed6 = true
 				}
 				if fed6 && !fed7 && m.Peek32(fbBuf) == wantA {
@@ -906,6 +906,8 @@ func TestXv6SD(t *testing.T) {
 			}
 			for _, want := range []string{
 				"2 slides found (series 169)",
+				"jump: 2",         // the entry prompt echoes the digit
+				"UART: jump -> 2", // and the executed jump is logged
 				"Start drawing slide 2 on FB",
 				"Done drawing slide 2",
 			} {

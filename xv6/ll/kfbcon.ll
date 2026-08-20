@@ -122,7 +122,7 @@ define internal fastcc void @clear_screen() unnamed_addr #0 {
 
 1:                                                ; preds = %5, %0
   %2 = phi i32 [ 0, %0 ], [ %6, %5 ]
-  %3 = icmp eq i32 %2, 60
+  %3 = icmp eq i32 %2, 30
   br i1 %3, label %4, label %5
 
 4:                                                ; preds = %1
@@ -138,12 +138,12 @@ define internal fastcc void @clear_screen() unnamed_addr #0 {
 define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   %2 = tail call i32 @kfb_active() #4
   %3 = icmp eq i32 %2, 0
-  br i1 %3, label %275, label %4
+  br i1 %3, label %211, label %4
 
 4:                                                ; preds = %1
   %5 = tail call i32 @kfb_owner() #4
   %6 = icmp eq i32 %5, 0
-  br i1 %6, label %7, label %275
+  br i1 %6, label %7, label %211
 
 7:                                                ; preds = %4
   %8 = load i1, ptr @fcursor, align 4
@@ -174,11 +174,11 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   store i32 0, ptr getelementptr inbounds nuw (i8, ptr @fpar, i32 8), align 4, !tbaa !3
   store i32 0, ptr getelementptr inbounds nuw (i8, ptr @fpar, i32 4), align 4, !tbaa !3
   store i32 0, ptr @fpar, align 4, !tbaa !3
-  br label %274
+  br label %210
 
 16:                                               ; preds = %13
   store i32 0, ptr @fstate, align 4, !tbaa !3
-  br label %274
+  br label %210
 
 17:                                               ; preds = %10
   %18 = add nsw i32 %11, -48
@@ -202,7 +202,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   %29 = mul nsw i32 %28, 10
   %30 = add nsw i32 %29, %18
   store i32 %30, ptr %27, align 4, !tbaa !3
-  br label %274
+  br label %210
 
 31:                                               ; preds = %17
   %32 = trunc i32 %0 to i8
@@ -214,18 +214,18 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
 33:                                               ; preds = %31
   %34 = load i32, ptr @fnpar, align 4, !tbaa !3
   %35 = icmp slt i32 %34, 4
-  br i1 %35, label %36, label %274
+  br i1 %35, label %36, label %210
 
 36:                                               ; preds = %33
   %37 = add nuw nsw i32 %34, 1
   %38 = icmp eq i32 %34, 0
   %39 = select i1 %38, i32 2, i32 %37
   store i32 %39, ptr @fnpar, align 4
-  br label %274
+  br label %210
 
 40:                                               ; preds = %31
   store i1 true, ptr @fpriv, align 4
-  br label %274
+  br label %210
 
 41:                                               ; preds = %31
   store i32 0, ptr @fstate, align 4, !tbaa !3
@@ -236,10 +236,10 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
 
 45:                                               ; preds = %41
   %46 = icmp eq i32 %42, 1049
-  br i1 %46, label %47, label %274
+  br i1 %46, label %47, label %210
 
 47:                                               ; preds = %45
-  switch i8 %32, label %274 [
+  switch i8 %32, label %210 [
     i8 104, label %48
     i8 108, label %48
   ]
@@ -248,10 +248,10 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   tail call fastcc void @clear_screen() #5
   store i32 0, ptr @fcy, align 4, !tbaa !3
   store i32 0, ptr @fcx, align 4, !tbaa !3
-  br label %274
+  br label %210
 
 49:                                               ; preds = %41
-  switch i8 %32, label %274 [
+  switch i8 %32, label %210 [
     i8 65, label %50
     i8 66, label %54
     i8 67, label %58
@@ -268,28 +268,28 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   %52 = sub nsw i32 %51, %43
   %53 = tail call i32 @llvm.smax.i32(i32 %52, i32 0)
   store i32 %53, ptr @fcy, align 4
-  br label %274
+  br label %210
 
 54:                                               ; preds = %49
   %55 = load i32, ptr @fcy, align 4, !tbaa !3
   %56 = add nsw i32 %55, %43
-  %57 = tail call i32 @llvm.smin.i32(i32 %56, i32 59)
+  %57 = tail call i32 @llvm.smin.i32(i32 %56, i32 29)
   store i32 %57, ptr @fcy, align 4
-  br label %274
+  br label %210
 
 58:                                               ; preds = %49
   %59 = load i32, ptr @fcx, align 4, !tbaa !3
   %60 = add nsw i32 %59, %43
   %61 = tail call i32 @llvm.smin.i32(i32 %60, i32 79)
   store i32 %61, ptr @fcx, align 4
-  br label %274
+  br label %210
 
 62:                                               ; preds = %49
   %63 = load i32, ptr @fcx, align 4, !tbaa !3
   %64 = sub nsw i32 %63, %43
   %65 = tail call i32 @llvm.smax.i32(i32 %64, i32 0)
   store i32 %65, ptr @fcx, align 4
-  br label %274
+  br label %210
 
 66:                                               ; preds = %49, %49
   %67 = tail call i32 @llvm.usub.sat.i32(i32 %42, i32 1)
@@ -299,14 +299,14 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   %71 = icmp ne i32 %70, 0
   %72 = select i1 %69, i1 %71, i1 false
   %73 = tail call i32 @llvm.smax.i32(i32 %67, i32 0)
-  %74 = tail call i32 @llvm.umin.i32(i32 %73, i32 59)
+  %74 = tail call i32 @llvm.umin.i32(i32 %73, i32 29)
   store i32 %74, ptr @fcy, align 4, !tbaa !3
   %75 = tail call i32 @llvm.smax.i32(i32 %70, i32 1)
   %76 = tail call i32 @llvm.umin.i32(i32 %75, i32 80)
   %77 = add nsw i32 %76, -1
   %78 = select i1 %72, i32 %77, i32 0
   store i32 %78, ptr @fcx, align 4, !tbaa !3
-  br label %274
+  br label %210
 
 79:                                               ; preds = %49
   switch i32 %42, label %90 [
@@ -316,7 +316,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
 
 80:                                               ; preds = %79
   tail call fastcc void @clear_screen() #5
-  br label %274
+  br label %210
 
 81:                                               ; preds = %79, %88
   %82 = phi i32 [ %89, %88 ], [ 0, %79 ]
@@ -328,7 +328,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   %86 = load i32, ptr @fcx, align 4, !tbaa !3
   %87 = add nsw i32 %86, 1
   tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %83, i32 noundef %87) #5
-  br label %274
+  br label %210
 
 88:                                               ; preds = %81
   tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %82, i32 noundef 80) #5
@@ -345,8 +345,8 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
 
 95:                                               ; preds = %98, %90
   %96 = phi i32 [ %94, %90 ], [ %99, %98 ]
-  %97 = icmp slt i32 %96, 59
-  br i1 %97, label %98, label %274
+  %97 = icmp slt i32 %96, 29
+  br i1 %97, label %98, label %210
 
 98:                                               ; preds = %95
   %99 = add nsw i32 %96, 1
@@ -362,21 +362,21 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
 101:                                              ; preds = %100
   %102 = load i32, ptr @fcy, align 4, !tbaa !3
   tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %102, i32 noundef 80) #5
-  br label %274
+  br label %210
 
 103:                                              ; preds = %100
   %104 = load i32, ptr @fcy, align 4, !tbaa !3
   %105 = load i32, ptr @fcx, align 4, !tbaa !3
   %106 = add nsw i32 %105, 1
   tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %104, i32 noundef %106) #5
-  br label %274
+  br label %210
 
 107:                                              ; preds = %100
   %108 = load i32, ptr @fcx, align 4, !tbaa !3
   %109 = load i32, ptr @fcy, align 4, !tbaa !3
   %110 = sub nsw i32 80, %108
   tail call fastcc void @clear_cells(i32 noundef %108, i32 noundef %109, i32 noundef %110) #5
-  br label %274
+  br label %210
 
 111:                                              ; preds = %49
   %112 = load i32, ptr @fnpar, align 4, !tbaa !3
@@ -488,7 +488,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
 
 159:                                              ; preds = %119
   tail call fastcc void @lut_build() #5
-  br label %274
+  br label %210
 
 160:                                              ; preds = %10
   %161 = trunc i32 %0 to i8
@@ -502,25 +502,25 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
 
 162:                                              ; preds = %160
   store i32 1, ptr @fstate, align 4, !tbaa !3
-  br label %274
+  br label %210
 
 163:                                              ; preds = %160
   tail call fastcc void @newline() #5
-  br label %274
+  br label %210
 
 164:                                              ; preds = %160
   store i32 0, ptr @fcx, align 4, !tbaa !3
-  br label %274
+  br label %210
 
 165:                                              ; preds = %160
   %166 = load i32, ptr @fcx, align 4, !tbaa !3
   %167 = icmp sgt i32 %166, 0
-  br i1 %167, label %168, label %274
+  br i1 %167, label %168, label %210
 
 168:                                              ; preds = %165
   %169 = add nsw i32 %166, -1
   store i32 %169, ptr @fcx, align 4, !tbaa !3
-  br label %274
+  br label %210
 
 170:                                              ; preds = %160
   %171 = load i32, ptr @fcx, align 4, !tbaa !3
@@ -528,12 +528,12 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   %173 = tail call i32 @llvm.smin.i32(i32 %172, i32 71)
   %174 = add nsw i32 %173, 8
   store i32 %174, ptr @fcx, align 4
-  br label %274
+  br label %210
 
 175:                                              ; preds = %160
   %176 = add nsw i32 %11, -32
   %177 = icmp ult i32 %176, 95
-  br i1 %177, label %178, label %274
+  br i1 %177, label %178, label %210
 
 178:                                              ; preds = %175
   %179 = shl nuw nsw i32 %11, 3
@@ -541,124 +541,54 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   %181 = load i32, ptr @fcx, align 4, !tbaa !3
   %182 = load i32, ptr @fcy, align 4, !tbaa !3
   %183 = tail call fastcc i32 @cell_addr(i32 noundef %181, i32 noundef %182) #5
-  %184 = load i8, ptr %180, align 1, !tbaa !7
-  %185 = zext i8 %184 to i32
-  %186 = getelementptr inbounds nuw [256 x i32], ptr @fluthi, i32 0, i32 %185
-  %187 = load i32, ptr %186, align 4, !tbaa !3
-  %188 = inttoptr i32 %183 to ptr
-  store volatile i32 %187, ptr %188, align 4, !tbaa !3
-  %189 = getelementptr inbounds nuw [256 x i32], ptr @flutlo, i32 0, i32 %185
-  %190 = load i32, ptr %189, align 4, !tbaa !3
-  %191 = add i32 %183, 4
-  %192 = inttoptr i32 %191 to ptr
-  store volatile i32 %190, ptr %192, align 4, !tbaa !3
-  %193 = getelementptr inbounds nuw i8, ptr %180, i32 1
-  %194 = load i8, ptr %193, align 1, !tbaa !7
-  %195 = zext i8 %194 to i32
-  %196 = getelementptr inbounds nuw [256 x i32], ptr @fluthi, i32 0, i32 %195
-  %197 = load i32, ptr %196, align 4, !tbaa !3
-  %198 = add i32 %183, 640
-  %199 = inttoptr i32 %198 to ptr
-  store volatile i32 %197, ptr %199, align 4, !tbaa !3
-  %200 = getelementptr inbounds nuw [256 x i32], ptr @flutlo, i32 0, i32 %195
-  %201 = load i32, ptr %200, align 4, !tbaa !3
-  %202 = add i32 %183, 644
-  %203 = inttoptr i32 %202 to ptr
-  store volatile i32 %201, ptr %203, align 4, !tbaa !3
-  %204 = getelementptr inbounds nuw i8, ptr %180, i32 2
-  %205 = load i8, ptr %204, align 1, !tbaa !7
-  %206 = zext i8 %205 to i32
-  %207 = getelementptr inbounds nuw [256 x i32], ptr @fluthi, i32 0, i32 %206
-  %208 = load i32, ptr %207, align 4, !tbaa !3
-  %209 = add i32 %183, 1280
-  %210 = inttoptr i32 %209 to ptr
-  store volatile i32 %208, ptr %210, align 4, !tbaa !3
-  %211 = getelementptr inbounds nuw [256 x i32], ptr @flutlo, i32 0, i32 %206
-  %212 = load i32, ptr %211, align 4, !tbaa !3
-  %213 = add i32 %183, 1284
-  %214 = inttoptr i32 %213 to ptr
-  store volatile i32 %212, ptr %214, align 4, !tbaa !3
-  %215 = getelementptr inbounds nuw i8, ptr %180, i32 3
-  %216 = load i8, ptr %215, align 1, !tbaa !7
-  %217 = zext i8 %216 to i32
-  %218 = getelementptr inbounds nuw [256 x i32], ptr @fluthi, i32 0, i32 %217
-  %219 = load i32, ptr %218, align 4, !tbaa !3
-  %220 = add i32 %183, 1920
-  %221 = inttoptr i32 %220 to ptr
-  store volatile i32 %219, ptr %221, align 4, !tbaa !3
-  %222 = getelementptr inbounds nuw [256 x i32], ptr @flutlo, i32 0, i32 %217
-  %223 = load i32, ptr %222, align 4, !tbaa !3
-  %224 = add i32 %183, 1924
-  %225 = inttoptr i32 %224 to ptr
-  store volatile i32 %223, ptr %225, align 4, !tbaa !3
-  %226 = getelementptr inbounds nuw i8, ptr %180, i32 4
-  %227 = load i8, ptr %226, align 1, !tbaa !7
-  %228 = zext i8 %227 to i32
-  %229 = getelementptr inbounds nuw [256 x i32], ptr @fluthi, i32 0, i32 %228
-  %230 = load i32, ptr %229, align 4, !tbaa !3
-  %231 = add i32 %183, 2560
-  %232 = inttoptr i32 %231 to ptr
-  store volatile i32 %230, ptr %232, align 4, !tbaa !3
-  %233 = getelementptr inbounds nuw [256 x i32], ptr @flutlo, i32 0, i32 %228
-  %234 = load i32, ptr %233, align 4, !tbaa !3
-  %235 = add i32 %183, 2564
-  %236 = inttoptr i32 %235 to ptr
-  store volatile i32 %234, ptr %236, align 4, !tbaa !3
-  %237 = getelementptr inbounds nuw i8, ptr %180, i32 5
-  %238 = load i8, ptr %237, align 1, !tbaa !7
-  %239 = zext i8 %238 to i32
-  %240 = getelementptr inbounds nuw [256 x i32], ptr @fluthi, i32 0, i32 %239
-  %241 = load i32, ptr %240, align 4, !tbaa !3
-  %242 = add i32 %183, 3200
-  %243 = inttoptr i32 %242 to ptr
-  store volatile i32 %241, ptr %243, align 4, !tbaa !3
-  %244 = getelementptr inbounds nuw [256 x i32], ptr @flutlo, i32 0, i32 %239
-  %245 = load i32, ptr %244, align 4, !tbaa !3
-  %246 = add i32 %183, 3204
-  %247 = inttoptr i32 %246 to ptr
-  store volatile i32 %245, ptr %247, align 4, !tbaa !3
-  %248 = getelementptr inbounds nuw i8, ptr %180, i32 6
-  %249 = load i8, ptr %248, align 1, !tbaa !7
-  %250 = zext i8 %249 to i32
-  %251 = getelementptr inbounds nuw [256 x i32], ptr @fluthi, i32 0, i32 %250
-  %252 = load i32, ptr %251, align 4, !tbaa !3
-  %253 = add i32 %183, 3840
-  %254 = inttoptr i32 %253 to ptr
-  store volatile i32 %252, ptr %254, align 4, !tbaa !3
-  %255 = getelementptr inbounds nuw [256 x i32], ptr @flutlo, i32 0, i32 %250
-  %256 = load i32, ptr %255, align 4, !tbaa !3
-  %257 = add i32 %183, 3844
-  %258 = inttoptr i32 %257 to ptr
-  store volatile i32 %256, ptr %258, align 4, !tbaa !3
-  %259 = getelementptr inbounds nuw i8, ptr %180, i32 7
-  %260 = load i8, ptr %259, align 1, !tbaa !7
-  %261 = zext i8 %260 to i32
-  %262 = getelementptr inbounds nuw [256 x i32], ptr @fluthi, i32 0, i32 %261
-  %263 = load i32, ptr %262, align 4, !tbaa !3
-  %264 = add i32 %183, 4480
-  %265 = inttoptr i32 %264 to ptr
-  store volatile i32 %263, ptr %265, align 4, !tbaa !3
-  %266 = getelementptr inbounds nuw [256 x i32], ptr @flutlo, i32 0, i32 %261
-  %267 = load i32, ptr %266, align 4, !tbaa !3
-  %268 = add i32 %183, 4484
-  %269 = inttoptr i32 %268 to ptr
-  store volatile i32 %267, ptr %269, align 4, !tbaa !3
-  %270 = load i32, ptr @fcx, align 4, !tbaa !3
-  %271 = add nsw i32 %270, 1
-  store i32 %271, ptr @fcx, align 4, !tbaa !3
-  %272 = icmp sgt i32 %270, 78
-  br i1 %272, label %273, label %274
+  br label %184
 
-273:                                              ; preds = %178
+184:                                              ; preds = %188, %178
+  %185 = phi i32 [ 0, %178 ], [ %204, %188 ]
+  %186 = phi i32 [ %183, %178 ], [ %203, %188 ]
+  %187 = icmp eq i32 %185, 8
+  br i1 %187, label %205, label %188
+
+188:                                              ; preds = %184
+  %189 = getelementptr inbounds nuw i8, ptr %180, i32 %185
+  %190 = load i8, ptr %189, align 1, !tbaa !7
+  %191 = zext i8 %190 to i32
+  %192 = getelementptr inbounds nuw [256 x i32], ptr @fluthi, i32 0, i32 %191
+  %193 = load i32, ptr %192, align 4, !tbaa !3
+  %194 = getelementptr inbounds nuw [256 x i32], ptr @flutlo, i32 0, i32 %191
+  %195 = load i32, ptr %194, align 4, !tbaa !3
+  %196 = inttoptr i32 %186 to ptr
+  store volatile i32 %193, ptr %196, align 4, !tbaa !3
+  %197 = add i32 %186, 4
+  %198 = inttoptr i32 %197 to ptr
+  store volatile i32 %195, ptr %198, align 4, !tbaa !3
+  %199 = add i32 %186, 640
+  %200 = inttoptr i32 %199 to ptr
+  store volatile i32 %193, ptr %200, align 4, !tbaa !3
+  %201 = add i32 %186, 644
+  %202 = inttoptr i32 %201 to ptr
+  store volatile i32 %195, ptr %202, align 4, !tbaa !3
+  %203 = add i32 %186, 1280
+  %204 = add nuw nsw i32 %185, 1
+  br label %184, !llvm.loop !17
+
+205:                                              ; preds = %184
+  %206 = load i32, ptr @fcx, align 4, !tbaa !3
+  %207 = add nsw i32 %206, 1
+  store i32 %207, ptr @fcx, align 4, !tbaa !3
+  %208 = icmp sgt i32 %206, 78
+  br i1 %208, label %209, label %210
+
+209:                                              ; preds = %205
   tail call fastcc void @newline() #5
-  br label %274
+  br label %210
 
-274:                                              ; preds = %95, %36, %33, %159, %107, %103, %101, %85, %80, %66, %62, %58, %54, %50, %49, %48, %47, %45, %40, %24, %163, %168, %165, %175, %273, %178, %170, %164, %162, %15, %16
+210:                                              ; preds = %95, %36, %33, %159, %107, %103, %101, %85, %80, %66, %62, %58, %54, %50, %49, %48, %47, %45, %40, %24, %163, %168, %165, %175, %209, %205, %170, %164, %162, %15, %16
   tail call fastcc void @cursor_xor() #5
   store i1 true, ptr @fcursor, align 4
-  br label %275
+  br label %211
 
-275:                                              ; preds = %1, %4, %274
+211:                                              ; preds = %1, %4, %210
   ret void
 }
 
@@ -670,34 +600,38 @@ define internal fastcc void @cursor_xor() unnamed_addr #0 {
   %1 = load i32, ptr @fcx, align 4, !tbaa !3
   %2 = load i32, ptr @fcy, align 4, !tbaa !3
   %3 = tail call fastcc i32 @cell_addr(i32 noundef %1, i32 noundef %2) #5
-  %4 = add i32 %3, 3840
-  %5 = inttoptr i32 %4 to ptr
-  %6 = load volatile i32, ptr %5, align 4, !tbaa !3
-  %7 = xor i32 %6, -1
-  store volatile i32 %7, ptr %5, align 4, !tbaa !3
-  %8 = add i32 %3, 3844
-  %9 = inttoptr i32 %8 to ptr
-  %10 = load volatile i32, ptr %9, align 4, !tbaa !3
-  %11 = xor i32 %10, -1
-  store volatile i32 %11, ptr %9, align 4, !tbaa !3
-  %12 = add i32 %3, 4480
-  %13 = inttoptr i32 %12 to ptr
-  %14 = load volatile i32, ptr %13, align 4, !tbaa !3
-  %15 = xor i32 %14, -1
-  store volatile i32 %15, ptr %13, align 4, !tbaa !3
-  %16 = add i32 %3, 4484
-  %17 = inttoptr i32 %16 to ptr
-  %18 = load volatile i32, ptr %17, align 4, !tbaa !3
-  %19 = xor i32 %18, -1
-  store volatile i32 %19, ptr %17, align 4, !tbaa !3
+  %4 = add i32 %3, 7680
+  br label %5
+
+5:                                                ; preds = %10, %0
+  %6 = phi i32 [ %4, %0 ], [ %18, %10 ]
+  %7 = phi i32 [ 0, %0 ], [ %19, %10 ]
+  %8 = icmp eq i32 %7, 4
+  br i1 %8, label %9, label %10
+
+9:                                                ; preds = %5
   ret void
+
+10:                                               ; preds = %5
+  %11 = inttoptr i32 %6 to ptr
+  %12 = load volatile i32, ptr %11, align 4, !tbaa !3
+  %13 = xor i32 %12, -1
+  store volatile i32 %13, ptr %11, align 4, !tbaa !3
+  %14 = add i32 %6, 4
+  %15 = inttoptr i32 %14 to ptr
+  %16 = load volatile i32, ptr %15, align 4, !tbaa !3
+  %17 = xor i32 %16, -1
+  store volatile i32 %17, ptr %15, align 4, !tbaa !3
+  %18 = add i32 %6, 640
+  %19 = add nuw nsw i32 %7, 1
+  br label %5, !llvm.loop !18
 }
 
 ; Function Attrs: minsize nounwind optsize
 define internal fastcc void @newline() unnamed_addr #0 {
   store i32 0, ptr @fcx, align 4, !tbaa !3
   %1 = load i32, ptr @fcy, align 4, !tbaa !3
-  %2 = icmp slt i32 %1, 59
+  %2 = icmp slt i32 %1, 29
   br i1 %2, label %3, label %5
 
 3:                                                ; preds = %0
@@ -708,12 +642,12 @@ define internal fastcc void @newline() unnamed_addr #0 {
 5:                                                ; preds = %0
   %6 = load i32, ptr @fpan, align 4, !tbaa !3
   %7 = add i32 %6, 1
-  %8 = icmp ugt i32 %7, 59
+  %8 = icmp ugt i32 %7, 29
   %9 = select i1 %8, i32 0, i32 %7
   store i32 %9, ptr @fpan, align 4
-  %10 = shl i32 %9, 3
+  %10 = shl i32 %9, 4
   tail call void @kfb_setpan(i32 noundef %10) #4
-  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef 59, i32 noundef 80) #5
+  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef 29, i32 noundef 80) #5
   br label %11
 
 11:                                               ; preds = %5, %3
@@ -747,19 +681,19 @@ define internal fastcc void @clear_cells(i32 noundef %0, i32 noundef %1, i32 nou
 20:                                               ; preds = %18, %24
   %21 = phi i32 [ %25, %24 ], [ %14, %18 ]
   %22 = phi i32 [ %26, %24 ], [ 0, %18 ]
-  %23 = icmp eq i32 %22, 8
+  %23 = icmp eq i32 %22, 16
   br i1 %23, label %42, label %24
 
 24:                                               ; preds = %20
   tail call void @kdmaset(i32 noundef %21, i32 noundef %13, i32 noundef %19) #4
   %25 = add i32 %21, 640
   %26 = add nuw nsw i32 %22, 1
-  br label %20, !llvm.loop !17
+  br label %20, !llvm.loop !19
 
 27:                                               ; preds = %16, %39
   %28 = phi i32 [ %40, %39 ], [ %14, %16 ]
   %29 = phi i32 [ %41, %39 ], [ 0, %16 ]
-  %30 = icmp eq i32 %29, 8
+  %30 = icmp eq i32 %29, 16
   br i1 %30, label %42, label %31
 
 31:                                               ; preds = %27, %35
@@ -773,12 +707,12 @@ define internal fastcc void @clear_cells(i32 noundef %0, i32 noundef %1, i32 nou
   store volatile i32 %13, ptr %36, align 4, !tbaa !3
   %37 = add i32 %32, 4
   %38 = add i32 %33, -1
-  br label %31, !llvm.loop !18
+  br label %31, !llvm.loop !20
 
 39:                                               ; preds = %31
   %40 = add i32 %28, 640
   %41 = add nuw nsw i32 %29, 1
-  br label %27, !llvm.loop !19
+  br label %27, !llvm.loop !21
 
 42:                                               ; preds = %27, %20
   ret void
@@ -788,11 +722,11 @@ define internal fastcc void @clear_cells(i32 noundef %0, i32 noundef %1, i32 nou
 define internal fastcc i32 @cell_addr(i32 noundef %0, i32 noundef %1) unnamed_addr #0 {
   %3 = load i32, ptr @fpan, align 4, !tbaa !3
   %4 = add i32 %3, %1
-  %5 = icmp ugt i32 %4, 59
-  %6 = add i32 %4, -60
+  %5 = icmp ugt i32 %4, 29
+  %6 = add i32 %4, -30
   %7 = select i1 %5, i32 %6, i32 %4
   %8 = tail call i32 @kfb_base() #4
-  %9 = mul i32 %7, 5120
+  %9 = mul i32 %7, 10240
   %10 = shl i32 %0, 3
   %11 = add i32 %8, %10
   %12 = add i32 %11, %9
@@ -850,3 +784,5 @@ attributes #5 = { minsize nobuiltin optsize "no-builtins" }
 !17 = distinct !{!17, !9, !10}
 !18 = distinct !{!18, !9, !10}
 !19 = distinct !{!19, !9, !10}
+!20 = distinct !{!20, !9, !10}
+!21 = distinct !{!21, !9, !10}

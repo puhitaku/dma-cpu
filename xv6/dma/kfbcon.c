@@ -32,9 +32,12 @@ int kfb_h(void);
 void kfb_setpan(uint row0);
 
 #define CELLW 8
-#define CELLH 8
+#define FONTH 8  /* the font bitmap is 8 rows */
+#define CELLH 16 /* each font row drawn twice: at 480p an 8-row cell
+                  * halved the glyphs the user knew from the doubled-
+                  * scan era; 80x30 with 8x16 cells restores the look */
 #define COLS (640 / CELLW)
-#define ROWS (480 / CELLH) /* the fb is 640x480, one row per scanline */
+#define ROWS (480 / CELLH)
 #define PITCH 640
 
 /* The 16 ANSI colors in RGB332 (SimpleTerminal's colormap, quantized). */
@@ -94,11 +97,13 @@ cell_addr(int cx, int cy)
 static void
 cursor_xor(void)
 {
-  uint a = cell_addr(fcx, fcy) + 6 * PITCH;
-  W32(a) ^= 0xFFFFFFFFu;
-  W32(a + 4) ^= 0xFFFFFFFFu;
-  W32(a + PITCH) ^= 0xFFFFFFFFu;
-  W32(a + PITCH + 4) ^= 0xFFFFFFFFu;
+  /* the underline is font rows 6-7, i.e. fb rows 12-15 */
+  uint a = cell_addr(fcx, fcy) + 12 * PITCH;
+  for (int r = 0; r < 4; r++) {
+    W32(a) ^= 0xFFFFFFFFu;
+    W32(a + 4) ^= 0xFFFFFFFFu;
+    a += PITCH;
+  }
 }
 
 static void
@@ -106,31 +111,15 @@ draw_glyph(int c)
 {
   const uchar *g = &fbfont[(uint)(c & 0x7F) * 8];
   uint a = cell_addr(fcx, fcy);
-  uint bits;
-  bits = g[0];
-  W32(a) = fluthi[bits];
-  W32(a + 4) = flutlo[bits];
-  bits = g[1];
-  W32(a + PITCH) = fluthi[bits];
-  W32(a + PITCH + 4) = flutlo[bits];
-  bits = g[2];
-  W32(a + 2 * PITCH) = fluthi[bits];
-  W32(a + 2 * PITCH + 4) = flutlo[bits];
-  bits = g[3];
-  W32(a + 3 * PITCH) = fluthi[bits];
-  W32(a + 3 * PITCH + 4) = flutlo[bits];
-  bits = g[4];
-  W32(a + 4 * PITCH) = fluthi[bits];
-  W32(a + 4 * PITCH + 4) = flutlo[bits];
-  bits = g[5];
-  W32(a + 5 * PITCH) = fluthi[bits];
-  W32(a + 5 * PITCH + 4) = flutlo[bits];
-  bits = g[6];
-  W32(a + 6 * PITCH) = fluthi[bits];
-  W32(a + 6 * PITCH + 4) = flutlo[bits];
-  bits = g[7];
-  W32(a + 7 * PITCH) = fluthi[bits];
-  W32(a + 7 * PITCH + 4) = flutlo[bits];
+  for (int r = 0; r < FONTH; r++) {
+    uint bits = g[r];
+    uint hi = fluthi[bits], lo = flutlo[bits];
+    W32(a) = hi;
+    W32(a + 4) = lo;
+    W32(a + PITCH) = hi;
+    W32(a + PITCH + 4) = lo;
+    a += 2 * PITCH;
+  }
 }
 
 static void

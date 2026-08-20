@@ -16,29 +16,32 @@ target triple = "thumbv6m-unknown-none-eabi"
 @.str.3 = private unnamed_addr constant [57 x i8] c"show: no slides (usage: show DIR|FILE...|DECK [series])\0A\00", align 1
 @.str.4 = private unnamed_addr constant [15 x i8] c" slides found\0A\00", align 1
 @.str.5 = private unnamed_addr constant [15 x i8] c"show: fb busy\0A\00", align 1
-@.str.6 = private unnamed_addr constant [11 x i8] c"UART: quit\00", align 1
-@.str.7 = private unnamed_addr constant [12 x i8] c"UART: right\00", align 1
-@.str.8 = private unnamed_addr constant [11 x i8] c"UART: left\00", align 1
-@.str.9 = private unnamed_addr constant [13 x i8] c"Joystick: up\00", align 1
-@.str.10 = private unnamed_addr constant [15 x i8] c"Joystick: down\00", align 1
-@.str.11 = private unnamed_addr constant [15 x i8] c"Joystick: left\00", align 1
-@.str.12 = private unnamed_addr constant [16 x i8] c"Joystick: right\00", align 1
-@.str.13 = private unnamed_addr constant [15 x i8] c"Joystick: push\00", align 1
+@.str.6 = private unnamed_addr constant [7 x i8] c"jump: \00", align 1
+@obuf = internal global [256 x i8] zeroinitializer, align 1
+@olen = internal unnamed_addr global i32 0, align 4
+@.str.7 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
+@.str.8 = private unnamed_addr constant [15 x i8] c"UART: jump -> \00", align 1
+@.str.9 = private unnamed_addr constant [15 x i8] c"jump: invalid\0A\00", align 1
+@.str.10 = private unnamed_addr constant [11 x i8] c"UART: quit\00", align 1
+@.str.11 = private unnamed_addr constant [12 x i8] c"UART: right\00", align 1
+@.str.12 = private unnamed_addr constant [11 x i8] c"UART: left\00", align 1
+@.str.13 = private unnamed_addr constant [13 x i8] c"Joystick: up\00", align 1
+@.str.14 = private unnamed_addr constant [15 x i8] c"Joystick: down\00", align 1
+@.str.15 = private unnamed_addr constant [15 x i8] c"Joystick: left\00", align 1
+@.str.16 = private unnamed_addr constant [16 x i8] c"Joystick: right\00", align 1
+@.str.17 = private unnamed_addr constant [15 x i8] c"Joystick: push\00", align 1
 @decksz = internal unnamed_addr global i32 0, align 4
 @deckoff = internal unnamed_addr global i32 0, align 4
-@olen = internal unnamed_addr global i32 0, align 4
-@.str.14 = private unnamed_addr constant [23 x i8] c" slides found (series \00", align 1
-@.str.15 = private unnamed_addr constant [3 x i8] c")\0A\00", align 1
-@obuf = internal global [256 x i8] zeroinitializer, align 1
-@.str.16 = private unnamed_addr constant [21 x i8] c"Start drawing slide \00", align 1
-@.str.17 = private unnamed_addr constant [8 x i8] c" on FB\0A\00", align 1
-@.str.18 = private unnamed_addr constant [20 x i8] c"Done drawing slide \00", align 1
-@.str.19 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
-@.str.20 = private unnamed_addr constant [19 x i8] c"show: cannot open \00", align 1
-@.str.21 = private unnamed_addr constant [8 x i8] c"Opened \00", align 1
-@.str.22 = private unnamed_addr constant [15 x i8] c"Start drawing \00", align 1
-@.str.23 = private unnamed_addr constant [7 x i8] c" on FB\00", align 1
-@.str.24 = private unnamed_addr constant [14 x i8] c"Done drawing \00", align 1
+@.str.18 = private unnamed_addr constant [23 x i8] c" slides found (series \00", align 1
+@.str.19 = private unnamed_addr constant [3 x i8] c")\0A\00", align 1
+@.str.20 = private unnamed_addr constant [21 x i8] c"Start drawing slide \00", align 1
+@.str.21 = private unnamed_addr constant [8 x i8] c" on FB\0A\00", align 1
+@.str.22 = private unnamed_addr constant [20 x i8] c"Done drawing slide \00", align 1
+@.str.23 = private unnamed_addr constant [19 x i8] c"show: cannot open \00", align 1
+@.str.24 = private unnamed_addr constant [8 x i8] c"Opened \00", align 1
+@.str.25 = private unnamed_addr constant [15 x i8] c"Start drawing \00", align 1
+@.str.26 = private unnamed_addr constant [7 x i8] c" on FB\00", align 1
+@.str.27 = private unnamed_addr constant [14 x i8] c"Done drawing \00", align 1
 
 ; Function Attrs: minsize noreturn nounwind optsize
 define dso_local noundef i32 @main(i32 noundef %0, ptr noundef readonly captures(none) %1) local_unnamed_addr #0 {
@@ -70,7 +73,7 @@ define internal fastcc range(i32 0, 2) i32 @t_show(i32 noundef %0, ptr noundef r
 
 16:                                               ; preds = %2
   %17 = call i32 @write(i32 noundef 2, ptr noundef nonnull @.str, i32 noundef 12) #12
-  br label %473
+  br label %544
 
 18:                                               ; preds = %2
   store i32 0, ptr @nshow, align 4, !tbaa !3
@@ -298,9 +301,9 @@ define internal fastcc range(i32 0, 2) i32 @t_show(i32 noundef %0, ptr noundef r
   %174 = shl nuw i32 %173, 24
   %175 = or disjoint i32 %170, %174
   call fastcc void @emitn(i32 noundef %175) #9
-  call fastcc void @emit(ptr noundef nonnull @.str.14) #9
+  call fastcc void @emit(ptr noundef nonnull @.str.18) #9
   call fastcc void @emit(ptr noundef nonnull %5) #9
-  call fastcc void @emit(ptr noundef nonnull @.str.15) #9
+  call fastcc void @emit(ptr noundef nonnull @.str.19) #9
   call fastcc void @flush() #9
   %176 = load i8, ptr %158, align 1, !tbaa !10
   %177 = zext i8 %176 to i32
@@ -336,7 +339,7 @@ define internal fastcc range(i32 0, 2) i32 @t_show(i32 noundef %0, ptr noundef r
   %196 = call i32 @write(i32 noundef 2, ptr noundef nonnull @.str.1, i32 noundef 29) #12
   %197 = call i32 @close(i32 noundef %25) #12
   call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %7) #11
-  br label %473
+  br label %544
 
 198:                                              ; preds = %27, %192
   %199 = call i32 @close(i32 noundef %25) #12
@@ -571,7 +574,7 @@ define internal fastcc range(i32 0, 2) i32 @t_show(i32 noundef %0, ptr noundef r
 324:                                              ; preds = %203, %207
   %325 = call i32 @write(i32 noundef 2, ptr noundef nonnull @.str.2, i32 noundef 18) #12
   call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %8) #11
-  br label %473
+  br label %544
 
 326:                                              ; preds = %201, %20
   %327 = phi i32 [ %202, %201 ], [ 0, %20 ]
@@ -621,7 +624,7 @@ define internal fastcc range(i32 0, 2) i32 @t_show(i32 noundef %0, ptr noundef r
 
 355:                                              ; preds = %351
   %356 = call i32 @write(i32 noundef 2, ptr noundef nonnull @.str.3, i32 noundef 56) #12
-  br label %473
+  br label %544
 
 357:                                              ; preds = %351
   call fastcc void @emitn(i32 noundef %352) #9
@@ -638,7 +641,7 @@ define internal fastcc range(i32 0, 2) i32 @t_show(i32 noundef %0, ptr noundef r
 
 363:                                              ; preds = %358
   %364 = call i32 @write(i32 noundef 2, ptr noundef nonnull @.str.5, i32 noundef 14) #12
-  br label %473
+  br label %544
 
 365:                                              ; preds = %358
   %366 = call i32 @ttyraw(i32 noundef 1) #12
@@ -651,197 +654,318 @@ define internal fastcc range(i32 0, 2) i32 @t_show(i32 noundef %0, ptr noundef r
   call fastcc void @show_slide(i32 noundef %359, ptr noundef %360, i32 noundef 0, i32 noundef %372, i32 noundef %371) #9
   br label %373
 
-373:                                              ; preds = %463, %365
-  %374 = phi i32 [ 0, %365 ], [ %464, %463 ]
-  %375 = phi i32 [ 31, %365 ], [ %420, %463 ]
+373:                                              ; preds = %534, %365
+  %374 = phi i32 [ 0, %365 ], [ %535, %534 ]
+  %375 = phi i32 [ 31, %365 ], [ %483, %534 ]
+  %376 = phi i32 [ -1, %365 ], [ %389, %534 ]
+  %377 = phi i32 [ 0, %365 ], [ %394, %534 ]
+  %378 = phi i32 [ 0, %365 ], [ %383, %534 ]
+  %379 = phi i32 [ -1, %365 ], [ %522, %534 ]
   call void @llvm.lifetime.start.p0(i64 1, ptr nonnull %11) #11
-  br label %376
+  br label %380
 
-376:                                              ; preds = %388, %373
-  %377 = phi i32 [ 0, %373 ], [ %389, %388 ]
-  %378 = phi i32 [ 0, %373 ], [ %380, %388 ]
-  br label %379
+380:                                              ; preds = %373, %423
+  %381 = phi i32 [ %376, %373 ], [ %428, %423 ]
+  %382 = phi i32 [ %377, %373 ], [ %427, %423 ]
+  %383 = phi i32 [ %378, %373 ], [ %429, %423 ]
+  %384 = phi i32 [ %379, %373 ], [ %391, %423 ]
+  %385 = phi i32 [ 0, %373 ], [ %424, %423 ]
+  %386 = phi i32 [ 0, %373 ], [ %425, %423 ]
+  %387 = call i32 @llvm.usub.sat.i32(i32 %383, i32 1)
+  br label %388
 
-379:                                              ; preds = %376, %386
-  %380 = phi i32 [ %378, %376 ], [ 1, %386 ]
-  br label %381
+388:                                              ; preds = %380, %443
+  %389 = phi i32 [ -1, %443 ], [ %381, %380 ]
+  %390 = phi i32 [ %394, %443 ], [ %382, %380 ]
+  %391 = phi i32 [ %445, %443 ], [ %384, %380 ]
+  %392 = icmp sgt i32 %389, -1
+  br label %393
 
-381:                                              ; preds = %379, %384
-  %382 = call i32 @read_nb(i32 noundef 0, ptr noundef nonnull %11, i32 noundef 1) #12
-  %383 = icmp eq i32 %382, 1
-  br i1 %383, label %384, label %407
+393:                                              ; preds = %388, %433
+  %394 = phi i32 [ %390, %388 ], [ 1, %433 ]
+  br label %395
 
-384:                                              ; preds = %381
-  %385 = load i8, ptr %11, align 1, !tbaa !10
-  switch i8 %385, label %381 [
-    i8 113, label %386
-    i8 3, label %386
-    i8 110, label %387
-    i8 32, label %387
-    i8 108, label %387
-    i8 112, label %390
-    i8 104, label %390
-    i8 27, label %391
+395:                                              ; preds = %393, %467
+  %396 = phi i32 [ %385, %393 ], [ %468, %467 ]
+  %397 = phi i32 [ %386, %393 ], [ %469, %467 ]
+  br label %398
+
+398:                                              ; preds = %447, %395
+  %399 = call i32 @read_nb(i32 noundef 0, ptr noundef nonnull %11, i32 noundef 1) #12
+  %400 = icmp eq i32 %399, 1
+  br i1 %400, label %401, label %470
+
+401:                                              ; preds = %398
+  %402 = load i8, ptr %11, align 1, !tbaa !10
+  %403 = add i8 %402, -48
+  %404 = icmp ult i8 %403, 10
+  br i1 %392, label %406, label %405
+
+405:                                              ; preds = %401
+  br i1 %404, label %407, label %446
+
+406:                                              ; preds = %401
+  br i1 %404, label %409, label %433
+
+407:                                              ; preds = %405
+  call fastcc void @emit(ptr noundef nonnull @.str.6) #9
+  call fastcc void @flush() #9
+  %408 = load i8, ptr %11, align 1, !tbaa !10
+  br label %411
+
+409:                                              ; preds = %406
+  %410 = icmp samesign ult i32 %389, 6
+  br i1 %410, label %411, label %423
+
+411:                                              ; preds = %407, %409
+  %412 = phi i32 [ %396, %407 ], [ %385, %409 ]
+  %413 = phi i32 [ %397, %407 ], [ %386, %409 ]
+  %414 = phi i8 [ %408, %407 ], [ %402, %409 ]
+  %415 = phi i32 [ 0, %407 ], [ %383, %409 ]
+  %416 = phi i32 [ 0, %407 ], [ %394, %409 ]
+  %417 = phi i32 [ 0, %407 ], [ %389, %409 ]
+  %418 = add nuw nsw i32 %417, 1
+  %419 = mul i32 %415, 10
+  %420 = sext i8 %414 to i32
+  %421 = add i32 %419, -48
+  %422 = add i32 %421, %420
+  br label %423
+
+423:                                              ; preds = %411, %409
+  %424 = phi i32 [ %412, %411 ], [ %385, %409 ]
+  %425 = phi i32 [ %413, %411 ], [ %386, %409 ]
+  %426 = phi i8 [ %414, %411 ], [ %402, %409 ]
+  %427 = phi i32 [ %416, %411 ], [ %394, %409 ]
+  %428 = phi i32 [ %418, %411 ], [ %389, %409 ]
+  %429 = phi i32 [ %422, %411 ], [ %383, %409 ]
+  %430 = load i32, ptr @olen, align 4, !tbaa !3
+  %431 = add nsw i32 %430, 1
+  store i32 %431, ptr @olen, align 4, !tbaa !3
+  %432 = getelementptr inbounds [256 x i8], ptr @obuf, i32 0, i32 %430
+  store i8 %426, ptr %432, align 1, !tbaa !10
+  call fastcc void @flush() #9
+  br label %380, !llvm.loop !37
+
+433:                                              ; preds = %406
+  switch i8 %402, label %393 [
+    i8 13, label %434
+    i8 10, label %434
   ], !llvm.loop !37
 
-386:                                              ; preds = %384, %384
-  call fastcc void @show_log(ptr noundef nonnull @.str.6, ptr noundef null, ptr noundef null) #9
-  br label %379, !llvm.loop !37
+434:                                              ; preds = %433, %433
+  call fastcc void @emit(ptr noundef nonnull @.str.7) #9
+  %435 = icmp eq i32 %394, 0
+  %436 = icmp ne i32 %389, 0
+  %437 = select i1 %435, i1 %436, i1 false
+  br i1 %437, label %438, label %443
 
-387:                                              ; preds = %384, %384, %384
-  call fastcc void @show_log(ptr noundef nonnull @.str.7, ptr noundef null, ptr noundef null) #9
-  br label %388
+438:                                              ; preds = %434
+  %439 = load i32, ptr @nshow, align 4, !tbaa !3
+  %440 = add nsw i32 %439, -1
+  %441 = call i32 @llvm.smin.i32(i32 %387, i32 %440)
+  call fastcc void @emit(ptr noundef nonnull @.str.8) #9
+  %442 = add nsw i32 %441, 1
+  call fastcc void @emitn(i32 noundef %442) #9
+  br label %443
 
-388:                                              ; preds = %387, %390, %405
-  %389 = phi i32 [ %406, %405 ], [ -1, %390 ], [ 1, %387 ]
-  br label %376, !llvm.loop !37
+443:                                              ; preds = %434, %438
+  %444 = phi ptr [ @.str.7, %438 ], [ @.str.9, %434 ]
+  %445 = phi i32 [ %441, %438 ], [ %391, %434 ]
+  call fastcc void @emit(ptr noundef nonnull %444) #9
+  call fastcc void @flush() #9
+  br label %388, !llvm.loop !37
 
-390:                                              ; preds = %384, %384
-  call fastcc void @show_log(ptr noundef nonnull @.str.8, ptr noundef null, ptr noundef null) #9
-  br label %388
+446:                                              ; preds = %405
+  switch i8 %402, label %467 [
+    i8 13, label %447
+    i8 10, label %447
+    i8 113, label %448
+    i8 3, label %448
+    i8 110, label %449
+    i8 32, label %449
+    i8 108, label %449
+    i8 112, label %450
+    i8 104, label %450
+    i8 27, label %451
+  ]
 
-391:                                              ; preds = %384
+447:                                              ; preds = %446, %446
+  br label %398, !llvm.loop !37
+
+448:                                              ; preds = %446, %446
+  call fastcc void @show_log(ptr noundef nonnull @.str.10, ptr noundef null, ptr noundef null) #9
+  br label %467
+
+449:                                              ; preds = %446, %446, %446
+  call fastcc void @show_log(ptr noundef nonnull @.str.11, ptr noundef null, ptr noundef null) #9
+  br label %467
+
+450:                                              ; preds = %446, %446
+  call fastcc void @show_log(ptr noundef nonnull @.str.12, ptr noundef null, ptr noundef null) #9
+  br label %467
+
+451:                                              ; preds = %446
   call void @llvm.lifetime.start.p0(i64 1, ptr nonnull %12) #11
   store i8 0, ptr %12, align 1, !tbaa !10
   call void @llvm.lifetime.start.p0(i64 1, ptr nonnull %13) #11
   store i8 0, ptr %13, align 1, !tbaa !10
-  %392 = call i32 @read_nb(i32 noundef 0, ptr noundef nonnull %12, i32 noundef 1) #12
-  %393 = call i32 @read_nb(i32 noundef 0, ptr noundef nonnull %13, i32 noundef 1) #12
-  %394 = load i8, ptr %12, align 1, !tbaa !10
-  %395 = icmp eq i8 %394, 91
-  %396 = load i8, ptr %13, align 1
-  %397 = icmp eq i8 %396, 67
-  %398 = select i1 %395, i1 %397, i1 false
-  br i1 %398, label %402, label %399
+  %452 = call i32 @read_nb(i32 noundef 0, ptr noundef nonnull %12, i32 noundef 1) #12
+  %453 = call i32 @read_nb(i32 noundef 0, ptr noundef nonnull %13, i32 noundef 1) #12
+  %454 = load i8, ptr %12, align 1, !tbaa !10
+  %455 = icmp eq i8 %454, 91
+  %456 = load i8, ptr %13, align 1
+  %457 = icmp eq i8 %456, 67
+  %458 = select i1 %455, i1 %457, i1 false
+  br i1 %458, label %462, label %459
 
-399:                                              ; preds = %391
-  %400 = icmp eq i8 %396, 68
-  %401 = select i1 %395, i1 %400, i1 false
-  br i1 %401, label %402, label %405
+459:                                              ; preds = %451
+  %460 = icmp eq i8 %456, 68
+  %461 = select i1 %455, i1 %460, i1 false
+  br i1 %461, label %462, label %465
 
-402:                                              ; preds = %399, %391
-  %403 = phi ptr [ @.str.7, %391 ], [ @.str.8, %399 ]
-  %404 = phi i32 [ 1, %391 ], [ -1, %399 ]
-  call fastcc void @show_log(ptr noundef nonnull %403, ptr noundef null, ptr noundef null) #9
-  br label %405
+462:                                              ; preds = %459, %451
+  %463 = phi ptr [ @.str.11, %451 ], [ @.str.12, %459 ]
+  %464 = phi i32 [ 1, %451 ], [ -1, %459 ]
+  call fastcc void @show_log(ptr noundef nonnull %463, ptr noundef null, ptr noundef null) #9
+  br label %465
 
-405:                                              ; preds = %402, %399
-  %406 = phi i32 [ %377, %399 ], [ %404, %402 ]
+465:                                              ; preds = %462, %459
+  %466 = phi i32 [ %396, %459 ], [ %464, %462 ]
   call void @llvm.lifetime.end.p0(i64 1, ptr nonnull %13) #11
   call void @llvm.lifetime.end.p0(i64 1, ptr nonnull %12) #11
-  br label %388
+  br label %467
 
-407:                                              ; preds = %381
-  %408 = call i32 @gpioctl(i32 noundef 2, i32 noundef 26, i32 noundef 0) #12
-  %409 = call i32 @gpioctl(i32 noundef 2, i32 noundef 27, i32 noundef 0) #12
-  %410 = shl i32 %409, 1
-  %411 = or i32 %410, %408
-  %412 = call i32 @gpioctl(i32 noundef 2, i32 noundef 28, i32 noundef 0) #12
-  %413 = shl i32 %412, 2
-  %414 = or i32 %411, %413
-  %415 = call i32 @gpioctl(i32 noundef 2, i32 noundef 29, i32 noundef 0) #12
-  %416 = shl i32 %415, 3
-  %417 = or i32 %414, %416
-  %418 = call i32 @gpioctl(i32 noundef 2, i32 noundef 24, i32 noundef 0) #12
-  %419 = shl i32 %418, 4
-  %420 = or i32 %417, %419
-  %421 = xor i32 %420, -1
-  %422 = and i32 %375, %421
-  %423 = and i32 %422, 1
-  %424 = icmp eq i32 %423, 0
-  br i1 %424, label %426, label %425
+467:                                              ; preds = %446, %449, %465, %450, %448
+  %468 = phi i32 [ %396, %448 ], [ 1, %449 ], [ -1, %450 ], [ %466, %465 ], [ %396, %446 ]
+  %469 = phi i32 [ 1, %448 ], [ %397, %449 ], [ %397, %450 ], [ %397, %465 ], [ %397, %446 ]
+  br label %395, !llvm.loop !37
 
-425:                                              ; preds = %407
-  call fastcc void @show_log(ptr noundef nonnull @.str.9, ptr noundef null, ptr noundef null) #9
-  br label %426
+470:                                              ; preds = %398
+  %471 = call i32 @gpioctl(i32 noundef 2, i32 noundef 26, i32 noundef 0) #12
+  %472 = call i32 @gpioctl(i32 noundef 2, i32 noundef 27, i32 noundef 0) #12
+  %473 = shl i32 %472, 1
+  %474 = or i32 %473, %471
+  %475 = call i32 @gpioctl(i32 noundef 2, i32 noundef 28, i32 noundef 0) #12
+  %476 = shl i32 %475, 2
+  %477 = or i32 %474, %476
+  %478 = call i32 @gpioctl(i32 noundef 2, i32 noundef 29, i32 noundef 0) #12
+  %479 = shl i32 %478, 3
+  %480 = or i32 %477, %479
+  %481 = call i32 @gpioctl(i32 noundef 2, i32 noundef 24, i32 noundef 0) #12
+  %482 = shl i32 %481, 4
+  %483 = or i32 %480, %482
+  %484 = xor i32 %483, -1
+  %485 = and i32 %375, %484
+  %486 = and i32 %485, 1
+  %487 = icmp eq i32 %486, 0
+  br i1 %487, label %489, label %488
 
-426:                                              ; preds = %425, %407
-  %427 = and i32 %422, 2
-  %428 = icmp eq i32 %427, 0
-  br i1 %428, label %430, label %429
-
-429:                                              ; preds = %426
-  call fastcc void @show_log(ptr noundef nonnull @.str.10, ptr noundef null, ptr noundef null) #9
-  br label %430
-
-430:                                              ; preds = %429, %426
-  %431 = and i32 %422, 4
-  %432 = icmp eq i32 %431, 0
-  br i1 %432, label %434, label %433
-
-433:                                              ; preds = %430
-  call fastcc void @show_log(ptr noundef nonnull @.str.11, ptr noundef null, ptr noundef null) #9
-  br label %434
-
-434:                                              ; preds = %433, %430
-  %435 = and i32 %422, 8
-  %436 = icmp eq i32 %435, 0
-  br i1 %436, label %438, label %437
-
-437:                                              ; preds = %434
-  call fastcc void @show_log(ptr noundef nonnull @.str.12, ptr noundef null, ptr noundef null) #9
-  br label %438
-
-438:                                              ; preds = %437, %434
-  %439 = and i32 %422, 16
-  %440 = icmp eq i32 %439, 0
-  br i1 %440, label %442, label %441
-
-441:                                              ; preds = %438
+488:                                              ; preds = %470
   call fastcc void @show_log(ptr noundef nonnull @.str.13, ptr noundef null, ptr noundef null) #9
-  br label %442
+  br label %489
 
-442:                                              ; preds = %441, %438
-  %443 = phi i32 [ 1, %441 ], [ %380, %438 ]
-  %444 = and i32 %422, 10
-  %445 = icmp eq i32 %444, 0
-  %446 = and i32 %422, 5
-  %447 = icmp eq i32 %446, 0
-  %448 = select i1 %447, i32 %377, i32 -1
-  %449 = select i1 %445, i32 %448, i32 1
-  %450 = icmp eq i32 %443, 0
-  br i1 %450, label %451, label %466
+489:                                              ; preds = %488, %470
+  %490 = and i32 %485, 2
+  %491 = icmp eq i32 %490, 0
+  br i1 %491, label %493, label %492
 
-451:                                              ; preds = %442
-  %452 = icmp eq i32 %449, 0
-  br i1 %452, label %463, label %453
+492:                                              ; preds = %489
+  call fastcc void @show_log(ptr noundef nonnull @.str.14, ptr noundef null, ptr noundef null) #9
+  br label %493
 
-453:                                              ; preds = %451
-  %454 = add nsw i32 %449, %374
-  %455 = icmp slt i32 %454, 0
-  %456 = load i32, ptr @nshow, align 4
-  %457 = add nsw i32 %456, -1
-  %458 = select i1 %455, i32 %457, i32 %454
-  %459 = icmp slt i32 %458, %456
-  %460 = select i1 %459, i32 %458, i32 0
-  %461 = load i32, ptr %6, align 4, !tbaa !36
-  call fastcc void @show_slide(i32 noundef %359, ptr noundef %360, i32 noundef %460, i32 noundef %461, i32 noundef %371) #9
-  %462 = call i32 @pause(i32 noundef 8) #12
-  br label %463
+493:                                              ; preds = %492, %489
+  %494 = and i32 %485, 4
+  %495 = icmp eq i32 %494, 0
+  br i1 %495, label %497, label %496
 
-463:                                              ; preds = %451, %453
-  %464 = phi i32 [ %460, %453 ], [ %374, %451 ]
-  %465 = call i32 @pause(i32 noundef 2) #12
+496:                                              ; preds = %493
+  call fastcc void @show_log(ptr noundef nonnull @.str.15, ptr noundef null, ptr noundef null) #9
+  br label %497
+
+497:                                              ; preds = %496, %493
+  %498 = and i32 %485, 8
+  %499 = icmp eq i32 %498, 0
+  br i1 %499, label %501, label %500
+
+500:                                              ; preds = %497
+  call fastcc void @show_log(ptr noundef nonnull @.str.16, ptr noundef null, ptr noundef null) #9
+  br label %501
+
+501:                                              ; preds = %500, %497
+  %502 = and i32 %485, 16
+  %503 = icmp eq i32 %502, 0
+  br i1 %503, label %505, label %504
+
+504:                                              ; preds = %501
+  call fastcc void @show_log(ptr noundef nonnull @.str.17, ptr noundef null, ptr noundef null) #9
+  br label %505
+
+505:                                              ; preds = %504, %501
+  %506 = phi i32 [ 1, %504 ], [ %397, %501 ]
+  %507 = and i32 %485, 10
+  %508 = icmp eq i32 %507, 0
+  %509 = and i32 %485, 5
+  %510 = icmp eq i32 %509, 0
+  %511 = select i1 %510, i32 %396, i32 -1
+  %512 = select i1 %508, i32 %511, i32 1
+  %513 = icmp eq i32 %506, 0
+  br i1 %513, label %514, label %537
+
+514:                                              ; preds = %505
+  %515 = icmp sgt i32 %391, -1
+  br i1 %515, label %516, label %520
+
+516:                                              ; preds = %514
+  %517 = icmp eq i32 %391, %374
+  br i1 %517, label %520, label %518
+
+518:                                              ; preds = %516
+  %519 = load i32, ptr %6, align 4, !tbaa !36
+  call fastcc void @show_slide(i32 noundef %359, ptr noundef %360, i32 noundef %391, i32 noundef %519, i32 noundef %371) #9
+  br label %520
+
+520:                                              ; preds = %516, %518, %514
+  %521 = phi i32 [ %374, %514 ], [ %391, %518 ], [ %374, %516 ]
+  %522 = phi i32 [ %391, %514 ], [ -1, %518 ], [ -1, %516 ]
+  %523 = icmp eq i32 %512, 0
+  br i1 %523, label %534, label %524
+
+524:                                              ; preds = %520
+  %525 = add nsw i32 %521, %512
+  %526 = icmp slt i32 %525, 0
+  %527 = load i32, ptr @nshow, align 4
+  %528 = add nsw i32 %527, -1
+  %529 = select i1 %526, i32 %528, i32 %525
+  %530 = icmp slt i32 %529, %527
+  %531 = select i1 %530, i32 %529, i32 0
+  %532 = load i32, ptr %6, align 4, !tbaa !36
+  call fastcc void @show_slide(i32 noundef %359, ptr noundef %360, i32 noundef %531, i32 noundef %532, i32 noundef %371) #9
+  %533 = call i32 @pause(i32 noundef 8) #12
+  br label %534
+
+534:                                              ; preds = %520, %524
+  %535 = phi i32 [ %531, %524 ], [ %521, %520 ]
+  %536 = call i32 @pause(i32 noundef 2) #12
   call void @llvm.lifetime.end.p0(i64 1, ptr nonnull %11) #11
   br label %373
 
-466:                                              ; preds = %442
+537:                                              ; preds = %505
   call void @llvm.lifetime.end.p0(i64 1, ptr nonnull %11) #11
-  %467 = call i32 @ttyraw(i32 noundef 0) #12
-  %468 = call i32 @fbctl(i32 noundef 2, ptr noundef null) #12
-  %469 = load i32, ptr @deckfd, align 4, !tbaa !3
-  %470 = icmp sgt i32 %469, -1
-  br i1 %470, label %471, label %473
+  %538 = call i32 @ttyraw(i32 noundef 0) #12
+  %539 = call i32 @fbctl(i32 noundef 2, ptr noundef null) #12
+  %540 = load i32, ptr @deckfd, align 4, !tbaa !3
+  %541 = icmp sgt i32 %540, -1
+  br i1 %541, label %542, label %544
 
-471:                                              ; preds = %466
-  %472 = call i32 @close(i32 noundef %469) #12
+542:                                              ; preds = %537
+  %543 = call i32 @close(i32 noundef %540) #12
   store i32 -1, ptr @deckfd, align 4, !tbaa !3
-  br label %473
+  br label %544
 
-473:                                              ; preds = %324, %195, %355, %363, %471, %466, %16
-  %474 = phi i32 [ 1, %16 ], [ 1, %355 ], [ 1, %363 ], [ 1, %324 ], [ 1, %195 ], [ 0, %471 ], [ 0, %466 ]
+544:                                              ; preds = %324, %195, %355, %363, %542, %537, %16
+  %545 = phi i32 [ 1, %16 ], [ 1, %355 ], [ 1, %363 ], [ 1, %324 ], [ 1, %195 ], [ 0, %542 ], [ 0, %537 ]
   call void @llvm.lifetime.end.p0(i64 20, ptr nonnull %6) #11
-  ret i32 %474
+  ret i32 %545
 }
 
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
@@ -1023,8 +1147,8 @@ define internal fastcc void @show_slide(i32 noundef range(i32 0, 2) %0, ptr noun
   br label %31, !llvm.loop !42
 
 47:                                               ; preds = %39
-  call fastcc void @show_log(ptr noundef nonnull @.str.21, ptr noundef nonnull %6, ptr noundef null) #9
-  call fastcc void @show_log(ptr noundef nonnull @.str.22, ptr noundef nonnull %6, ptr noundef nonnull @.str.23) #9
+  call fastcc void @show_log(ptr noundef nonnull @.str.24, ptr noundef nonnull %6, ptr noundef null) #9
+  call fastcc void @show_log(ptr noundef nonnull @.str.25, ptr noundef nonnull %6, ptr noundef nonnull @.str.26) #9
   br label %48
 
 48:                                               ; preds = %51, %47
@@ -1047,17 +1171,17 @@ define internal fastcc void @show_slide(i32 noundef range(i32 0, 2) %0, ptr noun
   br label %60
 
 60:                                               ; preds = %39, %58
-  %61 = phi ptr [ @.str.24, %58 ], [ @.str.20, %39 ]
+  %61 = phi ptr [ @.str.27, %58 ], [ @.str.23, %39 ]
   call fastcc void @show_log(ptr noundef nonnull %61, ptr noundef nonnull %6, ptr noundef null) #9
   call void @llvm.lifetime.end.p0(i64 96, ptr nonnull %6) #11
   br label %84
 
 62:                                               ; preds = %5
   store i32 0, ptr @olen, align 4, !tbaa !3
-  tail call fastcc void @emit(ptr noundef nonnull @.str.16) #9
+  tail call fastcc void @emit(ptr noundef nonnull @.str.20) #9
   %63 = add i32 %2, 1
   tail call fastcc void @emitn(i32 noundef %63) #9
-  tail call fastcc void @emit(ptr noundef nonnull @.str.17) #9
+  tail call fastcc void @emit(ptr noundef nonnull @.str.21) #9
   tail call fastcc void @flush() #9
   %64 = load i32, ptr @deckfd, align 4, !tbaa !3
   %65 = load i32, ptr @deckoff, align 4, !tbaa !3
@@ -1087,9 +1211,9 @@ define internal fastcc void @show_slide(i32 noundef range(i32 0, 2) %0, ptr noun
 83:                                               ; preds = %75, %72
   tail call fastcc void @show_expand2x(i32 noundef %3, i32 noundef %4, i32 noundef %73) #9
   store i32 0, ptr @olen, align 4, !tbaa !3
-  tail call fastcc void @emit(ptr noundef nonnull @.str.18) #9
+  tail call fastcc void @emit(ptr noundef nonnull @.str.22) #9
   tail call fastcc void @emitn(i32 noundef %63) #9
-  tail call fastcc void @emit(ptr noundef nonnull @.str.19) #9
+  tail call fastcc void @emit(ptr noundef nonnull @.str.7) #9
   tail call fastcc void @flush() #9
   br label %84
 
@@ -1119,7 +1243,7 @@ define internal fastcc void @show_log(ptr noundef readonly captures(none) %0, pt
   br label %9
 
 9:                                                ; preds = %8, %6
-  tail call fastcc void @emit(ptr noundef nonnull @.str.19) #9
+  tail call fastcc void @emit(ptr noundef nonnull @.str.7) #9
   tail call fastcc void @flush() #9
   ret void
 }
@@ -1181,7 +1305,13 @@ define internal fastcc void @show_expand2x(i32 noundef %0, i32 noundef %1, i32 n
 }
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+declare i32 @llvm.usub.sat.i32(i32, i32) #8
+
+; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
 declare i32 @llvm.umin.i32(i32, i32) #8
+
+; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+declare i32 @llvm.smin.i32(i32, i32) #8
 
 attributes #0 = { minsize noreturn nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { minsize noreturn optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
