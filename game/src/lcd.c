@@ -11,6 +11,7 @@
 #define SPI_DR (SPI0 + 0x8)
 #define SPI_SR (SPI0 + 0xC)
 #define SPI_CPSR (SPI0 + 0x10)
+#define SPI_DMACR (SPI0 + 0x24)
 
 static void
 spi_wait_idle(void)
@@ -60,8 +61,11 @@ lcd_init(void)
    * repurposed 125 MHz peri clock (the ST7789V serial-write limit). */
   W32(SPI_CR1) = 0;
   W32(SPI_CPSR) = 2;
-  W32(SPI_CR0) = 7; /* 8-bit frames, mode 0 */
-  W32(SPI_CR1) = 2; /* SSE */
+  W32(SPI_CR0) = 7;    /* 8-bit frames, mode 0 */
+  W32(SPI_DMACR) = 2;  /* TXDMAE: without it the PL022 never raises the
+                        * TX DREQ and the paced pixel channel starves
+                        * (found on silicon: flush hung at row 0) */
+  W32(SPI_CR1) = 2;    /* SSE */
   gpio_fn(PIN_LCD_SCK, 1);  /* FUNCSEL 1 = SPI */
   gpio_fn(PIN_LCD_SDA, 1);
   gpio_out(PIN_LCD_CS, 0); /* one device: CS held low */

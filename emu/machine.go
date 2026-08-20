@@ -83,6 +83,11 @@ type Machine struct {
 	streamAddr uint32
 	streamCtr  uint32
 
+	// SPI0 SSPDMACR as last written: the PL022 raises its TX DREQ only
+	// while TXDMAE (bit 1) is set — a paced channel starves without it
+	// (found on silicon: the LCD flush hung at row 0).
+	spiDmacr uint32
+
 	// TraceW, when non-nil, receives one line per DMA transfer.
 	TraceW io.Writer
 
@@ -350,6 +355,10 @@ func (m *Machine) Write(addr uint32, val uint32, size int) error {
 			m.SPIOut = append(m.SPIOut, SPIWrite{m.Cycle, val, uint8(size)})
 			return nil
 		}
+		if m.v.SPI0Base != 0 && addr == m.v.SPI0Base+0x24 { /* SSPDMACR */
+			m.spiDmacr = val
+			return nil
+		}
 		if m.v.XIPStreamAddr != 0 && addr == m.v.XIPStreamAddr {
 			m.streamAddr = val &^ 3
 			return nil
@@ -480,8 +489,9 @@ func (m *Machine) step() (bool, error) {
 		m.dma.levelDreq(m.v.DreqXIPStream)
 	}
 	// SPI0 TX drains continuously: a level request for any listener
-	// (the LCD pixel stream). Masked so non-SPI workloads never scan.
-	if m.dma.spiListen != 0 {
+	// (the LCD pixel stream) — but only while SSPDMACR.TXDMAE is set,
+	// like the PL022. Masked so non-SPI workloads never scan.
+	if m.dma.spiListen != 0 && m.spiDmacr&0x2 != 0 {
 		m.dma.levelDreqMask(m.dma.spiListen)
 	}
 	// Channel selection over the cached ready set: high-priority
