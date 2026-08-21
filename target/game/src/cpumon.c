@@ -130,8 +130,9 @@ cpumon_run(void)
     }
     phase++;
     if ((phase & 3) == 0) {
-      draw_zzz(58, phase);
-      draw_zzz(170, phase + 16);
+      /* anchored toward each chip's right temple, not mid-head */
+      draw_zzz(70, phase);
+      draw_zzz(182, phase + 16);
       gfx_present();
     }
     /* advance the idle clock in real time */

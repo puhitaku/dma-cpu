@@ -84,9 +84,9 @@ define dso_local void @cpumon_run() local_unnamed_addr #0 {
   br i1 %27, label %28, label %30
 
 28:                                               ; preds = %24
-  tail call fastcc void @draw_zzz(i32 noundef 58, i32 noundef %25) #4
+  tail call fastcc void @draw_zzz(i32 noundef 70, i32 noundef %25) #4
   %29 = add i32 %19, 17
-  tail call fastcc void @draw_zzz(i32 noundef 170, i32 noundef %29) #4
+  tail call fastcc void @draw_zzz(i32 noundef 182, i32 noundef %29) #4
   tail call void @gfx_present() #3
   br label %30
 
@@ -219,7 +219,7 @@ declare dso_local void @frame_sync(i32 noundef) local_unnamed_addr #1
 declare dso_local void @in_poll() local_unnamed_addr #1
 
 ; Function Attrs: minsize nounwind optsize
-define internal fastcc void @draw_zzz(i32 noundef range(i32 58, 171) %0, i32 noundef %1) unnamed_addr #0 {
+define internal fastcc void @draw_zzz(i32 noundef range(i32 70, 183) %0, i32 noundef %1) unnamed_addr #0 {
   tail call void @gfx_fill(i32 noundef %0, i32 noundef 24, i32 noundef 40, i32 noundef 27, i16 noundef zeroext 2147) #3
   %3 = lshr i32 %1, 3
   %4 = and i32 %3, 3
