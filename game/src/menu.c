@@ -11,18 +11,20 @@
 #define C_FOOT RGB(90, 100, 130)
 
 static const char *names[5] = {"Dinosaur", "LANWalk", "Yacht",
-                              "Sequencer", "CPU Sleep"};
+                              "Sequencer", "Arm info"};
 
 #define NGAMES 5
 
 static void
 draw_item(int i, int selected)
 {
-  int y = 74 + i * 25;
-  gfx_fill(32, y - 4, 176, 24, selected ? C_SELBG : C_BG);
+  /* highlight is 24 tall, the 16-tall label sits 4 px inside it top
+   * and bottom — even padding, no downward drift */
+  int y = 84 + i * 27;
+  gfx_fill(32, y, 176, 24, selected ? C_SELBG : C_BG);
   if (selected)
-    gfx_text(44, y, ">", C_TITLE, C_SELBG);
-  gfx_text2(60, y - 4, names[i], selected ? C_SEL : C_ITEM,
+    gfx_text(44, y + 8, ">", C_TITLE, C_SELBG);
+  gfx_text2(60, y + 4, names[i], selected ? C_SEL : C_ITEM,
             selected ? C_SELBG : C_BG);
 }
 
@@ -32,11 +34,11 @@ menu_run(void)
   gfx_clear(C_BG);
   gfx_text2(56, 24, "DMA PICO", C_TITLE, C_BG);
   gfx_fill(56, 44, 128, 2, C_TITLE);
-  gfx_text(8, 60, "Enjoy purely DMA-coded games", C_ITEM, C_BG);
+  gfx_text(8, 58, "Enjoy purely DMA-coded games", C_ITEM, C_BG);
   int sel = 0;
   for (int i = 0; i < NGAMES; i++)
     draw_item(i, i == sel);
-  gfx_text(12, 208, "up/down: pick   press: play", C_FOOT, C_BG);
+  gfx_text(12, 226, "up/down: pick   press: play", C_FOOT, C_BG);
   gfx_present();
   led(LED_DIM(0x0040FF), LED_DIM(0x0040FF)); /* dim blue browse */
   uputs("menu up\n");

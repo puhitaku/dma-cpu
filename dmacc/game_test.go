@@ -338,7 +338,7 @@ func TestGameMenu(t *testing.T) {
 		t.Errorf("title underline: %d pixels of %#04x", n, title)
 	}
 	selbg := rgb565(40, 70, 140)
-	if n := p.countColor(32, 70, 207, 93, selbg); n < 500 {
+	if n := p.countColor(32, 84, 207, 107, selbg); n < 500 {
 		t.Errorf("selected item background: %d pixels", n)
 	}
 	// fx: the machine armed the audio streamer at boot — silence is
@@ -517,7 +517,7 @@ func TestGameSeq(t *testing.T) {
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
 	press(t, m, prog, pinUp) // wraps up: Dino -> CPU Sleep
-	at = runUntil(t, m, "menu: CPU Sleep", at, 100_000_000)
+	at = runUntil(t, m, "menu: Arm info", at, 100_000_000)
 	press(t, m, prog, pinUp) // -> Sequencer
 	at = runUntil(t, m, "menu: Sequencer", at, 100_000_000)
 	press(t, m, prog, pinA)
@@ -549,7 +549,7 @@ func TestGameCPUMon(t *testing.T) {
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
 	press(t, m, prog, pinUp) // wraps to CPU Sleep
-	at = runUntil(t, m, "menu: CPU Sleep", at, 100_000_000)
+	at = runUntil(t, m, "menu: Arm info", at, 100_000_000)
 	// simulate the firmware's park stamp so the live idle clock reads
 	// a nonzero MM:SS (the emulated timer is fast, so the exact value
 	// is unimportant — only that the live path renders green digits)
@@ -563,12 +563,12 @@ func TestGameCPUMon(t *testing.T) {
 	p := decodeLCD(m, 16)
 	// the LIVE idle clock (02:17) must render in the live-green color
 	live := rgb565(90, 240, 140)
-	if n := p.countColor(150, 150, 229, 165, live); n < 60 {
+	if n := p.countColor(100, 146, 179, 161, live); n < 60 {
 		t.Errorf("idle clock: %d live-green pixels (expected the MM:SS)", n)
 	}
 	// sleeping-chip faces present (face color)
 	face := rgb565(220, 225, 245)
-	if n := p.countColor(24, 44, 216, 103, face); n < 40 {
+	if n := p.countColor(24, 52, 216, 111, face); n < 40 {
 		t.Errorf("chip faces: %d face pixels", n)
 	}
 	dumpPNG(t, p, "cpumon.png")

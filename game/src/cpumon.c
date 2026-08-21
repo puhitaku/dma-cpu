@@ -9,9 +9,6 @@
  *    just before it parked (firmware, 0x2003D000). It only advances,
  *    which is the proof: if the CPU ever executed again it could
  *    move that stamp, and it never does.
- *  - Every pixel on this screen was placed by the DMA machine; the
- *    CPU drew none of it. You are, right now, looking at the output
- *    of the thing that replaced the processor.
  */
 #include "g.h"
 
@@ -29,6 +26,8 @@
 #define C_DIM RGB(105, 112, 140)
 #define C_LIVE RGB(90, 240, 140)
 
+#define CHIP_Y 52
+
 /* one chip: body, pins, two shut eyes, a little breathing mouth */
 static void
 draw_chip(int x, int y)
@@ -39,7 +38,7 @@ draw_chip(int x, int y)
     gfx_fill(x - 5, y + 10 + i * 12, 5, 6, C_PIN);
     gfx_fill(x + 76, y + 10 + i * 12, 5, 6, C_PIN);
   }
-  /* shut eyes: gentle content down-then-up arc "‿ ‿" */
+  /* shut eyes: gentle content "‿ ‿" */
   for (int e = 0; e < 2; e++) {
     int ex = x + 18 + e * 30, ey = y + 26;
     gfx_fill(ex, ey, 3, 2, C_FACE);
@@ -51,20 +50,27 @@ draw_chip(int x, int y)
   gfx_rect(x + 33, y + 40, 10, 7, 1, C_FACE);
 }
 
-/* Zzz above a chip: three glyphs of growing size rising on a diagonal,
- * revealed one at a time by phase, looping. Redraws its own band. */
+/* Zzz above a chip: z, Z, Z of growing size on a rising diagonal,
+ * revealed one at a time by phase, looping. The box sits ENTIRELY in
+ * the clear band above the chips (y 24..50, chips start at 52), so
+ * the background erase touches only background — no chip corner is
+ * clipped — and the erase spans the full glyph extent including the
+ * big Z's top row, so nothing is left behind. */
+#define ZZZ_Y 24
+#define ZZZ_H 27
+
 static void
-draw_zzz(int x, int y, uint phase)
+draw_zzz(int bx, uint phase)
 {
-  gfx_fill(x, y, 48, 34, C_BG);
+  gfx_fill(bx, ZZZ_Y, 40, ZZZ_H, C_BG);
   uint n = (phase / 8) % 4; /* 0..3 visible */
   if (n >= 1)
-    gfx_text(x + 2, y + 24, "z", C_Z, C_BG);
+    gfx_text(bx, ZZZ_Y + 18, "z", C_Z, C_BG);
   if (n >= 2)
-    gfx_text(x + 14, y + 12, "Z", C_Z, C_BG);
+    gfx_text(bx + 11, ZZZ_Y + 9, "Z", C_Z, C_BG);
   if (n >= 3)
-    gfx_text2(x + 26, y - 2, "Z", C_Z, C_BG);
-  gfx_damage(x, y - 2, x + 47, y + 33);
+    gfx_text2(bx + 22, ZZZ_Y, "Z", C_Z, C_BG);
+  gfx_damage(bx, ZZZ_Y, bx + 39, ZZZ_Y + ZZZ_H - 1);
 }
 
 static void
@@ -78,8 +84,8 @@ draw_idle(uint secs)
   b[3] = (char)('0' + ss / 10);
   b[4] = (char)('0' + ss % 10);
   b[5] = 0;
-  gfx_fill(150, 150, 80, 16, C_BG);
-  gfx_text2(150, 150, b, C_LIVE, C_BG);
+  gfx_fill(100, 146, 80, 16, C_BG);
+  gfx_text2(100, 146, b, C_LIVE, C_BG);
 }
 
 void
@@ -88,22 +94,21 @@ cpumon_run(void)
   uputs("cpumon: up\n");
   led(LED_DIM(0x0040FF), LED_DIM(0x0040FF));
   gfx_clear(C_BG);
-  gfx_text2(32, 8, "CPU ASLEEP", C_TITLE, C_BG);
+  gfx_text2(32, 6, "CPU ASLEEP", C_TITLE, C_BG);
 
-  draw_chip(24, 44);
-  draw_chip(140, 44);
-  gfx_text(38, 110, "CORE 0", C_TEXT, C_BG);
-  gfx_text(40, 122, "wfi", C_DIM, C_BG);
-  gfx_text(154, 110, "CORE 1", C_TEXT, C_BG);
-  gfx_text(150, 122, "reset", C_DIM, C_BG);
+  draw_chip(24, CHIP_Y);
+  draw_chip(140, CHIP_Y);
+  gfx_text(38, 118, "CORE 0", C_TEXT, C_BG);
+  gfx_text(48, 130, "wfi", C_DIM, C_BG); /* one char in from the label */
+  gfx_text(154, 118, "CORE 1", C_TEXT, C_BG);
+  gfx_text(158, 130, "reset", C_DIM, C_BG);
 
   /* the facts */
-  gfx_text(8, 150, "idle", C_TEXT, C_BG);
-  gfx_text(8, 172, "CPU program:", C_TEXT, C_BG);
-  gfx_text(8, 184, "  cpsid i; wfi; b .-1", C_DIM, C_BG);
-  gfx_text(8, 196, "3 instructions, forever.", C_DIM, C_BG);
-  gfx_text(8, 214, "this screen: 100% DMA", C_LIVE, C_BG);
-  gfx_text(8, 226, "press: back", C_DIM, C_BG);
+  gfx_text(8, 150, "Idle for:", C_TEXT, C_BG);
+  gfx_text(8, 174, "CPU program:", C_TEXT, C_BG);
+  gfx_text(8, 186, "  cpsid i; wfi; b .-1", C_DIM, C_BG);
+  gfx_text(8, 198, "3 instructions, forever.", C_DIM, C_BG);
+  gfx_text(8, 220, "press: back", C_DIM, C_BG);
 
   /* seed the idle clock from the ARM's park stamp (or 0 if the
    * monitor is running under the emulator, where nothing stamped it) */
@@ -125,8 +130,8 @@ cpumon_run(void)
     }
     phase++;
     if ((phase & 3) == 0) {
-      draw_zzz(84, 40, phase);
-      draw_zzz(190, 40, phase + 16);
+      draw_zzz(58, phase);
+      draw_zzz(170, phase + 16);
       gfx_present();
     }
     /* advance the idle clock in real time */
