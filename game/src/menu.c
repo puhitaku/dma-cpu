@@ -36,7 +36,7 @@ menu_run(void)
   gfx_text(48, 200, "up/down: pick", C_FOOT, C_BG);
   gfx_text(48, 212, "press:   play", C_FOOT, C_BG);
   gfx_present();
-  led(0x000418, 0x000418); /* both dim blue while browsing */
+  led(LED_DIM(0x0040FF), LED_DIM(0x0040FF)); /* dim blue browse */
   uputs("menu up\n");
 
   uint beats = 0, t0 = now_us();
@@ -59,7 +59,7 @@ menu_run(void)
     }
     if (in_edge & BTN_A) {
       snd_play(1000, 60, 4);
-      led(0x00FF40, 0x00FF40);
+      led(LED_BRIGHT(0x00FF40), LED_BRIGHT(0x00FF40));
       uputs("start: ");
       uputs(names[sel]);
       uputs("\n");

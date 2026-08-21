@@ -309,7 +309,8 @@ func TestGameMenu(t *testing.T) {
 	if n := len(m.PIO0TX[1]); n != 2 {
 		t.Errorf("LED words = %d, want 2", n)
 	} else {
-		want := uint32(0x04<<16|0x00<<8|0x18) << 8 // GRB of 0x000418
+		// LED_DIM(0x0040FF) = 0x00040F, GRB on the wire
+		want := uint32(0x04<<16|0x00<<8|0x0F) << 8
 		if m.PIO0TX[1][0] != want || m.PIO0TX[1][1] != want {
 			t.Errorf("LED frames %#x,%#x want %#x",
 				m.PIO0TX[1][0], m.PIO0TX[1][1], want)

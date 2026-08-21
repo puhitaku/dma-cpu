@@ -158,21 +158,123 @@ snd_tick(void)
     gdma_fill(AURING, 0, AURING_BYTES);
 }
 
-/* led: both WS2811s, colors as 0xRRGGBB. Wire order is GRB (the
+/* --- LEDs: both WS2811s, colors as 0xRRGGBB. Wire order is GRB (the
  * common integrated parts); swap the packing here if the strip is an
  * RGB-order WS2811. Two words fit the four-deep FIFO, and the >50 us
- * frame gap latches automatically. */
-void
-led(uint rgb0, uint rgb1)
+ * frame gap latches automatically. Every path runs through a
+ * per-channel hard cap (the global comfort ceiling); call sites pick
+ * their tier with LED_BRIGHT/LED_DIM (g.h). Short animations
+ * (rainbow, blink) overlay the base colors and restore them. */
+
+#define LED_CAP 0x60u
+
+static uint led_base0, led_base1;
+static int leda_mode;  /* 0 none, 1 rainbow, 2 blink */
+static uint leda_n;    /* frames left */
+static uint leda_hue, leda_rgb, leda_phase;
+
+static uint
+led_capc(uint c)
+{
+  uint r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+  if (r > LED_CAP)
+    r = LED_CAP;
+  if (g > LED_CAP)
+    g = LED_CAP;
+  if (b > LED_CAP)
+    b = LED_CAP;
+  return (r << 16) | (g << 8) | b;
+}
+
+static void
+led_raw(uint rgb0, uint rgb1)
 {
   uint c[2];
-  c[0] = rgb0;
-  c[1] = rgb1;
+  c[0] = led_capc(rgb0);
+  c[1] = led_capc(rgb1);
   for (int i = 0; i < 2; i++) {
     uint grb = ((c[i] & 0x00FF00) << 8) | ((c[i] & 0xFF0000) >> 8) |
                (c[i] & 0x0000FF);
     while (W32(PIO_FSTAT) & (1u << 17)) /* SM1 TXFULL */
       ;
     W32(PIO_TXF1) = grb << 8; /* left-justify for shift-left autopull 24 */
+  }
+}
+
+void
+led(uint rgb0, uint rgb1)
+{
+  led_base0 = rgb0;
+  led_base1 = rgb1;
+  if (!leda_mode)
+    led_raw(rgb0, rgb1);
+}
+
+void
+led_rainbow(uint frames)
+{
+  leda_mode = 1;
+  leda_n = frames;
+  leda_hue = 0;
+}
+
+void
+led_blink(uint rgb, uint cycles)
+{
+  leda_mode = 2;
+  leda_rgb = rgb;
+  leda_n = cycles * 8; /* 4 frames up, 4 down per cycle */
+  leda_phase = 0;
+}
+
+/* folded triangle: a cheap smooth hue wheel with no multiplies */
+static uint
+tri8(uint x)
+{
+  x &= 0xFF;
+  return x < 128 ? x << 1 : (255 - x) << 1;
+}
+
+static uint
+wheel(uint h)
+{
+  return (tri8(h) << 16) | (tri8(h + 85) << 8) | tri8(h + 170);
+}
+
+/* scale a packed color to num/4 brightness, shifts only */
+static uint
+led_scale4(uint c, uint num)
+{
+  if (num == 0)
+    return 0;
+  if (num == 1)
+    return (c >> 2) & 0x3F3F3F;
+  if (num == 2)
+    return (c >> 1) & 0x7F7F7F;
+  if (num == 3)
+    return ((c >> 1) & 0x7F7F7F) + ((c >> 2) & 0x3F3F3F);
+  return c;
+}
+
+void
+led_tick(void)
+{
+  if (!leda_mode)
+    return;
+  if (leda_n == 0) {
+    leda_mode = 0;
+    led_raw(led_base0, led_base1);
+    return;
+  }
+  leda_n--;
+  if (leda_mode == 1) { /* rainbow: two loops in ~30 frames */
+    leda_hue += 17;
+    led_raw(LED_BRIGHT(wheel(leda_hue)), LED_BRIGHT(wheel(leda_hue + 128)));
+  } else { /* blink: linear tri-ramp, 4 frames per side */
+    uint ph = leda_phase;
+    leda_phase = ph == 7 ? 0 : ph + 1;
+    uint up = ph < 4 ? ph : 8 - ph;
+    uint c = led_scale4(LED_BRIGHT(leda_rgb), up);
+    led_raw(c, c);
   }
 }

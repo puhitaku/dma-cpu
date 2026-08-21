@@ -198,6 +198,7 @@ draw_total(void)
 {
   gfx_fill(4, 212, 232, 20, C_BG);
   gfx_text(10, 218, "TOTAL", C_TEXT, C_BG);
+  gfx_text(64, 218, "hold press: quit", C_DIM, C_BG);
   char b[4];
   numsp(b, 3, (uint)total());
   gfx_text(200, 218, b, C_SCORE, C_BG);
@@ -216,7 +217,7 @@ void
 yacht_run(void)
 {
   uputs("yacht: start\n");
-  led(0x101008, 0x101008); /* felt-table warm white */
+  led(LED_DIM(0xFFFF80), LED_DIM(0xFFFF80)); /* warm table glow */
   for (int c = 0; c < NCAT; c++)
     scores[c] = -1;
   turn = 0;
@@ -244,9 +245,18 @@ yacht_run(void)
     gfx_present();
 
     int booked = -1;
+    uint hold = 0;
     while (booked < 0) {
       frame_sync(33000);
       in_poll();
+      if (in_down & BTN_A)
+        hold++;
+      else
+        hold = 0;
+      if (hold > 45) { /* ~1.5 s hold quits to the menu */
+        uputs("yacht: quit\n");
+        return;
+      }
       if (!incats) {
         if (in_edge & BTN_LEFT) {
           int p = cur;
@@ -280,7 +290,7 @@ yacht_run(void)
             draw_die(cur, 1);
             gfx_present();
           } else if (rolls_left > 0) {
-            led(0x303030, 0x303030);
+            led(LED_BRIGHT(0xFFFFFF), LED_BRIGHT(0xFFFFFF));
             roll_dice();
             roll_anim();
             draw_roll_btn(1);
@@ -357,7 +367,7 @@ yacht_run(void)
   gfx_text(74, 136, "press: menu", C_TEXT, C_PANEL);
   gfx_present();
   snd_play(990, 60, 30);
-  led(0x20FF20, 0x20FF20);
+  led(LED_BRIGHT(0x20FF20), LED_BRIGHT(0x20FF20));
   uputs("yacht: total=");
   uputn((uint)total());
   uputs("\n");

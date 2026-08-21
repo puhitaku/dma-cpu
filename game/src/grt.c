@@ -117,11 +117,19 @@ gpio_out(int pin, int hi)
   W32(IOBANK0 + 8 * (uint)pin + 4) = (3u << 12) | ((hi ? 3u : 2u) << 8);
 }
 
-int
-gpio_in_pu(int pin)
+void
+gpio_in_init(int pin)
 {
   W32(PADSBANK0 + 4 + 4 * (uint)pin) = PAD_INIT | 0x8; /* PUE */
-  return (int)((W32(IOBANK0 + 8 * (uint)pin) >> 17) & 1);
+}
+
+int
+gpio_in(int pin)
+{
+  /* constant-mask test, not a shift: a variable >>17 costs a runtime
+   * rt_lshr call (~hundreds of records) and input polls ten pins per
+   * frame — this read is on the 60 fps hot path */
+  return (W32(IOBANK0 + 8 * (uint)pin) & 0x20000u) != 0;
 }
 
 /* --- bulk DMA on channel 11 (the kdma pattern, bare-metal) --- */

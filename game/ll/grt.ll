@@ -240,18 +240,23 @@ define dso_local void @gpio_out(i32 noundef %0, i32 noundef %1) local_unnamed_ad
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define dso_local range(i32 0, 2) i32 @gpio_in_pu(i32 noundef %0) local_unnamed_addr #0 {
+define dso_local void @gpio_in_init(i32 noundef %0) local_unnamed_addr #0 {
   %2 = shl i32 %0, 2
   %3 = add i32 %2, 1073856516
   %4 = inttoptr i32 %3 to ptr
   store volatile i32 90, ptr %4, align 4, !tbaa !9
-  %5 = shl i32 %0, 3
-  %6 = add i32 %5, 1073823744
-  %7 = inttoptr i32 %6 to ptr
-  %8 = load volatile i32, ptr %7, align 8, !tbaa !9
-  %9 = lshr i32 %8, 17
-  %10 = and i32 %9, 1
-  ret i32 %10
+  ret void
+}
+
+; Function Attrs: minsize mustprogress nofree norecurse nounwind optsize willreturn
+define dso_local range(i32 0, 2) i32 @gpio_in(i32 noundef %0) local_unnamed_addr #4 {
+  %2 = shl i32 %0, 3
+  %3 = add i32 %2, 1073823744
+  %4 = inttoptr i32 %3 to ptr
+  %5 = load volatile i32, ptr %4, align 8, !tbaa !9
+  %6 = lshr i32 %5, 17
+  %7 = and i32 %6, 1
+  ret i32 %7
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize

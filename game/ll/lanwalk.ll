@@ -183,7 +183,7 @@ define dso_local void @lanwalk_run() local_unnamed_addr #0 {
   tail call void @gfx_text(i32 noundef 111, i32 noundef 222, ptr noundef nonnull @.str.1, i16 noundef zeroext -21063, i16 noundef zeroext 2148) #6
   tail call fastcc void @draw_moves(i32 noundef 0) #8
   tail call void @gfx_present() #6
-  tail call void @led(i32 noundef 5140, i32 noundef 5140) #6
+  tail call void @led(i32 noundef 3855, i32 noundef 3855) #6
   br label %97
 
 97:                                               ; preds = %197, %96
@@ -352,7 +352,7 @@ define dso_local void @lanwalk_run() local_unnamed_addr #0 {
   tail call void @gfx_text(i32 noundef 74, i32 noundef 128, ptr noundef nonnull @.str.4, i16 noundef zeroext -21063, i16 noundef zeroext 2148) #6
   tail call void @gfx_present() #6
   tail call void @snd_play(i32 noundef 880, i32 noundef 60, i32 noundef 20) #6
-  tail call void @led(i32 noundef 65312, i32 noundef 65312) #6
+  tail call void @led(i32 noundef 16136, i32 noundef 16136) #6
   tail call void @uputs(ptr noundef nonnull @.str.5) #6
   tail call void @uputn(i32 noundef %175) #6
   tail call void @uputs(ptr noundef nonnull @.str.6) #6

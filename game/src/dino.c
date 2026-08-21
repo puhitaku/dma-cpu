@@ -188,6 +188,25 @@ draw_ground(void)
   gfx_fill(0, GROUND_Y, LCD_W, 2, C_FG);
 }
 
+/* fillf: clamped fill + immediate flush of a dirty band — the game
+ * runs at 60 fps by touching only the pixels that changed, instead
+ * of re-flushing the whole play strip (a full-width flush alone is
+ * ~23 ms of SPI wire at 31.25 MHz). */
+static void
+fillf(int x, int y, int w, int h, ushort c)
+{
+  if (x < 0) {
+    w += x;
+    x = 0;
+  }
+  if (x + w > LCD_W)
+    w = LCD_W - x;
+  if (w <= 0 || h <= 0)
+    return;
+  gfx_fill(x, y, w, h, c);
+  lcd_flush(x, y, x + w - 1, y + h - 1);
+}
+
 /* the dash row under the ground line slides with the world */
 static void
 draw_dashes(int goff)
@@ -241,7 +260,7 @@ dino_run(void)
 
 restart:
   uputs("dino: start\n");
-  led(0x104010, 0x000000); /* runner green, second dark */
+  led(0, 0); /* dark until something happens */
   gfx_clear(C_BG);
   draw_ground();
   draw_dashes(0);
@@ -251,12 +270,12 @@ restart:
   int y_fp = 0;  /* dino height above ground, 8.8 fixed point, up > 0 */
   int vy_fp = 0; /* velocity */
   uint score = 0, frame = 0;
-  int gap = 45; /* frames until next spawn attempt */
-  /* world speed in 8.8 px/frame. The accumulator only ever emits
-   * EVEN pixel steps (blits stay word-aligned), the leftover carries,
-   * so the ramp is smooth even though positions move 2 px at a time. */
-  int speed_fp = 1024; /* 4.0 */
-  int move_acc = 0, goff = 0;
+  int gap = 90; /* frames until next spawn attempt */
+  /* world speed in 8.8 px/frame at 60 fps. The accumulator only ever
+   * emits EVEN pixel steps (blits stay word-aligned), the leftover
+   * carries, so the 2.0 -> 5.0 px/frame ramp stays smooth. */
+  int speed_fp = 512;
+  int move_acc = 0, goff = 0, prev_dy = GROUND_Y - DH;
   struct cld {
     int x, y;
   };
@@ -270,20 +289,18 @@ restart:
   obs[0].x = obs[1].x = -1000;
 
   for (;;) {
-    frame_sync(33000);
+    frame_sync(16667); /* 60 fps */
     in_poll();
     frame++;
 
-    /* physics: press or up jumps from the ground. Apex ~44 px —
-     * high enough for the large cactus, low enough that fast play
-     * stays possible — and inside the redrawn strip (no ghosting). */
+    /* physics (60 fps constants): apex ~44 px, ~0.63 s airtime */
     if ((in_edge & (BTN_A | BTN_UP)) && y_fp == 0) {
-      vy_fp = 2400; /* ~9.4 px/frame */
-      snd_play(900, 35, 3);
+      vy_fp = 1200; /* ~4.7 px/frame */
+      snd_play(900, 35, 6);
     }
     if (y_fp > 0 || vy_fp > 0) {
       y_fp += vy_fp;
-      vy_fp -= 256; /* gravity: 1 px/frame^2 */
+      vy_fp -= 64; /* gravity: 0.25 px/frame^2 */
       if (y_fp <= 0) {
         y_fp = 0;
         vy_fp = 0;
@@ -296,23 +313,37 @@ restart:
     move_acc -= dx << 8;
     int speed_px = speed_fp >> 8;
 
-    /* obstacles march left; spawn on a cooling-down random gap */
+    /* obstacles: erase at the old spot, march, redraw, flush only
+     * the union band the move touched */
     if (gap > 0)
       gap--;
     for (int i = 0; i < 2; i++) {
       struct obst *o = &obs[i];
+      int oy = GROUND_Y - o->h;
       if (o->x < -100) {
         if (gap == 0) {
           spawn(o, score);
-          gap = 30 + (int)rng_below(40) - (speed_px * 2);
-          if (gap < 18)
-            gap = 18;
+          gap = 60 + (int)rng_below(80) - (speed_px << 4);
+          if (gap < 36)
+            gap = 36;
         }
         continue;
       }
+      int oldx = o->x;
+      gfx_fill(oldx < 0 ? 0 : oldx, oy, oldx < 0 ? o->w + oldx : o->w,
+               o->h, C_BG);
       o->x -= dx;
-      if (o->x + o->w <= 0)
+      if (o->x + o->w <= 0) {
+        fillf(0, oy, oldx + o->w, o->h, C_BG);
         o->x = -1000;
+        continue;
+      }
+      gfx_blit(o->x, oy, o->cell, o->w, o->h);
+      int bx = o->x < 0 ? 0 : o->x;
+      int be = oldx + o->w;
+      if (be > LCD_W)
+        be = LCD_W;
+      lcd_flush(bx, oy, be - 1, GROUND_Y - 1);
     }
 
     /* ground dashes slide with the world; clouds drift on their own */
@@ -320,42 +351,52 @@ restart:
     if (goff >= 24)
       goff -= 24;
     draw_dashes(goff);
-    if ((frame & 7) == 0) {
+    lcd_flush(0, GROUND_Y + 5, LCD_W - 1, GROUND_Y + 5);
+    if ((frame & 15) == 0) {
       for (int i = 0; i < 2; i++) {
-        gfx_fill(clouds[i].x, clouds[i].y, 20, 5, C_BG);
+        int oldx = clouds[i].x;
+        gfx_fill(oldx < 0 ? 0 : oldx, clouds[i].y, 20, 5, C_BG);
         clouds[i].x -= 2;
         if (clouds[i].x < -20)
           clouds[i].x = LCD_W;
         gfx_blit(clouds[i].x, clouds[i].y, cell_cloud, 20, 5);
+        int bx = clouds[i].x < 0 ? 0 : clouds[i].x;
+        int be = oldx + 20;
+        if (be > LCD_W)
+          be = LCD_W;
+        if (be > bx)
+          lcd_flush(bx, clouds[i].y, be - 1, clouds[i].y + 4);
       }
     }
 
     /* score + difficulty: the speed creeps up a little at a time
-     * (4.0 -> 10.0 px/frame over ~100 s) instead of stepping */
-    if ((frame & 1) == 0) {
+     * (2.0 -> 5.0 px/frame at 60 fps over ~100 s) */
+    if ((frame & 3) == 0) {
       score++;
-      if (score % 100 == 0) { /* milestone chirp + flash */
-        snd_play(1200, 40, 3);
-        led(0x404040, 0x104010);
+      if (score % 100 == 0) { /* level up: rainbow burst */
+        snd_play(1200, 40, 6);
+        led_rainbow(30); /* half a second at 60 fps */
       }
     }
-    if (speed_fp < 2560 && (frame & 31) == 0)
-      speed_fp += 16;
+    if (speed_fp < 1280 && (frame & 63) == 0)
+      speed_fp += 8;
 
-    /* redraw the play strip: sky, dino, cacti, ground fringe */
-    gfx_fill(0, STRIP_Y, LCD_W, GROUND_Y - STRIP_Y, C_BG);
+    /* the dino: redraw only when it moved or the run frame flips */
     int dy = GROUND_Y - DH - (y_fp >> 8);
-    ushort *cell = (frame & 4) ? cell_run_a : cell_run_b;
-    if (y_fp > 0)
-      cell = cell_run_a;
-    gfx_blit(DINO_X, dy, cell, DW, DH);
-    for (int i = 0; i < 2; i++)
-      if (obs[i].x > -100)
-        gfx_blit(obs[i].x, GROUND_Y - obs[i].h, obs[i].cell, obs[i].w,
-                 obs[i].h);
-    if ((frame & 1) == 0)
+    if (dy != prev_dy || (frame & 7) == 0) {
+      int top = dy < prev_dy ? dy : prev_dy;
+      gfx_fill(DINO_X, top, DW, prev_dy + DH - top, C_BG);
+      ushort *cell = (frame & 8) ? cell_run_a : cell_run_b;
+      if (y_fp > 0)
+        cell = cell_run_a;
+      gfx_blit(DINO_X, dy, cell, DW, DH);
+      lcd_flush(DINO_X, top, DINO_X + DW - 1, prev_dy + DH - 1);
+      prev_dy = dy;
+    }
+    if ((frame & 1) == 0) {
       draw_score(score);
-    gfx_present();
+      lcd_flush(LCD_W - 5 * 8 - 8, 8, LCD_W - 9, 15);
+    }
 
     /* collision: AABB with a 3 px mercy margin */
     int dtop = dy + 3, dbot = GROUND_Y - (y_fp >> 8) - 1;
@@ -372,8 +413,8 @@ restart:
     continue;
 
   dead:
-    snd_play(220, 70, 18);
-    led(0x600000, 0x600000);
+    snd_play(220, 70, 36);
+    led_blink(0xFF0000, 3); /* rapid tri-ramp, three times */
     gfx_blit(DINO_X, dy, cell_dead, DW, DH);
     gfx_text2(48, 56, "GAME OVER", C_OVER, C_BG);
     gfx_text(24, 80, "press: retry  down: menu", C_FG, C_BG);
@@ -382,12 +423,14 @@ restart:
     uputn(score);
     uputs("\n");
     for (;;) {
-      frame_sync(33000);
+      frame_sync(16667);
       in_poll();
       if (in_edge & (BTN_A | BTN_UP))
         goto restart;
-      if (in_edge & BTN_DOWN)
+      if (in_edge & BTN_DOWN) {
+        led(0, 0);
         return;
+      }
     }
   }
 }

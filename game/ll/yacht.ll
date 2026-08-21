@@ -10,31 +10,34 @@ target triple = "thumbv6m-unknown-none-eabi"
 @rolls_left = internal unnamed_addr global i32 0, align 4
 @held = internal unnamed_addr global [5 x i32] zeroinitializer, align 4
 @dice = internal unnamed_addr global [5 x i32] zeroinitializer, align 4
+@in_down = external dso_local local_unnamed_addr global i32, align 4
+@.str.2 = private unnamed_addr constant [13 x i8] c"yacht: quit\0A\00", align 1
 @in_edge = external dso_local local_unnamed_addr global i32, align 4
-@.str.2 = private unnamed_addr constant [13 x i8] c"yacht: roll\0A\00", align 1
-@.str.3 = private unnamed_addr constant [12 x i8] c"yacht: cat=\00", align 1
-@.str.4 = private unnamed_addr constant [8 x i8] c" score=\00", align 1
-@.str.5 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
-@.str.6 = private unnamed_addr constant [9 x i8] c"FINISHED\00", align 1
-@.str.7 = private unnamed_addr constant [6 x i8] c"total\00", align 1
-@.str.8 = private unnamed_addr constant [12 x i8] c"press: menu\00", align 1
-@.str.9 = private unnamed_addr constant [14 x i8] c"yacht: total=\00", align 1
+@.str.3 = private unnamed_addr constant [13 x i8] c"yacht: roll\0A\00", align 1
+@.str.4 = private unnamed_addr constant [12 x i8] c"yacht: cat=\00", align 1
+@.str.5 = private unnamed_addr constant [8 x i8] c" score=\00", align 1
+@.str.6 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
+@.str.7 = private unnamed_addr constant [9 x i8] c"FINISHED\00", align 1
+@.str.8 = private unnamed_addr constant [6 x i8] c"total\00", align 1
+@.str.9 = private unnamed_addr constant [12 x i8] c"press: menu\00", align 1
+@.str.10 = private unnamed_addr constant [14 x i8] c"yacht: total=\00", align 1
 @pips = internal unnamed_addr constant [7 x i16] [i16 0, i16 16, i16 257, i16 273, i16 325, i16 341, i16 365], align 2
-@.str.10 = private unnamed_addr constant [5 x i8] c"ROLL\00", align 1
-@catname = internal unnamed_addr constant [12 x ptr] [ptr @.str.11, ptr @.str.12, ptr @.str.13, ptr @.str.14, ptr @.str.15, ptr @.str.16, ptr @.str.17, ptr @.str.18, ptr @.str.19, ptr @.str.20, ptr @.str.21, ptr @.str.22], align 4
-@.str.11 = private unnamed_addr constant [5 x i8] c"Aces\00", align 1
-@.str.12 = private unnamed_addr constant [5 x i8] c"Twos\00", align 1
-@.str.13 = private unnamed_addr constant [7 x i8] c"Threes\00", align 1
-@.str.14 = private unnamed_addr constant [6 x i8] c"Fours\00", align 1
-@.str.15 = private unnamed_addr constant [6 x i8] c"Fives\00", align 1
-@.str.16 = private unnamed_addr constant [6 x i8] c"Sixes\00", align 1
-@.str.17 = private unnamed_addr constant [7 x i8] c"Choice\00", align 1
-@.str.18 = private unnamed_addr constant [10 x i8] c"Four Kind\00", align 1
-@.str.19 = private unnamed_addr constant [11 x i8] c"Full House\00", align 1
-@.str.20 = private unnamed_addr constant [15 x i8] c"Small Straight\00", align 1
-@.str.21 = private unnamed_addr constant [13 x i8] c"Big Straight\00", align 1
-@.str.22 = private unnamed_addr constant [6 x i8] c"Yacht\00", align 1
-@.str.23 = private unnamed_addr constant [6 x i8] c"TOTAL\00", align 1
+@.str.11 = private unnamed_addr constant [5 x i8] c"ROLL\00", align 1
+@catname = internal unnamed_addr constant [12 x ptr] [ptr @.str.12, ptr @.str.13, ptr @.str.14, ptr @.str.15, ptr @.str.16, ptr @.str.17, ptr @.str.18, ptr @.str.19, ptr @.str.20, ptr @.str.21, ptr @.str.22, ptr @.str.23], align 4
+@.str.12 = private unnamed_addr constant [5 x i8] c"Aces\00", align 1
+@.str.13 = private unnamed_addr constant [5 x i8] c"Twos\00", align 1
+@.str.14 = private unnamed_addr constant [7 x i8] c"Threes\00", align 1
+@.str.15 = private unnamed_addr constant [6 x i8] c"Fours\00", align 1
+@.str.16 = private unnamed_addr constant [6 x i8] c"Fives\00", align 1
+@.str.17 = private unnamed_addr constant [6 x i8] c"Sixes\00", align 1
+@.str.18 = private unnamed_addr constant [7 x i8] c"Choice\00", align 1
+@.str.19 = private unnamed_addr constant [10 x i8] c"Four Kind\00", align 1
+@.str.20 = private unnamed_addr constant [11 x i8] c"Full House\00", align 1
+@.str.21 = private unnamed_addr constant [15 x i8] c"Small Straight\00", align 1
+@.str.22 = private unnamed_addr constant [13 x i8] c"Big Straight\00", align 1
+@.str.23 = private unnamed_addr constant [6 x i8] c"Yacht\00", align 1
+@.str.24 = private unnamed_addr constant [6 x i8] c"TOTAL\00", align 1
+@.str.25 = private unnamed_addr constant [17 x i8] c"hold press: quit\00", align 1
 @roll_anim.pause = internal unnamed_addr constant [7 x i8] c"\01\01\02\03\04\06\08", align 1
 
 ; Function Attrs: minsize nounwind optsize
@@ -43,7 +46,7 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   %2 = alloca [6 x i8], align 1
   %3 = alloca [4 x i8], align 1
   tail call void @uputs(ptr noundef nonnull @.str) #6
-  tail call void @led(i32 noundef 1052680, i32 noundef 1052680) #6
+  tail call void @led(i32 noundef 986888, i32 noundef 986888) #6
   br label %4
 
 4:                                                ; preds = %13, %0
@@ -68,8 +71,8 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   %15 = add nuw nsw i32 %5, 1
   br label %4, !llvm.loop !7
 
-16:                                               ; preds = %262, %7
-  %17 = phi i32 [ %263, %262 ], [ %12, %7 ]
+16:                                               ; preds = %273, %7
+  %17 = phi i32 [ %274, %273 ], [ %12, %7 ]
   %18 = add nsw i32 %17, 1
   store i32 %18, ptr @turn, align 4, !tbaa !3
   store i32 3, ptr @rolls_left, align 4, !tbaa !3
@@ -136,462 +139,481 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 47:                                               ; preds = %44
   call fastcc void @draw_total() #7
   call void @gfx_present() #6
-  br label %256
+  br label %266
 
 48:                                               ; preds = %44
   call fastcc void @draw_cat(i32 noundef %45, i32 noundef 0) #7
   %49 = add nuw nsw i32 %45, 1
   br label %44, !llvm.loop !15
 
-50:                                               ; preds = %197, %248
-  %51 = phi i32 [ %249, %248 ], [ %198, %197 ]
-  %52 = phi i32 [ %251, %248 ], [ %91, %197 ]
-  br i1 %261, label %53, label %262
+50:                                               ; preds = %206, %257
+  %51 = phi i32 [ %258, %257 ], [ %207, %206 ]
+  %52 = phi i32 [ %260, %257 ], [ %59, %206 ]
+  %53 = phi i32 [ %261, %257 ], [ %100, %206 ]
+  br i1 %272, label %54, label %273
 
-53:                                               ; preds = %50
+54:                                               ; preds = %50
   call void @frame_sync(i32 noundef 33000) #6
   call void @in_poll() #6
-  %54 = icmp eq i32 %51, 0
-  %55 = load i32, ptr @in_edge, align 4, !tbaa !3
-  br i1 %54, label %56, label %204
+  %55 = load i32, ptr @in_down, align 4, !tbaa !3
+  %56 = and i32 %55, 16
+  %57 = icmp eq i32 %56, 0
+  %58 = add i32 %52, 1
+  %59 = select i1 %57, i32 0, i32 %58
+  %60 = icmp ugt i32 %59, 45
+  br i1 %60, label %61, label %62
 
-56:                                               ; preds = %53
-  %57 = and i32 %55, 4
-  %58 = icmp eq i32 %57, 0
-  br i1 %58, label %72, label %59
+61:                                               ; preds = %54
+  call void @uputs(ptr noundef nonnull @.str.2) #6
+  br label %284
 
-59:                                               ; preds = %56
-  %60 = icmp eq i32 %52, 0
-  %61 = add nsw i32 %52, -1
-  %62 = select i1 %60, i32 5, i32 %61
-  %63 = icmp eq i32 %52, 5
-  br i1 %63, label %64, label %65
+62:                                               ; preds = %54
+  %63 = icmp eq i32 %51, 0
+  %64 = load i32, ptr @in_edge, align 4, !tbaa !3
+  br i1 %63, label %65, label %213
 
-64:                                               ; preds = %59
+65:                                               ; preds = %62
+  %66 = and i32 %64, 4
+  %67 = icmp eq i32 %66, 0
+  br i1 %67, label %81, label %68
+
+68:                                               ; preds = %65
+  %69 = icmp eq i32 %53, 0
+  %70 = add nsw i32 %53, -1
+  %71 = select i1 %69, i32 5, i32 %70
+  %72 = icmp eq i32 %53, 5
+  br i1 %72, label %73, label %74
+
+73:                                               ; preds = %68
   call fastcc void @draw_roll_btn(i32 noundef 0) #7
-  br label %66
+  br label %75
 
-65:                                               ; preds = %59
-  call fastcc void @draw_die(i32 noundef %52, i32 noundef 0) #7
-  br label %66
+74:                                               ; preds = %68
+  call fastcc void @draw_die(i32 noundef %53, i32 noundef 0) #7
+  br label %75
 
-66:                                               ; preds = %65, %64
-  %67 = icmp eq i32 %62, 5
-  br i1 %67, label %68, label %69
+75:                                               ; preds = %74, %73
+  %76 = icmp eq i32 %71, 5
+  br i1 %76, label %77, label %78
 
-68:                                               ; preds = %66
+77:                                               ; preds = %75
   call fastcc void @draw_roll_btn(i32 noundef 1) #7
-  br label %70
+  br label %79
 
-69:                                               ; preds = %66
-  call fastcc void @draw_die(i32 noundef %62, i32 noundef 1) #7
-  br label %70
+78:                                               ; preds = %75
+  call fastcc void @draw_die(i32 noundef %71, i32 noundef 1) #7
+  br label %79
 
-70:                                               ; preds = %69, %68
+79:                                               ; preds = %78, %77
   call void @gfx_present() #6
-  %71 = load i32, ptr @in_edge, align 4, !tbaa !3
-  br label %72
+  %80 = load i32, ptr @in_edge, align 4, !tbaa !3
+  br label %81
 
-72:                                               ; preds = %70, %56
-  %73 = phi i32 [ %71, %70 ], [ %55, %56 ]
-  %74 = phi i32 [ %62, %70 ], [ %52, %56 ]
-  %75 = and i32 %73, 8
-  %76 = icmp eq i32 %75, 0
-  br i1 %76, label %89, label %77
+81:                                               ; preds = %79, %65
+  %82 = phi i32 [ %80, %79 ], [ %64, %65 ]
+  %83 = phi i32 [ %71, %79 ], [ %53, %65 ]
+  %84 = and i32 %82, 8
+  %85 = icmp eq i32 %84, 0
+  br i1 %85, label %98, label %86
 
-77:                                               ; preds = %72
-  %78 = icmp eq i32 %74, 5
-  %79 = add nsw i32 %74, 1
-  %80 = select i1 %78, i32 0, i32 %79
-  br i1 %78, label %81, label %82
+86:                                               ; preds = %81
+  %87 = icmp eq i32 %83, 5
+  %88 = add nsw i32 %83, 1
+  %89 = select i1 %87, i32 0, i32 %88
+  br i1 %87, label %90, label %91
 
-81:                                               ; preds = %77
+90:                                               ; preds = %86
   call fastcc void @draw_roll_btn(i32 noundef 0) #7
-  br label %83
+  br label %92
 
-82:                                               ; preds = %77
-  call fastcc void @draw_die(i32 noundef %74, i32 noundef 0) #7
-  br label %83
+91:                                               ; preds = %86
+  call fastcc void @draw_die(i32 noundef %83, i32 noundef 0) #7
+  br label %92
 
-83:                                               ; preds = %82, %81
-  %84 = icmp eq i32 %80, 5
-  br i1 %84, label %85, label %86
+92:                                               ; preds = %91, %90
+  %93 = icmp eq i32 %89, 5
+  br i1 %93, label %94, label %95
 
-85:                                               ; preds = %83
+94:                                               ; preds = %92
   call fastcc void @draw_roll_btn(i32 noundef 1) #7
-  br label %87
+  br label %96
 
-86:                                               ; preds = %83
-  call fastcc void @draw_die(i32 noundef %80, i32 noundef 1) #7
-  br label %87
+95:                                               ; preds = %92
+  call fastcc void @draw_die(i32 noundef %89, i32 noundef 1) #7
+  br label %96
 
-87:                                               ; preds = %86, %85
+96:                                               ; preds = %95, %94
   call void @gfx_present() #6
-  %88 = load i32, ptr @in_edge, align 4, !tbaa !3
-  br label %89
+  %97 = load i32, ptr @in_edge, align 4, !tbaa !3
+  br label %98
 
-89:                                               ; preds = %87, %72
-  %90 = phi i32 [ %88, %87 ], [ %73, %72 ]
-  %91 = phi i32 [ %80, %87 ], [ %74, %72 ]
-  %92 = and i32 %90, 16
-  %93 = icmp eq i32 %92, 0
-  br i1 %93, label %190, label %94
+98:                                               ; preds = %96, %81
+  %99 = phi i32 [ %97, %96 ], [ %82, %81 ]
+  %100 = phi i32 [ %89, %96 ], [ %83, %81 ]
+  %101 = and i32 %99, 16
+  %102 = icmp eq i32 %101, 0
+  br i1 %102, label %199, label %103
 
-94:                                               ; preds = %89
-  %95 = icmp slt i32 %91, 5
-  br i1 %95, label %96, label %101
+103:                                              ; preds = %98
+  %104 = icmp slt i32 %100, 5
+  br i1 %104, label %105, label %110
 
-96:                                               ; preds = %94
-  %97 = getelementptr inbounds [5 x i32], ptr @held, i32 0, i32 %91
-  %98 = load i32, ptr %97, align 4, !tbaa !3
-  %99 = icmp eq i32 %98, 0
-  %100 = zext i1 %99 to i32
-  store i32 %100, ptr %97, align 4, !tbaa !3
-  call fastcc void @draw_die(i32 noundef %91, i32 noundef 1) #7
+105:                                              ; preds = %103
+  %106 = getelementptr inbounds [5 x i32], ptr @held, i32 0, i32 %100
+  %107 = load i32, ptr %106, align 4, !tbaa !3
+  %108 = icmp eq i32 %107, 0
+  %109 = zext i1 %108 to i32
+  store i32 %109, ptr %106, align 4, !tbaa !3
+  call fastcc void @draw_die(i32 noundef %100, i32 noundef 1) #7
   call void @gfx_present() #6
-  br label %190
+  br label %199
 
-101:                                              ; preds = %94
-  %102 = load i32, ptr @rolls_left, align 4, !tbaa !3
-  %103 = icmp sgt i32 %102, 0
-  br i1 %103, label %104, label %190
+110:                                              ; preds = %103
+  %111 = load i32, ptr @rolls_left, align 4, !tbaa !3
+  %112 = icmp sgt i32 %111, 0
+  br i1 %112, label %113, label %199
 
-104:                                              ; preds = %101
-  call void @led(i32 noundef 3158064, i32 noundef 3158064) #6
-  br label %105
+113:                                              ; preds = %110
+  call void @led(i32 noundef 4144959, i32 noundef 4144959) #6
+  br label %114
 
-105:                                              ; preds = %116, %104
-  %106 = phi i32 [ 0, %104 ], [ %117, %116 ]
-  %107 = icmp eq i32 %106, 5
-  br i1 %107, label %118, label %108
+114:                                              ; preds = %125, %113
+  %115 = phi i32 [ 0, %113 ], [ %126, %125 ]
+  %116 = icmp eq i32 %115, 5
+  br i1 %116, label %127, label %117
 
-108:                                              ; preds = %105
-  %109 = getelementptr inbounds nuw [5 x i32], ptr @held, i32 0, i32 %106
-  %110 = load i32, ptr %109, align 4, !tbaa !3
-  %111 = icmp eq i32 %110, 0
-  br i1 %111, label %112, label %116
+117:                                              ; preds = %114
+  %118 = getelementptr inbounds nuw [5 x i32], ptr @held, i32 0, i32 %115
+  %119 = load i32, ptr %118, align 4, !tbaa !3
+  %120 = icmp eq i32 %119, 0
+  br i1 %120, label %121, label %125
 
-112:                                              ; preds = %108
-  %113 = call i32 @rng_below(i32 noundef 6) #6
-  %114 = add nsw i32 %113, 1
-  %115 = getelementptr inbounds nuw [5 x i32], ptr @dice, i32 0, i32 %106
-  store i32 %114, ptr %115, align 4, !tbaa !3
-  br label %116
+121:                                              ; preds = %117
+  %122 = call i32 @rng_below(i32 noundef 6) #6
+  %123 = add nsw i32 %122, 1
+  %124 = getelementptr inbounds nuw [5 x i32], ptr @dice, i32 0, i32 %115
+  store i32 %123, ptr %124, align 4, !tbaa !3
+  br label %125
 
-116:                                              ; preds = %112, %108
-  %117 = add nuw nsw i32 %106, 1
-  br label %105, !llvm.loop !16
+125:                                              ; preds = %121, %117
+  %126 = add nuw nsw i32 %115, 1
+  br label %114, !llvm.loop !16
 
-118:                                              ; preds = %105
-  %119 = load i32, ptr @rolls_left, align 4, !tbaa !3
-  %120 = add nsw i32 %119, -1
-  store i32 %120, ptr @rolls_left, align 4, !tbaa !3
+127:                                              ; preds = %114
+  %128 = load i32, ptr @rolls_left, align 4, !tbaa !3
+  %129 = add nsw i32 %128, -1
+  store i32 %129, ptr @rolls_left, align 4, !tbaa !3
   call void @llvm.lifetime.start.p0(i64 20, ptr nonnull %1) #8
-  br label %121
+  br label %130
 
-121:                                              ; preds = %124, %118
-  %122 = phi i32 [ 0, %118 ], [ %128, %124 ]
-  %123 = icmp eq i32 %122, 5
-  br i1 %123, label %129, label %124
+130:                                              ; preds = %133, %127
+  %131 = phi i32 [ 0, %127 ], [ %137, %133 ]
+  %132 = icmp eq i32 %131, 5
+  br i1 %132, label %138, label %133
 
-124:                                              ; preds = %121
-  %125 = getelementptr inbounds nuw [5 x i32], ptr @dice, i32 0, i32 %122
-  %126 = load i32, ptr %125, align 4, !tbaa !3
-  %127 = getelementptr inbounds nuw [5 x i32], ptr %1, i32 0, i32 %122
-  store i32 %126, ptr %127, align 4, !tbaa !3
-  %128 = add nuw nsw i32 %122, 1
-  br label %121, !llvm.loop !17
+133:                                              ; preds = %130
+  %134 = getelementptr inbounds nuw [5 x i32], ptr @dice, i32 0, i32 %131
+  %135 = load i32, ptr %134, align 4, !tbaa !3
+  %136 = getelementptr inbounds nuw [5 x i32], ptr %1, i32 0, i32 %131
+  store i32 %135, ptr %136, align 4, !tbaa !3
+  %137 = add nuw nsw i32 %131, 1
+  br label %130, !llvm.loop !17
 
-129:                                              ; preds = %121, %165
-  %130 = phi i32 [ %167, %165 ], [ 0, %121 ]
-  %131 = icmp eq i32 %130, 7
-  br i1 %131, label %175, label %132
+138:                                              ; preds = %130, %174
+  %139 = phi i32 [ %176, %174 ], [ 0, %130 ]
+  %140 = icmp eq i32 %139, 7
+  br i1 %140, label %184, label %141
 
-132:                                              ; preds = %129
-  %133 = getelementptr inbounds nuw [7 x i8], ptr @roll_anim.pause, i32 0, i32 %130
-  %134 = load i8, ptr %133, align 1, !tbaa !13
-  %135 = zext i8 %134 to i32
-  br label %136
+141:                                              ; preds = %138
+  %142 = getelementptr inbounds nuw [7 x i8], ptr @roll_anim.pause, i32 0, i32 %139
+  %143 = load i8, ptr %142, align 1, !tbaa !13
+  %144 = zext i8 %143 to i32
+  br label %145
 
-136:                                              ; preds = %141, %132
-  %137 = phi i32 [ %142, %141 ], [ 0, %132 ]
-  %138 = icmp eq i32 %137, %135
-  br i1 %138, label %139, label %141
+145:                                              ; preds = %150, %141
+  %146 = phi i32 [ %151, %150 ], [ 0, %141 ]
+  %147 = icmp eq i32 %146, %144
+  br i1 %147, label %148, label %150
 
-139:                                              ; preds = %136
-  %140 = icmp eq i32 %130, 6
-  br label %143
+148:                                              ; preds = %145
+  %149 = icmp eq i32 %139, 6
+  br label %152
 
-141:                                              ; preds = %136
+150:                                              ; preds = %145
   call void @frame_sync(i32 noundef 33000) #6
-  %142 = add nuw nsw i32 %137, 1
-  br label %136, !llvm.loop !18
+  %151 = add nuw nsw i32 %146, 1
+  br label %145, !llvm.loop !18
 
-143:                                              ; preds = %160, %139
-  %144 = phi i32 [ %161, %160 ], [ 0, %139 ]
-  %145 = icmp eq i32 %144, 5
-  br i1 %145, label %162, label %146
+152:                                              ; preds = %169, %148
+  %153 = phi i32 [ %170, %169 ], [ 0, %148 ]
+  %154 = icmp eq i32 %153, 5
+  br i1 %154, label %171, label %155
 
-146:                                              ; preds = %143
-  %147 = getelementptr inbounds nuw [5 x i32], ptr @held, i32 0, i32 %144
-  %148 = load i32, ptr %147, align 4, !tbaa !3
-  %149 = icmp eq i32 %148, 0
-  br i1 %149, label %150, label %160
+155:                                              ; preds = %152
+  %156 = getelementptr inbounds nuw [5 x i32], ptr @held, i32 0, i32 %153
+  %157 = load i32, ptr %156, align 4, !tbaa !3
+  %158 = icmp eq i32 %157, 0
+  br i1 %158, label %159, label %169
 
-150:                                              ; preds = %146
-  br i1 %140, label %151, label %154
+159:                                              ; preds = %155
+  br i1 %149, label %160, label %163
 
-151:                                              ; preds = %150
-  %152 = getelementptr inbounds nuw [5 x i32], ptr %1, i32 0, i32 %144
-  %153 = load i32, ptr %152, align 4, !tbaa !3
-  br label %157
+160:                                              ; preds = %159
+  %161 = getelementptr inbounds nuw [5 x i32], ptr %1, i32 0, i32 %153
+  %162 = load i32, ptr %161, align 4, !tbaa !3
+  br label %166
 
-154:                                              ; preds = %150
-  %155 = call i32 @rng_below(i32 noundef 6) #6
-  %156 = add nsw i32 %155, 1
-  br label %157
+163:                                              ; preds = %159
+  %164 = call i32 @rng_below(i32 noundef 6) #6
+  %165 = add nsw i32 %164, 1
+  br label %166
 
-157:                                              ; preds = %154, %151
-  %158 = phi i32 [ %153, %151 ], [ %156, %154 ]
-  %159 = getelementptr inbounds nuw [5 x i32], ptr @dice, i32 0, i32 %144
-  store i32 %158, ptr %159, align 4, !tbaa !3
-  br label %160
+166:                                              ; preds = %163, %160
+  %167 = phi i32 [ %162, %160 ], [ %165, %163 ]
+  %168 = getelementptr inbounds nuw [5 x i32], ptr @dice, i32 0, i32 %153
+  store i32 %167, ptr %168, align 4, !tbaa !3
+  br label %169
 
-160:                                              ; preds = %157, %146
-  %161 = add nuw nsw i32 %144, 1
-  br label %143, !llvm.loop !19
+169:                                              ; preds = %166, %155
+  %170 = add nuw nsw i32 %153, 1
+  br label %152, !llvm.loop !19
 
-162:                                              ; preds = %143, %173
-  %163 = phi i32 [ %174, %173 ], [ 0, %143 ]
-  %164 = icmp eq i32 %163, 5
-  br i1 %164, label %165, label %168
+171:                                              ; preds = %152, %182
+  %172 = phi i32 [ %183, %182 ], [ 0, %152 ]
+  %173 = icmp eq i32 %172, 5
+  br i1 %173, label %174, label %177
 
-165:                                              ; preds = %162
-  %166 = select i1 %140, i32 900, i32 1400
-  call void @snd_play(i32 noundef %166, i32 noundef 25, i32 noundef 1) #6
+174:                                              ; preds = %171
+  %175 = select i1 %149, i32 900, i32 1400
+  call void @snd_play(i32 noundef %175, i32 noundef 25, i32 noundef 1) #6
   call void @gfx_present() #6
-  %167 = add nuw nsw i32 %130, 1
-  br label %129, !llvm.loop !20
+  %176 = add nuw nsw i32 %139, 1
+  br label %138, !llvm.loop !20
 
-168:                                              ; preds = %162
-  %169 = getelementptr inbounds nuw [5 x i32], ptr @held, i32 0, i32 %163
-  %170 = load i32, ptr %169, align 4, !tbaa !3
-  %171 = icmp eq i32 %170, 0
-  br i1 %171, label %172, label %173
+177:                                              ; preds = %171
+  %178 = getelementptr inbounds nuw [5 x i32], ptr @held, i32 0, i32 %172
+  %179 = load i32, ptr %178, align 4, !tbaa !3
+  %180 = icmp eq i32 %179, 0
+  br i1 %180, label %181, label %182
 
-172:                                              ; preds = %168
-  call fastcc void @draw_die(i32 noundef %163, i32 noundef 0) #7
-  br label %173
+181:                                              ; preds = %177
+  call fastcc void @draw_die(i32 noundef %172, i32 noundef 0) #7
+  br label %182
 
-173:                                              ; preds = %172, %168
-  %174 = add nuw nsw i32 %163, 1
-  br label %162, !llvm.loop !21
+182:                                              ; preds = %181, %177
+  %183 = add nuw nsw i32 %172, 1
+  br label %171, !llvm.loop !21
 
-175:                                              ; preds = %129, %178
-  %176 = phi i32 [ %182, %178 ], [ 0, %129 ]
-  %177 = icmp eq i32 %176, 5
-  br i1 %177, label %183, label %178
-
-178:                                              ; preds = %175
-  %179 = getelementptr inbounds nuw [5 x i32], ptr %1, i32 0, i32 %176
-  %180 = load i32, ptr %179, align 4, !tbaa !3
-  %181 = getelementptr inbounds nuw [5 x i32], ptr @dice, i32 0, i32 %176
-  store i32 %180, ptr %181, align 4, !tbaa !3
-  %182 = add nuw nsw i32 %176, 1
-  br label %175, !llvm.loop !22
-
-183:                                              ; preds = %175
-  call void @llvm.lifetime.end.p0(i64 20, ptr nonnull %1) #8
-  call fastcc void @draw_roll_btn(i32 noundef 1) #7
-  br label %184
-
-184:                                              ; preds = %188, %183
-  %185 = phi i32 [ 0, %183 ], [ %189, %188 ]
-  %186 = icmp eq i32 %185, 12
-  br i1 %186, label %187, label %188
+184:                                              ; preds = %138, %187
+  %185 = phi i32 [ %191, %187 ], [ 0, %138 ]
+  %186 = icmp eq i32 %185, 5
+  br i1 %186, label %192, label %187
 
 187:                                              ; preds = %184
+  %188 = getelementptr inbounds nuw [5 x i32], ptr %1, i32 0, i32 %185
+  %189 = load i32, ptr %188, align 4, !tbaa !3
+  %190 = getelementptr inbounds nuw [5 x i32], ptr @dice, i32 0, i32 %185
+  store i32 %189, ptr %190, align 4, !tbaa !3
+  %191 = add nuw nsw i32 %185, 1
+  br label %184, !llvm.loop !22
+
+192:                                              ; preds = %184
+  call void @llvm.lifetime.end.p0(i64 20, ptr nonnull %1) #8
+  call fastcc void @draw_roll_btn(i32 noundef 1) #7
+  br label %193
+
+193:                                              ; preds = %197, %192
+  %194 = phi i32 [ 0, %192 ], [ %198, %197 ]
+  %195 = icmp eq i32 %194, 12
+  br i1 %195, label %196, label %197
+
+196:                                              ; preds = %193
   call void @gfx_present() #6
-  call void @uputs(ptr noundef nonnull @.str.2) #6
-  br label %190
+  call void @uputs(ptr noundef nonnull @.str.3) #6
+  br label %199
 
-188:                                              ; preds = %184
-  call fastcc void @draw_cat(i32 noundef %185, i32 noundef 0) #7
-  %189 = add nuw nsw i32 %185, 1
-  br label %184, !llvm.loop !23
+197:                                              ; preds = %193
+  call fastcc void @draw_cat(i32 noundef %194, i32 noundef 0) #7
+  %198 = add nuw nsw i32 %194, 1
+  br label %193, !llvm.loop !23
 
-190:                                              ; preds = %96, %187, %101, %89
-  %191 = load i32, ptr @in_edge, align 4, !tbaa !3
-  %192 = and i32 %191, 3
-  %193 = icmp ne i32 %192, 0
-  %194 = load i32, ptr @rolls_left, align 4
-  %195 = icmp slt i32 %194, 3
-  %196 = select i1 %193, i1 %195, i1 false
-  br i1 %196, label %199, label %197
+199:                                              ; preds = %105, %196, %110, %98
+  %200 = load i32, ptr @in_edge, align 4, !tbaa !3
+  %201 = and i32 %200, 3
+  %202 = icmp ne i32 %201, 0
+  %203 = load i32, ptr @rolls_left, align 4
+  %204 = icmp slt i32 %203, 3
+  %205 = select i1 %202, i1 %204, i1 false
+  br i1 %205, label %208, label %206
 
-197:                                              ; preds = %190, %203
-  %198 = phi i32 [ 1, %203 ], [ 0, %190 ]
+206:                                              ; preds = %199, %212
+  %207 = phi i32 [ 1, %212 ], [ 0, %199 ]
   br label %50, !llvm.loop !24
 
-199:                                              ; preds = %190
-  %200 = icmp eq i32 %91, 5
-  br i1 %200, label %201, label %202
+208:                                              ; preds = %199
+  %209 = icmp eq i32 %100, 5
+  br i1 %209, label %210, label %211
 
-201:                                              ; preds = %199
+210:                                              ; preds = %208
   call fastcc void @draw_roll_btn(i32 noundef 0) #7
-  br label %203
+  br label %212
 
-202:                                              ; preds = %199
-  call fastcc void @draw_die(i32 noundef %91, i32 noundef 0) #7
-  br label %203
+211:                                              ; preds = %208
+  call fastcc void @draw_die(i32 noundef %100, i32 noundef 0) #7
+  br label %212
 
-203:                                              ; preds = %202, %201
-  call fastcc void @draw_cat(i32 noundef %250, i32 noundef 1) #7
+212:                                              ; preds = %211, %210
+  call fastcc void @draw_cat(i32 noundef %259, i32 noundef 1) #7
   call void @gfx_present() #6
-  br label %197
+  br label %206
 
-204:                                              ; preds = %53
-  %205 = and i32 %55, 12
-  %206 = icmp eq i32 %205, 0
-  br i1 %206, label %213, label %207
+213:                                              ; preds = %62
+  %214 = and i32 %64, 12
+  %215 = icmp eq i32 %214, 0
+  br i1 %215, label %222, label %216
 
-207:                                              ; preds = %204
-  call fastcc void @draw_cat(i32 noundef %250, i32 noundef 0) #7
-  %208 = icmp eq i32 %52, 5
-  br i1 %208, label %209, label %210
+216:                                              ; preds = %213
+  call fastcc void @draw_cat(i32 noundef %259, i32 noundef 0) #7
+  %217 = icmp eq i32 %53, 5
+  br i1 %217, label %218, label %219
 
-209:                                              ; preds = %207
+218:                                              ; preds = %216
   call fastcc void @draw_roll_btn(i32 noundef 1) #7
-  br label %211
+  br label %220
 
-210:                                              ; preds = %207
-  call fastcc void @draw_die(i32 noundef %52, i32 noundef 1) #7
-  br label %211
+219:                                              ; preds = %216
+  call fastcc void @draw_die(i32 noundef %53, i32 noundef 1) #7
+  br label %220
 
-211:                                              ; preds = %210, %209
+220:                                              ; preds = %219, %218
   call void @gfx_present() #6
-  %212 = load i32, ptr @in_edge, align 4, !tbaa !3
-  br label %213
+  %221 = load i32, ptr @in_edge, align 4, !tbaa !3
+  br label %222
 
-213:                                              ; preds = %211, %204
-  %214 = phi i32 [ %212, %211 ], [ %55, %204 ]
-  %215 = phi i32 [ 0, %211 ], [ 1, %204 ]
-  %216 = and i32 %214, 1
-  %217 = icmp eq i32 %216, 0
-  br i1 %217, label %228, label %218
+222:                                              ; preds = %220, %213
+  %223 = phi i32 [ %221, %220 ], [ %64, %213 ]
+  %224 = phi i32 [ 0, %220 ], [ 1, %213 ]
+  %225 = and i32 %223, 1
+  %226 = icmp eq i32 %225, 0
+  br i1 %226, label %237, label %227
 
-218:                                              ; preds = %213, %218
-  %219 = phi i32 [ %222, %218 ], [ %250, %213 ]
-  %220 = icmp eq i32 %219, 0
-  %221 = add nsw i32 %219, -1
-  %222 = select i1 %220, i32 11, i32 %221
-  %223 = getelementptr inbounds [12 x i32], ptr @scores, i32 0, i32 %222
-  %224 = load i32, ptr %223, align 4, !tbaa !3
-  %225 = icmp sgt i32 %224, -1
-  br i1 %225, label %218, label %226, !llvm.loop !25
+227:                                              ; preds = %222, %227
+  %228 = phi i32 [ %231, %227 ], [ %259, %222 ]
+  %229 = icmp eq i32 %228, 0
+  %230 = add nsw i32 %228, -1
+  %231 = select i1 %229, i32 11, i32 %230
+  %232 = getelementptr inbounds [12 x i32], ptr @scores, i32 0, i32 %231
+  %233 = load i32, ptr %232, align 4, !tbaa !3
+  %234 = icmp sgt i32 %233, -1
+  br i1 %234, label %227, label %235, !llvm.loop !25
 
-226:                                              ; preds = %218
-  call fastcc void @draw_cat(i32 noundef %250, i32 noundef 0) #7
-  call fastcc void @draw_cat(i32 noundef %222, i32 noundef 1) #7
+235:                                              ; preds = %227
+  call fastcc void @draw_cat(i32 noundef %259, i32 noundef 0) #7
+  call fastcc void @draw_cat(i32 noundef %231, i32 noundef 1) #7
   call void @gfx_present() #6
-  %227 = load i32, ptr @in_edge, align 4, !tbaa !3
-  br label %228
+  %236 = load i32, ptr @in_edge, align 4, !tbaa !3
+  br label %237
 
-228:                                              ; preds = %226, %213
-  %229 = phi i32 [ %227, %226 ], [ %214, %213 ]
-  %230 = phi i32 [ %222, %226 ], [ %250, %213 ]
-  %231 = and i32 %229, 2
-  %232 = icmp eq i32 %231, 0
-  br i1 %232, label %243, label %233
+237:                                              ; preds = %235, %222
+  %238 = phi i32 [ %236, %235 ], [ %223, %222 ]
+  %239 = phi i32 [ %231, %235 ], [ %259, %222 ]
+  %240 = and i32 %238, 2
+  %241 = icmp eq i32 %240, 0
+  br i1 %241, label %252, label %242
 
-233:                                              ; preds = %228, %233
-  %234 = phi i32 [ %237, %233 ], [ %230, %228 ]
-  %235 = icmp eq i32 %234, 11
-  %236 = add nsw i32 %234, 1
-  %237 = select i1 %235, i32 0, i32 %236
-  %238 = getelementptr inbounds [12 x i32], ptr @scores, i32 0, i32 %237
-  %239 = load i32, ptr %238, align 4, !tbaa !3
-  %240 = icmp sgt i32 %239, -1
-  br i1 %240, label %233, label %241, !llvm.loop !26
+242:                                              ; preds = %237, %242
+  %243 = phi i32 [ %246, %242 ], [ %239, %237 ]
+  %244 = icmp eq i32 %243, 11
+  %245 = add nsw i32 %243, 1
+  %246 = select i1 %244, i32 0, i32 %245
+  %247 = getelementptr inbounds [12 x i32], ptr @scores, i32 0, i32 %246
+  %248 = load i32, ptr %247, align 4, !tbaa !3
+  %249 = icmp sgt i32 %248, -1
+  br i1 %249, label %242, label %250, !llvm.loop !26
 
-241:                                              ; preds = %233
-  call fastcc void @draw_cat(i32 noundef %230, i32 noundef 0) #7
-  call fastcc void @draw_cat(i32 noundef %237, i32 noundef 1) #7
+250:                                              ; preds = %242
+  call fastcc void @draw_cat(i32 noundef %239, i32 noundef 0) #7
+  call fastcc void @draw_cat(i32 noundef %246, i32 noundef 1) #7
   call void @gfx_present() #6
-  %242 = load i32, ptr @in_edge, align 4, !tbaa !3
-  br label %243
+  %251 = load i32, ptr @in_edge, align 4, !tbaa !3
+  br label %252
 
-243:                                              ; preds = %241, %228
-  %244 = phi i32 [ %242, %241 ], [ %229, %228 ]
-  %245 = phi i32 [ %237, %241 ], [ %230, %228 ]
-  %246 = and i32 %244, 16
-  %247 = icmp eq i32 %246, 0
-  br i1 %247, label %248, label %252, !llvm.loop !24
+252:                                              ; preds = %250, %237
+  %253 = phi i32 [ %251, %250 ], [ %238, %237 ]
+  %254 = phi i32 [ %246, %250 ], [ %239, %237 ]
+  %255 = and i32 %253, 16
+  %256 = icmp eq i32 %255, 0
+  br i1 %256, label %257, label %262, !llvm.loop !24
 
-248:                                              ; preds = %256, %243
-  %249 = phi i32 [ %215, %243 ], [ %257, %256 ]
-  %250 = phi i32 [ %245, %243 ], [ %258, %256 ]
-  %251 = phi i32 [ %52, %243 ], [ %260, %256 ]
+257:                                              ; preds = %266, %252
+  %258 = phi i32 [ %224, %252 ], [ %267, %266 ]
+  %259 = phi i32 [ %254, %252 ], [ %268, %266 ]
+  %260 = phi i32 [ %59, %252 ], [ %270, %266 ]
+  %261 = phi i32 [ %53, %252 ], [ %271, %266 ]
   br label %50
 
-252:                                              ; preds = %243
+262:                                              ; preds = %252
   call void @snd_play(i32 noundef 800, i32 noundef 45, i32 noundef 4) #6
-  %253 = call fastcc i32 @cat_score(i32 noundef %245) #7
-  %254 = getelementptr inbounds [12 x i32], ptr @scores, i32 0, i32 %245
-  store i32 %253, ptr %254, align 4, !tbaa !3
-  call void @uputs(ptr noundef nonnull @.str.3) #6
-  call void @uputn(i32 noundef %245) #6
+  %263 = call fastcc i32 @cat_score(i32 noundef %254) #7
+  %264 = getelementptr inbounds [12 x i32], ptr @scores, i32 0, i32 %254
+  store i32 %263, ptr %264, align 4, !tbaa !3
   call void @uputs(ptr noundef nonnull @.str.4) #6
-  %255 = load i32, ptr %254, align 4, !tbaa !3
-  call void @uputn(i32 noundef %255) #6
+  call void @uputn(i32 noundef %254) #6
   call void @uputs(ptr noundef nonnull @.str.5) #6
-  br label %256, !llvm.loop !24
+  %265 = load i32, ptr %264, align 4, !tbaa !3
+  call void @uputn(i32 noundef %265) #6
+  call void @uputs(ptr noundef nonnull @.str.6) #6
+  br label %266, !llvm.loop !24
 
-256:                                              ; preds = %47, %252
-  %257 = phi i32 [ 0, %47 ], [ %215, %252 ]
-  %258 = phi i32 [ %32, %47 ], [ %245, %252 ]
-  %259 = phi i32 [ -1, %47 ], [ %245, %252 ]
-  %260 = phi i32 [ 5, %47 ], [ %52, %252 ]
-  %261 = icmp slt i32 %259, 0
-  br label %248
+266:                                              ; preds = %47, %262
+  %267 = phi i32 [ 0, %47 ], [ %224, %262 ]
+  %268 = phi i32 [ %32, %47 ], [ %254, %262 ]
+  %269 = phi i32 [ -1, %47 ], [ %254, %262 ]
+  %270 = phi i32 [ 0, %47 ], [ %59, %262 ]
+  %271 = phi i32 [ 5, %47 ], [ %53, %262 ]
+  %272 = icmp slt i32 %269, 0
+  br label %257
 
-262:                                              ; preds = %50
-  call fastcc void @draw_cat(i32 noundef %259, i32 noundef 0) #7
+273:                                              ; preds = %50
+  call fastcc void @draw_cat(i32 noundef %269, i32 noundef 0) #7
   call fastcc void @draw_total() #7
   call void @gfx_present() #6
-  %263 = load i32, ptr @turn, align 4, !tbaa !3
-  %264 = icmp eq i32 %263, 12
-  br i1 %264, label %265, label %16
+  %274 = load i32, ptr @turn, align 4, !tbaa !3
+  %275 = icmp eq i32 %274, 12
+  br i1 %275, label %276, label %16
 
-265:                                              ; preds = %262
+276:                                              ; preds = %273
   call void @gfx_fill(i32 noundef 30, i32 noundef 96, i32 noundef 180, i32 noundef 52, i16 noundef zeroext 2532) #6
   call void @gfx_rect(i32 noundef 30, i32 noundef 96, i32 noundef 180, i32 noundef 52, i32 noundef 2, i16 noundef zeroext -377) #6
-  call void @gfx_text2(i32 noundef 52, i32 noundef 104, ptr noundef nonnull @.str.6, i16 noundef zeroext -377, i16 noundef zeroext 2532) #6
+  call void @gfx_text2(i32 noundef 52, i32 noundef 104, ptr noundef nonnull @.str.7, i16 noundef zeroext -377, i16 noundef zeroext 2532) #6
   call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %3) #8
-  %266 = call fastcc i32 @total() #7
-  call void @numsp(ptr noundef nonnull %3, i32 noundef 3, i32 noundef %266) #6
-  call void @gfx_text(i32 noundef 76, i32 noundef 124, ptr noundef nonnull @.str.7, i16 noundef zeroext -12615, i16 noundef zeroext 2532) #6
+  %277 = call fastcc i32 @total() #7
+  call void @numsp(ptr noundef nonnull %3, i32 noundef 3, i32 noundef %277) #6
+  call void @gfx_text(i32 noundef 76, i32 noundef 124, ptr noundef nonnull @.str.8, i16 noundef zeroext -12615, i16 noundef zeroext 2532) #6
   call void @gfx_text(i32 noundef 124, i32 noundef 124, ptr noundef nonnull %3, i16 noundef zeroext -1, i16 noundef zeroext 2532) #6
-  call void @gfx_text(i32 noundef 74, i32 noundef 136, ptr noundef nonnull @.str.8, i16 noundef zeroext -12615, i16 noundef zeroext 2532) #6
+  call void @gfx_text(i32 noundef 74, i32 noundef 136, ptr noundef nonnull @.str.9, i16 noundef zeroext -12615, i16 noundef zeroext 2532) #6
   call void @gfx_present() #6
   call void @snd_play(i32 noundef 990, i32 noundef 60, i32 noundef 30) #6
-  call void @led(i32 noundef 2162464, i32 noundef 2162464) #6
-  call void @uputs(ptr noundef nonnull @.str.9) #6
-  %267 = call fastcc i32 @total() #7
-  call void @uputn(i32 noundef %267) #6
-  call void @uputs(ptr noundef nonnull @.str.5) #6
-  br label %268
+  call void @led(i32 noundef 540424, i32 noundef 540424) #6
+  call void @uputs(ptr noundef nonnull @.str.10) #6
+  %278 = call fastcc i32 @total() #7
+  call void @uputn(i32 noundef %278) #6
+  call void @uputs(ptr noundef nonnull @.str.6) #6
+  br label %279
 
-268:                                              ; preds = %268, %265
+279:                                              ; preds = %279, %276
   call void @frame_sync(i32 noundef 33000) #6
   call void @in_poll() #6
-  %269 = load i32, ptr @in_edge, align 4, !tbaa !3
-  %270 = and i32 %269, 16
-  %271 = icmp eq i32 %270, 0
-  br i1 %271, label %268, label %272, !llvm.loop !27
+  %280 = load i32, ptr @in_edge, align 4, !tbaa !3
+  %281 = and i32 %280, 16
+  %282 = icmp eq i32 %281, 0
+  br i1 %282, label %279, label %283, !llvm.loop !27
 
-272:                                              ; preds = %268
+283:                                              ; preds = %279
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %3) #8
+  br label %284
+
+284:                                              ; preds = %61, %283
   ret void
 }
 
@@ -698,7 +720,7 @@ define internal fastcc void @draw_roll_btn(i32 noundef range(i32 0, 2) %0) unnam
   %10 = icmp eq i32 %9, 0
   %11 = select i1 %10, i16 27662, i16 -1
   %12 = select i1 %10, i16 2371, i16 2532
-  tail call void @gfx_text(i32 noundef 189, i32 noundef 25, ptr noundef nonnull @.str.10, i16 noundef zeroext %11, i16 noundef zeroext %12) #6
+  tail call void @gfx_text(i32 noundef 189, i32 noundef 25, ptr noundef nonnull @.str.11, i16 noundef zeroext %11, i16 noundef zeroext %12) #6
   call void @llvm.lifetime.start.p0(i64 2, ptr nonnull %2) #8
   %13 = load i32, ptr @rolls_left, align 4, !tbaa !3
   %14 = trunc i32 %13 to i8
@@ -765,7 +787,8 @@ define internal fastcc void @draw_cat(i32 noundef %0, i32 noundef range(i32 0, 2
 define internal fastcc void @draw_total() unnamed_addr #0 {
   %1 = alloca [4 x i8], align 1
   tail call void @gfx_fill(i32 noundef 4, i32 noundef 212, i32 noundef 232, i32 noundef 20, i16 noundef zeroext 2371) #6
-  tail call void @gfx_text(i32 noundef 10, i32 noundef 218, ptr noundef nonnull @.str.23, i16 noundef zeroext -12615, i16 noundef zeroext 2371) #6
+  tail call void @gfx_text(i32 noundef 10, i32 noundef 218, ptr noundef nonnull @.str.24, i16 noundef zeroext -12615, i16 noundef zeroext 2371) #6
+  tail call void @gfx_text(i32 noundef 64, i32 noundef 218, ptr noundef nonnull @.str.25, i16 noundef zeroext 27662, i16 noundef zeroext 2371) #6
   call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %1) #8
   %2 = tail call fastcc i32 @total() #7
   call void @numsp(ptr noundef nonnull %1, i32 noundef 3, i32 noundef %2) #6

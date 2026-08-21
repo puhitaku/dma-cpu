@@ -37,7 +37,7 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
   tail call void @gfx_text(i32 noundef 48, i32 noundef 200, ptr noundef nonnull @.str.2, i16 noundef zeroext 23344, i16 noundef zeroext 2181) #2
   tail call void @gfx_text(i32 noundef 48, i32 noundef 212, ptr noundef nonnull @.str.3, i16 noundef zeroext 23344, i16 noundef zeroext 2181) #2
   tail call void @gfx_present() #2
-  tail call void @led(i32 noundef 1048, i32 noundef 1048) #2
+  tail call void @led(i32 noundef 1039, i32 noundef 1039) #2
   tail call void @uputs(ptr noundef nonnull @.str.4) #2
   %5 = tail call i32 @now_us() #2
   br label %6
@@ -110,7 +110,7 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
 
 45:                                               ; preds = %34
   tail call void @snd_play(i32 noundef 1000, i32 noundef 60, i32 noundef 4) #2
-  tail call void @led(i32 noundef 65344, i32 noundef 65344) #2
+  tail call void @led(i32 noundef 16144, i32 noundef 16144) #2
   tail call void @uputs(ptr noundef nonnull @.str.7) #2
   %46 = getelementptr inbounds [4 x ptr], ptr @names, i32 0, i32 %28
   %47 = load ptr, ptr %46, align 4, !tbaa !10

@@ -47,7 +47,8 @@ uint now_us(void);
 void delay_us(uint us);
 void gpio_fn(int pin, uint funcsel);
 void gpio_out(int pin, int hi);
-int gpio_in_pu(int pin);
+void gpio_in_init(int pin); /* enable the pull-up, once */
+int gpio_in(int pin);       /* fast level read (mask, no shift) */
 void gdma_copy(uint dst, uint src, uint bytes);
 void gdma_fill(uint dst, uint word, uint bytes);
 void gdma_spi16(uint src, uint halfwords); /* paced pixel stream */
@@ -95,7 +96,16 @@ void fx_init(void);
 void snd_play(uint hz, uint vol, uint frames); /* vol 0..255 */
 void snd_rate(uint div_fp8); /* SM0 CLKDIV, keep 15900..26300 in-band */
 void snd_tick(void);
-void led(uint rgb0, uint rgb1); /* 0xRRGGBB each */
+void led(uint rgb0, uint rgb1); /* 0xRRGGBB each; per-channel capped */
+void led_rainbow(uint frames);   /* fast hue loop, then back to base */
+void led_blink(uint rgb, uint cycles); /* tri-ramp blink, 4 f/side */
+void led_tick(void); /* frame_sync drives the animations */
+
+/* Global LED brightness tiers: write call sites with full-saturation
+ * colors and wrap them — the scale plus led()'s hard cap keeps both
+ * WS2811s even and comfortable everywhere. */
+#define LED_BRIGHT(c) (((c) >> 2) & 0x3F3F3F)
+#define LED_DIM(c) (((c) >> 4) & 0x0F0F0F)
 void seq_run(void); /* the percussion sequencer demo */
 
 /* the games (each returns when the player exits to the menu) */

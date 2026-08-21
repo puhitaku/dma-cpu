@@ -22,7 +22,7 @@ stick(const uchar *pins)
 {
   uint m = 0;
   for (int i = 0; i < 5; i++)
-    if (!gpio_in_pu(pins[i])) /* low = pressed */
+    if (!gpio_in(pins[i])) /* low = pressed */
       m |= 1u << i;
   return m;
 }
@@ -30,6 +30,12 @@ stick(const uchar *pins)
 void
 in_poll(void)
 {
+  if (!in_primed) { /* pull-ups on before the first read */
+    for (int i = 0; i < 5; i++) {
+      gpio_in_init(joyA[i]);
+      gpio_in_init(joyB[i]);
+    }
+  }
   uint now = stick(joyA) | stick(joyB);
   if (!in_primed) {
     in_primed = 1;
@@ -70,6 +76,7 @@ frame_sync(uint us)
 {
   static uint next;
   snd_tick();
+  led_tick();
   uint now = now_us();
   if (next == 0 || now - next > us * 8)
     next = now;

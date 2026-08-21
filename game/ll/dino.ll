@@ -40,9 +40,9 @@ define dso_local void @dino_run() local_unnamed_addr #0 {
   %4 = getelementptr inbounds nuw i8, ptr %1, i32 12
   br label %5
 
-5:                                                ; preds = %166, %0
+5:                                                ; preds = %199, %0
   tail call void @uputs(ptr noundef nonnull @.str) #4
-  tail call void @led(i32 noundef 1064976, i32 noundef 0) #4
+  tail call void @led(i32 noundef 0, i32 noundef 0) #4
   tail call void @gfx_clear(i16 noundef zeroext -1) #4
   tail call void @gfx_fill(i32 noundef 0, i32 noundef 190, i32 noundef 240, i32 noundef 2, i16 noundef zeroext 14823) #4
   tail call fastcc void @draw_dashes(i32 noundef 0) #5
@@ -58,278 +58,330 @@ define dso_local void @dino_run() local_unnamed_addr #0 {
   store i32 -1000, ptr @obs, align 4, !tbaa !9
   br label %6
 
-6:                                                ; preds = %145, %5
-  %7 = phi i32 [ 0, %5 ], [ %53, %145 ]
-  %8 = phi i32 [ 0, %5 ], [ %49, %145 ]
-  %9 = phi i32 [ 1024, %5 ], [ %127, %145 ]
-  %10 = phi i32 [ 45, %5 ], [ %45, %145 ]
-  %11 = phi i32 [ 0, %5 ], [ %15, %145 ]
-  %12 = phi i32 [ 0, %5 ], [ %110, %145 ]
-  %13 = phi i32 [ 0, %5 ], [ %32, %145 ]
-  %14 = phi i32 [ 0, %5 ], [ %33, %145 ]
-  tail call void @frame_sync(i32 noundef 33000) #4
+6:                                                ; preds = %178, %5
+  %7 = phi i32 [ 168, %5 ], [ %172, %178 ]
+  %8 = phi i32 [ 0, %5 ], [ %54, %178 ]
+  %9 = phi i32 [ 0, %5 ], [ %50, %178 ]
+  %10 = phi i32 [ 512, %5 ], [ %154, %178 ]
+  %11 = phi i32 [ 90, %5 ], [ %46, %178 ]
+  %12 = phi i32 [ 0, %5 ], [ %16, %178 ]
+  %13 = phi i32 [ 0, %5 ], [ %148, %178 ]
+  %14 = phi i32 [ 0, %5 ], [ %33, %178 ]
+  %15 = phi i32 [ 0, %5 ], [ %34, %178 ]
+  tail call void @frame_sync(i32 noundef 16667) #4
   tail call void @in_poll() #4
-  %15 = add i32 %11, 1
-  %16 = load i32, ptr @in_edge, align 4, !tbaa !13
-  %17 = and i32 %16, 17
-  %18 = icmp ne i32 %17, 0
-  %19 = icmp eq i32 %14, 0
-  %20 = and i1 %18, %19
-  br i1 %20, label %21, label %22
-
-21:                                               ; preds = %6
-  tail call void @snd_play(i32 noundef 900, i32 noundef 35, i32 noundef 3) #4
-  br label %25
+  %16 = add i32 %12, 1
+  %17 = load i32, ptr @in_edge, align 4, !tbaa !13
+  %18 = and i32 %17, 17
+  %19 = icmp ne i32 %18, 0
+  %20 = icmp eq i32 %15, 0
+  %21 = and i1 %19, %20
+  br i1 %21, label %22, label %23
 
 22:                                               ; preds = %6
-  br i1 %19, label %23, label %25
+  tail call void @snd_play(i32 noundef 900, i32 noundef 35, i32 noundef 6) #4
+  br label %26
 
-23:                                               ; preds = %22
-  %24 = icmp sgt i32 %13, 0
-  br i1 %24, label %25, label %31
+23:                                               ; preds = %6
+  br i1 %20, label %24, label %26
 
-25:                                               ; preds = %21, %23, %22
-  %26 = phi i32 [ %13, %23 ], [ %13, %22 ], [ 2400, %21 ]
-  %27 = add nsw i32 %26, %14
-  %28 = add nsw i32 %26, -256
-  %29 = icmp slt i32 %27, 1
-  br i1 %29, label %30, label %31
+24:                                               ; preds = %23
+  %25 = icmp sgt i32 %14, 0
+  br i1 %25, label %26, label %32
 
-30:                                               ; preds = %25
-  br label %31
+26:                                               ; preds = %22, %24, %23
+  %27 = phi i32 [ %14, %24 ], [ %14, %23 ], [ 1200, %22 ]
+  %28 = add nsw i32 %27, %15
+  %29 = add nsw i32 %27, -64
+  %30 = icmp slt i32 %28, 1
+  br i1 %30, label %31, label %32
 
-31:                                               ; preds = %25, %30, %23
-  %32 = phi i32 [ 0, %30 ], [ %28, %25 ], [ %13, %23 ]
-  %33 = phi i32 [ 0, %30 ], [ %27, %25 ], [ 0, %23 ]
-  %34 = add nsw i32 %9, %8
-  %35 = ashr i32 %34, 8
-  %36 = and i32 %35, -2
-  %37 = icmp sgt i32 %10, 0
-  %38 = sext i1 %37 to i32
-  %39 = add nsw i32 %10, %38
-  %40 = icmp ugt i32 %12, 100
-  %41 = ashr i32 %9, 7
-  %42 = and i32 %41, -2
-  br label %43
+31:                                               ; preds = %26
+  br label %32
 
-43:                                               ; preds = %86, %31
-  %44 = phi i32 [ 0, %31 ], [ %88, %86 ]
-  %45 = phi i32 [ %39, %31 ], [ %87, %86 ]
-  %46 = icmp eq i32 %44, 2
-  br i1 %46, label %47, label %56
+32:                                               ; preds = %26, %31, %24
+  %33 = phi i32 [ 0, %31 ], [ %29, %26 ], [ %14, %24 ]
+  %34 = phi i32 [ 0, %31 ], [ %28, %26 ], [ 0, %24 ]
+  %35 = add nsw i32 %10, %9
+  %36 = ashr i32 %35, 8
+  %37 = and i32 %36, -2
+  %38 = icmp sgt i32 %11, 0
+  %39 = sext i1 %38 to i32
+  %40 = add nsw i32 %11, %39
+  %41 = icmp ugt i32 %13, 100
+  %42 = ashr i32 %10, 4
+  %43 = and i32 %42, -16
+  br label %44
 
-47:                                               ; preds = %43
-  %48 = shl nsw i32 %36, 8
-  %49 = sub nsw i32 %34, %48
-  %50 = add nsw i32 %36, %7
-  %51 = icmp sgt i32 %50, 23
-  %52 = add nsw i32 %50, -24
-  %53 = select i1 %51, i32 %52, i32 %50
-  tail call fastcc void @draw_dashes(i32 noundef %53) #5
-  %54 = and i32 %15, 7
-  %55 = icmp eq i32 %54, 0
-  br i1 %55, label %89, label %101
+44:                                               ; preds = %115, %32
+  %45 = phi i32 [ 0, %32 ], [ %117, %115 ]
+  %46 = phi i32 [ %40, %32 ], [ %116, %115 ]
+  %47 = icmp eq i32 %45, 2
+  br i1 %47, label %48, label %57
 
-56:                                               ; preds = %43
-  %57 = getelementptr inbounds nuw [2 x %struct.obst], ptr @obs, i32 0, i32 %44
-  %58 = load i32, ptr %57, align 4, !tbaa !9
-  %59 = icmp slt i32 %58, -100
-  br i1 %59, label %60, label %79
+48:                                               ; preds = %44
+  %49 = shl nsw i32 %37, 8
+  %50 = sub nsw i32 %35, %49
+  %51 = add nsw i32 %37, %8
+  %52 = icmp sgt i32 %51, 23
+  %53 = add nsw i32 %51, -24
+  %54 = select i1 %52, i32 %53, i32 %51
+  tail call fastcc void @draw_dashes(i32 noundef %54) #5
+  tail call void @lcd_flush(i32 noundef 0, i32 noundef 195, i32 noundef 239, i32 noundef 195) #4
+  %55 = and i32 %16, 15
+  %56 = icmp eq i32 %55, 0
+  br i1 %56, label %118, label %139
 
-60:                                               ; preds = %56
-  %61 = icmp eq i32 %45, 0
-  br i1 %61, label %62, label %86
+57:                                               ; preds = %44
+  %58 = getelementptr inbounds nuw [2 x %struct.obst], ptr @obs, i32 0, i32 %45
+  %59 = getelementptr inbounds nuw i8, ptr %58, i32 8
+  %60 = load i32, ptr %59, align 4, !tbaa !14
+  %61 = sub nsw i32 190, %60
+  %62 = load i32, ptr %58, align 4, !tbaa !9
+  %63 = icmp slt i32 %62, -100
+  br i1 %63, label %64, label %82
 
-62:                                               ; preds = %60
-  br i1 %40, label %63, label %67
+64:                                               ; preds = %57
+  %65 = icmp eq i32 %46, 0
+  br i1 %65, label %66, label %115
 
-63:                                               ; preds = %62
-  %64 = tail call i32 @rng() #4
-  %65 = and i32 %64, 3
-  %66 = icmp eq i32 %65, 0
-  br i1 %66, label %68, label %67
+66:                                               ; preds = %64
+  br i1 %41, label %67, label %71
 
-67:                                               ; preds = %63, %62
-  br label %68
+67:                                               ; preds = %66
+  %68 = tail call i32 @rng() #4
+  %69 = and i32 %68, 3
+  %70 = icmp eq i32 %69, 0
+  br i1 %70, label %72, label %71
 
-68:                                               ; preds = %63, %67
-  %69 = phi i32 [ 12, %67 ], [ 18, %63 ]
-  %70 = phi i32 [ 24, %67 ], [ 30, %63 ]
-  %71 = phi ptr [ @cell_cact_s, %67 ], [ @cell_cact_l, %63 ]
-  %72 = getelementptr inbounds nuw i8, ptr %57, i32 4
-  store i32 %69, ptr %72, align 4, !tbaa !14
-  %73 = getelementptr inbounds nuw i8, ptr %57, i32 8
-  store i32 %70, ptr %73, align 4, !tbaa !15
-  %74 = getelementptr inbounds nuw i8, ptr %57, i32 12
-  store ptr %71, ptr %74, align 4, !tbaa !16
-  store i32 240, ptr %57, align 4, !tbaa !9
-  %75 = tail call i32 @rng_below(i32 noundef 40) #4
-  %76 = sub i32 %75, %42
-  %77 = add i32 %76, 30
-  %78 = tail call i32 @llvm.smax.i32(i32 %77, i32 18)
-  br label %86
+71:                                               ; preds = %67, %66
+  br label %72
 
-79:                                               ; preds = %56
-  %80 = sub nsw i32 %58, %36
-  %81 = getelementptr inbounds nuw i8, ptr %57, i32 4
-  %82 = load i32, ptr %81, align 4, !tbaa !14
-  %83 = add nsw i32 %82, %80
-  %84 = icmp slt i32 %83, 1
-  %85 = select i1 %84, i32 -1000, i32 %80
-  store i32 %85, ptr %57, align 4
-  br label %86
+72:                                               ; preds = %67, %71
+  %73 = phi i32 [ 12, %71 ], [ 18, %67 ]
+  %74 = phi i32 [ 24, %71 ], [ 30, %67 ]
+  %75 = phi ptr [ @cell_cact_s, %71 ], [ @cell_cact_l, %67 ]
+  %76 = getelementptr inbounds nuw i8, ptr %58, i32 4
+  store i32 %73, ptr %76, align 4, !tbaa !15
+  store i32 %74, ptr %59, align 4, !tbaa !14
+  %77 = getelementptr inbounds nuw i8, ptr %58, i32 12
+  store ptr %75, ptr %77, align 4, !tbaa !16
+  store i32 240, ptr %58, align 4, !tbaa !9
+  %78 = tail call i32 @rng_below(i32 noundef 80) #4
+  %79 = sub i32 %78, %43
+  %80 = add i32 %79, 60
+  %81 = tail call i32 @llvm.smax.i32(i32 %80, i32 36)
+  br label %115
 
-86:                                               ; preds = %60, %68, %79
-  %87 = phi i32 [ %45, %79 ], [ %78, %68 ], [ %45, %60 ]
-  %88 = add nuw nsw i32 %44, 1
-  br label %43, !llvm.loop !17
+82:                                               ; preds = %57
+  %83 = tail call i32 @llvm.smax.i32(i32 %62, i32 0)
+  %84 = getelementptr inbounds nuw i8, ptr %58, i32 4
+  %85 = load i32, ptr %84, align 4, !tbaa !15
+  %86 = tail call i32 @llvm.smin.i32(i32 %62, i32 0)
+  %87 = add nsw i32 %85, %86
+  tail call void @gfx_fill(i32 noundef %83, i32 noundef %61, i32 noundef %87, i32 noundef %60, i16 noundef zeroext -1) #4
+  %88 = load i32, ptr %58, align 4, !tbaa !9
+  %89 = sub nsw i32 %88, %37
+  store i32 %89, ptr %58, align 4, !tbaa !9
+  %90 = load i32, ptr %84, align 4, !tbaa !15
+  %91 = add nsw i32 %90, %89
+  %92 = icmp slt i32 %91, 1
+  br i1 %92, label %93, label %105
 
-89:                                               ; preds = %47, %92
-  %90 = phi i32 [ %100, %92 ], [ 0, %47 ]
-  %91 = icmp eq i32 %90, 2
-  br i1 %91, label %101, label %92
+93:                                               ; preds = %82
+  %94 = add nsw i32 %90, %62
+  %95 = load i32, ptr %59, align 4, !tbaa !14
+  %96 = tail call i32 @llvm.smin.i32(i32 %94, i32 240)
+  %97 = icmp slt i32 %94, 1
+  br i1 %97, label %104, label %98
 
-92:                                               ; preds = %89
-  %93 = getelementptr inbounds nuw [2 x %struct.cld], ptr %1, i32 0, i32 %90
-  %94 = load i32, ptr %93, align 4, !tbaa !3
-  %95 = getelementptr inbounds nuw i8, ptr %93, i32 4
-  %96 = load i32, ptr %95, align 4, !tbaa !8
-  tail call void @gfx_fill(i32 noundef %94, i32 noundef %96, i32 noundef 20, i32 noundef 5, i16 noundef zeroext -1) #4
-  %97 = add nsw i32 %94, -2
-  %98 = icmp slt i32 %94, -18
-  %99 = select i1 %98, i32 240, i32 %97
-  store i32 %99, ptr %93, align 4, !tbaa !3
-  tail call void @gfx_blit(i32 noundef %99, i32 noundef %96, ptr noundef nonnull @cell_cloud, i32 noundef 20, i32 noundef 5) #4
-  %100 = add nuw nsw i32 %90, 1
-  br label %89, !llvm.loop !20
+98:                                               ; preds = %93
+  %99 = icmp slt i32 %95, 1
+  br i1 %99, label %104, label %100
 
-101:                                              ; preds = %89, %47
-  %102 = and i32 %11, 1
-  %103 = icmp eq i32 %102, 0
-  br i1 %103, label %109, label %104
+100:                                              ; preds = %98
+  tail call void @gfx_fill(i32 noundef 0, i32 noundef range(i32 -2147483457, -2147483648) %61, i32 noundef %96, i32 noundef %95, i16 noundef zeroext -1) #4
+  %101 = add nsw i32 %96, -1
+  %102 = sub i32 %95, %60
+  %103 = add i32 %102, 189
+  tail call void @lcd_flush(i32 noundef 0, i32 noundef range(i32 -2147483457, -2147483648) %61, i32 noundef %101, i32 noundef %103) #4
+  br label %104
 
-104:                                              ; preds = %101
-  %105 = add i32 %12, 1
-  %106 = urem i32 %105, 100
-  %107 = icmp eq i32 %106, 0
-  br i1 %107, label %108, label %109
+104:                                              ; preds = %93, %98, %100
+  store i32 -1000, ptr %58, align 4, !tbaa !9
+  br label %115
 
-108:                                              ; preds = %104
-  tail call void @snd_play(i32 noundef 1200, i32 noundef 40, i32 noundef 3) #4
-  tail call void @led(i32 noundef 4210752, i32 noundef 1064976) #4
-  br label %109
+105:                                              ; preds = %82
+  %106 = getelementptr inbounds nuw i8, ptr %58, i32 12
+  %107 = load ptr, ptr %106, align 4, !tbaa !16
+  %108 = load i32, ptr %59, align 4, !tbaa !14
+  tail call void @gfx_blit(i32 noundef %89, i32 noundef %61, ptr noundef %107, i32 noundef %90, i32 noundef %108) #4
+  %109 = load i32, ptr %58, align 4, !tbaa !9
+  %110 = tail call i32 @llvm.smax.i32(i32 %109, i32 0)
+  %111 = load i32, ptr %84, align 4, !tbaa !15
+  %112 = add nsw i32 %111, %62
+  %113 = tail call i32 @llvm.smin.i32(i32 %112, i32 240)
+  %114 = add nsw i32 %113, -1
+  tail call void @lcd_flush(i32 noundef %110, i32 noundef %61, i32 noundef %114, i32 noundef 189) #4
+  br label %115
 
-109:                                              ; preds = %104, %108, %101
-  %110 = phi i32 [ %105, %108 ], [ %105, %104 ], [ %12, %101 ]
-  tail call void @gfx_fill(i32 noundef 0, i32 noundef 100, i32 noundef 240, i32 noundef 90, i16 noundef zeroext -1) #4
-  %111 = lshr i32 %33, 8
-  %112 = sub nsw i32 168, %111
-  %113 = and i32 %15, 4
-  %114 = icmp eq i32 %113, 0
-  %115 = icmp eq i32 %33, 0
-  %116 = select i1 %115, i1 %114, i1 false
-  %117 = select i1 %116, ptr @cell_run_b, ptr @cell_run_a
-  tail call void @gfx_blit(i32 noundef 30, i32 noundef %112, ptr noundef nonnull %117, i32 noundef 20, i32 noundef 22) #4
-  br label %118
+115:                                              ; preds = %104, %105, %64, %72
+  %116 = phi i32 [ %81, %72 ], [ %46, %64 ], [ %46, %105 ], [ %46, %104 ]
+  %117 = add nuw nsw i32 %45, 1
+  br label %44, !llvm.loop !17
 
-118:                                              ; preds = %140, %109
-  %119 = phi i32 [ 0, %109 ], [ %141, %140 ]
+118:                                              ; preds = %48, %137
+  %119 = phi i32 [ %138, %137 ], [ 0, %48 ]
   %120 = icmp eq i32 %119, 2
-  br i1 %120, label %121, label %128
+  br i1 %120, label %139, label %121
 
 121:                                              ; preds = %118
-  %122 = icmp slt i32 %9, 2560
-  %123 = and i32 %15, 31
-  %124 = icmp eq i32 %123, 0
-  %125 = select i1 %122, i1 %124, i1 false
-  %126 = add nsw i32 %9, 16
-  %127 = select i1 %125, i32 %126, i32 %9
-  br i1 %103, label %143, label %142
+  %122 = getelementptr inbounds nuw [2 x %struct.cld], ptr %1, i32 0, i32 %119
+  %123 = load i32, ptr %122, align 4, !tbaa !3
+  %124 = tail call i32 @llvm.smax.i32(i32 %123, i32 0)
+  %125 = getelementptr inbounds nuw i8, ptr %122, i32 4
+  %126 = load i32, ptr %125, align 4, !tbaa !8
+  tail call void @gfx_fill(i32 noundef %124, i32 noundef %126, i32 noundef 20, i32 noundef 5, i16 noundef zeroext -1) #4
+  %127 = add nsw i32 %123, -2
+  %128 = icmp slt i32 %123, -18
+  %129 = select i1 %128, i32 240, i32 %127
+  store i32 %129, ptr %122, align 4, !tbaa !3
+  tail call void @gfx_blit(i32 noundef %129, i32 noundef %126, ptr noundef nonnull @cell_cloud, i32 noundef 20, i32 noundef 5) #4
+  %130 = tail call i32 @llvm.smax.i32(i32 %129, i32 0)
+  %131 = tail call i32 @llvm.smin.i32(i32 %123, i32 220)
+  %132 = add nsw i32 %131, 20
+  %133 = icmp sgt i32 %132, %130
+  br i1 %133, label %134, label %137
 
-128:                                              ; preds = %118
-  %129 = getelementptr inbounds nuw [2 x %struct.obst], ptr @obs, i32 0, i32 %119
-  %130 = load i32, ptr %129, align 4, !tbaa !9
-  %131 = icmp sgt i32 %130, -100
-  br i1 %131, label %132, label %140
+134:                                              ; preds = %121
+  %135 = add nsw i32 %131, 19
+  %136 = add nsw i32 %126, 4
+  tail call void @lcd_flush(i32 noundef %130, i32 noundef %126, i32 noundef %135, i32 noundef %136) #4
+  br label %137
 
-132:                                              ; preds = %128
-  %133 = getelementptr inbounds nuw i8, ptr %129, i32 8
-  %134 = load i32, ptr %133, align 4, !tbaa !15
-  %135 = sub nsw i32 190, %134
-  %136 = getelementptr inbounds nuw i8, ptr %129, i32 12
-  %137 = load ptr, ptr %136, align 4, !tbaa !16
-  %138 = getelementptr inbounds nuw i8, ptr %129, i32 4
-  %139 = load i32, ptr %138, align 4, !tbaa !14
-  tail call void @gfx_blit(i32 noundef %130, i32 noundef %135, ptr noundef %137, i32 noundef %139, i32 noundef %134) #4
-  br label %140
+137:                                              ; preds = %134, %121
+  %138 = add nuw nsw i32 %119, 1
+  br label %118, !llvm.loop !20
 
-140:                                              ; preds = %128, %132
-  %141 = add nuw nsw i32 %119, 1
-  br label %118, !llvm.loop !21
+139:                                              ; preds = %118, %48
+  %140 = and i32 %16, 3
+  %141 = icmp eq i32 %140, 0
+  br i1 %141, label %142, label %147
 
-142:                                              ; preds = %121
-  tail call fastcc void @draw_score(i32 noundef %110) #5
-  br label %143
+142:                                              ; preds = %139
+  %143 = add i32 %13, 1
+  %144 = urem i32 %143, 100
+  %145 = icmp eq i32 %144, 0
+  br i1 %145, label %146, label %147
 
-143:                                              ; preds = %142, %121
-  tail call void @gfx_present() #4
-  %144 = sub nsw i32 189, %111
-  br label %145
+146:                                              ; preds = %142
+  tail call void @snd_play(i32 noundef 1200, i32 noundef 40, i32 noundef 6) #4
+  tail call void @led_rainbow(i32 noundef 30) #4
+  br label %147
 
-145:                                              ; preds = %163, %143
-  %146 = phi i32 [ 0, %143 ], [ %164, %163 ]
-  %147 = icmp eq i32 %146, 2
-  br i1 %147, label %6, label %148, !llvm.loop !22
+147:                                              ; preds = %142, %146, %139
+  %148 = phi i32 [ %143, %146 ], [ %143, %142 ], [ %13, %139 ]
+  %149 = icmp slt i32 %10, 1280
+  %150 = and i32 %16, 63
+  %151 = icmp eq i32 %150, 0
+  %152 = select i1 %149, i1 %151, i1 false
+  %153 = add nsw i32 %10, 8
+  %154 = select i1 %152, i32 %153, i32 %10
+  %155 = lshr i32 %34, 8
+  %156 = sub nsw i32 168, %155
+  %157 = icmp eq i32 %156, %7
+  br i1 %157, label %158, label %161
 
-148:                                              ; preds = %145
-  %149 = getelementptr inbounds nuw [2 x %struct.obst], ptr @obs, i32 0, i32 %146
-  %150 = load i32, ptr %149, align 4, !tbaa !9
-  %151 = add i32 %150, 100
-  %152 = icmp ult i32 %151, 145
-  br i1 %152, label %153, label %163
+158:                                              ; preds = %147
+  %159 = and i32 %16, 7
+  %160 = icmp eq i32 %159, 0
+  br i1 %160, label %161, label %171
 
-153:                                              ; preds = %148
-  %154 = getelementptr inbounds nuw i8, ptr %149, i32 8
-  %155 = load i32, ptr %154, align 4, !tbaa !15
-  %156 = sub i32 192, %155
-  %157 = getelementptr inbounds nuw i8, ptr %149, i32 4
-  %158 = load i32, ptr %157, align 4, !tbaa !14
-  %159 = add nsw i32 %158, %150
-  %160 = icmp sgt i32 %159, 35
-  %161 = icmp sgt i32 %144, %156
-  %162 = select i1 %160, i1 %161, i1 false
-  br i1 %162, label %165, label %163
+161:                                              ; preds = %158, %147
+  %162 = tail call i32 @llvm.smin.i32(i32 %156, i32 %7)
+  %163 = add nsw i32 %7, 22
+  %164 = sub i32 %163, %162
+  tail call void @gfx_fill(i32 noundef 30, i32 noundef %162, i32 noundef 20, i32 noundef %164, i16 noundef zeroext -1) #4
+  %165 = and i32 %16, 8
+  %166 = icmp eq i32 %165, 0
+  %167 = icmp eq i32 %34, 0
+  %168 = select i1 %167, i1 %166, i1 false
+  %169 = select i1 %168, ptr @cell_run_b, ptr @cell_run_a
+  tail call void @gfx_blit(i32 noundef 30, i32 noundef %156, ptr noundef nonnull %169, i32 noundef 20, i32 noundef 22) #4
+  %170 = add nsw i32 %7, 21
+  tail call void @lcd_flush(i32 noundef 30, i32 noundef %162, i32 noundef 49, i32 noundef %170) #4
+  br label %171
 
-163:                                              ; preds = %153, %148
-  %164 = add nuw nsw i32 %146, 1
-  br label %145, !llvm.loop !23
+171:                                              ; preds = %161, %158
+  %172 = phi i32 [ %156, %161 ], [ %7, %158 ]
+  %173 = and i32 %12, 1
+  %174 = icmp eq i32 %173, 0
+  br i1 %174, label %176, label %175
 
-165:                                              ; preds = %153
-  tail call void @snd_play(i32 noundef 220, i32 noundef 70, i32 noundef 18) #4
-  tail call void @led(i32 noundef 6291456, i32 noundef 6291456) #4
-  tail call void @gfx_blit(i32 noundef 30, i32 noundef %112, ptr noundef nonnull @cell_dead, i32 noundef 20, i32 noundef 22) #4
+175:                                              ; preds = %171
+  tail call fastcc void @draw_score(i32 noundef %148) #5
+  tail call void @lcd_flush(i32 noundef 192, i32 noundef 8, i32 noundef 231, i32 noundef 15) #4
+  br label %176
+
+176:                                              ; preds = %175, %171
+  %177 = sub nsw i32 189, %155
+  br label %178
+
+178:                                              ; preds = %196, %176
+  %179 = phi i32 [ 0, %176 ], [ %197, %196 ]
+  %180 = icmp eq i32 %179, 2
+  br i1 %180, label %6, label %181, !llvm.loop !21
+
+181:                                              ; preds = %178
+  %182 = getelementptr inbounds nuw [2 x %struct.obst], ptr @obs, i32 0, i32 %179
+  %183 = load i32, ptr %182, align 4, !tbaa !9
+  %184 = add i32 %183, 100
+  %185 = icmp ult i32 %184, 145
+  br i1 %185, label %186, label %196
+
+186:                                              ; preds = %181
+  %187 = getelementptr inbounds nuw i8, ptr %182, i32 8
+  %188 = load i32, ptr %187, align 4, !tbaa !14
+  %189 = sub i32 192, %188
+  %190 = getelementptr inbounds nuw i8, ptr %182, i32 4
+  %191 = load i32, ptr %190, align 4, !tbaa !15
+  %192 = add nsw i32 %191, %183
+  %193 = icmp sgt i32 %192, 35
+  %194 = icmp sgt i32 %177, %189
+  %195 = select i1 %193, i1 %194, i1 false
+  br i1 %195, label %198, label %196
+
+196:                                              ; preds = %186, %181
+  %197 = add nuw nsw i32 %179, 1
+  br label %178, !llvm.loop !22
+
+198:                                              ; preds = %186
+  tail call void @snd_play(i32 noundef 220, i32 noundef 70, i32 noundef 36) #4
+  tail call void @led_blink(i32 noundef 16711680, i32 noundef 3) #4
+  tail call void @gfx_blit(i32 noundef 30, i32 noundef %156, ptr noundef nonnull @cell_dead, i32 noundef 20, i32 noundef 22) #4
   tail call void @gfx_text2(i32 noundef 48, i32 noundef 56, ptr noundef nonnull @.str.1, i16 noundef zeroext -14011, i16 noundef zeroext -1) #4
   tail call void @gfx_text(i32 noundef 24, i32 noundef 80, ptr noundef nonnull @.str.2, i16 noundef zeroext 14823, i16 noundef zeroext -1) #4
   tail call void @gfx_present() #4
   tail call void @uputs(ptr noundef nonnull @.str.3) #4
-  tail call void @uputn(i32 noundef %110) #4
+  tail call void @uputn(i32 noundef %148) #4
   tail call void @uputs(ptr noundef nonnull @.str.4) #4
-  br label %166
+  br label %199
 
-166:                                              ; preds = %170, %165
-  tail call void @frame_sync(i32 noundef 33000) #4
+199:                                              ; preds = %203, %198
+  tail call void @frame_sync(i32 noundef 16667) #4
   tail call void @in_poll() #4
-  %167 = load i32, ptr @in_edge, align 4, !tbaa !13
-  %168 = and i32 %167, 17
-  %169 = icmp eq i32 %168, 0
-  br i1 %169, label %170, label %5
+  %200 = load i32, ptr @in_edge, align 4, !tbaa !13
+  %201 = and i32 %200, 17
+  %202 = icmp eq i32 %201, 0
+  br i1 %202, label %203, label %5
 
-170:                                              ; preds = %166
-  %171 = and i32 %167, 2
-  %172 = icmp eq i32 %171, 0
-  br i1 %172, label %166, label %173, !llvm.loop !24
+203:                                              ; preds = %199
+  %204 = and i32 %200, 2
+  %205 = icmp eq i32 %204, 0
+  br i1 %205, label %199, label %206, !llvm.loop !23
 
-173:                                              ; preds = %170
+206:                                              ; preds = %203
+  tail call void @led(i32 noundef 0, i32 noundef 0) #4
   ret void
 }
 
@@ -376,7 +428,7 @@ define internal fastcc void @draw_dashes(i32 noundef %0) unnamed_addr #0 {
 
 17:                                               ; preds = %16, %7
   %18 = add nsw i32 %4, 24
-  br label %3, !llvm.loop !25
+  br label %3, !llvm.loop !24
 }
 
 ; Function Attrs: minsize nounwind optsize
@@ -410,11 +462,20 @@ declare void @llvm.lifetime.start.p0(i64 immarg, ptr captures(none)) #2
 ; Function Attrs: minsize optsize
 declare dso_local i32 @rng_below(i32 noundef) local_unnamed_addr #1
 
+; Function Attrs: minsize optsize
+declare dso_local void @gfx_fill(i32 noundef, i32 noundef, i32 noundef, i32 noundef, i16 noundef zeroext) local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @lcd_flush(i32 noundef, i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
+
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
 declare void @llvm.lifetime.end.p0(i64 immarg, ptr captures(none)) #2
 
 ; Function Attrs: minsize optsize
-declare dso_local void @gfx_fill(i32 noundef, i32 noundef, i32 noundef, i32 noundef, i16 noundef zeroext) local_unnamed_addr #1
+declare dso_local void @led_rainbow(i32 noundef) local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @led_blink(i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @gfx_text2(i32 noundef, i32 noundef, ptr noundef, i16 noundef zeroext, i16 noundef zeroext) local_unnamed_addr #1
@@ -432,10 +493,10 @@ declare dso_local void @numstr(ptr noundef, i32 noundef, i32 noundef) local_unna
 declare dso_local i32 @rng() local_unnamed_addr #1
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
-declare i32 @llvm.smax.i32(i32, i32) #3
+declare i32 @llvm.smin.i32(i32, i32) #3
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
-declare i32 @llvm.smin.i32(i32, i32) #3
+declare i32 @llvm.smax.i32(i32, i32) #3
 
 attributes #0 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { minsize optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
@@ -462,15 +523,14 @@ attributes #6 = { nounwind }
 !11 = !{!"p1 short", !12, i64 0}
 !12 = !{!"any pointer", !6, i64 0}
 !13 = !{!5, !5, i64 0}
-!14 = !{!10, !5, i64 4}
-!15 = !{!10, !5, i64 8}
+!14 = !{!10, !5, i64 8}
+!15 = !{!10, !5, i64 4}
 !16 = !{!10, !11, i64 12}
 !17 = distinct !{!17, !18, !19}
 !18 = !{!"llvm.loop.mustprogress"}
 !19 = !{!"llvm.loop.unroll.disable"}
 !20 = distinct !{!20, !18, !19}
-!21 = distinct !{!21, !18, !19}
-!22 = distinct !{!22, !19}
-!23 = distinct !{!23, !18, !19}
-!24 = distinct !{!24, !19}
-!25 = distinct !{!25, !18, !19}
+!21 = distinct !{!21, !19}
+!22 = distinct !{!22, !18, !19}
+!23 = distinct !{!23, !19}
+!24 = distinct !{!24, !18, !19}

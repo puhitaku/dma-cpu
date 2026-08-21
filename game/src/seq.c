@@ -103,6 +103,31 @@ render_noise(volatile uint *d, int n, int amp, int dk)
   }
 }
 
+/* Steep fade-in/out on a drum's ends (48 frames ~= 1.1 ms each):
+ * the raw waveforms start and stop mid-swing, and that step is an
+ * audible pop. Shift-ladder scaling, 8-frame blocks — no multiplies. */
+static uint
+fade_frame(uint w, int sh)
+{
+  int s = (int)(short)(ushort)(w & 0xFFFFu);
+  s >>= sh;
+  uint us = (ushort)s;
+  return (us << 16) | us;
+}
+
+static void
+fade_ends(volatile uint *d, int n)
+{
+  for (int k = 0; k < 6; k++)
+    for (int i = 0; i < 8; i++)
+      d[k * 8 + i] = fade_frame(d[k * 8 + i], 6 - k);
+  for (int k = 0; k < 6; k++)
+    for (int i = 0; i < 8; i++) {
+      int idx = n - 48 + k * 8 + i;
+      d[idx] = fade_frame(d[idx], k + 1);
+    }
+}
+
 static void
 render_drums(void)
 {
@@ -116,6 +141,8 @@ render_drums(void)
   render_square((volatile uint *)daddr[3], dlen[3], 138, 1, 12000, 11);
   render_noise((volatile uint *)daddr[4], dlen[4], 9000, 7);
   render_noise((volatile uint *)daddr[5], dlen[5], 9000, 10);
+  for (int i = 1; i < NINST; i++)
+    fade_ends((volatile uint *)daddr[i], dlen[i]);
   rendered = 1;
 }
 
@@ -257,11 +284,11 @@ seq_run(void)
       draw_playhead(playhead, step);
       playhead = step;
       if (inst == 1)
-        led(0x501000, 0x000000); /* kick: warm flash */
+        led(LED_BRIGHT(0xFF4000), 0); /* kick: warm flash */
       else if (inst == 2)
-        led(0x000000, 0x404010); /* snare: the other one */
+        led(0, LED_BRIGHT(0xFFFF40)); /* snare: the other one */
       else if (inst)
-        led(0x000818, 0x000818);
+        led(LED_DIM(0x00FFFF), LED_DIM(0x00FFFF));
       else
         led(0, 0);
       gfx_present();
