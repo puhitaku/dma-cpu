@@ -120,10 +120,11 @@ void led_tick(void); /* frame_sync drives the animations */
 void seq_run(void); /* the percussion sequencer demo */
 
 /* the games (each returns when the player exits to the menu) */
-int menu_run(void); /* 0 Dinosaur, 1 LANWalk, 2 Yacht, 3 Sequencer */
+int menu_run(void); /* 0 Dino 1 LANWalk 2 Yacht 3 Seq 4 CPUmon */
 void dino_run(void);
 void lanwalk_run(void);
 void yacht_run(void);
+void cpumon_run(void); /* the "CPU is asleep" monitor */
 
 #define RGB(r, g, b) \
   ((ushort)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | (((b) & 0xF8) >> 3)))

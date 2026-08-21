@@ -41,7 +41,7 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	}
 	var mods []*llir.Module
 	for _, p := range []string{"gmain", "menu", "dino", "lanwalk", "yacht",
-		"input", "fx", "seq", "gfx", "lcd", "grt"} {
+		"input", "fx", "seq", "cpumon", "gfx", "lcd", "grt"} {
 		mods = append(mods, parseLL(t, "../game/ll/"+p+".ll"))
 	}
 	mod, err := llir.Merge(mods...)
@@ -338,7 +338,7 @@ func TestGameMenu(t *testing.T) {
 		t.Errorf("title underline: %d pixels of %#04x", n, title)
 	}
 	selbg := rgb565(40, 70, 140)
-	if n := p.countColor(32, 92, 207, 115, selbg); n < 500 {
+	if n := p.countColor(32, 70, 207, 93, selbg); n < 500 {
 		t.Errorf("selected item background: %d pixels", n)
 	}
 	// fx: the machine armed the audio streamer at boot — silence is
@@ -491,9 +491,9 @@ func TestGameYacht(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
-	press(t, m, prog, pinUp) // wraps to Sequencer...
-	at = runUntil(t, m, "menu: Sequencer", at, 100_000_000)
-	press(t, m, prog, pinUp) // ...then Yacht
+	press(t, m, prog, pinDown) // Dino -> LANWalk
+	at = runUntil(t, m, "menu: LANWalk", at, 100_000_000)
+	press(t, m, prog, pinDown) // -> Yacht
 	at = runUntil(t, m, "menu: Yacht", at, 100_000_000)
 	press(t, m, prog, pinA)
 	at = runUntil(t, m, "yacht: start", at, 100_000_000)
@@ -516,7 +516,9 @@ func TestGameSeq(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
-	press(t, m, prog, pinUp)
+	press(t, m, prog, pinUp) // wraps up: Dino -> CPU Sleep
+	at = runUntil(t, m, "menu: CPU Sleep", at, 100_000_000)
+	press(t, m, prog, pinUp) // -> Sequencer
 	at = runUntil(t, m, "menu: Sequencer", at, 100_000_000)
 	press(t, m, prog, pinA)
 	at = runUntil(t, m, "seq: up", at, 100_000_000)
@@ -539,5 +541,36 @@ func TestGameSeq(t *testing.T) {
 	press(t, m, prog, pinA)
 	at = runUntil(t, m, "seq: step set", at, 100_000_000)
 	dumpPNG(t, decodeLCD(m, 16), "seq.png")
+	_ = at
+}
+
+func TestGameCPUMon(t *testing.T) {
+	t.Parallel()
+	m, prog := bootGame(t)
+	at := runUntil(t, m, "menu up", 0, 300_000_000)
+	press(t, m, prog, pinUp) // wraps to CPU Sleep
+	at = runUntil(t, m, "menu: CPU Sleep", at, 100_000_000)
+	// simulate the firmware's park stamp so the live idle clock reads
+	// a nonzero MM:SS (the emulated timer is fast, so the exact value
+	// is unimportant — only that the live path renders green digits)
+	m.Poke32(0x2003D004, 1_000_000)
+	m.Poke32(0x2003D000, 0x51EE9500)
+	press(t, m, prog, pinA)
+	at = runUntil(t, m, "cpumon: up", at, 100_000_000)
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 40_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	p := decodeLCD(m, 16)
+	// the LIVE idle clock (02:17) must render in the live-green color
+	live := rgb565(90, 240, 140)
+	if n := p.countColor(150, 150, 229, 165, live); n < 60 {
+		t.Errorf("idle clock: %d live-green pixels (expected the MM:SS)", n)
+	}
+	// sleeping-chip faces present (face color)
+	face := rgb565(220, 225, 245)
+	if n := p.countColor(24, 44, 216, 103, face); n < 40 {
+		t.Errorf("chip faces: %d face pixels", n)
+	}
+	dumpPNG(t, p, "cpumon.png")
 	_ = at
 }

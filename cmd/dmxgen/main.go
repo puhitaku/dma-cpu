@@ -741,7 +741,8 @@ func wavSamples(path string) ([]byte, error) {
 func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	dasm, err := compileLL([]string{"game/ll/gmain.ll", "game/ll/menu.ll",
 		"game/ll/dino.ll", "game/ll/lanwalk.ll", "game/ll/yacht.ll",
-		"game/ll/input.ll", "game/ll/fx.ll", "game/ll/seq.ll", "game/ll/gfx.ll",
+		"game/ll/input.ll", "game/ll/fx.ll", "game/ll/seq.ll",
+		"game/ll/cpumon.ll", "game/ll/gfx.ll",
 		"game/ll/lcd.ll", "game/ll/grt.ll"},
 		dmacc.Options{Entry: "gmain", NoSafepoints: true, XIPText: true})
 	if err != nil {

@@ -1241,6 +1241,16 @@ static void game_start(void)
     printf("=== handing over to the GAMEPICO machine (ARM -> wfi) ===\n");
     stdio_flush();
     uart_default_tx_wait_blocking();
+    /* Stamp the CPU's final timestamp for the game's CPU-sleep
+     * monitor: the ARM's only remaining work after this is dmx_start
+     * plus the park prologue (a few us, invisible at second
+     * resolution), then wfi forever. The monitor reads this block
+     * (0x2003D000, free SRAM between the audio ring and the compact
+     * scratch) and shows now - stamp climbing — a clock that only
+     * advances because nothing on the CPU side ever runs again. */
+    volatile uint32_t *cpustat = (volatile uint32_t *)0x2003D000u;
+    cpustat[1] = time_us_32();
+    cpustat[0] = 0x51EE9500u; /* "SLEEP" marker: block valid */
     dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 1};
     if (dmx_start(&cfg, HIL_GAME_ENTRY) != DMX_OK) {
         printf("GAME: FAIL start\n");

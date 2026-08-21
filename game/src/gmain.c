@@ -19,8 +19,10 @@ gmain(void)
       lanwalk_run();
     else if (g == 2)
       yacht_run();
-    else
+    else if (g == 3)
       seq_run();
+    else
+      cpumon_run();
   }
   return 0; /* unreachable; the entry contract wants an int */
 }

@@ -5,20 +5,20 @@ target triple = "thumbv6m-unknown-none-eabi"
 
 @.str = private unnamed_addr constant [9 x i8] c"DMA PICO\00", align 1
 @.str.1 = private unnamed_addr constant [29 x i8] c"Enjoy purely DMA-coded games\00", align 1
-@.str.2 = private unnamed_addr constant [14 x i8] c"up/down: pick\00", align 1
-@.str.3 = private unnamed_addr constant [14 x i8] c"press:   play\00", align 1
-@.str.4 = private unnamed_addr constant [9 x i8] c"menu up\0A\00", align 1
+@.str.2 = private unnamed_addr constant [28 x i8] c"up/down: pick   press: play\00", align 1
+@.str.3 = private unnamed_addr constant [9 x i8] c"menu up\0A\00", align 1
 @in_edge = external dso_local local_unnamed_addr global i32, align 4
-@.str.5 = private unnamed_addr constant [7 x i8] c"menu: \00", align 1
-@names = internal unnamed_addr constant [4 x ptr] [ptr @.str.10, ptr @.str.11, ptr @.str.12, ptr @.str.13], align 4
-@.str.6 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
-@.str.7 = private unnamed_addr constant [8 x i8] c"start: \00", align 1
-@.str.8 = private unnamed_addr constant [6 x i8] c"beat \00", align 1
-@.str.9 = private unnamed_addr constant [2 x i8] c">\00", align 1
-@.str.10 = private unnamed_addr constant [9 x i8] c"Dinosaur\00", align 1
-@.str.11 = private unnamed_addr constant [8 x i8] c"LANWalk\00", align 1
-@.str.12 = private unnamed_addr constant [6 x i8] c"Yacht\00", align 1
-@.str.13 = private unnamed_addr constant [10 x i8] c"Sequencer\00", align 1
+@.str.4 = private unnamed_addr constant [7 x i8] c"menu: \00", align 1
+@names = internal unnamed_addr constant [5 x ptr] [ptr @.str.9, ptr @.str.10, ptr @.str.11, ptr @.str.12, ptr @.str.13], align 4
+@.str.5 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
+@.str.6 = private unnamed_addr constant [8 x i8] c"start: \00", align 1
+@.str.7 = private unnamed_addr constant [6 x i8] c"beat \00", align 1
+@.str.8 = private unnamed_addr constant [2 x i8] c">\00", align 1
+@.str.9 = private unnamed_addr constant [9 x i8] c"Dinosaur\00", align 1
+@.str.10 = private unnamed_addr constant [8 x i8] c"LANWalk\00", align 1
+@.str.11 = private unnamed_addr constant [6 x i8] c"Yacht\00", align 1
+@.str.12 = private unnamed_addr constant [10 x i8] c"Sequencer\00", align 1
+@.str.13 = private unnamed_addr constant [10 x i8] c"CPU Sleep\00", align 1
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local i32 @menu_run() local_unnamed_addr #0 {
@@ -30,15 +30,14 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
 
 1:                                                ; preds = %10, %0
   %2 = phi i32 [ 0, %0 ], [ %13, %10 ]
-  %3 = icmp eq i32 %2, 4
+  %3 = icmp eq i32 %2, 5
   br i1 %3, label %4, label %10
 
 4:                                                ; preds = %1
-  tail call void @gfx_text(i32 noundef 48, i32 noundef 200, ptr noundef nonnull @.str.2, i16 noundef zeroext 23344, i16 noundef zeroext 2181) #2
-  tail call void @gfx_text(i32 noundef 48, i32 noundef 212, ptr noundef nonnull @.str.3, i16 noundef zeroext 23344, i16 noundef zeroext 2181) #2
+  tail call void @gfx_text(i32 noundef 12, i32 noundef 208, ptr noundef nonnull @.str.2, i16 noundef zeroext 23344, i16 noundef zeroext 2181) #2
   tail call void @gfx_present() #2
   tail call void @led(i32 noundef 1039, i32 noundef 1039) #2
-  tail call void @uputs(ptr noundef nonnull @.str.4) #2
+  tail call void @uputs(ptr noundef nonnull @.str.3) #2
   %5 = tail call i32 @now_us() #2
   br label %6
 
@@ -64,11 +63,11 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
   %18 = icmp eq i32 %17, 0
   %19 = icmp eq i32 %15, 0
   %20 = add nsw i32 %15, -1
-  %21 = select i1 %19, i32 3, i32 %20
+  %21 = select i1 %19, i32 4, i32 %20
   %22 = select i1 %18, i32 %15, i32 %21
   %23 = and i32 %16, 2
   %24 = icmp eq i32 %23, 0
-  %25 = icmp eq i32 %22, 3
+  %25 = icmp eq i32 %22, 4
   %26 = add nsw i32 %22, 1
   %27 = select i1 %25, i32 0, i32 %26
   %28 = select i1 %24, i32 %22, i32 %27
@@ -80,11 +79,11 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
   tail call fastcc void @draw_item(i32 noundef %28, i32 noundef 1) #3
   tail call void @gfx_present() #2
   tail call void @snd_play(i32 noundef 700, i32 noundef 40, i32 noundef 2) #2
-  tail call void @uputs(ptr noundef nonnull @.str.5) #2
-  %31 = getelementptr inbounds [4 x ptr], ptr @names, i32 0, i32 %28
+  tail call void @uputs(ptr noundef nonnull @.str.4) #2
+  %31 = getelementptr inbounds [5 x ptr], ptr @names, i32 0, i32 %28
   %32 = load ptr, ptr %31, align 4, !tbaa !10
   tail call void @uputs(ptr noundef %32) #2
-  tail call void @uputs(ptr noundef nonnull @.str.6) #2
+  tail call void @uputs(ptr noundef nonnull @.str.5) #2
   %33 = load i32, ptr @in_edge, align 4, !tbaa !6
   br label %34
 
@@ -103,18 +102,18 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
 42:                                               ; preds = %38
   %43 = add i32 %9, 1000000
   %44 = add i32 %8, 1
-  tail call void @uputs(ptr noundef nonnull @.str.8) #2
+  tail call void @uputs(ptr noundef nonnull @.str.7) #2
   tail call void @uputn(i32 noundef %44) #2
-  tail call void @uputs(ptr noundef nonnull @.str.6) #2
+  tail call void @uputs(ptr noundef nonnull @.str.5) #2
   br label %6, !llvm.loop !13
 
 45:                                               ; preds = %34
   tail call void @led(i32 noundef 16144, i32 noundef 16144) #2
-  tail call void @uputs(ptr noundef nonnull @.str.7) #2
-  %46 = getelementptr inbounds [4 x ptr], ptr @names, i32 0, i32 %28
+  tail call void @uputs(ptr noundef nonnull @.str.6) #2
+  %46 = getelementptr inbounds [5 x ptr], ptr @names, i32 0, i32 %28
   %47 = load ptr, ptr %46, align 4, !tbaa !10
   tail call void @uputs(ptr noundef %47) #2
-  tail call void @uputs(ptr noundef nonnull @.str.6) #2
+  tail call void @uputs(ptr noundef nonnull @.str.5) #2
   tail call void @snd_play(i32 noundef 523, i32 noundef 55, i32 noundef 255) #2
   tail call void @delay_us(i32 noundef 55000) #2
   tail call void @snd_play(i32 noundef 659, i32 noundef 55, i32 noundef 255) #2
@@ -139,21 +138,21 @@ declare dso_local void @gfx_text(i32 noundef, i32 noundef, ptr noundef, i16 noun
 
 ; Function Attrs: minsize nounwind optsize
 define internal fastcc void @draw_item(i32 noundef %0, i32 noundef range(i32 0, 2) %1) unnamed_addr #0 {
-  %3 = mul nsw i32 %0, 26
-  %4 = add nsw i32 %3, 84
+  %3 = mul nsw i32 %0, 25
+  %4 = add nsw i32 %3, 70
   %5 = icmp eq i32 %1, 0
   %6 = select i1 %5, i16 2181, i16 10801
   tail call void @gfx_fill(i32 noundef 32, i32 noundef %4, i32 noundef 176, i32 noundef 24, i16 noundef zeroext %6) #2
   br i1 %5, label %9, label %7
 
 7:                                                ; preds = %2
-  %8 = add nsw i32 %3, 88
-  tail call void @gfx_text(i32 noundef 44, i32 noundef %8, ptr noundef nonnull @.str.9, i16 noundef zeroext -377, i16 noundef zeroext 10801) #2
+  %8 = add nsw i32 %3, 74
+  tail call void @gfx_text(i32 noundef 44, i32 noundef %8, ptr noundef nonnull @.str.8, i16 noundef zeroext -377, i16 noundef zeroext 10801) #2
   br label %9
 
 9:                                                ; preds = %7, %2
   %10 = phi i16 [ -1, %7 ], [ -18950, %2 ]
-  %11 = getelementptr inbounds [4 x ptr], ptr @names, i32 0, i32 %0
+  %11 = getelementptr inbounds [5 x ptr], ptr @names, i32 0, i32 %0
   %12 = load ptr, ptr %11, align 4, !tbaa !10
   tail call void @gfx_text2(i32 noundef 60, i32 noundef %4, ptr noundef %12, i16 noundef zeroext %10, i16 noundef zeroext %6) #2
   ret void
