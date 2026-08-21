@@ -355,7 +355,7 @@ func TestGameDino(t *testing.T) {
 	at = runUntil(t, m, "dino: over score=", at, 2_000_000_000)
 	p := decodeLCD(m, 16)
 	over := rgb565(200, 40, 40)
-	if n := p.countColor(48, 130, 192, 146, over); n < 100 {
+	if n := p.countColor(48, 56, 192, 72, over); n < 100 {
 		t.Errorf("GAME OVER text: %d red pixels", n)
 	}
 	dumpPNG(t, p, "dino.png")

@@ -148,7 +148,7 @@ draw_cat(int c, int cursor)
   if (scores[c] >= 0) {
     numsp(b, 3, (uint)scores[c]);
     gfx_text(200, y, b, C_SCORE, cursor ? C_PANEL : C_BG);
-  } else {
+  } else if (rolls_left < 3) { /* no previews before the first roll */
     numsp(b, 3, (uint)cat_score(c));
     gfx_text(200, y, b, C_PREV, cursor ? C_PANEL : C_BG);
   }
@@ -229,8 +229,7 @@ yacht_run(void)
     for (int i = 0; i < 5; i++)
       held[i] = 0;
     for (int i = 0; i < 5; i++)
-      dice[i] = 0;
-    roll_dice(); /* first roll is free */
+      dice[i] = 0; /* blank faces until the player rolls */
 
     int cur = 5, incats = 0, catc = 0; /* cur 0-4 dice, 5 = ROLL */
     while (scores[catc] >= 0)
@@ -291,7 +290,8 @@ yacht_run(void)
             uputs("yacht: roll\n");
           }
         }
-        if (in_edge & (BTN_UP | BTN_DOWN)) { /* into the sheet */
+        if ((in_edge & (BTN_UP | BTN_DOWN)) && rolls_left < 3) {
+          /* into the sheet — locked until the dice have been rolled */
           incats = 1;
           if (cur == 5)
             draw_roll_btn(0);

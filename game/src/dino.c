@@ -26,8 +26,8 @@ static const uint art_dino_a[22] = {
   0x0ff00000,
   0x07e00000,
   0x06600000,
-  0x06300000,
-  0x071c0000,
+  0x06700000,
+  0x07000000,
   0x00000000,
 };
 /* art_dino_b: 20x22 */
@@ -50,9 +50,9 @@ static const uint art_dino_b[22] = {
   0x1ff80000,
   0x0ff00000,
   0x07e00000,
-  0x06700000,
-  0x07000000,
-  0x07800000,
+  0x06600000,
+  0x07600000,
+  0x00700000,
   0x00000000,
 };
 /* art_dino_dead: 20x22 */
@@ -76,8 +76,8 @@ static const uint art_dino_dead[22] = {
   0x0ff00000,
   0x07e00000,
   0x06600000,
-  0x06300000,
-  0x071c0000,
+  0x06700000,
+  0x07000000,
   0x00000000,
 };
 /* art_cact_s: 12x24 */
@@ -141,6 +141,15 @@ static const uint art_cact_l[30] = {
   0x01e00000,
 };
 
+/* art_cloud: 20x5, drifting in the distant sky */
+static const uint art_cloud[5] = {
+  0x07c00000,
+  0x1ff38000,
+  0x3fffc000,
+  0x7fffe000,
+  0x3fff8000,
+};
+
 #define DW 20
 #define DH 22
 #define CSW 12
@@ -150,6 +159,7 @@ static const uint art_cact_l[30] = {
 
 #define C_BG RGB(255, 255, 255)
 #define C_FG RGB(60, 60, 60)
+#define C_CLOUD RGB(185, 192, 205)
 #define C_CACT RGB(0, 130, 60)
 #define C_OVER RGB(200, 40, 40)
 
@@ -162,6 +172,7 @@ static ushort cell_run_b[DW * DH];
 static ushort cell_dead[DW * DH];
 static ushort cell_cact_s[CSW * CSH];
 static ushort cell_cact_l[CLW * CLH];
+static ushort cell_cloud[20 * 5];
 
 /* one obstacle slot: x < -100 = free */
 struct obst {
@@ -175,8 +186,24 @@ static void
 draw_ground(void)
 {
   gfx_fill(0, GROUND_Y, LCD_W, 2, C_FG);
-  for (int x = 6; x < LCD_W; x += 24)
-    gfx_fill(x, GROUND_Y + 5, 8, 1, C_FG);
+}
+
+/* the dash row under the ground line slides with the world */
+static void
+draw_dashes(int goff)
+{
+  gfx_fill(0, GROUND_Y + 5, LCD_W, 1, C_BG);
+  for (int x = 6 - goff; x < LCD_W; x += 24) {
+    int xx = x, ww = 8;
+    if (xx < 0) {
+      ww += xx;
+      xx = 0;
+    }
+    if (xx + ww > LCD_W)
+      ww = LCD_W - xx;
+    if (ww > 0)
+      gfx_fill(xx, GROUND_Y + 5, ww, 1, C_FG);
+  }
 }
 
 static void
@@ -210,19 +237,36 @@ dino_run(void)
   gfx_sprite(art_dino_dead, DW, DH, C_FG, C_BG, cell_dead);
   gfx_sprite(art_cact_s, CSW, CSH, C_CACT, C_BG, cell_cact_s);
   gfx_sprite(art_cact_l, CLW, CLH, C_CACT, C_BG, cell_cact_l);
+  gfx_sprite(art_cloud, 20, 5, C_CLOUD, C_BG, cell_cloud);
 
 restart:
   uputs("dino: start\n");
   led(0x104010, 0x000000); /* runner green, second dark */
   gfx_clear(C_BG);
   draw_ground();
+  draw_dashes(0);
   draw_score(0);
   gfx_present();
 
   int y_fp = 0;  /* dino height above ground, 8.8 fixed point, up > 0 */
   int vy_fp = 0; /* velocity */
   uint score = 0, frame = 0;
-  int speed = 4, gap = 45; /* frames until next spawn attempt */
+  int gap = 45; /* frames until next spawn attempt */
+  /* world speed in 8.8 px/frame. The accumulator only ever emits
+   * EVEN pixel steps (blits stay word-aligned), the leftover carries,
+   * so the ramp is smooth even though positions move 2 px at a time. */
+  int speed_fp = 1024; /* 4.0 */
+  int move_acc = 0, goff = 0;
+  struct cld {
+    int x, y;
+  };
+  struct cld clouds[2];
+  clouds[0].x = 150;
+  clouds[0].y = 40;
+  clouds[1].x = 40;
+  clouds[1].y = 64;
+  gfx_blit(clouds[0].x, clouds[0].y, cell_cloud, 20, 5);
+  gfx_blit(clouds[1].x, clouds[1].y, cell_cloud, 20, 5);
   obs[0].x = obs[1].x = -1000;
 
   for (;;) {
@@ -246,6 +290,12 @@ restart:
       }
     }
 
+    /* the world scrolls by an even step from the 8.8 accumulator */
+    move_acc += speed_fp;
+    int dx = (move_acc >> 8) & ~1;
+    move_acc -= dx << 8;
+    int speed_px = speed_fp >> 8;
+
     /* obstacles march left; spawn on a cooling-down random gap */
     if (gap > 0)
       gap--;
@@ -254,18 +304,34 @@ restart:
       if (o->x < -100) {
         if (gap == 0) {
           spawn(o, score);
-          gap = 30 + (int)rng_below(40) - (speed * 2);
+          gap = 30 + (int)rng_below(40) - (speed_px * 2);
           if (gap < 18)
             gap = 18;
         }
         continue;
       }
-      o->x -= speed;
+      o->x -= dx;
       if (o->x + o->w <= 0)
         o->x = -1000;
     }
 
-    /* score + difficulty */
+    /* ground dashes slide with the world; clouds drift on their own */
+    goff += dx;
+    if (goff >= 24)
+      goff -= 24;
+    draw_dashes(goff);
+    if ((frame & 7) == 0) {
+      for (int i = 0; i < 2; i++) {
+        gfx_fill(clouds[i].x, clouds[i].y, 20, 5, C_BG);
+        clouds[i].x -= 2;
+        if (clouds[i].x < -20)
+          clouds[i].x = LCD_W;
+        gfx_blit(clouds[i].x, clouds[i].y, cell_cloud, 20, 5);
+      }
+    }
+
+    /* score + difficulty: the speed creeps up a little at a time
+     * (4.0 -> 10.0 px/frame over ~100 s) instead of stepping */
     if ((frame & 1) == 0) {
       score++;
       if (score % 100 == 0) { /* milestone chirp + flash */
@@ -273,9 +339,8 @@ restart:
         led(0x404040, 0x104010);
       }
     }
-    if (score == 150 || score == 400 || score == 800)
-      if (speed < 10)
-        speed += 2;
+    if (speed_fp < 2560 && (frame & 31) == 0)
+      speed_fp += 16;
 
     /* redraw the play strip: sky, dino, cacti, ground fringe */
     gfx_fill(0, STRIP_Y, LCD_W, GROUND_Y - STRIP_Y, C_BG);
@@ -288,7 +353,7 @@ restart:
       if (obs[i].x > -100)
         gfx_blit(obs[i].x, GROUND_Y - obs[i].h, obs[i].cell, obs[i].w,
                  obs[i].h);
-    if ((frame & 7) == 0)
+    if ((frame & 1) == 0)
       draw_score(score);
     gfx_present();
 
@@ -310,8 +375,8 @@ restart:
     snd_play(220, 70, 18);
     led(0x600000, 0x600000);
     gfx_blit(DINO_X, dy, cell_dead, DW, DH);
-    gfx_text2(48, 130, "GAME OVER", C_OVER, C_BG);
-    gfx_text(24, 154, "press: retry  down: menu", C_FG, C_BG);
+    gfx_text2(48, 56, "GAME OVER", C_OVER, C_BG);
+    gfx_text(24, 80, "press: retry  down: menu", C_FG, C_BG);
     gfx_present();
     uputs("dino: over score=");
     uputn(score);
