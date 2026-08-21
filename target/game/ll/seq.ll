@@ -18,7 +18,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @.str.8 = private unnamed_addr constant [15 x i8] c"seq: step set\0A\00", align 1
 @in_down = external dso_local local_unnamed_addr global i32, align 4
 @.str.9 = private unnamed_addr constant [11 x i8] c"seq: exit\0A\00", align 1
-@dlen = internal unnamed_addr constant [6 x i32] [i32 0, i32 3000, i32 2000, i32 2200, i32 800, i32 3000], align 4
+@dlen = internal unnamed_addr constant [6 x i32] [i32 0, i32 2800, i32 1900, i32 2000, i32 800, i32 2700], align 4
 @daddr = internal unnamed_addr global [6 x i32] zeroinitializer, align 4
 @dcol = internal unnamed_addr constant [6 x i16] [i16 8390, i16 -1339, i16 -377, i16 16111, i16 18012, i16 -17537], align 2
 @dletter = internal unnamed_addr constant [6 x i8] c".KSTHC", align 1
@@ -37,7 +37,7 @@ define dso_local void @seq_run() local_unnamed_addr #0 {
   br label %3
 
 3:                                                ; preds = %43, %2
-  %4 = phi i32 [ 537051136, %2 ], [ %48, %43 ]
+  %4 = phi i32 [ 537059328, %2 ], [ %48, %43 ]
   %5 = phi i32 [ 1, %2 ], [ %49, %43 ]
   %6 = icmp eq i32 %5, 6
   br i1 %6, label %7, label %43
@@ -52,7 +52,7 @@ define dso_local void @seq_run() local_unnamed_addr #0 {
   %12 = phi i32 [ 1, %7 ], [ %27, %25 ]
   %13 = phi i32 [ 14000, %7 ], [ %29, %25 ]
   %14 = phi i32 [ 0, %7 ], [ %33, %25 ]
-  %15 = icmp eq i32 %14, 3000
+  %15 = icmp eq i32 %14, 2800
   br i1 %15, label %34, label %16
 
 16:                                               ; preds = %10
@@ -85,16 +85,16 @@ define dso_local void @seq_run() local_unnamed_addr #0 {
 34:                                               ; preds = %10
   %35 = load i32, ptr getelementptr inbounds nuw (i8, ptr @daddr, i32 8), align 4, !tbaa !3
   %36 = inttoptr i32 %35 to ptr
-  tail call fastcc void @render_square(ptr noundef %36, i32 noundef 2000, i32 noundef 67, i32 noundef 0, i32 noundef 10000, i32 noundef 9) #5
+  tail call fastcc void @render_square(ptr noundef %36, i32 noundef 1900, i32 noundef 67, i32 noundef 0, i32 noundef 10000, i32 noundef 9) #5
   %37 = load i32, ptr getelementptr inbounds nuw (i8, ptr @daddr, i32 12), align 4, !tbaa !3
   %38 = inttoptr i32 %37 to ptr
-  tail call fastcc void @render_square(ptr noundef %38, i32 noundef 2200, i32 noundef 138, i32 noundef 1, i32 noundef 12000, i32 noundef 11) #5
+  tail call fastcc void @render_square(ptr noundef %38, i32 noundef 2000, i32 noundef 138, i32 noundef 1, i32 noundef 12000, i32 noundef 11) #5
   %39 = load i32, ptr getelementptr inbounds nuw (i8, ptr @daddr, i32 16), align 4, !tbaa !3
   %40 = inttoptr i32 %39 to ptr
   tail call fastcc void @render_noise(ptr noundef %40, i32 noundef 800, i32 noundef 7) #5
   %41 = load i32, ptr getelementptr inbounds nuw (i8, ptr @daddr, i32 20), align 4, !tbaa !3
   %42 = inttoptr i32 %41 to ptr
-  tail call fastcc void @render_noise(ptr noundef %42, i32 noundef 3000, i32 noundef 10) #5
+  tail call fastcc void @render_noise(ptr noundef %42, i32 noundef 2700, i32 noundef 10) #5
   br label %50
 
 43:                                               ; preds = %3
@@ -515,7 +515,7 @@ declare dso_local void @led(i32 noundef, i32 noundef) local_unnamed_addr #1
 declare dso_local void @gdma_copy(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize memory(argmem: readwrite, inaccessiblemem: readwrite)
-define internal fastcc void @render_square(ptr noundef %0, i32 noundef range(i32 2000, 2201) %1, i32 noundef range(i32 67, 139) %2, i32 noundef range(i32 0, 2) %3, i32 noundef range(i32 10000, 12001) %4, i32 noundef range(i32 9, 12) %5) unnamed_addr #3 {
+define internal fastcc void @render_square(ptr noundef %0, i32 noundef range(i32 1900, 2001) %1, i32 noundef range(i32 67, 139) %2, i32 noundef range(i32 0, 2) %3, i32 noundef range(i32 10000, 12001) %4, i32 noundef range(i32 9, 12) %5) unnamed_addr #3 {
   %7 = icmp ne i32 %3, 0
   br label %8
 
@@ -556,7 +556,7 @@ define internal fastcc void @render_square(ptr noundef %0, i32 noundef range(i32
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize memory(argmem: readwrite, inaccessiblemem: readwrite)
-define internal fastcc void @render_noise(ptr noundef %0, i32 noundef range(i32 800, 3001) %1, i32 noundef range(i32 7, 11) %2) unnamed_addr #3 {
+define internal fastcc void @render_noise(ptr noundef %0, i32 noundef range(i32 800, 2701) %1, i32 noundef range(i32 7, 11) %2) unnamed_addr #3 {
   br label %4
 
 4:                                                ; preds = %10, %3

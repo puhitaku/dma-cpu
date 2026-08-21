@@ -94,7 +94,7 @@ void frame_sync(uint us); /* pace the caller's loop to one tick per us */
  * budget counts in every loop that paces itself.
  * The audio ring is 16 KiB at a fixed 16 KiB-aligned address (the
  * ring wrap is an address mask): 4096 L|R frames, which is also one
- * sequencer step. Reserved region 0x2002C000..0x2003C000 holds the
+ * sequencer step. Reserved region 0x2002E000..0x2003C000 holds the
  * drum PCM then the ring; dmxgen asserts the image stays clear. */
 #define AURING 0x20038000u
 #define AURING_BYTES 16384u

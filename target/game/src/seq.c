@@ -24,7 +24,7 @@
 #define NSTEP 16
 #define NINST 6 /* 0 = rest */
 
-#define DRUMS 0x2002C000u /* PCM arena below the ring (g.h) */
+#define DRUMS 0x2002E000u /* PCM arena below the ring (g.h) */
 
 #define C_BG RGB(16, 10, 28)
 #define C_TEXT RGB(190, 180, 210)
@@ -33,7 +33,7 @@
 #define C_PLAY RGB(255, 210, 60)
 
 /* per-instrument: PCM frames, cell color, letter */
-static const int dlen[NINST] = {0, 3000, 2000, 2200, 800, 3000};
+static const int dlen[NINST] = {0, 2800, 1900, 2000, 800, 2700};
 static uint daddr[NINST];
 static const ushort dcol[NINST] = {
     RGB(34, 26, 52),  RGB(255, 90, 40),  RGB(255, 210, 60),

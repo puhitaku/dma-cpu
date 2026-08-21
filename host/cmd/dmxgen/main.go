@@ -803,9 +803,9 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			sfxBlob = append(sfxBlob, 0)
 		}
 	}
-	// Fixed audio region (fx.c/seq.c): drum PCM from 0x2002C000, the
+	// Fixed audio region (fx.c/seq.c): drum PCM from 0x2002E000, the
 	// 16 KiB ring at 0x20038000. Nothing in the image may grow in.
-	const auBase, auEnd = 0x2002C000, 0x2003C000
+	const auBase, auEnd = 0x2002E000, 0x2003C000
 	for _, seg := range prog.Image.Segments {
 		end := seg.LinkAddr + uint32(len(seg.Data))
 		if seg.LinkAddr < auEnd && end > auBase {
