@@ -146,9 +146,10 @@ draw_cat(int c, int cursor)
   gfx_text(10, y, catname[c], scores[c] >= 0 ? C_DIM : C_TEXT,
            cursor ? C_PANEL : C_BG);
   char b[4];
-  if (scores[c] >= 0) {
+  if (scores[c] >= 0) { /* booked: dimmed like its name — bright was
+                         * too easy to mistake for an open preview */
     numsp(b, 3, (uint)scores[c]);
-    gfx_text(200, y, b, C_SCORE, cursor ? C_PANEL : C_BG);
+    gfx_text(200, y, b, C_DIM, cursor ? C_PANEL : C_BG);
   } else if (rolls_left < 3) { /* no previews before the first roll */
     numsp(b, 3, (uint)cat_score(c));
     gfx_text(200, y, b, C_PREV, cursor ? C_PANEL : C_BG);
@@ -179,8 +180,11 @@ roll_anim(void)
   for (int i = 0; i < 5; i++)
     fin[i] = dice[i];
   for (int t = 0; t < 7; t++) {
-    for (int f = 0; f < pause[t]; f++)
+    for (int f = 0; f < pause[t]; f++) {
       frame_sync(33000);
+      if (f == 0)
+        led(0, 0); /* each tick is a one-frame faint blink */
+    }
     for (int i = 0; i < 5; i++)
       if (!held[i])
         dice[i] = t == 6 ? fin[i] : 1 + (int)rng_below(6);
@@ -188,8 +192,11 @@ roll_anim(void)
       if (!held[i])
         draw_die(i, 0);
     snd_play(t == 6 ? 900 : 1400, 25, 1); /* tick, lower final thunk */
+    led(LED_DIM(0xFFFFFF), LED_DIM(0xFFFFFF)); /* faint, with the tick */
     gfx_present();
   }
+  frame_sync(33000);
+  led(0, 0); /* dice settled: lights out */
   for (int i = 0; i < 5; i++)
     dice[i] = fin[i];
 }
@@ -291,7 +298,6 @@ yacht_run(void)
             draw_die(cur, 1);
             gfx_present();
           } else if (rolls_left > 0) {
-            led(LED_BRIGHT(0xFFFFFF), LED_BRIGHT(0xFFFFFF));
             roll_dice();
             roll_anim();
             draw_roll_btn(1);
