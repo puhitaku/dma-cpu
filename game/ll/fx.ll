@@ -174,6 +174,13 @@ define dso_local void @snd_play(i32 noundef %0, i32 noundef %1, i32 noundef %2) 
 declare dso_local void @gdma_copy(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize nounwind optsize
+define dso_local void @snd_off() local_unnamed_addr #1 {
+  store i32 0, ptr @snd_frames, align 4, !tbaa !3
+  tail call void @gdma_fill(i32 noundef 537100288, i32 noundef 0, i32 noundef 16384) #7
+  ret void
+}
+
+; Function Attrs: minsize nounwind optsize
 define dso_local void @snd_tick() local_unnamed_addr #1 {
   %1 = load i32, ptr @snd_frames, align 4, !tbaa !3
   %2 = icmp eq i32 %1, 0

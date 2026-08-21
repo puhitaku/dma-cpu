@@ -149,6 +149,15 @@ snd_play(uint hz, uint vol, uint frames)
   snd_frames = frames;
 }
 
+/* snd_off: silence now — the ring zeroes and any pending tone
+ * budget is dropped. */
+void
+snd_off(void)
+{
+  snd_frames = 0;
+  gdma_fill(AURING, 0, AURING_BYTES);
+}
+
 /* snd_tick: frame_sync calls this once per frame; the tone decays to
  * silence (a zeroed ring) when its budget runs out. */
 void

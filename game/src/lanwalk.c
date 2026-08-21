@@ -28,6 +28,7 @@ static uchar stack[CELLS];
 
 static const signed char dr[4] = {-1, 0, 1, 0};
 static const signed char dc[4] = {0, 1, 0, -1};
+static const uchar bit4[4] = {1, 2, 4, 8}; /* 1<<d without runtime shl */
 
 static uint
 rotcw(uint m)
@@ -68,8 +69,8 @@ gen_board(void)
     }
     int d = cand[rng_below((uint)n)];
     int nx = neigh(cur, d);
-    mask[cur] |= (uchar)(1u << d);
-    mask[nx] |= (uchar)(1u << ((d + 2) & 3));
+    mask[cur] |= bit4[d];
+    mask[nx] |= bit4[(d + 2) & 3];
     lit[nx] = 1;
     stack[sp++] = (uchar)nx;
   }
@@ -96,7 +97,7 @@ relight(void)
       int nx = neigh(cur, d);
       if (nx < 0 || lit[nx])
         continue;
-      if ((mask[cur] & (1u << d)) && (mask[nx] & (1u << ((d + 2) & 3)))) {
+      if ((mask[cur] & bit4[d]) && (mask[nx] & bit4[(d + 2) & 3])) {
         lit[nx] = 1;
         stack[sp++] = (uchar)nx;
       }

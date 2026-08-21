@@ -13,17 +13,24 @@ static uint in_prev;
 static int in_primed; /* first poll only baselines (no phantom edges) */
 
 /* Per-stick pin tables in BTN bit order (up, down, left, right,
- * press) — the harness wires roles out of GPIO order (g.h). */
+ * press) — the harness wires roles out of GPIO order (g.h). The
+ * poll runs every frame at 60 fps, so the GPIO STATUS addresses are
+ * precomputed and read inline: no per-pin call, no address math. */
 static const uchar joyA[5] = {3, 4, 2, 5, 6};
 static const uchar joyB[5] = {8, 9, 7, 10, 11};
+#define GSTAT(pin) (IOBANK0 + 8u * (pin))
+static const uint joyAaddr[5] = {GSTAT(3), GSTAT(4), GSTAT(2), GSTAT(5),
+                                 GSTAT(6)};
+static const uint joyBaddr[5] = {GSTAT(8), GSTAT(9), GSTAT(7), GSTAT(10),
+                                 GSTAT(11)};
 
 static uint
-stick(const uchar *pins)
+stick(const uint *addrs)
 {
-  uint m = 0;
-  for (int i = 0; i < 5; i++)
-    if (!gpio_in(pins[i])) /* low = pressed */
-      m |= 1u << i;
+  uint m = 0, bit = 1;
+  for (int i = 0; i < 5; i++, bit <<= 1)
+    if (!(W32(addrs[i]) & 0x20000u)) /* low = pressed */
+      m |= bit;
   return m;
 }
 
@@ -36,7 +43,7 @@ in_poll(void)
       gpio_in_init(joyB[i]);
     }
   }
-  uint now = stick(joyA) | stick(joyB);
+  uint now = stick(joyAaddr) | stick(joyBaddr);
   if (!in_primed) {
     in_primed = 1;
     in_prev = now;

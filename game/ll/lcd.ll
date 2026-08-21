@@ -58,42 +58,28 @@ define internal fastcc void @lcd_cmd(i32 noundef range(i32 17, 59) %0) unnamed_a
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @lcd_flush(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3) local_unnamed_addr #0 {
   tail call fastcc void @lcd_cmd(i32 noundef 42) #4
-  %5 = lshr i32 %0, 8
-  tail call fastcc void @spi_put8(i32 noundef %5) #4
+  tail call fastcc void @spi_put8(i32 noundef 0) #4
   tail call fastcc void @spi_put8(i32 noundef %0) #4
-  %6 = lshr i32 %2, 8
-  tail call fastcc void @spi_put8(i32 noundef %6) #4
+  tail call fastcc void @spi_put8(i32 noundef 0) #4
   tail call fastcc void @spi_put8(i32 noundef %2) #4
   tail call fastcc void @lcd_cmd(i32 noundef 43) #4
-  %7 = lshr i32 %1, 8
-  tail call fastcc void @spi_put8(i32 noundef %7) #4
+  tail call fastcc void @spi_put8(i32 noundef 0) #4
   tail call fastcc void @spi_put8(i32 noundef %1) #4
-  %8 = lshr i32 %3, 8
-  tail call fastcc void @spi_put8(i32 noundef %8) #4
+  tail call fastcc void @spi_put8(i32 noundef 0) #4
   tail call fastcc void @spi_put8(i32 noundef %3) #4
   tail call fastcc void @lcd_cmd(i32 noundef 44) #4
   tail call fastcc void @spi_bits(i32 noundef 16) #4
+  %5 = mul nsw i32 %1, 240
+  %6 = add nsw i32 %5, %0
+  %7 = getelementptr inbounds [57600 x i16], ptr @fb, i32 0, i32 %6
+  %8 = ptrtoint ptr %7 to i32
   %9 = sub i32 %2, %0
   %10 = add i32 %9, 1
-  br label %11
-
-11:                                               ; preds = %15, %4
-  %12 = phi i32 [ %1, %4 ], [ %20, %15 ]
-  %13 = icmp sgt i32 %12, %3
-  br i1 %13, label %14, label %15
-
-14:                                               ; preds = %11
+  %11 = sub i32 %3, %1
+  %12 = add i32 %11, 1
+  tail call void @gdma_spi_rows(i32 noundef %8, i32 noundef %10, i32 noundef %12, i32 noundef 480) #3
   tail call fastcc void @spi_bits(i32 noundef 8) #4
   ret void
-
-15:                                               ; preds = %11
-  %16 = mul nsw i32 %12, 240
-  %17 = add nsw i32 %16, %0
-  %18 = getelementptr inbounds [57600 x i16], ptr @fb, i32 0, i32 %17
-  %19 = ptrtoint ptr %18 to i32
-  tail call void @gdma_spi16(i32 noundef %19, i32 noundef %10) #3
-  %20 = add nsw i32 %12, 1
-  br label %11, !llvm.loop !7
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
@@ -108,7 +94,7 @@ define internal fastcc void @spi_bits(i32 noundef range(i32 8, 17) %0) unnamed_a
 }
 
 ; Function Attrs: minsize optsize
-declare dso_local void @gdma_spi16(i32 noundef, i32 noundef) local_unnamed_addr #1
+declare dso_local void @gdma_spi_rows(i32 noundef, i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
 define internal fastcc void @spi_wait_idle() unnamed_addr #2 {
@@ -118,7 +104,7 @@ define internal fastcc void @spi_wait_idle() unnamed_addr #2 {
   %2 = load volatile i32, ptr inttoptr (i32 1073987596 to ptr), align 4, !tbaa !3
   %3 = and i32 %2, 16
   %4 = icmp eq i32 %3, 0
-  br i1 %4, label %5, label %1, !llvm.loop !10
+  br i1 %4, label %5, label %1, !llvm.loop !7
 
 5:                                                ; preds = %1
   ret void
@@ -132,7 +118,7 @@ define internal fastcc void @spi_put8(i32 noundef %0) unnamed_addr #2 {
   %3 = load volatile i32, ptr inttoptr (i32 1073987596 to ptr), align 4, !tbaa !3
   %4 = and i32 %3, 2
   %5 = icmp eq i32 %4, 0
-  br i1 %5, label %2, label %6, !llvm.loop !11
+  br i1 %5, label %2, label %6, !llvm.loop !10
 
 6:                                                ; preds = %2
   %7 = and i32 %0, 255
@@ -160,4 +146,3 @@ attributes #4 = { minsize nobuiltin optsize "no-builtins" }
 !8 = !{!"llvm.loop.mustprogress"}
 !9 = !{!"llvm.loop.unroll.disable"}
 !10 = distinct !{!10, !8, !9}
-!11 = distinct !{!11, !8, !9}

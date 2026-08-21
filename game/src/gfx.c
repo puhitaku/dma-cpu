@@ -57,17 +57,38 @@ gfx_clear(ushort c)
   gfx_damage(0, 0, LCD_W - 1, LCD_H - 1);
 }
 
+static uint fillword; /* gdma_rows refill source for fills */
+
+/* halve a small count without a shift: w>>1 is a ~30-iteration
+ * runtime call, and clang idiom-recognizes a counting loop right
+ * back into one — a lookup table is safe from both. */
+static uchar half_tab[LCD_W + 1];
+
+static uint
+halfof(int w)
+{
+  if (half_tab[2] == 0) { /* build once */
+    uint n = 0;
+    for (int i = 0; i <= LCD_W; i++) {
+      half_tab[i] = (uchar)n;
+      if (i & 1)
+        n++;
+    }
+  }
+  return half_tab[w];
+}
+
 void
 gfx_fill(int x, int y, int w, int h, ushort c)
 {
   if (w <= 0 || h <= 0)
     return;
-  for (int r = 0; r < h; r++) {
-    ushort *p = &fb[(y + r) * LCD_W + x];
-    /* row fill: word-wide when aligned and even, else scalar */
-    if (((uint)p & 3) == 0 && (w & 1) == 0)
-      gdma_fill((uint)p, (uint)c | ((uint)c << 16), (uint)w * 2);
-    else
+  ushort *p = &fb[y * LCD_W + x];
+  if (((uint)p & 3) == 0 && (w & 1) == 0) {
+    fillword = (uint)c | ((uint)c << 16);
+    gdma_rows((uint)p, (uint)&fillword, halfof(w), h, LCD_W * 2, 0);
+  } else {
+    for (int r = 0; r < h; r++, p += LCD_W)
       for (int i = 0; i < w; i++)
         p[i] = c;
   }
@@ -83,8 +104,13 @@ gfx_text(int x, int y, const char *s, ushort fg, ushort bg)
     for (int r = 0; r < 8; r++) {
       ushort *p = &fb[(y + r) * LCD_W + cx];
       uint bits = g[r];
-      for (int i = 0; i < 8; i++)
-        p[i] = (bits & (0x80u >> i)) ? fg : bg;
+      /* LEFT-running mask, walking pixels right-to-left: on this
+       * machine << 1 is one sniff double, while ANY >> — even >> 1 —
+       * is a ~30-iteration runtime loop (rt_lshr was 75%% of the
+       * frame in the sampling profile) */
+      uint mask = 1;
+      for (int i = 7; i >= 0; i--, mask <<= 1)
+        p[i] = (bits & mask) ? fg : bg;
     }
   }
   gfx_damage(x, y, cx - 1, y + 7);
@@ -99,8 +125,9 @@ gfx_text2(int x, int y, const char *s, ushort fg, ushort bg)
     for (int r = 0; r < 8; r++) {
       ushort *p = &fb[(y + r * 2) * LCD_W + cx];
       uint bits = g[r];
-      for (int i = 0; i < 8; i++) {
-        ushort c = (bits & (0x80u >> i)) ? fg : bg;
+      uint mask = 1; /* left-running mask: see gfx_text */
+      for (int i = 7; i >= 0; i--, mask <<= 1) {
+        ushort c = (bits & mask) ? fg : bg;
         p[i * 2] = c;
         p[i * 2 + 1] = c;
         p[LCD_W + i * 2] = c;
@@ -149,11 +176,32 @@ gfx_blit(int x, int y, const ushort *src, int w, int h)
   const ushort *row = src + sx;
   for (int r = 0; r < sy; r++)
     row += w + sx; /* original stride is the unclipped width */
-  for (int r = 0; r < ch; r++) {
-    gdma_copy((uint)&fb[(y + r) * LCD_W + x], (uint)row, (uint)cw * 2);
-    row += w + sx;
-  }
+  if ((((uint)row | (uint)&fb[y * LCD_W + x]) & 3) == 0)
+    gdma_rows((uint)&fb[y * LCD_W + x], (uint)row, halfof(cw), ch,
+              LCD_W * 2, ((uint)w + (uint)sx) * 2);
+  else
+    for (int r = 0; r < ch; r++) {
+      gdma_copy((uint)&fb[(y + r) * LCD_W + x], (uint)row, (uint)cw * 2);
+      row += w + sx;
+    }
   gfx_damage(x, y, x + cw - 1, y + ch - 1);
+}
+
+/* gfx_glyph_cell: render one font glyph into a 64-pixel cell, so hot
+ * paths can blit text instead of re-rendering it per pixel (the
+ * dino's score draw was ~60%% of its frame). */
+void
+gfx_glyph_cell(int ch, ushort fg, ushort bg, ushort *dst)
+{
+  const uchar *g = &fbfont[(uint)(ch & 0x7F) * 8];
+  int idx = 0;
+  for (int r = 0; r < 8; r++) {
+    uint bits = g[r];
+    uint mask = 1;
+    for (int i = 7; i >= 0; i--, mask <<= 1)
+      dst[idx + i] = (bits & mask) ? fg : bg;
+    idx += 8;
+  }
 }
 
 /* Render a 1bpp bitmap (each row a 32-bit word, MSB = leftmost pixel)
@@ -165,7 +213,9 @@ gfx_sprite(const uint *rows, int w, int h, ushort fg, ushort bg, ushort *dst)
   int idx = 0;
   for (int r = 0; r < h; r++) {
     uint bits = rows[r];
-    for (int c = 0; c < w; c++)
-      dst[idx++] = (bits & (0x80000000u >> c)) ? fg : bg;
+    uint mask = 1u << (32 - w); /* left-running mask: see gfx_text */
+    for (int c = w - 1; c >= 0; c--, mask <<= 1)
+      dst[idx + c] = (bits & mask) ? fg : bg;
+    idx += w;
   }
 }

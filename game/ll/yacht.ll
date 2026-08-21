@@ -653,22 +653,22 @@ define internal fastcc void @draw_die(i32 noundef %0, i32 noundef range(i32 0, 2
 
 12:                                               ; preds = %35, %2
   %13 = phi i32 [ 0, %2 ], [ %36, %35 ]
-  %14 = icmp eq i32 %13, 9
-  br i1 %14, label %15, label %19
+  %14 = phi i32 [ 1, %2 ], [ %37, %35 ]
+  %15 = icmp eq i32 %13, 9
+  br i1 %15, label %16, label %20
 
-15:                                               ; preds = %12
-  %16 = getelementptr inbounds [5 x i32], ptr @held, i32 0, i32 %0
-  %17 = load i32, ptr %16, align 4, !tbaa !3
-  %18 = icmp eq i32 %17, 0
-  br i1 %18, label %39, label %37
+16:                                               ; preds = %12
+  %17 = getelementptr inbounds [5 x i32], ptr @held, i32 0, i32 %0
+  %18 = load i32, ptr %17, align 4, !tbaa !3
+  %19 = icmp eq i32 %18, 0
+  br i1 %19, label %40, label %38
 
-19:                                               ; preds = %12
-  %20 = shl nuw nsw i32 1, %13
-  %21 = and i32 %20, %10
+20:                                               ; preds = %12
+  %21 = and i32 %14, %10
   %22 = icmp eq i32 %21, 0
   br i1 %22, label %35, label %23
 
-23:                                               ; preds = %19
+23:                                               ; preds = %20
   %24 = trunc nuw i32 %13 to i8
   %25 = freeze i8 %24
   %26 = udiv i8 %25, 3
@@ -683,24 +683,25 @@ define internal fastcc void @draw_die(i32 noundef %0, i32 noundef range(i32 0, 2
   tail call void @gfx_fill(i32 noundef %31, i32 noundef %34, i32 noundef 4, i32 noundef 4, i16 noundef zeroext 4259) #6
   br label %35
 
-35:                                               ; preds = %19, %23
+35:                                               ; preds = %20, %23
   %36 = add nuw nsw i32 %13, 1
+  %37 = shl i32 %14, 1
   br label %12, !llvm.loop !30
 
-37:                                               ; preds = %15
-  %38 = add nsw i32 %3, 8
-  tail call void @gfx_fill(i32 noundef %38, i32 noundef 49, i32 noundef 24, i32 noundef 4, i16 noundef zeroext -377) #6
-  br label %39
+38:                                               ; preds = %16
+  %39 = add nsw i32 %3, 8
+  tail call void @gfx_fill(i32 noundef %39, i32 noundef 49, i32 noundef 24, i32 noundef 4, i16 noundef zeroext -377) #6
+  br label %40
 
-39:                                               ; preds = %37, %15
-  %40 = icmp eq i32 %1, 0
-  br i1 %40, label %42, label %41
+40:                                               ; preds = %38, %16
+  %41 = icmp eq i32 %1, 0
+  br i1 %41, label %43, label %42
 
-41:                                               ; preds = %39
+42:                                               ; preds = %40
   tail call void @gfx_rect(i32 noundef %5, i32 noundef 16, i32 noundef 32, i32 noundef 40, i32 noundef 2, i16 noundef zeroext -1337) #6
-  br label %42
+  br label %43
 
-42:                                               ; preds = %41, %39
+43:                                               ; preds = %42, %40
   ret void
 }
 

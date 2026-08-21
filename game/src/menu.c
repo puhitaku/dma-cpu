@@ -58,11 +58,21 @@ menu_run(void)
       uputs("\n");
     }
     if (in_edge & BTN_A) {
-      snd_play(1000, 60, 4);
       led(LED_BRIGHT(0x00FF40), LED_BRIGHT(0x00FF40));
       uputs("start: ");
       uputs(names[sel]);
       uputs("\n");
+      /* launch fanfare: a rapid C5-E5-G5 arpeggio, timed by the
+       * hardware clock so every game gets the identical jingle (a
+       * frame-counted tone died at whatever pace the next game's
+       * first frames happened to run). */
+      snd_play(523, 55, 255);
+      delay_us(55000);
+      snd_play(659, 55, 255);
+      delay_us(55000);
+      snd_play(784, 55, 255);
+      delay_us(90000);
+      snd_off();
       return sel;
     }
     if (now_us() - t0 >= 1000000) {

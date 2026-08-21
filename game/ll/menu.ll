@@ -109,13 +109,19 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
   br label %6, !llvm.loop !13
 
 45:                                               ; preds = %34
-  tail call void @snd_play(i32 noundef 1000, i32 noundef 60, i32 noundef 4) #2
   tail call void @led(i32 noundef 16144, i32 noundef 16144) #2
   tail call void @uputs(ptr noundef nonnull @.str.7) #2
   %46 = getelementptr inbounds [4 x ptr], ptr @names, i32 0, i32 %28
   %47 = load ptr, ptr %46, align 4, !tbaa !10
   tail call void @uputs(ptr noundef %47) #2
   tail call void @uputs(ptr noundef nonnull @.str.6) #2
+  tail call void @snd_play(i32 noundef 523, i32 noundef 55, i32 noundef 255) #2
+  tail call void @delay_us(i32 noundef 55000) #2
+  tail call void @snd_play(i32 noundef 659, i32 noundef 55, i32 noundef 255) #2
+  tail call void @delay_us(i32 noundef 55000) #2
+  tail call void @snd_play(i32 noundef 784, i32 noundef 55, i32 noundef 255) #2
+  tail call void @delay_us(i32 noundef 90000) #2
+  tail call void @snd_off() #2
   ret i32 %28
 }
 
@@ -173,6 +179,12 @@ declare dso_local void @in_poll() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @snd_play(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @delay_us(i32 noundef) local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @snd_off() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @uputn(i32 noundef) local_unnamed_addr #1

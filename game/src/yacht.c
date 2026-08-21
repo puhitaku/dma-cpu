@@ -36,8 +36,9 @@ draw_die(int i, int cursor)
   gfx_fill(x, y, 28, 28, C_DIE);
   gfx_rect(x, y, 28, 28, 1, C_PIP);
   uint p = pips[dice[i]];
-  for (int b = 0; b < 9; b++)
-    if (p & (1u << b)) {
+  uint bit = 1;
+  for (int b = 0; b < 9; b++, bit <<= 1)
+    if (p & bit) {
       int px = x + 4 + (b % 3) * 8, py = y + 4 + (b / 3) * 8;
       gfx_fill(px, py, 4, 4, C_PIP);
     }

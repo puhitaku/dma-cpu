@@ -123,13 +123,15 @@ gpio_in_init(int pin)
   W32(PADSBANK0 + 4 + 4 * (uint)pin) = PAD_INIT | 0x8; /* PUE */
 }
 
-int
+uint
 gpio_in(int pin)
 {
-  /* constant-mask test, not a shift: a variable >>17 costs a runtime
-   * rt_lshr call (~hundreds of records) and input polls ten pins per
-   * frame — this read is on the 60 fps hot path */
-  return (W32(IOBANK0 + 8 * (uint)pin) & 0x20000u) != 0;
+  /* Returns the RAW masked bit (nonzero = high), deliberately not a
+   * 0/1 bool: `!= 0` makes clang canonicalize the test into
+   * lshr 17 + and 1, and every >> on this machine is a ~30-iteration
+   * runtime loop — the sampling profiler clocked that one shift at
+   * 71%% of the dino frame. A bare mask has nothing to canonicalize. */
+  return W32(IOBANK0 + 8 * (uint)pin) & 0x20000u;
 }
 
 /* --- bulk DMA on channel 11 (the kdma pattern, bare-metal) --- */
@@ -175,12 +177,54 @@ gdma_fill(uint dst, uint word, uint bytes)
     W32(p) = word;
 }
 
+/* gdma_rows: n rows of `words` 32-bit words each, dst advancing by
+ * dstride bytes per row, src by sstride (0 = refill from the same
+ * place). One CTRL decode and NO shifts — the per-row gd_run path
+ * cost a runtime bytes>>2 per row, which the profiler saw. */
+void
+gdma_rows(uint dst, uint src, uint words, int rows, uint dstride,
+          uint sstride)
+{
+  /* AL3 alias trick: CTRL and TRANS_COUNT program ONCE (the count
+   * reloads itself on every trigger), so each row is two register
+   * writes — write addr, then READ_ADDR_TRIG fires it. The row loop
+   * is the hottest thing the profiler sees; every store here is
+   * dmacc-compiled and far from free. */
+  W32(DMACH(GD) + 0x10) = sstride ? memctrl : (memctrl & ~GD_INCR_READ);
+  W32(DMACH(GD) + 0x38) = words; /* AL3_TRANS_COUNT: the reload */
+  for (int r = 0; r < rows; r++) {
+    W32(DMACH(GD) + 0x34) = dst; /* AL3_WRITE_ADDR */
+    W32(DMACH(GD) + 0x3C) = src; /* AL3_READ_ADDR_TRIG: go */
+    while (W32(DMACH(GD) + 0x8) != 0)
+      ;
+    dst += dstride;
+    src += sstride;
+  }
+}
+
+/* gdma_spi_rows: the flush inner loop — dst (SPI DR), count, and
+ * CTRL are constant, so each row is ONE trigger write plus the
+ * completion poll. */
+void
+gdma_spi_rows(uint src, uint halfwords, int rows, uint sstride)
+{
+  W32(DMACH(GD) + 0x10) = spictrl;
+  W32(DMACH(GD) + 0x34) = SPI0 + 0x8;
+  W32(DMACH(GD) + 0x38) = halfwords;
+  for (int r = 0; r < rows; r++) {
+    W32(DMACH(GD) + 0x3C) = src; /* AL3_READ_ADDR_TRIG */
+    while (W32(DMACH(GD) + 0x8) != 0)
+      ;
+    src += sstride;
+  }
+}
+
 /* Stream halfwords into the SPI0 data register, paced by the TX
- * DREQ, then drain: the caller flips D/C right after. */
+ * DREQ. NO drain here: multi-row flushes only need the bus idle
+ * before the D/C flip, and spi_bits' wait_idle covers that — a
+ * per-row full drain serialized every row on the wire. */
 void
 gdma_spi16(uint src, uint halfwords)
 {
   gd_run(src, SPI0 + 0x8, halfwords, spictrl);
-  while (W32(SPI0 + 0xC) & 0x10) /* SSPSR.BSY */
-    ;
 }

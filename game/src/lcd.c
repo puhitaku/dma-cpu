@@ -105,22 +105,21 @@ lcd_init(void)
 void
 lcd_flush(int x0, int y0, int x1, int y1)
 {
+  /* high address bytes are always zero on a 240 px panel — and on
+   * this machine a >>8 is a runtime loop, so spell out the zeros */
   lcd_cmd(0x2A); /* CASET */
-  lcd_dat((uint)x0 >> 8);
+  lcd_dat(0);
   lcd_dat((uint)x0);
-  lcd_dat((uint)x1 >> 8);
+  lcd_dat(0);
   lcd_dat((uint)x1);
   lcd_cmd(0x2B); /* RASET */
-  lcd_dat((uint)y0 >> 8);
+  lcd_dat(0);
   lcd_dat((uint)y0);
-  lcd_dat((uint)y1 >> 8);
+  lcd_dat(0);
   lcd_dat((uint)y1);
   lcd_cmd(0x2C); /* RAMWR */
   spi_bits(16);
-  uint w = (uint)(x1 - x0 + 1);
-  for (int y = y0; y <= y1; y++) {
-    uint row = (uint)&fb[y * LCD_W + x0];
-    gdma_spi16(row, w);
-  }
-  spi_bits(8);
+  gdma_spi_rows((uint)&fb[y0 * LCD_W + x0], (uint)(x1 - x0 + 1),
+                y1 - y0 + 1, LCD_W * 2);
+  spi_bits(8); /* wait_idle inside covers the final drain */
 }

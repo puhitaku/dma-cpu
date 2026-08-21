@@ -249,14 +249,13 @@ define dso_local void @gpio_in_init(i32 noundef %0) local_unnamed_addr #0 {
 }
 
 ; Function Attrs: minsize mustprogress nofree norecurse nounwind optsize willreturn
-define dso_local range(i32 0, 2) i32 @gpio_in(i32 noundef %0) local_unnamed_addr #4 {
+define dso_local range(i32 0, 131073) i32 @gpio_in(i32 noundef %0) local_unnamed_addr #4 {
   %2 = shl i32 %0, 3
   %3 = add i32 %2, 1073823744
   %4 = inttoptr i32 %3 to ptr
   %5 = load volatile i32, ptr %4, align 8, !tbaa !9
-  %6 = lshr i32 %5, 17
-  %7 = and i32 %6, 1
-  ret i32 %7
+  %6 = and i32 %5, 131072
+  ret i32 %6
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
@@ -359,18 +358,78 @@ define dso_local void @gdma_fill(i32 noundef %0, i32 noundef %1, i32 noundef %2)
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
+define dso_local void @gdma_rows(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3, i32 noundef %4, i32 noundef %5) local_unnamed_addr #0 {
+  %7 = icmp eq i32 %5, 0
+  %8 = load i32, ptr @memctrl, align 4
+  %9 = and i32 %8, -17
+  %10 = select i1 %7, i32 %9, i32 %8
+  store volatile i32 %10, ptr inttoptr (i32 1342178000 to ptr), align 16, !tbaa !9
+  store volatile i32 %2, ptr inttoptr (i32 1342178040 to ptr), align 8, !tbaa !9
+  br label %11
+
+11:                                               ; preds = %21, %6
+  %12 = phi i32 [ %1, %6 ], [ %23, %21 ]
+  %13 = phi i32 [ %0, %6 ], [ %22, %21 ]
+  %14 = phi i32 [ 0, %6 ], [ %24, %21 ]
+  %15 = icmp slt i32 %14, %3
+  br i1 %15, label %17, label %16
+
+16:                                               ; preds = %11
+  ret void
+
+17:                                               ; preds = %11
+  store volatile i32 %13, ptr inttoptr (i32 1342178036 to ptr), align 4, !tbaa !9
+  store volatile i32 %12, ptr inttoptr (i32 1342178044 to ptr), align 4, !tbaa !9
+  br label %18
+
+18:                                               ; preds = %18, %17
+  %19 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !9
+  %20 = icmp eq i32 %19, 0
+  br i1 %20, label %21, label %18, !llvm.loop !22
+
+21:                                               ; preds = %18
+  %22 = add i32 %13, %4
+  %23 = add i32 %12, %5
+  %24 = add nuw nsw i32 %14, 1
+  br label %11, !llvm.loop !23
+}
+
+; Function Attrs: minsize nofree norecurse nounwind optsize
+define dso_local void @gdma_spi_rows(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3) local_unnamed_addr #0 {
+  %5 = load i32, ptr @spictrl, align 4, !tbaa !9
+  store volatile i32 %5, ptr inttoptr (i32 1342178000 to ptr), align 16, !tbaa !9
+  store volatile i32 1073987592, ptr inttoptr (i32 1342178036 to ptr), align 4, !tbaa !9
+  store volatile i32 %1, ptr inttoptr (i32 1342178040 to ptr), align 8, !tbaa !9
+  br label %6
+
+6:                                                ; preds = %15, %4
+  %7 = phi i32 [ %0, %4 ], [ %16, %15 ]
+  %8 = phi i32 [ 0, %4 ], [ %17, %15 ]
+  %9 = icmp slt i32 %8, %2
+  br i1 %9, label %11, label %10
+
+10:                                               ; preds = %6
+  ret void
+
+11:                                               ; preds = %6
+  store volatile i32 %7, ptr inttoptr (i32 1342178044 to ptr), align 4, !tbaa !9
+  br label %12
+
+12:                                               ; preds = %12, %11
+  %13 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !9
+  %14 = icmp eq i32 %13, 0
+  br i1 %14, label %15, label %12, !llvm.loop !24
+
+15:                                               ; preds = %12
+  %16 = add i32 %7, %3
+  %17 = add nuw nsw i32 %8, 1
+  br label %6, !llvm.loop !25
+}
+
+; Function Attrs: minsize nofree norecurse nounwind optsize
 define dso_local void @gdma_spi16(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
   %3 = load i32, ptr @spictrl, align 4, !tbaa !9
   tail call fastcc void @gd_run(i32 noundef %0, i32 noundef 1073987592, i32 noundef %1, i32 noundef %3) #5
-  br label %4
-
-4:                                                ; preds = %4, %2
-  %5 = load volatile i32, ptr inttoptr (i32 1073987596 to ptr), align 4, !tbaa !9
-  %6 = and i32 %5, 16
-  %7 = icmp eq i32 %6, 0
-  br i1 %7, label %8, label %4, !llvm.loop !22
-
-8:                                                ; preds = %4
   ret void
 }
 
@@ -408,3 +467,6 @@ attributes #6 = { nounwind }
 !20 = distinct !{!20, !7, !8}
 !21 = distinct !{!21, !7, !8}
 !22 = distinct !{!22, !7, !8}
+!23 = distinct !{!23, !7, !8}
+!24 = distinct !{!24, !7, !8}
+!25 = distinct !{!25, !7, !8}

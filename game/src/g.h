@@ -48,10 +48,14 @@ void delay_us(uint us);
 void gpio_fn(int pin, uint funcsel);
 void gpio_out(int pin, int hi);
 void gpio_in_init(int pin); /* enable the pull-up, once */
-int gpio_in(int pin);       /* fast level read (mask, no shift) */
+uint gpio_in(int pin);      /* raw masked level: nonzero = high */
 void gdma_copy(uint dst, uint src, uint bytes);
 void gdma_fill(uint dst, uint word, uint bytes);
 void gdma_spi16(uint src, uint halfwords); /* paced pixel stream */
+void gdma_rows(uint dst, uint src, uint words, int rows, uint dstride,
+               uint sstride); /* 2-write row loop (AL3 trigger) */
+void gdma_spi_rows(uint src, uint halfwords, int rows,
+                   uint sstride); /* 1-write row loop into the SPI */
 
 /* lcd.c */
 void lcd_init(void);
@@ -67,6 +71,8 @@ void gfx_text2(int x, int y, const char *s, ushort fg, ushort bg); /* 2x */
 void gfx_blit(int x, int y, const ushort *src, int w, int h); /* opaque */
 void gfx_sprite(const uint *rows, int w, int h, ushort fg, ushort bg,
                 ushort *dst); /* 1bpp rows (MSB left) -> RGB565 */
+void gfx_glyph_cell(int ch, ushort fg, ushort bg,
+                    ushort *dst); /* one 8x8 font glyph -> 64 pixels */
 void gfx_damage(int x0, int y0, int x1, int y1);
 void gfx_present(void); /* flush the damage rect, reset it */
 
@@ -95,6 +101,7 @@ void frame_sync(uint us); /* pace the caller's loop to one tick per us */
 void fx_init(void);
 void snd_play(uint hz, uint vol, uint frames); /* vol 0..255 */
 void snd_rate(uint div_fp8); /* SM0 CLKDIV, keep 15900..26300 in-band */
+void snd_off(void); /* silence immediately */
 void snd_tick(void);
 void led(uint rgb0, uint rgb1); /* 0xRRGGBB each; per-channel capped */
 void led_rainbow(uint frames);   /* fast hue loop, then back to base */

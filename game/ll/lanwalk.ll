@@ -15,6 +15,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @.str.5 = private unnamed_addr constant [23 x i8] c"lanwalk: solved moves=\00", align 1
 @.str.6 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
 @stack = internal unnamed_addr global [49 x i8] zeroinitializer, align 1
+@bit4 = internal unnamed_addr constant [4 x i8] c"\01\02\04\08", align 1
 @.str.7 = private unnamed_addr constant [6 x i8] c"moves\00", align 1
 @dr = internal unnamed_addr constant [4 x i8] c"\FF\00\01\00", align 1
 @dc = internal unnamed_addr constant [4 x i8] c"\00\01\00\FF", align 1
@@ -94,20 +95,20 @@ define dso_local void @lanwalk_run() local_unnamed_addr #0 {
   %40 = getelementptr inbounds nuw [4 x i32], ptr %1, i32 0, i32 %39
   %41 = load i32, ptr %40, align 4, !tbaa !10
   %42 = tail call fastcc i32 @neigh(i32 noundef %18, i32 noundef %41) #8
-  %43 = shl nuw i32 1, %41
-  %44 = getelementptr inbounds nuw [49 x i8], ptr @mask, i32 0, i32 %18
-  %45 = load i8, ptr %44, align 1, !tbaa !3
-  %46 = trunc i32 %43 to i8
-  %47 = or i8 %45, %46
-  store i8 %47, ptr %44, align 1, !tbaa !3
+  %43 = getelementptr inbounds [4 x i8], ptr @bit4, i32 0, i32 %41
+  %44 = load i8, ptr %43, align 1, !tbaa !3
+  %45 = getelementptr inbounds nuw [49 x i8], ptr @mask, i32 0, i32 %18
+  %46 = load i8, ptr %45, align 1, !tbaa !3
+  %47 = or i8 %46, %44
+  store i8 %47, ptr %45, align 1, !tbaa !3
   %48 = and i32 %41, 3
   %49 = xor i32 %48, 2
-  %50 = shl nuw nsw i32 1, %49
-  %51 = getelementptr inbounds [49 x i8], ptr @mask, i32 0, i32 %42
-  %52 = load i8, ptr %51, align 1, !tbaa !3
-  %53 = trunc nuw nsw i32 %50 to i8
-  %54 = or i8 %52, %53
-  store i8 %54, ptr %51, align 1, !tbaa !3
+  %50 = getelementptr inbounds nuw [4 x i8], ptr @bit4, i32 0, i32 %49
+  %51 = load i8, ptr %50, align 1, !tbaa !3
+  %52 = getelementptr inbounds [49 x i8], ptr @mask, i32 0, i32 %42
+  %53 = load i8, ptr %52, align 1, !tbaa !3
+  %54 = or i8 %53, %51
+  store i8 %54, ptr %52, align 1, !tbaa !3
   %55 = getelementptr inbounds [49 x i8], ptr @lit, i32 0, i32 %42
   store i8 1, ptr %55, align 1, !tbaa !3
   %56 = trunc nsw i32 %42 to i8
@@ -433,20 +434,20 @@ define internal fastcc void @relight() unnamed_addr #2 {
 
 28:                                               ; preds = %24
   %29 = load i8, ptr %16, align 1, !tbaa !3
-  %30 = zext i8 %29 to i32
-  %31 = shl nuw nsw i32 1, %19
-  %32 = and i32 %31, %30
-  %33 = icmp eq i32 %32, 0
+  %30 = getelementptr inbounds nuw [4 x i8], ptr @bit4, i32 0, i32 %19
+  %31 = load i8, ptr %30, align 1, !tbaa !3
+  %32 = and i8 %31, %29
+  %33 = icmp eq i8 %32, 0
   br i1 %33, label %46, label %34
 
 34:                                               ; preds = %28
   %35 = getelementptr inbounds nuw [49 x i8], ptr @mask, i32 0, i32 %22
   %36 = load i8, ptr %35, align 1, !tbaa !3
-  %37 = zext i8 %36 to i32
-  %38 = xor i32 %19, 2
-  %39 = shl nuw nsw i32 1, %38
-  %40 = and i32 %39, %37
-  %41 = icmp eq i32 %40, 0
+  %37 = xor i32 %19, 2
+  %38 = getelementptr inbounds nuw [4 x i8], ptr @bit4, i32 0, i32 %37
+  %39 = load i8, ptr %38, align 1, !tbaa !3
+  %40 = and i8 %39, %36
+  %41 = icmp eq i8 %40, 0
   br i1 %41, label %46, label %42
 
 42:                                               ; preds = %34
