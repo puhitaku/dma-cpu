@@ -23,7 +23,7 @@ clean:
 # IR goldens in target/libc/ll/, which are committed and linked into programs by
 # passing them to dmacc alongside the program's own .ll. Regenerate after
 # changing target/libc/picolibc.h, target/libc/dma_stdio.c, or the submodule pin.
-PICOLIBC := lib/picolibc
+PICOLIBC := target/libc/picolibc
 LIBC_STDIO := printf vfiprintf puts putchar fputs fputc \
               sprintf snprintf vsnprintf filestrput
 LIBC_STRING := strlen strnlen strcmp strncmp strcpy strncpy strchr memchr memcmp

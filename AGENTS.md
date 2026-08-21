@@ -69,7 +69,7 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   because `jneg` is only correct for |v| < 2^28; compiled code must use
   them for arbitrary values. They dispatch through a pooled trampoline
   arena appended to .text (ABI v0.1, doc/abi.md).
-- libc = picolibc (submodule `lib/picolibc`, BSD-licensed — the ONLY
+- libc = picolibc (submodule `target/libc/picolibc`, BSD-licensed — the ONLY
   third-party code that may be committed/referenced; the Cornell rule
   above still stands). It is compiled through the normal pipeline, not
   ported: curated sources -> IR goldens in `target/libc/ll/` (`make libc`),

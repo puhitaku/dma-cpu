@@ -25,7 +25,7 @@ SOFTWARE.
 
 ** picolibc **
 
-See /lib/picolibc/COPYING.picolibc for the authors and license agreements.
+See /target/libc/picolibc/COPYING.picolibc for the authors and license agreements.
 
 The following files contain derived portions from picolibc:
  - libc/ll/*.ll

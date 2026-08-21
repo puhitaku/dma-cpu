@@ -16,7 +16,7 @@ LIBC_LL := $(wildcard $(REPO)/target/libc/ll/*.ll)
 CLANG_FLAGS := --target=armv6m-none-eabi -Oz -fno-unroll-loops \
                -fsigned-char -ffreestanding -nostdinc \
                -I$(REPO)/target/libc -I$(REPO)/target/libc/include \
-               -I$(REPO)/lib/picolibc/libc/include \
+               -I$(REPO)/target/libc/picolibc/libc/include \
                -I$(shell clang -print-resource-dir)/include
 
 .PHONY: run dasm dmx clean

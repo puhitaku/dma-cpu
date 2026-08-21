@@ -57,9 +57,13 @@ else is docs, examples, and vendored dependencies.
   UART. The emulator is silicon-calibrated against a Pico 2; see
   `prompts/004-hw-calibration.md` for the results (all golden tests pass
   on hardware at ~10 M blocks/s).
-- `target/libc/` — picolibc configuration and the curated IR goldens it
-  compiles to; `target/game/` is the DMA-driven game console; `target/xv6/`
-  is the xv6-derived kernel port (`target/xv6/PORT.md`).
+- `target/libc/` — the DMA machine's C library: DMA-specific config and
+  glue (committed) plus the vendored picolibc submodule
+  (`target/libc/picolibc`) it is compiled from. `make libc` turns the
+  curated picolibc sources into the IR goldens in `target/libc/ll/`,
+  which `dmacc` links into programs — see `target/libc/README.md`.
+  `target/game/` is the DMA-driven game console; `target/xv6/` is the
+  xv6-derived kernel port (`target/xv6/PORT.md`).
 
 ### Everything else
 
@@ -68,7 +72,8 @@ else is docs, examples, and vendored dependencies.
   the phased design log. Third-party reference material is copyrighted and
   stays untracked (see Coding rules in `prompts/overview.md`).
 - `examples/` — standalone programs built through the toolchain.
-- `lib/picolibc`, `references/` — vendored git submodules.
+- `references/` — reference-only git submodules, studied but never built
+  (unlike `target/libc/picolibc`, which is compiled and linked).
 
 ## Build and test
 
