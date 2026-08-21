@@ -20,14 +20,18 @@ spi_wait_idle(void)
     ;
 }
 
-/* Frame size switch: PL022 wants SSE off while CR0 changes. */
+/* Frame size switch: PL022 wants SSE off while CR0 changes.
+ * SPI mode 3 (SPO|SPH, bits 6-7), not mode 0: with CS strapped low
+ * the ST7789 counts clock edges continuously, and an idle-low clock
+ * miscounts the first edge — the classic dark-panel failure of
+ * CS-less ST7789 wiring. Mode 3 idles the clock high. */
 static void
 spi_bits(uint n)
 {
   spi_wait_idle();
-  W32(SPI_CR1) = 0;            /* SSE off */
-  W32(SPI_CR0) = (n - 1) & 0xF; /* DSS; SPO/SPH 0 (mode 0), SCR 0 */
-  W32(SPI_CR1) = 2;            /* SSE on */
+  W32(SPI_CR1) = 0;                    /* SSE off */
+  W32(SPI_CR0) = ((n - 1) & 0xF) | 0xC0; /* DSS; mode 3; SCR 0 */
+  W32(SPI_CR1) = 2;                    /* SSE on */
 }
 
 static void
@@ -57,11 +61,14 @@ lcd_dat(uint d)
 void
 lcd_init(void)
 {
-  /* SPI0: CPSR=2, SCR=0 -> clk_peri/2 = 62.5 MHz at the board's
-   * repurposed 125 MHz peri clock (the ST7789V serial-write limit). */
+  /* SPI0: CPSR=4, SCR=0 -> clk_peri/4 = 31.25 MHz. The ST7789V spec
+   * ceiling is 62.5 MHz (CPSR=2), but that leaves zero margin over
+   * jumper wires; a full-screen flush at 31.25 MHz is ~30 ms, plenty
+   * for every screen here. Dial CPSR back to 2 once the panel is on
+   * a soldered harness. */
   W32(SPI_CR1) = 0;
-  W32(SPI_CPSR) = 2;
-  W32(SPI_CR0) = 7;    /* 8-bit frames, mode 0 */
+  W32(SPI_CPSR) = 4;
+  W32(SPI_CR0) = 7 | 0xC0; /* 8-bit frames, mode 3 (see spi_bits) */
   W32(SPI_DMACR) = 2;  /* TXDMAE: without it the PL022 never raises the
                         * TX DREQ and the paced pixel channel starves
                         * (found on silicon: flush hung at row 0) */

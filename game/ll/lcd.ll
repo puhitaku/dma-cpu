@@ -8,8 +8,8 @@ target triple = "thumbv6m-unknown-none-eabi"
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @lcd_init() local_unnamed_addr #0 {
   store volatile i32 0, ptr inttoptr (i32 1073987588 to ptr), align 4, !tbaa !3
-  store volatile i32 2, ptr inttoptr (i32 1073987600 to ptr), align 16, !tbaa !3
-  store volatile i32 7, ptr inttoptr (i32 1073987584 to ptr), align 16384, !tbaa !3
+  store volatile i32 4, ptr inttoptr (i32 1073987600 to ptr), align 16, !tbaa !3
+  store volatile i32 199, ptr inttoptr (i32 1073987584 to ptr), align 16384, !tbaa !3
   store volatile i32 2, ptr inttoptr (i32 1073987620 to ptr), align 4, !tbaa !3
   store volatile i32 2, ptr inttoptr (i32 1073987588 to ptr), align 4, !tbaa !3
   tail call void @gpio_fn(i32 noundef 18, i32 noundef 1) #3
@@ -99,7 +99,8 @@ define internal fastcc void @spi_bits(i32 noundef range(i32 8, 17) %0) unnamed_a
   tail call fastcc void @spi_wait_idle() #4
   store volatile i32 0, ptr inttoptr (i32 1073987588 to ptr), align 4, !tbaa !3
   %2 = add nsw i32 %0, -1
-  store volatile i32 %2, ptr inttoptr (i32 1073987584 to ptr), align 16384, !tbaa !3
+  %3 = or i32 %2, 192
+  store volatile i32 %3, ptr inttoptr (i32 1073987584 to ptr), align 16384, !tbaa !3
   store volatile i32 2, ptr inttoptr (i32 1073987588 to ptr), align 4, !tbaa !3
   ret void
 }
