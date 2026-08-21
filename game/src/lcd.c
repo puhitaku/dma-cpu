@@ -77,7 +77,7 @@ lcd_init(void)
   gpio_fn(PIN_LCD_SDA, 1);
   gpio_out(PIN_LCD_CS, 0); /* one device: CS held low */
   gpio_out(PIN_LCD_DC, 1);
-  gpio_out(PIN_LCD_BLK, 1); /* backlight on */
+  gpio_out(PIN_LCD_BLK, 0); /* dark until the GRAM is clean */
 
   gpio_out(PIN_LCD_RES, 0); /* hardware reset pulse */
   delay_us(20000);
@@ -92,8 +92,13 @@ lcd_init(void)
   lcd_dat(0x00);
   lcd_cmd(0x21); /* INVON: these IPS panels are inverted */
   lcd_cmd(0x13); /* NORON */
+  /* The controller's GRAM powers up as noise: paint it black (fb is
+   * still all-zero here) BEFORE the panel shows anything, then turn
+   * the display and backlight on — no garbled boot flash. */
+  lcd_flush(0, 0, LCD_W - 1, LCD_H - 1);
   lcd_cmd(0x29); /* DISPON */
   delay_us(20000);
+  gpio_out(PIN_LCD_BLK, 1); /* backlight on over a clean screen */
 }
 
 /* Send the framebuffer rect [x0..x1]x[y0..y1] (inclusive). */

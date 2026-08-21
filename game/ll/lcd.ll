@@ -16,7 +16,7 @@ define dso_local void @lcd_init() local_unnamed_addr #0 {
   tail call void @gpio_fn(i32 noundef 19, i32 noundef 1) #3
   tail call void @gpio_out(i32 noundef 17, i32 noundef 0) #3
   tail call void @gpio_out(i32 noundef 16, i32 noundef 1) #3
-  tail call void @gpio_out(i32 noundef 21, i32 noundef 1) #3
+  tail call void @gpio_out(i32 noundef 21, i32 noundef 0) #3
   tail call void @gpio_out(i32 noundef 20, i32 noundef 0) #3
   tail call void @delay_us(i32 noundef 20000) #3
   tail call void @gpio_out(i32 noundef 20, i32 noundef 1) #3
@@ -29,8 +29,10 @@ define dso_local void @lcd_init() local_unnamed_addr #0 {
   tail call fastcc void @spi_put8(i32 noundef 0) #4
   tail call fastcc void @lcd_cmd(i32 noundef 33) #4
   tail call fastcc void @lcd_cmd(i32 noundef 19) #4
+  tail call void @lcd_flush(i32 noundef 0, i32 noundef 0, i32 noundef 239, i32 noundef 239) #4
   tail call fastcc void @lcd_cmd(i32 noundef 41) #4
   tail call void @delay_us(i32 noundef 20000) #3
+  tail call void @gpio_out(i32 noundef 21, i32 noundef 1) #3
   ret void
 }
 

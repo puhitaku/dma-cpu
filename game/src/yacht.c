@@ -18,8 +18,9 @@
 
 #define NCAT 12
 static const char *catname[NCAT] = {
-    "Aces",   "Twos",      "Threes",  "Fours",      "Fives",   "Sixes",
-    "Choice", "Four Kind", "Full Hse", "Little Str", "Big Str", "YACHT"};
+    "Aces",       "Twos",           "Threes",       "Fours",
+    "Fives",      "Sixes",          "Choice",       "Four Kind",
+    "Full House", "Small Straight", "Big Straight", "Yacht"};
 
 static int dice[5], held[5], scores[NCAT], rolls_left, turn;
 
@@ -123,8 +124,11 @@ total(void)
   return t;
 }
 
+/* draw_cat: booked boxes show their score in white; every open box
+ * previews (dim green) what the current five dice would score there
+ * — holds and cursor position never hide a detection. */
 static void
-draw_cat(int c, int cursor, int preview)
+draw_cat(int c, int cursor)
 {
   int y = 66 + c * 12;
   gfx_fill(4, y - 1, 232, 11, cursor ? C_PANEL : C_BG);
@@ -134,10 +138,49 @@ draw_cat(int c, int cursor, int preview)
   if (scores[c] >= 0) {
     numstr(b, 3, (uint)scores[c]);
     gfx_text(200, y, b, C_SCORE, cursor ? C_PANEL : C_BG);
-  } else if (preview && rolls_left < 3) {
+  } else {
     numstr(b, 3, (uint)cat_score(c));
     gfx_text(200, y, b, C_PREV, cursor ? C_PANEL : C_BG);
   }
+}
+
+/* 2. round indicator, top right: "01/12" */
+static void
+draw_round(void)
+{
+  char b[6];
+  numstr(b, 2, (uint)turn);
+  b[2] = '/';
+  b[3] = '1';
+  b[4] = '2';
+  b[5] = 0;
+  gfx_text(LCD_W - 5 * 8 - 4, 4, b, C_TEXT, C_BG);
+}
+
+/* 4. roulette roll: unheld dice tick through random faces, fast then
+ * decelerating, and the last tick lands on the already-decided final
+ * faces. ~0.8 s total; input is not polled while it runs. */
+static void
+roll_anim(void)
+{
+  static const uchar pause[7] = {1, 1, 2, 3, 4, 6, 8}; /* frames */
+  int fin[5];
+  for (int i = 0; i < 5; i++)
+    fin[i] = dice[i];
+  for (int t = 0; t < 7; t++) {
+    for (int f = 0; f < pause[t]; f++)
+      frame_sync(33000);
+    for (int i = 0; i < 5; i++)
+      if (!held[i])
+        dice[i] = t == 6 ? fin[i] : 1 + (int)rng_below(6);
+    for (int i = 0; i < 5; i++)
+      if (!held[i])
+        draw_die(i, 0);
+    snd_play(t == 6 ? 900 : 1400, 25, 1); /* tick, lower final thunk */
+    gfx_present();
+  }
+  for (int i = 0; i < 5; i++)
+    dice[i] = fin[i];
 }
 
 static void
@@ -185,8 +228,9 @@ yacht_run(void)
     for (int i = 0; i < 5; i++)
       draw_die(i, 0);
     draw_roll_btn(1);
+    draw_round();
     for (int c = 0; c < NCAT; c++)
-      draw_cat(c, 0, 0);
+      draw_cat(c, 0);
     draw_total();
     gfx_present();
 
@@ -227,14 +271,12 @@ yacht_run(void)
             draw_die(cur, 1);
             gfx_present();
           } else if (rolls_left > 0) {
-            snd_play(450, 45, 4);
             led(0x303030, 0x303030);
             roll_dice();
-            for (int i = 0; i < 5; i++)
-              draw_die(i, 0);
+            roll_anim();
             draw_roll_btn(1);
             for (int c = 0; c < NCAT; c++)
-              draw_cat(c, 0, 0);
+              draw_cat(c, 0);
             gfx_present();
             uputs("yacht: roll\n");
           }
@@ -245,13 +287,13 @@ yacht_run(void)
             draw_roll_btn(0);
           else
             draw_die(cur, 0);
-          draw_cat(catc, 1, 1);
+          draw_cat(catc, 1);
           gfx_present();
         }
       } else {
         if (in_edge & (BTN_LEFT | BTN_RIGHT)) { /* back to the dice */
           incats = 0;
-          draw_cat(catc, 0, 0);
+          draw_cat(catc, 0);
           if (cur == 5)
             draw_roll_btn(1);
           else
@@ -263,8 +305,8 @@ yacht_run(void)
           do
             catc = catc == 0 ? NCAT - 1 : catc - 1;
           while (scores[catc] >= 0);
-          draw_cat(p, 0, 0);
-          draw_cat(catc, 1, 1);
+          draw_cat(p, 0);
+          draw_cat(catc, 1);
           gfx_present();
         }
         if (in_edge & BTN_DOWN) {
@@ -272,8 +314,8 @@ yacht_run(void)
           do
             catc = catc == NCAT - 1 ? 0 : catc + 1;
           while (scores[catc] >= 0);
-          draw_cat(p, 0, 0);
-          draw_cat(catc, 1, 1);
+          draw_cat(p, 0);
+          draw_cat(catc, 1);
           gfx_present();
         }
         if (in_edge & BTN_A) {
@@ -288,7 +330,7 @@ yacht_run(void)
         }
       }
     }
-    draw_cat(booked, 0, 0);
+    draw_cat(booked, 0);
     draw_total();
     gfx_present();
     if (turn == NCAT)
