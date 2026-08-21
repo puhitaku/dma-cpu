@@ -6,7 +6,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @.str = private unnamed_addr constant [9 x i8] c"seq: up\0A\00", align 1
 @.str.1 = private unnamed_addr constant [10 x i8] c"SEQUENCER\00", align 1
 @rendered = internal unnamed_addr global i1 false, align 4
-@.str.2 = private unnamed_addr constant [22 x i8] c"synthesizing drums...\00", align 1
+@.str.2 = private unnamed_addr constant [22 x i8] c"Synthesizing Drums...\00", align 1
 @.str.3 = private unnamed_addr constant [6 x i8] c"tempo\00", align 1
 @.str.4 = private unnamed_addr constant [24 x i8] c"K kick   S snare  T tom\00", align 1
 @.str.5 = private unnamed_addr constant [18 x i8] c"H hat    C cymbal\00", align 1
@@ -32,7 +32,7 @@ define dso_local void @seq_run() local_unnamed_addr #0 {
   br i1 %1, label %105, label %2
 
 2:                                                ; preds = %0
-  tail call void @gfx_text(i32 noundef 52, i32 noundef 110, ptr noundef nonnull @.str.2, i16 noundef zeroext -16966, i16 noundef zeroext 4163) #4
+  tail call void @gfx_text(i32 noundef 36, i32 noundef 116, ptr noundef nonnull @.str.2, i16 noundef zeroext -16966, i16 noundef zeroext 4163) #4
   tail call void @gfx_present() #4
   br label %3
 
@@ -191,7 +191,7 @@ define dso_local void @seq_run() local_unnamed_addr #0 {
 
 104:                                              ; preds = %50
   store i1 true, ptr @rendered, align 4
-  tail call void @gfx_fill(i32 noundef 0, i32 noundef 104, i32 noundef 240, i32 noundef 26, i16 noundef zeroext 4163) #4
+  tail call void @gfx_fill(i32 noundef 0, i32 noundef 116, i32 noundef 240, i32 noundef 8, i16 noundef zeroext 4163) #4
   br label %105
 
 105:                                              ; preds = %104, %0

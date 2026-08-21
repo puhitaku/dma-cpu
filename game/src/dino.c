@@ -253,8 +253,11 @@ dash_init(void)
 static void
 draw_dashes(int goff)
 {
+  /* sstride must be nonzero: gdma_rows reads it as copy-vs-fill, and
+   * a "fill" repeats the FIRST pattern word across the row — a solid
+   * line flickering with goff instead of a scrolling texture. */
   gdma_rows((uint)&fb[(GROUND_Y + 5) * LCD_W], (uint)&dashpat[goff],
-            LCD_W / 2, 1, 0, 0);
+            LCD_W / 2, 1, 0, LCD_W * 2);
   gfx_damage(0, GROUND_Y + 5, LCD_W - 1, GROUND_Y + 5);
 }
 

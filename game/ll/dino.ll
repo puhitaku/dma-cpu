@@ -597,7 +597,7 @@ declare dso_local void @gfx_clear(i16 noundef zeroext) local_unnamed_addr #1
 define internal fastcc void @draw_dashes(i32 noundef range(i32 -2147483648, 2147483624) %0) unnamed_addr #0 {
   %2 = getelementptr inbounds [264 x i16], ptr @dashpat, i32 0, i32 %0
   %3 = ptrtoint ptr %2 to i32
-  tail call void @gdma_rows(i32 noundef ptrtoint (ptr getelementptr inbounds nuw (i8, ptr @fb, i32 93600) to i32), i32 noundef %3, i32 noundef 120, i32 noundef 1, i32 noundef 0, i32 noundef 0) #5
+  tail call void @gdma_rows(i32 noundef ptrtoint (ptr getelementptr inbounds nuw (i8, ptr @fb, i32 93600) to i32), i32 noundef %3, i32 noundef 120, i32 noundef 1, i32 noundef 0, i32 noundef 480) #5
   tail call void @gfx_damage(i32 noundef 0, i32 noundef 195, i32 noundef 239, i32 noundef 195) #5
   ret void
 }

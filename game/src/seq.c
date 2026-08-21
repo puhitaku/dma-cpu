@@ -200,10 +200,11 @@ seq_run(void)
   gfx_clear(C_BG);
   gfx_text2(48, 8, "SEQUENCER", C_PLAY, C_BG);
   if (!rendered) {
-    gfx_text(52, 110, "synthesizing drums...", C_TEXT, C_BG);
+    /* 21 chars, centered both ways */
+    gfx_text(36, 116, "Synthesizing Drums...", C_TEXT, C_BG);
     gfx_present();
     render_drums();
-    gfx_fill(0, 104, LCD_W, 26, C_BG);
+    gfx_fill(0, 116, LCD_W, 8, C_BG);
   }
   gfx_text(72, 40, "tempo", C_TEXT, C_BG);
   for (int i = 0; i < NSTEP; i++)
