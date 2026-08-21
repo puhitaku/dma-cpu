@@ -9,7 +9,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @.str.3 = private unnamed_addr constant [9 x i8] c"menu up\0A\00", align 1
 @in_edge = external dso_local local_unnamed_addr global i32, align 4
 @.str.4 = private unnamed_addr constant [7 x i8] c"menu: \00", align 1
-@names = internal unnamed_addr constant [5 x ptr] [ptr @.str.9, ptr @.str.10, ptr @.str.11, ptr @.str.12, ptr @.str.13], align 4
+@names = internal unnamed_addr constant [6 x ptr] [ptr @.str.9, ptr @.str.10, ptr @.str.11, ptr @.str.12, ptr @.str.13, ptr @.str.14], align 4
 @.str.5 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
 @.str.6 = private unnamed_addr constant [8 x i8] c"start: \00", align 1
 @.str.7 = private unnamed_addr constant [6 x i8] c"beat \00", align 1
@@ -18,7 +18,8 @@ target triple = "thumbv6m-unknown-none-eabi"
 @.str.10 = private unnamed_addr constant [8 x i8] c"LANWalk\00", align 1
 @.str.11 = private unnamed_addr constant [6 x i8] c"Yacht\00", align 1
 @.str.12 = private unnamed_addr constant [10 x i8] c"Sequencer\00", align 1
-@.str.13 = private unnamed_addr constant [9 x i8] c"Arm info\00", align 1
+@.str.13 = private unnamed_addr constant [10 x i8] c"Benchmark\00", align 1
+@.str.14 = private unnamed_addr constant [9 x i8] c"Arm info\00", align 1
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local i32 @menu_run() local_unnamed_addr #0 {
@@ -30,7 +31,7 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
 
 1:                                                ; preds = %10, %0
   %2 = phi i32 [ 0, %0 ], [ %13, %10 ]
-  %3 = icmp eq i32 %2, 5
+  %3 = icmp eq i32 %2, 6
   br i1 %3, label %4, label %10
 
 4:                                                ; preds = %1
@@ -63,11 +64,11 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
   %18 = icmp eq i32 %17, 0
   %19 = icmp eq i32 %15, 0
   %20 = add nsw i32 %15, -1
-  %21 = select i1 %19, i32 4, i32 %20
+  %21 = select i1 %19, i32 5, i32 %20
   %22 = select i1 %18, i32 %15, i32 %21
   %23 = and i32 %16, 2
   %24 = icmp eq i32 %23, 0
-  %25 = icmp eq i32 %22, 4
+  %25 = icmp eq i32 %22, 5
   %26 = add nsw i32 %22, 1
   %27 = select i1 %25, i32 0, i32 %26
   %28 = select i1 %24, i32 %22, i32 %27
@@ -80,7 +81,7 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
   tail call void @gfx_present() #2
   tail call void @snd_play(i32 noundef 700, i32 noundef 40, i32 noundef 2) #2
   tail call void @uputs(ptr noundef nonnull @.str.4) #2
-  %31 = getelementptr inbounds [5 x ptr], ptr @names, i32 0, i32 %28
+  %31 = getelementptr inbounds [6 x ptr], ptr @names, i32 0, i32 %28
   %32 = load ptr, ptr %31, align 4, !tbaa !10
   tail call void @uputs(ptr noundef %32) #2
   tail call void @uputs(ptr noundef nonnull @.str.5) #2
@@ -110,7 +111,7 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
 45:                                               ; preds = %34
   tail call void @led(i32 noundef 16144, i32 noundef 16144) #2
   tail call void @uputs(ptr noundef nonnull @.str.6) #2
-  %46 = getelementptr inbounds [5 x ptr], ptr @names, i32 0, i32 %28
+  %46 = getelementptr inbounds [6 x ptr], ptr @names, i32 0, i32 %28
   %47 = load ptr, ptr %46, align 4, !tbaa !10
   tail call void @uputs(ptr noundef %47) #2
   tail call void @uputs(ptr noundef nonnull @.str.5) #2
@@ -138,22 +139,22 @@ declare dso_local void @gfx_text(i32 noundef, i32 noundef, ptr noundef, i16 noun
 
 ; Function Attrs: minsize nounwind optsize
 define internal fastcc void @draw_item(i32 noundef %0, i32 noundef range(i32 0, 2) %1) unnamed_addr #0 {
-  %3 = mul nsw i32 %0, 27
-  %4 = add nsw i32 %3, 84
+  %3 = mul nsw i32 %0, 24
+  %4 = add nsw i32 %3, 76
   %5 = icmp eq i32 %1, 0
   %6 = select i1 %5, i16 2181, i16 10801
-  tail call void @gfx_fill(i32 noundef 32, i32 noundef %4, i32 noundef 176, i32 noundef 24, i16 noundef zeroext %6) #2
+  tail call void @gfx_fill(i32 noundef 32, i32 noundef %4, i32 noundef 176, i32 noundef 22, i16 noundef zeroext %6) #2
   br i1 %5, label %9, label %7
 
 7:                                                ; preds = %2
-  %8 = add nsw i32 %3, 92
+  %8 = add nsw i32 %3, 83
   tail call void @gfx_text(i32 noundef 44, i32 noundef %8, ptr noundef nonnull @.str.8, i16 noundef zeroext -377, i16 noundef zeroext 10801) #2
   br label %9
 
 9:                                                ; preds = %7, %2
   %10 = phi i16 [ -1, %7 ], [ -18950, %2 ]
-  %11 = add nsw i32 %3, 88
-  %12 = getelementptr inbounds [5 x ptr], ptr @names, i32 0, i32 %0
+  %11 = add nsw i32 %3, 79
+  %12 = getelementptr inbounds [6 x ptr], ptr @names, i32 0, i32 %0
   %13 = load ptr, ptr %12, align 4, !tbaa !10
   tail call void @gfx_text2(i32 noundef 60, i32 noundef %11, ptr noundef %13, i16 noundef zeroext %10, i16 noundef zeroext %6) #2
   ret void

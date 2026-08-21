@@ -5,6 +5,8 @@ import (
 	"image/color"
 	"image/png"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -41,7 +43,7 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	}
 	var mods []*llir.Module
 	for _, p := range []string{"gmain", "menu", "dino", "lanwalk", "yacht",
-		"input", "fx", "seq", "cpumon", "gfx", "lcd", "grt"} {
+		"input", "fx", "seq", "cpumon", "bench", "gfx", "lcd", "grt"} {
 		mods = append(mods, parseLL(t, "../../target/game/ll/"+p+".ll"))
 	}
 	mod, err := llir.Merge(mods...)
@@ -338,7 +340,7 @@ func TestGameMenu(t *testing.T) {
 		t.Errorf("title underline: %d pixels of %#04x", n, title)
 	}
 	selbg := rgb565(40, 70, 140)
-	if n := p.countColor(32, 84, 207, 107, selbg); n < 500 {
+	if n := p.countColor(32, 76, 207, 97, selbg); n < 500 {
 		t.Errorf("selected item background: %d pixels", n)
 	}
 	// fx: the machine armed the audio streamer at boot — silence is
@@ -516,8 +518,10 @@ func TestGameSeq(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
-	press(t, m, prog, pinUp) // wraps up: Dino -> CPU Sleep
+	press(t, m, prog, pinUp) // wraps up: Dino -> Arm info
 	at = runUntil(t, m, "menu: Arm info", at, 100_000_000)
+	press(t, m, prog, pinUp) // -> Benchmark
+	at = runUntil(t, m, "menu: Benchmark", at, 100_000_000)
 	press(t, m, prog, pinUp) // -> Sequencer
 	at = runUntil(t, m, "menu: Sequencer", at, 100_000_000)
 	press(t, m, prog, pinA)
@@ -572,5 +576,165 @@ func TestGameCPUMon(t *testing.T) {
 		t.Errorf("chip faces: %d face pixels", n)
 	}
 	dumpPNG(t, p, "cpumon.png")
+	_ = at
+}
+
+// benchRef mirrors bench.c's kernels on the host: same xorshift32
+// seeding, same fixed work, uint32 wraparound. The silicon-run
+// checksums must match these exactly — the benchmark measures
+// nothing if the kernels are miscompiled.
+type benchRef struct{ xs uint32 }
+
+func (b *benchRef) rand() uint32 {
+	b.xs ^= b.xs << 13
+	b.xs ^= b.xs >> 17
+	b.xs ^= b.xs << 5
+	return b.xs
+}
+
+func benchExpect() map[string][2]uint32 { // name -> {ops, sum}
+	exp := map[string][2]uint32{}
+	// seeding, in bench_run order
+	b := &benchRef{xs: 0xC0FFEE01}
+	scratch := make([]uint32, 1024)
+	for i := 0; i < 512; i++ {
+		scratch[i] = b.rand()
+	}
+	ma := make([]uint32, 144)
+	mb := make([]uint32, 144)
+	for i := 0; i < 144; i++ {
+		ma[i] = b.rand() & 0xFF
+		mb[i] = b.rand() & 0xFF
+	}
+	for i := 0; i < 192; i++ {
+		scratch[640+i] = b.rand() | 1
+	}
+	// bogo: sum 1..65536
+	exp["bogo"] = [2]uint32{65536, 65536 * 65537 / 2}
+	// sieve: 4096 flags, two passes
+	var marks, primes uint32
+	for pass := 0; pass < 2; pass++ {
+		flags := make([]bool, 4096)
+		for i := range flags {
+			flags[i] = true
+		}
+		for i := 2; i < 4096; i++ {
+			if flags[i] {
+				primes++
+				for k := i + i; k < 4096; k += i {
+					flags[k] = false
+					marks++
+				}
+			}
+		}
+	}
+	exp["sieve"] = [2]uint32{marks, primes}
+	// sort: 4 rounds of insertion sort over the pregen data
+	var cmps, ssum uint32
+	for r := 0; r < 4; r++ {
+		a := append([]uint32(nil), scratch[r*128:r*128+128]...)
+		for i := 1; i < 128; i++ {
+			v := a[i]
+			j := i
+			for j > 0 {
+				cmps++
+				if a[j-1] <= v {
+					break
+				}
+				a[j] = a[j-1]
+				j--
+			}
+			a[j] = v
+		}
+		ssum += a[0] + a[64] + a[127] + uint32(r)*a[7]
+	}
+	exp["sort"] = [2]uint32{cmps, ssum}
+	// mul: 12x12 matmul
+	mc := make([]uint32, 144)
+	for i := 0; i < 12; i++ {
+		for j := 0; j < 12; j++ {
+			var acc uint32
+			for k := 0; k < 12; k++ {
+				acc += ma[i*12+k] * mb[k*12+j]
+			}
+			mc[i*12+j] = acc
+		}
+	}
+	var msum uint32
+	for _, v := range mc {
+		msum += v
+	}
+	exp["mul"] = [2]uint32{12 * 12 * 12, msum}
+	// div: Euclid over the pre-seeded pairs
+	var steps, dsum uint32
+	for i := 0; i < 96; i++ {
+		a, bb := scratch[640+i*2], scratch[640+i*2+1]
+		for bb != 0 {
+			a, bb = bb, a%bb
+			steps++
+		}
+		dsum += a
+	}
+	exp["div"] = [2]uint32{steps, dsum}
+	// rand: 2048 xorshift steps from the fixed seed
+	rb := &benchRef{xs: 0x1234567}
+	var rsum uint32
+	for i := 0; i < 2048; i++ {
+		rsum += rb.rand()
+	}
+	exp["rand"] = [2]uint32{2048, rsum}
+	// shr1: the pathological >>1, golden-ratio walk
+	v, shsum := uint32(0xDEADBEEF), uint32(0)
+	for i := 0; i < 1024; i++ {
+		shsum += v >> 1
+		v += 0x9E3779B9
+	}
+	exp["shr1"] = [2]uint32{1024, shsum}
+	// mem: last fill value appears at both probe words (u32 wrap)
+	fill := uint32(0xA5A5A5A5) + 7
+	exp["mem"] = [2]uint32{8 * (1024 + 1024), fill + fill}
+	return exp
+}
+
+func TestGameBench(t *testing.T) {
+	t.Parallel()
+	m, prog := bootGame(t)
+	at := runUntil(t, m, "menu up", 0, 300_000_000)
+	for _, marker := range []string{"menu: LANWalk", "menu: Yacht",
+		"menu: Sequencer", "menu: Benchmark"} {
+		press(t, m, prog, pinDown)
+		at = runUntil(t, m, marker, at, 100_000_000)
+	}
+	press(t, m, prog, pinA)
+	at = runUntil(t, m, "bench: up", at, 100_000_000)
+	at = runUntil(t, m, "bench done", at, 600_000_000)
+
+	// every kernel line must carry the host-computed ops and checksum
+	out := string(m.ConsoleOut)
+	for name, want := range benchExpect() {
+		re := regexp.MustCompile(`BENCH ` + name + `\s+ops=(\d+) us=\d+ sum=([0-9a-f]{8})`)
+		mm := re.FindStringSubmatch(out)
+		if mm == nil {
+			t.Errorf("%s: no BENCH line", name)
+			continue
+		}
+		ops, _ := strconv.ParseUint(mm[1], 10, 32)
+		sum, _ := strconv.ParseUint(mm[2], 16, 32)
+		if uint32(ops) != want[0] || uint32(sum) != want[1] {
+			t.Errorf("%s: ops=%d sum=%08x, want ops=%d sum=%08x",
+				name, ops, sum, want[0], want[1])
+		}
+	}
+	if !strings.Contains(out, "BENCH mips100=") {
+		t.Errorf("missing MIPS summary line")
+	}
+
+	// the headline MIPS figure renders in live green
+	p := decodeLCD(m, 16)
+	live := rgb565(90, 240, 140)
+	if n := p.countColor(8, 160, 119, 176, live); n < 60 {
+		t.Errorf("MIPS headline: %d live-green pixels", n)
+	}
+	dumpPNG(t, p, "bench.png")
 	_ = at
 }

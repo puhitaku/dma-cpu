@@ -10,21 +10,22 @@
 #define C_SELBG RGB(40, 70, 140)
 #define C_FOOT RGB(90, 100, 130)
 
-static const char *names[5] = {"Dinosaur", "LANWalk", "Yacht",
-                              "Sequencer", "Arm info"};
+static const char *names[6] = {"Dinosaur", "LANWalk",   "Yacht",
+                               "Sequencer", "Benchmark", "Arm info"};
 
-#define NGAMES 5
+#define NGAMES 6
 
 static void
 draw_item(int i, int selected)
 {
-  /* highlight is 24 tall, the 16-tall label sits 4 px inside it top
-   * and bottom — even padding, no downward drift */
-  int y = 84 + i * 27;
-  gfx_fill(32, y, 176, 24, selected ? C_SELBG : C_BG);
+  /* highlight is 22 tall, the 16-tall label sits 3 px inside it top
+   * and bottom — even padding; six items at a 24-px pitch clear the
+   * footer line at y=226 */
+  int y = 76 + i * 24;
+  gfx_fill(32, y, 176, 22, selected ? C_SELBG : C_BG);
   if (selected)
-    gfx_text(44, y + 8, ">", C_TITLE, C_SELBG);
-  gfx_text2(60, y + 4, names[i], selected ? C_SEL : C_ITEM,
+    gfx_text(44, y + 7, ">", C_TITLE, C_SELBG);
+  gfx_text2(60, y + 3, names[i], selected ? C_SEL : C_ITEM,
             selected ? C_SELBG : C_BG);
 }
 

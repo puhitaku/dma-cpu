@@ -18,11 +18,12 @@ define dso_local noundef i32 @gmain() local_unnamed_addr #0 {
 
 1:                                                ; preds = %5, %0
   %2 = tail call i32 @menu_run() #2
-  switch i32 %2, label %8 [
+  switch i32 %2, label %9 [
     i32 0, label %3
     i32 1, label %4
     i32 2, label %6
     i32 3, label %7
+    i32 4, label %8
   ]
 
 3:                                                ; preds = %1
@@ -33,7 +34,7 @@ define dso_local noundef i32 @gmain() local_unnamed_addr #0 {
   tail call void @lanwalk_run() #2
   br label %5
 
-5:                                                ; preds = %4, %7, %8, %6, %3
+5:                                                ; preds = %4, %7, %9, %8, %6, %3
   br label %1, !llvm.loop !3
 
 6:                                                ; preds = %1
@@ -45,6 +46,10 @@ define dso_local noundef i32 @gmain() local_unnamed_addr #0 {
   br label %5
 
 8:                                                ; preds = %1
+  tail call void @bench_run() #2
+  br label %5
+
+9:                                                ; preds = %1
   tail call void @cpumon_run() #2
   br label %5
 }
@@ -72,6 +77,9 @@ declare dso_local void @yacht_run() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @seq_run() local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @bench_run() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @cpumon_run() local_unnamed_addr #1

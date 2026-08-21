@@ -90,7 +90,7 @@ xv6-ll:
 	done
 
 # gamepico bare-metal sources -> IR (no xv6 headers; self-contained).
-GAME_SRCS = grt.c lcd.c gfx.c input.c fx.c seq.c cpumon.c menu.c dino.c lanwalk.c yacht.c gmain.c
+GAME_SRCS = grt.c lcd.c gfx.c input.c fx.c seq.c cpumon.c bench.c menu.c dino.c lanwalk.c yacht.c gmain.c
 
 .PHONY: game-ll
 game-ll:

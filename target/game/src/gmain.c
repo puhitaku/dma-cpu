@@ -21,6 +21,8 @@ gmain(void)
       yacht_run();
     else if (g == 3)
       seq_run();
+    else if (g == 4)
+      bench_run();
     else
       cpumon_run();
   }
