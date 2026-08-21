@@ -140,9 +140,19 @@ draw_tile(int cell, int cursor)
   if (cell == SERVER) {
     gfx_fill(x + 8, y + 8, 14, 14, C_SERVER);
   } else if (popcount4(m) == 1) { /* leaf = workstation */
-    gfx_rect(x + 9, y + 9, 12, 12, 2, wc);
-    if (lit[cell])
-      gfx_fill(x + 13, y + 13, 4, 4, C_LIT);
+    /* an old desktop computer: a big CRT square sitting on a wide,
+     * low case. Unlit it is a gray outline with a dark screen; lit it
+     * goes green and a smiley glows on the CRT. */
+    gfx_rect(x + 7, y + 5, 16, 16, 2, wc);     /* CRT bezel */
+    gfx_fill(x + 9, y + 7, 12, 12, C_BG);      /* screen (hides cable) */
+    gfx_fill(x + 4, y + 21, 22, 4, wc);        /* desktop case */
+    if (lit[cell]) {                           /* the smiley wakes up */
+      gfx_fill(x + 11, y + 9, 2, 3, C_LIT);    /* eyes */
+      gfx_fill(x + 17, y + 9, 2, 3, C_LIT);
+      gfx_fill(x + 10, y + 13, 2, 2, C_LIT);   /* smile, mirror-perfect */
+      gfx_fill(x + 12, y + 15, 6, 2, C_LIT);   /* about the eye axis   */
+      gfx_fill(x + 18, y + 13, 2, 2, C_LIT);
+    }
   }
   if (cursor)
     gfx_rect(x + 1, y + 1, TILE - 2, TILE - 2, 2, C_CURSOR);
