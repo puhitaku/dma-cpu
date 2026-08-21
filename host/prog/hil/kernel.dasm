@@ -5,7 +5,7 @@
 ; This file is only the MECHANISM: two kernel entries and the
 ; indirection words the C side maintains to say who is current.
 ;
-; Tick delivery is approach B (doc/abi.md) with a single injector
+; Tick delivery is approach B (references/design_docs/abi.md) with a single injector
 ; (ABI ch3, timer TREQ, one-shot): it patches the RUNNING process's
 ; dispatch word with vecSched; the process detours here at its next
 ; safepoint. The C scheduler retargets the injector's WRITE_ADDR at

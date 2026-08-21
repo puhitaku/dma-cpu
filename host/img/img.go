@@ -1,6 +1,6 @@
 // Package img defines the DMX executable image format for DMA-machine
 // programs and its loader (see prompts/overview.md §4.4 and Phase 1, and
-// doc/dmx.md for the binary layout).
+// references/design_docs/dmx.md for the binary layout).
 //
 // A DMX image is a list of segments (program blocks and data are both just
 // bytes), a list of ABS32 relocations, a list of MMIO init writes, and an
@@ -59,7 +59,7 @@ type Image struct {
 	EntryOff uint32 // byte offset of the entry block within EntrySeg
 }
 
-// Encode serializes the image (see doc/dmx.md).
+// Encode serializes the image (see references/design_docs/dmx.md).
 func (im *Image) Encode() ([]byte, error) {
 	if err := im.validate(); err != nil {
 		return nil, err

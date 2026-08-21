@@ -35,7 +35,7 @@ Other targets:
   (worth a look: every C operation becomes a handful of 16-byte DMA
   control blocks).
 - `make dmx` — produce a relocatable `.dmx` executable for the target
-  loader (`doc/dmx.md`).
+  loader (`references/design_docs/dmx.md`).
 - `make SKU=rp2040 run` — same source, RP2040 encodings.
 
 ## Writing your own program

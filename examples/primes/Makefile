@@ -28,7 +28,7 @@ run: build/$(PROG).ll $(REPO)/bin/dmacc
 dasm: build/$(PROG).ll $(REPO)/bin/dmacc
 	$(REPO)/bin/dmacc -o build/$(PROG).dasm build/$(PROG).ll $(LIBC_LL)
 
-# Produce a loadable DMX executable (doc/dmx.md) for the target loader.
+# Produce a loadable DMX executable (references/design_docs/dmx.md) for the target loader.
 dmx: build/$(PROG).ll $(REPO)/bin/dmacc
 	$(REPO)/bin/dmacc -sku $(SKU) -o build/$(PROG).dasm -dmx build/$(PROG).dmx build/$(PROG).ll $(LIBC_LL)
 

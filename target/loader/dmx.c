@@ -1,4 +1,4 @@
-/* DMX loader implementation. See dmx.h and doc/dmx.md. */
+/* DMX loader implementation. See dmx.h and references/design_docs/dmx.md. */
 
 #include "dmx.h"
 

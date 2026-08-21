@@ -78,7 +78,7 @@ type Variant struct {
 	DreqXIPStream uint32
 }
 
-// RP2040: datasheet §2.5 (doc/rp2040-datasheet.pdf).
+// RP2040: datasheet §2.5 (references/datasheets/rp2040-datasheet.pdf).
 var RP2040 = &Variant{
 	Name:           "rp2040",
 	SelfCountWedge: true,
@@ -120,7 +120,7 @@ var RP2040 = &Variant{
 	DreqADC:      36,
 }
 
-// RP2350: datasheet §12.6 (doc/rp2350-datasheet.pdf). SECCFG/MPU
+// RP2350: datasheet §12.6 (references/datasheets/rp2350-datasheet.pdf). SECCFG/MPU
 // registers (0x480+) are not modelled; they read as zero.
 var RP2350 = &Variant{
 	Name:          "rp2350",

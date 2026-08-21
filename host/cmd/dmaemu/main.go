@@ -15,7 +15,7 @@
 // (or standalone, for hand-configured channel arrangements). The result —
 // stop reason, cycle count, dumps, and GPIO events — is printed as JSON.
 //
-// Alternatively, a DMX executable (see doc/dmx.md) replaces "machine":
+// Alternatively, a DMX executable (see references/design_docs/dmx.md) replaces "machine":
 //
 //	{
 //	  "image": {"file": "prog.dmx", "placement": {"1": "0x20020000"}},

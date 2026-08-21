@@ -5,7 +5,7 @@ terminal emulator (fbcon) mirroring the console onto it, and a kernel
 framebuffer API so a userspace program can take the display over —
 on a new board, the Adafruit Feather RP2350 with PSRAM.
 
-## Board facts (doc/adafruit-feather-rp2350.pdf, pinouts pp.12-22)
+## Board facts (references/datasheets/adafruit-feather-rp2350.pdf, pinouts pp.12-22)
 
 - HSTX pins GPIO12-19 on the 22-pin port. DVI lane map (silk):
   D2±=GPIO12/13, CK±=GPIO14/15, D1±=GPIO16/17, D0±=GPIO18/19.

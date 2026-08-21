@@ -2,7 +2,7 @@
 
 Status as of 2026-08-16. **`printf` works on the DMA machine, and it is
 picolibc's printf, not a lookalike** — the real sources, vendored as the
-`lib/picolibc` submodule and compiled through the ordinary
+`target/libc/picolibc` submodule and compiled through the ordinary
 clang → `dmacc` pipeline. The Pico 2's UART now carries text formatted
 entirely by DMA control blocks:
 

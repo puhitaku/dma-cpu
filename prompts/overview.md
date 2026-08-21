@@ -3,7 +3,7 @@
 ## 1. Project Goals
 
 Building on the fact that the RP2040/RP2350 DMA controller is Turing-complete
-(see `doc/ece4760.pdf`), this project pursues:
+(see `references/datasheets/ece4760.pdf`), this project pursues:
 
 1. **Enhance LLVM to support DMA programming** — make Clang emit programs that
    run on the RP2040 DMA machine.
@@ -20,13 +20,13 @@ build/test loop that a coding agent can drive.
 
 **Reference documents:**
 
-- `doc/ece4760.pdf` — the reference article describing the DMA computing
+- `references/datasheets/ece4760.pdf` — the reference article describing the DMA computing
   machine architecture this project builds on (third-party copyrighted
   material, not committed; see Coding rules).
-- `doc/rp2040-datasheet.pdf` — RP2040 datasheet: authoritative reference for
+- `references/datasheets/rp2040-datasheet.pdf` — RP2040 datasheet: authoritative reference for
   the DMA controller (§2.5, incl. register aliases §2.5.2.1 and DREQs §2.5.3)
   and atomic register access (§2.1.2).
-- `doc/rp2350-datasheet.pdf` — RP2350 datasheet: DMA controller §12.6.
+- `references/datasheets/rp2350-datasheet.pdf` — RP2350 datasheet: DMA controller §12.6.
   Note the RP2350 changes the CTRL bit layout, global DMA register
   offsets, channel/IRQ counts, SRAM size, IO_BANK0 base, and GPIO
   override bit positions — encodings are SKU-specific (see emu.Variant).
@@ -35,7 +35,7 @@ build/test loop that a coding agent can drive.
 
 ## 2. Background: the DMA machine in one page
 
-The reference design (`doc/ece4760.pdf`) is a fetch/execute machine built
+The reference design (`references/datasheets/ece4760.pdf`) is a fetch/execute machine built
 from three DMA channels:
 
 - **Fetch channel (DMA0)** — its `READ_ADDR` *is the program counter*. It
@@ -68,7 +68,7 @@ Architectural state and where it physically lives:
 | Program text | array of 16-byte blocks | SRAM (must be writable — see §4.6) |
 
 Two facts verified against the RP2040 datasheet
-(`doc/rp2040-datasheet.pdf`) that constrain everything below:
+(`references/datasheets/rp2040-datasheet.pdf`) that constrain everything below:
 
 - **There is no GPIO DREQ.** DREQs 0–39 are peripheral FIFOs (PIO, SPI, UART,
   I2C, ADC, XIP) plus `DREQ_PWM_WRAP0..7`; internal pacing timers are
@@ -302,7 +302,7 @@ Instead:
   "spills" are just more SRAM words (cheap — same cost as a register!).
 - Lower each pseudo-instruction to its block sequence late (AsmPrinter/MC):
   `ADD rd, rs1, rs2` → 3 blocks (load sniffer / add-pass / store), etc.,
-  mirroring the DMAasm macro table in `doc/ece4760.pdf` pp. 4–5.
+  mirroring the DMAasm macro table in `references/datasheets/ece4760.pdf` pp. 4–5.
 - MC emits 16-byte blocks with ABS32 fixups; the "encoder" writes 4 words.
 - Target triple `dmacpu-unknown-none`; ILP32; no FP (softfloat or none);
   `char` = 8-bit but note sub-word stores use the DMA width field.
@@ -344,7 +344,7 @@ themselves).
 ### Phase 0 — Ground truth (foundation for the agent loop)
 
 1. Fetch the reference test programs (code ZIPs referenced in
-   `doc/ece4760.pdf`) into a git-ignored local directory — they are
+   `references/datasheets/ece4760.pdf`) into a git-ignored local directory — they are
    copyrighted and must not be committed (see Coding rules) — and get them
    running on a real Pico with the C-macro "assembler"; capture GPIO/UART
    golden outputs.
@@ -447,13 +447,13 @@ the translator as its executable spec. Original plan for reference:
 
 ### Coding rules
 
-1. The reference docs and code (`doc/ece4760.pdf` and the code ZIPs it
+1. The reference docs and code (`references/datasheets/ece4760.pdf` and the code ZIPs it
    links) are copyrighted by their author and not OSS.
    Do not commit the files in the Git repo.
 2. Write the code, comments, and docs in English.
 
 ### Immediate next steps
 
-1. Fetch the reference code ZIPs linked from `doc/ece4760.pdf` (local,
+1. Fetch the reference code ZIPs linked from `references/datasheets/ece4760.pdf` (local,
    git-ignored — see Coding rules).
 2. Start Phase 0: golden tests on hardware + `dmaemu` (Go) core loop.

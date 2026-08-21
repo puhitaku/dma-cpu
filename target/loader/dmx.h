@@ -1,6 +1,6 @@
 /* DMX executable loader for the DMA machine (RP2 target side).
  *
- * Parses the DMX image format (doc/dmx.md), places segments into SRAM,
+ * Parses the DMX image format (references/design_docs/dmx.md), places segments into SRAM,
  * applies relocations and init writes, and starts the 3-channel
  * fetch/execute machine. Freestanding C99; no Pico SDK dependency — MMIO
  * is done through volatile pointers, so this compiles into any bare-metal

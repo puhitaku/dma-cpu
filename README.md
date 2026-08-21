@@ -28,13 +28,13 @@ else is docs, examples, and vendored dependencies.
   the interrupt-dispatch design from `prompts/overview.md` §3.2.
 - `host/dmaasm/` — the assembler: SKU-portable `.dasm` sources (labels,
   literal pools, instruction-field addressing, the ABI v0 register file
-  and macro instruction set — see `doc/abi.md`) assembled into
+  and macro instruction set — see `references/design_docs/abi.md`) assembled into
   SKU-specific DMX executables with a symbol table. Validated on silicon:
   the HIL firmware runs assembler-produced binaries.
 - `host/dmacc/` + `host/llir/` — the C toolchain: `llir` parses clang's
   LLVM IR, `dmacc` lowers it to SKU-portable `.dasm`. Differential tests
   in `host/dmacc/testdata/` pin it against host clang.
-- `host/img/` — the DMX executable format (`doc/dmx.md`): builder,
+- `host/img/` — the DMX executable format (`references/design_docs/dmx.md`): builder,
   encoder/decoder, and the reference loader with Tier-2 relocation (same
   image runs at any placement). `host/fsimg/` builds xv6 filesystem images.
 - `host/boards/` — deployable-target descriptors (SKU, memory partition,
@@ -67,13 +67,18 @@ else is docs, examples, and vendored dependencies.
 
 ### Everything else
 
-- `doc/` — project documents (`dmx.md` is the image format spec, `abi.md`
-  the ABI) and the committed RP2040/RP2350 datasheets. `prompts/` holds
-  the phased design log. Third-party reference material is copyrighted and
-  stays untracked (see Coding rules in `prompts/overview.md`).
+- `docs/` — human-facing guides: how to build the firmware
+  (`building-firmware.md`) and how to wire the hardware
+  (`building-hardware.md`).
+- `prompts/` — the phased design log: the analysis in `overview.md` and a
+  per-phase results document for each step.
+- `references/` — material to consult, none of it built into the product:
+  `datasheets/` (the RP2040/RP2350 and peripheral datasheets),
+  `design_docs/` (the project's own specs — `abi.md` and `dmx.md`), and
+  reference-only git submodules studied but never compiled. Contrast
+  `target/libc/picolibc`, which *is* compiled and linked. Copyrighted
+  material stays untracked (see Coding rules in `prompts/overview.md`).
 - `examples/` — standalone programs built through the toolchain.
-- `references/` — reference-only git submodules, studied but never built
-  (unlike `target/libc/picolibc`, which is compiled and linked).
 
 ## Build and test
 

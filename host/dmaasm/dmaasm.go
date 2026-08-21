@@ -1,6 +1,6 @@
 // Package dmaasm assembles DMA-machine assembly (".dasm") into DMX
 // executables. The language and its lowering are defined by ABI v0
-// (doc/abi.md); the instruction set mirrors the macro table in
+// (references/design_docs/abi.md); the instruction set mirrors the macro table in
 // prompts/overview.md §2.
 //
 // Source is SKU-portable: MMIO names (%sniff, %pc, …), control words, and
@@ -66,7 +66,7 @@ func (r *Result) Symbol(name string) (uint32, error) {
 	return a, nil
 }
 
-// ABI v0 register file, laid out by the .regs directive (doc/abi.md).
+// ABI v0 register file, laid out by the .regs directive (references/design_docs/abi.md).
 var abiRegs = func() []string {
 	regs := make([]string, 0, 32)
 	for i := 0; i < 16; i++ {
@@ -483,7 +483,7 @@ var instrs = map[string]instrSpec{
 	"gpio":  {2, 2, fixed(1)},
 	"halt":  {0, 0, fixed(1)},
 	"nop":   {0, 0, fixed(1)},
-	// safepoint: the ABI interrupt delivery point (doc/abi.md) — store
+	// safepoint: the ABI interrupt delivery point (references/design_docs/abi.md) — store
 	// the resume address, then jump indirectly through `dispatch`.
 	"safepoint": {0, 0, fixed(2)},
 }

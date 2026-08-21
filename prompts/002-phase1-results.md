@@ -7,7 +7,7 @@ on the Phase 0 HIL rig.
 
 ## What was built
 
-### DMX format (`doc/dmx.md`, v1)
+### DMX format (`references/design_docs/dmx.md`, v1)
 
 A deliberately small loadable format: byte segments (program blocks and
 data are both opaque bytes), one ABS32 relocation type (`{seg, off, ref}`:

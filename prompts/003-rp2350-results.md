@@ -4,7 +4,7 @@ Status as of 2026-08-16. The toolchain now targets both RP2 SKUs: the
 emulator, image builder, CLI, and C loader are parametrized by SKU, and
 the entire golden-test suite passes on RP2040 and RP2350.
 
-## What differs between the SKUs (verified against `doc/rp2350-datasheet.pdf` §12.6)
+## What differs between the SKUs (verified against `references/datasheets/rp2350-datasheet.pdf` §12.6)
 
 The programming model is shared, but the encodings are not:
 
@@ -32,7 +32,7 @@ bit layout, atomic register aliases, credit-based DREQs, pacing timers.
 **Consequence for the toolchain:** control words are not portable between
 SKUs. A DMA-machine program must be assembled for its target chip; DMX
 images carry SKU-specific payload and the SKU is agreed out of band
-(documented in `doc/dmx.md`).
+(documented in `references/design_docs/dmx.md`).
 
 ## Implementation
 

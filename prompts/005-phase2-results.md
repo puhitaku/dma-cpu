@@ -2,7 +2,7 @@
 
 Status as of 2026-08-16. Both Phase 2 items of `prompts/overview.md` are
 done: the `dmaasm` assembler exists and its output has been validated on
-RP2350 silicon, and ABI v0 is frozen in `doc/abi.md`.
+RP2350 silicon, and ABI v0 is frozen in `references/design_docs/abi.md`.
 
 ## What was built
 
@@ -39,7 +39,7 @@ verifies intent values in the emulator, and emits the firmware header.
 **The firmware therefore runs assembler-produced binaries — the hardware
 pass validates the assembler end to end.**
 
-### ABI v0 (frozen, `doc/abi.md`)
+### ABI v0 (frozen, `references/design_docs/abi.md`)
 
 Channels 0/1/2 (+3 injector, HIGH_PRIORITY); the 32-word register file
 (`r0`–`r15`, `lr`, `sp`, `zero`, `null`, `at`, `dispatch`, `irqresume`);

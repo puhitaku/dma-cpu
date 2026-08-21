@@ -36,7 +36,7 @@ that path deliberately, not as a fallback:
 
 Compiled code cannot promise `|v| < 2^28`, so `jneg` alone cannot lower
 `icmp`. Added to the assembler (all silicon-validated through the
-compiled programs; ABI v0.1, doc/abi.md):
+compiled programs; ABI v0.1, references/design_docs/abi.md):
 
 - **Full-range comparisons**: `jsign` (4 blocks), `jeq` (12),
   `jlt`/`jltu` (16, signed/unsigned borrow formulas) — all isolate the

@@ -1,5 +1,5 @@
 // Command dmaasm assembles DMA-machine assembly (.dasm) into a DMX
-// executable (doc/dmx.md) for one RP2 SKU.
+// executable (references/design_docs/dmx.md) for one RP2 SKU.
 //
 // Usage:
 //

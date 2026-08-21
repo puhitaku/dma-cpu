@@ -10,13 +10,13 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
 
 ## Hard rules
 
-- Never commit third-party reference material: `doc/ece4760.pdf` and the
-  code ZIPs it links (keep under git-ignored `third_party/`). They are
+- Never commit third-party reference material: `references/datasheets/ece4760.pdf` and the
+  code ZIPs it links (keep local copies git-ignored). They are
   copyrighted; see "Coding rules" in `prompts/overview.md`.
 - Do not use "Cornell" or "ECE4760" in code, identifiers, comments, or
   repo-facing files. Name things after what they do (e.g. `fetchexec`);
   cite `prompts/overview.md` instead of the source article. The literal
-  file path `doc/ece4760.pdf` in prompts/.gitignore is the only exception.
+  file path `references/datasheets/ece4760.pdf` in `.gitignore` is the only exception.
 - Code, comments, and docs are written in English.
 - Every self-built tool is Go, standard library only (single module).
   Exceptions: the future LLVM backend (C++) and target-side code that
@@ -32,7 +32,7 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   (`host/emu/variant.go`, instances `emu.RP2040`/`emu.RP2350`). Never hardcode
   them elsewhere. `TestVariantEncodings` pins them against the datasheets.
 - Control words and DMX images are per-SKU and not portable; producers
-  and loaders agree on the SKU out of band (`doc/dmx.md`).
+  and loaders agree on the SKU out of band (`references/design_docs/dmx.md`).
 - CTRL's CHAIN_TO and TREQ_SEL are fields, not flags: never OR a new
   value over a ctrl word that already has one (TREQ=permanent is all
   ones); rebuild the word.
@@ -43,7 +43,7 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   Semantic changes to `host/emu/dma.go`/`host/emu/machine.go` need re-validation on
   hardware, and new behaviour must be tested on both SKUs (use the
   `forEachVariant` test helper).
-- ABI v0 is frozen in `doc/abi.md` (channels, register file, calling
+- ABI v0 is frozen in `references/design_docs/abi.md` (channels, register file, calling
   convention, safepoint rule, HALT/NOP encodings). Changing it means a
   version bump and updating dmaasm, img, target/loader, dmxgen, and the
   doc together.
@@ -68,7 +68,7 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
 - The full-range comparison macros (`jsign`/`jeq`/`jlt`/`jltu`) exist
   because `jneg` is only correct for |v| < 2^28; compiled code must use
   them for arbitrary values. They dispatch through a pooled trampoline
-  arena appended to .text (ABI v0.1, doc/abi.md).
+  arena appended to .text (ABI v0.1, references/design_docs/abi.md).
 - libc = picolibc (submodule `target/libc/picolibc`, BSD-licensed — the ONLY
   third-party code that may be committed/referenced; the Cornell rule
   above still stands). It is compiled through the normal pipeline, not

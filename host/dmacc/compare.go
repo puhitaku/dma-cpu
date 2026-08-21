@@ -25,7 +25,7 @@ type cmpHelper struct {
 }
 
 // The helper bodies. Predicate math is identical to the dmaasm inline
-// macros (doc/abi.md); `jsign` slots: negative sign first.
+// macros (references/design_docs/abi.md); `jsign` slots: negative sign first.
 var cmpHelpers = []cmpHelper{
 	{"eqz", `; a == 0 ? -> cw_t : cw_f  (sign of a | -a)
 __cw_eqz:

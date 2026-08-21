@@ -1,6 +1,6 @@
 # Copyrighted third-party reference material — never commit (see prompts/overview.md, Coding rules)
 /third_party/
-/doc/ece4760.pdf
+/references/datasheets/ece4760.pdf
 
 # Build artifacts
 /bin/

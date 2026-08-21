@@ -499,7 +499,7 @@ func TestPollProgram(t *testing.T) {
 			t.Fatalf("spurious ISR: %d", got)
 		}
 		// Raise with -1: jneg's byte-swap trick needs |value| < 2^28, so
-		// 0x80000000 would NOT be seen as negative (doc/abi.md).
+		// 0x80000000 would NOT be seen as negative (references/design_docs/abi.md).
 		m.Poke32(pending, 0xFFFFFFFF)
 		rr, err := m.Run(emu.RunConfig{MaxCycles: 2000, WatchWrites: []uint32{isrcount}})
 		if err != nil || rr.Reason != emu.StopWatch {
