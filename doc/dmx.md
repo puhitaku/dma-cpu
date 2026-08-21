@@ -4,7 +4,7 @@ DMX is the loadable image format for DMA-machine programs (Phase 1 of
 `prompts/overview.md`). It carries program blocks and data as opaque byte
 segments, a table of ABS32 relocations, a table of MMIO init writes, and an
 entry point. Producers: the `img` Go package (and, later, the `dmaasm`
-linker). Consumers: `img/load.go` (emulator/host, the behavioural
+linker). Consumers: `host/img/load.go` (emulator/host, the behavioural
 reference) and `target/loader/dmx.c` (RP2 bare-metal).
 
 Design rationale (`prompts/overview.md` §4.3–§4.4): every operand on this

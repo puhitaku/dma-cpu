@@ -2,7 +2,7 @@
 
 Frozen 2026-08-16 (Phase 2). Implemented by `dmaasm` (assembler),
 `img.DefaultMachine` (host loader), `target/loader` (RP2 loader), and the
-HIL layouts in `cmd/dmxgen`. Changes require bumping to v1 and updating
+HIL layouts in `host/cmd/dmxgen`. Changes require bumping to v1 and updating
 all four, plus AGENTS.md.
 
 v0.1 (Phase 4, additive): the reserved word at 0x5C is assigned as `at2`

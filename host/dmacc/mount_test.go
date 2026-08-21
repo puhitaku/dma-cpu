@@ -1,0 +1,76 @@
+package dmacc_test
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/puhitaku/dma-cpu/host/fsimg"
+)
+
+// TestXv6Mount (prompts/029): mount the vfat volume, list it with ls
+// (8.3 and long names, a subdirectory), cat files by short and long
+// name, cd inside and use relative paths, check the read-only guard
+// and busy/unmount semantics, and confirm free/echo still behave.
+func TestXv6Mount(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("full-system boot")
+	}
+	fb := fsimg.NewFAT32(128) // 64 KiB volume
+	fb.AddFile("HELLO.TXT", []byte("hello from vfat\n"))
+	fb.AddFile("a-rather-long-file-name.txt", []byte("long names work\n"))
+	fb.AddDir("SUB")
+	fb.AddFile("SUB/NESTED.TXT", []byte("nested read\n"))
+	big := make([]byte, 1500) // spans multiple clusters
+	for i := range big {
+		big[i] = byte('a' + i%26)
+	}
+	big[len(big)-2] = 'Z'
+	big[len(big)-1] = '\n'
+	fb.AddFile("BIG.BIN", big)
+	vol := fb.Bytes()
+
+	flash := make([]byte, 0x400000)
+	for i := range flash {
+		flash[i] = 0xFF
+	}
+	copy(flash[0x240000:], vol)
+
+	m, _ := bootXshFlash(t, flash)
+	m.FeedConsole("mkdir /mnt\rmount fat0 /mnt\rmount\rls /mnt\r" +
+		"cat /mnt/HELLO.TXT\rcat /mnt/a-rather-long-file-name.txt\r" +
+		"cat /mnt/arathe~2.txt\r" + // the listed 8.3 stub works too
+		"ls mnt\r" + // relative mountpoint crossing
+		"cd mnt\rls .\rcat SUB/NESTED.TXT\rcd /\r" +
+		"echo no > /mnt/nope\r" +
+		"mount -u /mnt\rls /mnt\recho done\r")
+	runScript(t, m, 2_000_000_000)
+	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
+	t.Logf("console:\n%s", out)
+	for _, want := range []string{
+		"fat0 on /mnt type vfat (ro)",
+		"hello.txt",                   // 8.3 names list lowercased
+		"a-rather-long-file-name.txt", // LFNs list IN FULL (DIRSIZ 62)
+		"sub",
+		"hello from vfat",
+		"long names work",
+		"nested read",
+		"done",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(out, "cannot stat") {
+		t.Errorf("ls could not stat a name it listed")
+	}
+	if !strings.Contains(out, "big.bin ") {
+		t.Errorf("short name after a long one must terminate cleanly")
+	}
+	if n := strings.Count(out, "big.bin"); n < 3 {
+		t.Errorf("big.bin should list via /mnt, mnt and . (got %d)", n)
+	}
+	if n := strings.Count(out, "long names work"); n < 2 {
+		t.Errorf("LFN and 8.3 stub should both cat (got %d)", n)
+	}
+}

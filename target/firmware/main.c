@@ -669,7 +669,7 @@ static void exp_abort(void)
 extern char __bss_end__;
 
 #ifdef HIL_HAS_SYSCALL
-/* Phase 5c (xv6/PORT.md): xv6 syscalls on silicon. Two instances of
+/* Phase 5c (target/xv6/PORT.md): xv6 syscalls on silicon. Two instances of
  * the syscall exerciser run under the tick scheduler; pid 1's
  * SYS_write lines appear directly on the UART between the markers.
  * Same start-then-arm ordering as shell_start (the tick-arming race
@@ -800,7 +800,7 @@ static void __attribute__((unused)) stage_blob(uint32_t home, const uint8_t *src
 }
 
 #ifdef HIL_HAS_EXEC
-/* Phase 5e (xv6/PORT.md): fork/exec/wait with the image loader IN the
+/* Phase 5e (target/xv6/PORT.md): fork/exec/wait with the image loader IN the
  * kernel. Stages the hello blob at its registered RAM homes; pid 2
  * vforks, the child execs "hello" (the kernel places and relocates
  * it), the parent waits and reaps exit(7). The three lines between

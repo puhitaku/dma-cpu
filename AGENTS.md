@@ -29,7 +29,7 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
 
 - All SKU-specific encodings — CTRL bit layout, global register offsets,
   sizes, DREQ numbers, GPIO fields — live only in `emu.Variant`
-  (`emu/variant.go`, instances `emu.RP2040`/`emu.RP2350`). Never hardcode
+  (`host/emu/variant.go`, instances `emu.RP2040`/`emu.RP2350`). Never hardcode
   them elsewhere. `TestVariantEncodings` pins them against the datasheets.
 - Control words and DMX images are per-SKU and not portable; producers
   and loaders agree on the SKU out of band (`doc/dmx.md`).
@@ -40,7 +40,7 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   `prompts/004-hw-calibration.md` for the verified facts: pre-write quiet
   on null CTRL_TRIG, zero-count immediate completion, credit cleared on
   trigger, trigger-drop while EN=0, CRC bit order, 15 sys-clk/block).
-  Semantic changes to `emu/dma.go`/`emu/machine.go` need re-validation on
+  Semantic changes to `host/emu/dma.go`/`host/emu/machine.go` need re-validation on
   hardware, and new behaviour must be tested on both SKUs (use the
   `forEachVariant` test helper).
 - ABI v0 is frozen in `doc/abi.md` (channels, register file, calling
@@ -52,8 +52,8 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   abort-divert a running machine expecting to resume it — both wedge
   ~71 % of the time on silicon; CHAN_ABORT is for full restarts only.
 - DMA-machine programs are written in `.dasm` (assembled by `dmaasm`,
-  SKU chosen at assembly); the HIL images in `prog/hil/` are the
-  reference programs — `cmd/dmxgen` assembles them into the firmware
+  SKU chosen at assembly); the HIL images in `host/prog/hil/` are the
+  reference programs — `host/cmd/dmxgen` assembles them into the firmware
   header, so hardware runs validate the assembler.
 - C compiles via stock clang IR + the `dmacc` translator (Phase 4,
   `prompts/007-phase4-results.md`): `clang --target=armv6m-none-eabi
@@ -61,7 +61,7 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   then `llir` (parser) + `dmacc` (codegen) emit SKU-portable .dasm. No
   register allocator by design: every SSA value is an SRAM word. v0
   limits: no recursion (static frames), no i64/float/varargs/indirect
-  calls. Differential tests (`dmacc/testdata/`) pin dmacc against host
+  calls. Differential tests (`host/dmacc/testdata/`) pin dmacc against host
   clang execution; regenerate goldens with `make llgen` (host clang
   required; keep -fsigned-char on both sides or `char` semantics
   diverge).
@@ -72,12 +72,12 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
 - libc = picolibc (submodule `lib/picolibc`, BSD-licensed — the ONLY
   third-party code that may be committed/referenced; the Cornell rule
   above still stands). It is compiled through the normal pipeline, not
-  ported: curated sources -> IR goldens in `libc/ll/` (`make libc`),
-  linked by passing them to dmacc. Config lives in `libc/picolibc.h`
+  ported: curated sources -> IR goldens in `target/libc/ll/` (`make libc`),
+  linked by passing them to dmacc. Config lives in `target/libc/picolibc.h`
   (hand-written; integer-only stdio). stdout is UART0: dmacc maps the
   `__dma_uart_dr`/`__dma_uart_fr` globals to `%uartdr`/`%uartfr`; the
   emulator captures DR writes in `Machine.ConsoleOut`. See
-  `prompts/008-libc-results.md` and `libc/README.md`.
+  `prompts/008-libc-results.md` and `target/libc/README.md`.
 - dmacc supports varargs (static va areas, whole-program sized),
   indirect calls (<= 4 register args), and multi-module linking
   (`llir.Merge`). Still rejected: recursion, i64 values, floats,
@@ -87,7 +87,7 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   loader `DMX_COMPACT_MACHINE_CFG`; classic remains the default. The
   planner enforces canonical state at instruction boundaries and
   cross-checks pass-1 sizing against emission. Mind the mode-domain
-  rules in dmaasm/compact.go (notably: every record runs at its bank's
+  rules in host/dmaasm/compact.go (notably: every record runs at its bank's
   CURRENT count; sniff sequences must consume the accumulator within
   one macro). `.ifcompact` gates encoding-specific dasm; block .count/
   .ctrl fields do not exist in compact (use %cnt8w/%cnt8rw + dyncount).
@@ -95,7 +95,7 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
   instance; context switch = swapping irqresume at a safepoint (all
   shared scratch is dead there by construction — keep it that way: no
   safepoints inside macros, millicode, or the runtime). The scheduler
-  is prog/hil/kernel.dasm; ticks arrive via a two-injector chain (ch3
+  is host/prog/hil/kernel.dasm; ticks arrive via a two-injector chain (ch3
   timer -> ch4) patching both dispatch words. dmacc's crt0 thunk is the
   exported `crtthunk` (kernels use it as the dispatch EOI value).
 - Size discipline (`prompts/009-size-results.md`): the standard clang
@@ -139,9 +139,9 @@ phased plan). Phase outcomes are logged in `prompts/00N-*-results.md` /
 
 - `make test` = `go vet` + all golden tests. Run it before committing.
 - `make llgen` regenerates the compiler IR goldens + host expectations
-  (needs host clang; only when dmacc/testdata/*.c change).
+  (needs host clang; only when host/dmacc/testdata/*.c change).
 - `make build` builds the `dmaemu`/`dmaasm`/`dmacc` CLIs; `make images` regenerates
-  `target/firmware/generated/images.h` via `cmd/dmxgen` (required whenever
+  `target/firmware/generated/images.h` via `host/cmd/dmxgen` (required whenever
   test programs or emulator semantics change); `make firmware` builds the
   HIL firmware; `make test-hw` flashes it.
 - Toolchain defaults (this machine; override via Makefile vars):

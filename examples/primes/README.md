@@ -21,7 +21,7 @@ primes: 2 3 5 7 11 13 ...
 
 `make run` compiles `primes.c` with clang to LLVM IR, lowers it with
 `dmacc` to DMA control blocks together with the picolibc modules
-(`libc/README.md` — that `printf` is the real picolibc, running on the
+(`target/libc/README.md` — that `printf` is the real picolibc, running on the
 DMA machine), and executes it in the silicon-calibrated emulator.
 printf output goes to UART0: the emulator shows it as console text; on
 real hardware the same bytes appear on the serial port. `main()`'s
@@ -60,5 +60,5 @@ compile-time errors, never miscompiles):
   by default; benchmark without them via `dmacc -nosafepoints`.
 
 To run a program on real hardware, add it to the HIL specs in
-`cmd/dmxgen/main.go` (see the `cc_*` entries) and `make test-hw` from
+`host/cmd/dmxgen/main.go` (see the `cc_*` entries) and `make test-hw` from
 the repo root — the firmware checks it against the emulator's results.

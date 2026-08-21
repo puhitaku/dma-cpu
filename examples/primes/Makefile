@@ -7,7 +7,7 @@ PROG    ?= primes
 DUMPS   ?= -dump nprimes -dump primes:46
 # The picolibc IR goldens (printf & friends); `make libc` at the repo
 # root regenerates them. Drop this for a libc-free program.
-LIBC_LL := $(wildcard $(REPO)/libc/ll/*.ll)
+LIBC_LL := $(wildcard $(REPO)/target/libc/ll/*.ll)
 
 # The front half is stock clang. Keep these flags: -Oz gives the
 # smallest IR in the form dmacc expects, -fsigned-char keeps char
@@ -15,7 +15,7 @@ LIBC_LL := $(wildcard $(REPO)/libc/ll/*.ll)
 # provide picolibc's headers.
 CLANG_FLAGS := --target=armv6m-none-eabi -Oz -fno-unroll-loops \
                -fsigned-char -ffreestanding -nostdinc \
-               -I$(REPO)/libc -I$(REPO)/libc/include \
+               -I$(REPO)/target/libc -I$(REPO)/target/libc/include \
                -I$(REPO)/lib/picolibc/libc/include \
                -I$(shell clang -print-resource-dir)/include
 

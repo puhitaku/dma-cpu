@@ -191,7 +191,7 @@ int dmx_start(const dmx_machine_cfg *cfg, uint32_t entry)
     }
     uint32_t exec_regs = ch_reg(cfg->exec, 0);
 
-    /* Mirrors emu.SetupFetchExec (img/load.go is the reference).
+    /* Mirrors emu.SetupFetchExec (host/img/load.go is the reference).
      * Fix: one transfer, scratch -> fetch.AL2_WRITE_ADDR_TRIG. */
     wr32_sram(cfg->scratch, exec_regs);
     mmio_write(ch_reg(cfg->fix, DMA_CH_AL1_READ_ADDR), cfg->scratch);

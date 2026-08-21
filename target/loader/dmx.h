@@ -11,7 +11,7 @@
  * RP2040. The image itself must also have been assembled for the same
  * SKU — DMX carries SKU-specific control words as opaque payload.
  *
- * NOT YET VALIDATED ON HARDWARE: the emulator-side loader (img/load.go) is
+ * NOT YET VALIDATED ON HARDWARE: the emulator-side loader (host/img/load.go) is
  * the behavioural reference until the Phase 0 HIL rig exists.
  */
 #ifndef DMX_H
