@@ -835,17 +835,6 @@ sleep(uint chan)
   p->state = SLEEPING;
 }
 
-static void
-wakeup(uint chan)
-{
-  for (int i = 0; i < NPROC; i++) {
-    if (proc[i].state == SLEEPING && proc[i].chan == chan) {
-      proc[i].chan = 0;
-      proc[i].state = RUNNABLE;
-    }
-  }
-}
-
 /* --- Scheduler fence for the fs layer (kpipe.c): sleeper lookup,
  * mailbox access, deposit-completion, and voluntary blocking, without
  * exposing the ABI proc table. Mail fields: 1 a0, 2 a1, 3 a2, 4 ret,

@@ -27,7 +27,7 @@ type Options struct {
 	NoSafepoints   bool   // omit safepoints at backward branches
 	InlineCompares bool   // inline comparison sequences (faster, much larger)
 	Stats          *Stats // when non-nil, collect size attribution
-	RecursionDepth int    // OBSOLETE: recursion now uses the frame stack
+	RecursionDepth int    // max recursion-frame depth (routes intra-set calls d -> d+1)
 	FrameStack     int    // frame-stack bytes for recursive calls; default 4096
 	// XIPText emits flash-immutable text: every self-modified record
 	// (block-field patch target) is placed in a trailing .ramtext region
@@ -631,53 +631,6 @@ func recSuffix(d int) string {
 		return ""
 	}
 	return fmt.Sprintf("__r%d", d)
-}
-
-// checkNoRecursion rejects call-graph cycles: v0 frames are static.
-func (g *gen) checkNoRecursion() error {
-	const (
-		white = 0
-		gray  = 1
-		black = 2
-	)
-	color := map[string]int{}
-	var visit func(name string, path []string) error
-	visit = func(name string, path []string) error {
-		f, ok := g.funcIdx[name]
-		if !ok {
-			return nil // runtime/intrinsic
-		}
-		switch color[name] {
-		case gray:
-			return fmt.Errorf("dmacc: recursion is not supported (v0 static frames): %s -> %s",
-				strings.Join(path, " -> "), name)
-		case black:
-			return nil
-		}
-		color[name] = gray
-		for _, b := range f.Blocks {
-			for _, ins := range b.Instrs {
-				if ins.Op == "call" && !strings.HasPrefix(ins.Callee, "llvm.") {
-					if err := visit(ins.Callee, append(path, name)); err != nil {
-						return err
-					}
-				}
-			}
-		}
-		color[name] = black
-		return nil
-	}
-	names := make([]string, 0, len(g.funcIdx))
-	for n := range g.funcIdx {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	for _, n := range names {
-		if err := visit(n, nil); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // --- Naming ---

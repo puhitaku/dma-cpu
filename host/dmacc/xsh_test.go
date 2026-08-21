@@ -17,12 +17,8 @@ import (
 	"github.com/puhitaku/dma-cpu/host/prog"
 )
 
-// buildUser compiles an xv6 user program (name.ll + the userland
+// buildUserScratch compiles an xv6 user program (name.ll + the userland
 // modules) and assembles it reloc-intact at canonical link bases.
-func buildUser(t *testing.T, v *emu.Variant, name string, extra ...string) *dmaasm.Result {
-	return buildUserScratch(t, v, boards.Pico2.Scratch, name, extra...)
-}
-
 func buildUserScratch(t *testing.T, v *emu.Variant, scratch uint32, name string, extra ...string) *dmaasm.Result {
 	t.Helper()
 	paths := append([]string{name, "ulib", "usys"}, extra...)
@@ -45,12 +41,6 @@ func buildUserScratch(t *testing.T, v *emu.Variant, scratch uint32, name string,
 		t.Fatal(err)
 	}
 	return res
-}
-
-// buildDisk assembles the user programs as DMX-exec files and packs
-// them (plus README) into an xv6 filesystem image.
-func buildDisk(t *testing.T, v *emu.Variant) []byte {
-	return buildDiskBoard(t, v, boards.Pico2)
 }
 
 // buildDiskBoard builds a board's RAM disk. Flash-apps boards get a

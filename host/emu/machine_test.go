@@ -77,12 +77,6 @@ func (p *tprog) move(src, dst uint32, extra ...uint32) uint32 {
 	return p.emit(src, dst, 1, ctrl)
 }
 
-// jump emits an unconditional jump: the target address is interned as a
-// literal and copied into the fetch channel's READ_ADDR (the PC).
-func (p *tprog) jump(target uint32) uint32 {
-	return p.move(p.word(target), emu.ChanRegAddr(p.cfg.Fetch, emu.OffReadAddr))
-}
-
 // epilogue emits "set done flag, then halt on an all-zero block".
 func (p *tprog) epilogue() {
 	p.move(p.word(1), p.done)

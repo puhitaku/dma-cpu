@@ -7,45 +7,6 @@
 #include "kernel/fs.h"
 #include "user/user.h"
 
-static int
-streq(const char *a, const char *b)
-{
-  while (*a && *a == *b) {
-    a++;
-    b++;
-  }
-  return *a == *b;
-}
-
-static char obuf[256];
-static int olen;
-
-static void
-emit(const char *s)
-{
-  while (*s)
-    obuf[olen++] = *s++;
-}
-
-static void
-emitn(uint v)
-{
-  char d[12];
-  int i = 0;
-  do {
-    d[i++] = '0' + v % 10;
-    v /= 10;
-  } while (v);
-  while (i)
-    obuf[olen++] = d[--i];
-}
-
-static void
-flush(void)
-{
-  write(1, obuf, olen);
-  olen = 0;
-}
 /* fbtest: exercise the framebuffer API end to end — acquire, draw a
  * test card straight into PSRAM (16-color bars, R/G/B ramps, a gray
  * ramp, white border), verify a sample, hold it ~5 s, release. */
