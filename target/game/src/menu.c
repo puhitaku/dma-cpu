@@ -10,23 +10,37 @@
 #define C_SELBG RGB(40, 70, 140)
 #define C_FOOT RGB(90, 100, 130)
 
-static const char *names[6] = {"Dinosaur", "LANWalk",   "Yacht",
-                               "Sequencer", "Benchmark", "Arm info"};
+static const char *names[7] = {"Dinosaur",  "LANWalk",   "Yacht",
+                               "Sequencer", "Benchmark", "Radiosity",
+                               "Arm info"};
 
-#define NGAMES 6
+#define NGAMES 7
+#define VIS 6 /* rows on screen; the list scrolls beyond that */
+
+static int top; /* first visible item */
 
 static void
-draw_item(int i, int selected)
+draw_row(int i, int selected)
 {
   /* highlight is 22 tall, the 16-tall label sits 3 px inside it top
-   * and bottom — even padding; six items at a 24-px pitch clear the
-   * footer line at y=226 */
-  int y = 76 + i * 24;
+   * and bottom — even padding; VIS rows at a 24-px pitch clear the
+   * footer line at y=226. Row position comes from the scroll window. */
+  int y = 76 + (i - top) * 24;
   gfx_fill(32, y, 176, 22, selected ? C_SELBG : C_BG);
   if (selected)
     gfx_text(44, y + 7, ">", C_TITLE, C_SELBG);
   gfx_text2(60, y + 3, names[i], selected ? C_SEL : C_ITEM,
             selected ? C_SELBG : C_BG);
+}
+
+/* full window redraw: VIS rows plus the more-above/below arrows */
+static void
+draw_window(int sel)
+{
+  for (int i = top; i < top + VIS; i++)
+    draw_row(i, i == sel);
+  gfx_text(216, 80, top > 0 ? "^" : " ", C_FOOT, C_BG);
+  gfx_text(216, 190, top + VIS < NGAMES ? "v" : " ", C_FOOT, C_BG);
 }
 
 int
@@ -37,8 +51,8 @@ menu_run(void)
   gfx_fill(56, 44, 128, 2, C_TITLE);
   gfx_text(8, 58, "Enjoy purely DMA-coded games", C_ITEM, C_BG);
   int sel = 0;
-  for (int i = 0; i < NGAMES; i++)
-    draw_item(i, i == sel);
+  top = 0;
+  draw_window(sel);
   gfx_text(12, 226, "up/down: pick   press: play", C_FOOT, C_BG);
   gfx_present();
   led(LED_DIM(0x0040FF), LED_DIM(0x0040FF)); /* dim blue browse */
@@ -54,8 +68,19 @@ menu_run(void)
     if (in_edge & BTN_DOWN)
       sel = sel == NGAMES - 1 ? 0 : sel + 1;
     if (sel != prev) {
-      draw_item(prev, 0);
-      draw_item(sel, 1);
+      /* keep the selection inside the window, scrolling as needed */
+      int newtop = top;
+      if (sel < newtop)
+        newtop = sel;
+      if (sel > newtop + VIS - 1)
+        newtop = sel - (VIS - 1);
+      if (newtop != top) {
+        top = newtop;
+        draw_window(sel);
+      } else {
+        draw_row(prev, 0);
+        draw_row(sel, 1);
+      }
       gfx_present();
       snd_play(700, 40, 2);
       uputs("menu: ");

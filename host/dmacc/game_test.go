@@ -43,7 +43,7 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	}
 	var mods []*llir.Module
 	for _, p := range []string{"gmain", "menu", "dino", "lanwalk", "yacht",
-		"input", "fx", "seq", "cpumon", "bench", "gfx", "lcd", "grt"} {
+		"input", "fx", "seq", "cpumon", "bench", "radio", "gfx", "lcd", "grt"} {
 		mods = append(mods, parseLL(t, "../../target/game/ll/"+p+".ll"))
 	}
 	mod, err := llir.Merge(mods...)
@@ -518,8 +518,10 @@ func TestGameSeq(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
-	press(t, m, prog, pinUp) // wraps up: Dino -> Arm info
+	press(t, m, prog, pinUp) // wraps up: Dino -> Arm info (scrolls)
 	at = runUntil(t, m, "menu: Arm info", at, 100_000_000)
+	press(t, m, prog, pinUp) // -> Radiosity
+	at = runUntil(t, m, "menu: Radiosity", at, 100_000_000)
 	press(t, m, prog, pinUp) // -> Benchmark
 	at = runUntil(t, m, "menu: Benchmark", at, 100_000_000)
 	press(t, m, prog, pinUp) // -> Sequencer
@@ -694,6 +696,64 @@ func benchExpect() map[string][2]uint32 { // name -> {ops, sum}
 	fill := uint32(0xA5A5A5A5) + 7
 	exp["mem"] = [2]uint32{8 * (1024 + 1024), fill + fill}
 	return exp
+}
+
+func TestGameRadio(t *testing.T) {
+	t.Parallel()
+	m, prog := bootGame(t)
+	at := runUntil(t, m, "menu up", 0, 300_000_000)
+	for _, marker := range []string{"menu: LANWalk", "menu: Yacht",
+		"menu: Sequencer", "menu: Benchmark", "menu: Radiosity"} {
+		press(t, m, prog, pinDown)
+		at = runUntil(t, m, marker, at, 100_000_000)
+	}
+	press(t, m, prog, pinA)
+	at = runUntil(t, m, "radio: up", at, 100_000_000)
+	// let a few dozen shots land: the ceiling light must have lit the
+	// floor, and the red/green walls must be bleeding their colors
+	at = runUntil(t, m, "radio: shot 32", at, 3_000_000_000)
+
+	p := decodeLCD(m, 16)
+	// the 2x2 ceiling light renders near-white in the upper middle
+	lit := 0
+	for y := 5; y < 60; y++ {
+		for x := 90; x < 150; x++ {
+			c := p.px[y*240+x]
+			if c>>11 >= 28 && (c>>5)&0x3F >= 56 { // bright r and g
+				lit++
+			}
+		}
+	}
+	if lit < 100 {
+		t.Errorf("ceiling light: %d bright pixels", lit)
+	}
+	// left wall red-dominant, right wall green-dominant
+	redish, greenish := 0, 0
+	for y := 100; y < 140; y++ {
+		for x := 5; x < 40; x++ {
+			c := p.px[y*240+x]
+			if c>>11 > 2*((c>>5)&0x3F)/4 && c>>11 > 0 {
+				redish++
+			}
+		}
+		for x := 200; x < 235; x++ {
+			c := p.px[y*240+x]
+			if (c>>5)&0x3F > 0 && (c>>5)&0x3F/2 >= c>>11 {
+				greenish++
+			}
+		}
+	}
+	if redish < 200 {
+		t.Errorf("left wall: %d red-dominant pixels", redish)
+	}
+	if greenish < 200 {
+		t.Errorf("right wall: %d green-dominant pixels", greenish)
+	}
+	dumpPNG(t, p, "radio.png")
+
+	// press exits back to the menu
+	press(t, m, prog, pinA)
+	runUntil(t, m, "radio: back", at, 200_000_000)
 }
 
 func TestGameBench(t *testing.T) {

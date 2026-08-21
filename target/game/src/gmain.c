@@ -23,6 +23,8 @@ gmain(void)
       seq_run();
     else if (g == 4)
       bench_run();
+    else if (g == 5)
+      radio_run();
     else
       cpumon_run();
   }
