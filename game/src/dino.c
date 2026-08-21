@@ -230,10 +230,11 @@ restart:
     in_poll();
     frame++;
 
-    /* physics: press or up jumps from the ground. Apex ~55 px keeps
-     * the sprite inside the redrawn strip (no ghosting above it). */
+    /* physics: press or up jumps from the ground. Apex ~44 px —
+     * high enough for the large cactus, low enough that fast play
+     * stays possible — and inside the redrawn strip (no ghosting). */
     if ((in_edge & (BTN_A | BTN_UP)) && y_fp == 0) {
-      vy_fp = 2688; /* 10.5 px/frame */
+      vy_fp = 2400; /* ~9.4 px/frame */
       snd_play(900, 35, 3);
     }
     if (y_fp > 0 || vy_fp > 0) {

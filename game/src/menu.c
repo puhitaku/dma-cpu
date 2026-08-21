@@ -10,12 +10,12 @@
 #define C_SELBG RGB(40, 70, 140)
 #define C_FOOT RGB(90, 100, 130)
 
-static const char *names[3] = {"Dinosaur", "LANWalk", "Yacht"};
+static const char *names[4] = {"Dinosaur", "LANWalk", "Yacht", "Sequencer"};
 
 static void
 draw_item(int i, int selected)
 {
-  int y = 96 + i * 28;
+  int y = 88 + i * 26;
   gfx_fill(32, y - 4, 176, 24, selected ? C_SELBG : C_BG);
   if (selected)
     gfx_text(44, y, ">", C_TITLE, C_SELBG);
@@ -31,7 +31,7 @@ menu_run(void)
   gfx_fill(56, 44, 128, 2, C_TITLE);
   gfx_text(8, 60, "Enjoy purely DMA-coded games", C_ITEM, C_BG);
   int sel = 0;
-  for (int i = 0; i < 3; i++)
+  for (int i = 0; i < 4; i++)
     draw_item(i, i == sel);
   gfx_text(48, 200, "up/down: pick", C_FOOT, C_BG);
   gfx_text(48, 212, "press:   play", C_FOOT, C_BG);
@@ -45,9 +45,9 @@ menu_run(void)
     in_poll();
     int prev = sel;
     if (in_edge & BTN_UP)
-      sel = sel == 0 ? 2 : sel - 1;
+      sel = sel == 0 ? 3 : sel - 1;
     if (in_edge & BTN_DOWN)
-      sel = sel == 2 ? 0 : sel + 1;
+      sel = sel == 3 ? 0 : sel + 1;
     if (sel != prev) {
       draw_item(prev, 0);
       draw_item(sel, 1);

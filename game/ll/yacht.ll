@@ -543,7 +543,7 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   call void @gfx_text2(i32 noundef 52, i32 noundef 104, ptr noundef nonnull @.str.6, i16 noundef zeroext -377, i16 noundef zeroext 2532) #6
   call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %3) #8
   %248 = call fastcc i32 @total() #7
-  call void @numstr(ptr noundef nonnull %3, i32 noundef 3, i32 noundef %248) #6
+  call void @numsp(ptr noundef nonnull %3, i32 noundef 3, i32 noundef %248) #6
   call void @gfx_text(i32 noundef 76, i32 noundef 124, ptr noundef nonnull @.str.7, i16 noundef zeroext -12615, i16 noundef zeroext 2532) #6
   call void @gfx_text(i32 noundef 124, i32 noundef 124, ptr noundef nonnull %3, i16 noundef zeroext -1, i16 noundef zeroext 2532) #6
   call void @gfx_text(i32 noundef 74, i32 noundef 136, ptr noundef nonnull @.str.8, i16 noundef zeroext -12615, i16 noundef zeroext 2532) #6
@@ -754,7 +754,7 @@ define internal fastcc void @draw_cat(i32 noundef %0, i32 noundef range(i32 0, 2
 19:                                               ; preds = %2, %17
   %20 = phi i32 [ %18, %17 ], [ %15, %2 ]
   %21 = phi i16 [ 32500, %17 ], [ -1, %2 ]
-  call void @numstr(ptr noundef nonnull %3, i32 noundef 3, i32 noundef %20) #6
+  call void @numsp(ptr noundef nonnull %3, i32 noundef 3, i32 noundef %20) #6
   call void @gfx_text(i32 noundef 200, i32 noundef %5, ptr noundef nonnull %3, i16 noundef zeroext %21, i16 noundef zeroext %8) #6
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %3) #8
   ret void
@@ -767,7 +767,7 @@ define internal fastcc void @draw_total() unnamed_addr #0 {
   tail call void @gfx_text(i32 noundef 10, i32 noundef 218, ptr noundef nonnull @.str.23, i16 noundef zeroext -12615, i16 noundef zeroext 2371) #6
   call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %1) #8
   %2 = tail call fastcc i32 @total() #7
-  call void @numstr(ptr noundef nonnull %1, i32 noundef 3, i32 noundef %2) #6
+  call void @numsp(ptr noundef nonnull %1, i32 noundef 3, i32 noundef %2) #6
   call void @gfx_text(i32 noundef 200, i32 noundef 218, ptr noundef nonnull %1, i16 noundef zeroext -1, i16 noundef zeroext 2371) #6
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %1) #8
   ret void
@@ -808,7 +808,7 @@ define internal fastcc i32 @cat_score(i32 noundef %0) unnamed_addr #3 {
   %12 = load i32, ptr %11, align 4, !tbaa !3
   %13 = tail call i32 @llvm.smax.i32(i32 %12, i32 0)
   %14 = mul i32 %13, %10
-  br label %78
+  br label %98
 
 15:                                               ; preds = %3
   %16 = getelementptr inbounds nuw [5 x i32], ptr @dice, i32 0, i32 %5
@@ -822,18 +822,18 @@ define internal fastcc i32 @cat_score(i32 noundef %0) unnamed_addr #3 {
   br label %3, !llvm.loop !34
 
 23:                                               ; preds = %7
-  switch i32 %0, label %70 [
-    i32 6, label %78
+  switch i32 %0, label %90 [
+    i32 6, label %98
     i32 7, label %24
     i32 8, label %35
     i32 9, label %54
-    i32 10, label %62
+    i32 10, label %72
   ]
 
 24:                                               ; preds = %23, %33
   %25 = phi i32 [ %34, %33 ], [ 1, %23 ]
   %26 = icmp eq i32 %25, 7
-  br i1 %26, label %78, label %27
+  br i1 %26, label %98, label %27
 
 27:                                               ; preds = %24
   %28 = getelementptr inbounds nuw [7 x i32], ptr %2, i32 0, i32 %25
@@ -843,7 +843,7 @@ define internal fastcc i32 @cat_score(i32 noundef %0) unnamed_addr #3 {
 
 31:                                               ; preds = %27
   %32 = shl nuw nsw i32 %25, 2
-  br label %78
+  br label %98
 
 33:                                               ; preds = %27
   %34 = add nuw nsw i32 %25, 1
@@ -861,7 +861,7 @@ define internal fastcc i32 @cat_score(i32 noundef %0) unnamed_addr #3 {
   %42 = icmp ne i32 %37, 0
   %43 = select i1 %41, i1 %42, i1 false
   %44 = select i1 %43, i32 %4, i32 0
-  br label %78
+  br label %98
 
 45:                                               ; preds = %35
   %46 = getelementptr inbounds nuw [7 x i32], ptr %2, i32 0, i32 %38
@@ -883,46 +883,74 @@ define internal fastcc i32 @cat_score(i32 noundef %0) unnamed_addr #3 {
   %53 = add nuw nsw i32 %38, 1
   br label %35, !llvm.loop !36
 
-54:                                               ; preds = %23, %57
-  %55 = phi i32 [ %61, %57 ], [ 1, %23 ]
-  %56 = icmp eq i32 %55, 6
-  br i1 %56, label %78, label %57
+54:                                               ; preds = %23, %62
+  %55 = phi i32 [ %65, %62 ], [ 5, %23 ]
+  %56 = phi i32 [ %64, %62 ], [ 1, %23 ]
+  %57 = icmp eq i32 %55, 8
+  br i1 %57, label %98, label %58
 
-57:                                               ; preds = %54
-  %58 = getelementptr inbounds nuw [7 x i32], ptr %2, i32 0, i32 %55
-  %59 = load i32, ptr %58, align 4, !tbaa !3
-  %60 = icmp eq i32 %59, 1
-  %61 = add nuw nsw i32 %55, 1
-  br i1 %60, label %54, label %78, !llvm.loop !37
+58:                                               ; preds = %54, %66
+  %59 = phi i32 [ %70, %66 ], [ 1, %54 ]
+  %60 = phi i32 [ %71, %66 ], [ %56, %54 ]
+  %61 = icmp eq i32 %60, %55
+  br i1 %61, label %62, label %66
 
-62:                                               ; preds = %23, %65
-  %63 = phi i32 [ %69, %65 ], [ 2, %23 ]
-  %64 = icmp eq i32 %63, 7
-  br i1 %64, label %78, label %65
+62:                                               ; preds = %58
+  %63 = icmp eq i32 %59, 0
+  %64 = add nuw nsw i32 %56, 1
+  %65 = add nuw nsw i32 %55, 1
+  br i1 %63, label %54, label %98, !llvm.loop !37
 
-65:                                               ; preds = %62
-  %66 = getelementptr inbounds nuw [7 x i32], ptr %2, i32 0, i32 %63
-  %67 = load i32, ptr %66, align 4, !tbaa !3
-  %68 = icmp eq i32 %67, 1
-  %69 = add nuw nsw i32 %63, 1
-  br i1 %68, label %62, label %78, !llvm.loop !38
+66:                                               ; preds = %58
+  %67 = getelementptr inbounds nuw [7 x i32], ptr %2, i32 0, i32 %60
+  %68 = load i32, ptr %67, align 4, !tbaa !3
+  %69 = icmp eq i32 %68, 0
+  %70 = select i1 %69, i32 0, i32 %59
+  %71 = add nuw nsw i32 %60, 1
+  br label %58, !llvm.loop !38
 
-70:                                               ; preds = %23, %73
-  %71 = phi i32 [ %77, %73 ], [ 1, %23 ]
-  %72 = icmp eq i32 %71, 7
-  br i1 %72, label %78, label %73
+72:                                               ; preds = %23, %80
+  %73 = phi i32 [ %83, %80 ], [ 6, %23 ]
+  %74 = phi i32 [ %82, %80 ], [ 1, %23 ]
+  %75 = icmp eq i32 %73, 8
+  br i1 %75, label %98, label %76
 
-73:                                               ; preds = %70
-  %74 = getelementptr inbounds nuw [7 x i32], ptr %2, i32 0, i32 %71
-  %75 = load i32, ptr %74, align 4, !tbaa !3
-  %76 = icmp eq i32 %75, 5
-  %77 = add nuw nsw i32 %71, 1
-  br i1 %76, label %78, label %70, !llvm.loop !39
+76:                                               ; preds = %72, %84
+  %77 = phi i32 [ %88, %84 ], [ 1, %72 ]
+  %78 = phi i32 [ %89, %84 ], [ %74, %72 ]
+  %79 = icmp eq i32 %78, %73
+  br i1 %79, label %80, label %84
 
-78:                                               ; preds = %62, %65, %54, %57, %24, %70, %73, %9, %31, %23, %40
-  %79 = phi i32 [ %44, %40 ], [ %4, %23 ], [ %32, %31 ], [ %14, %9 ], [ 0, %70 ], [ 50, %73 ], [ 0, %24 ], [ 30, %54 ], [ 0, %57 ], [ 30, %62 ], [ 0, %65 ]
+80:                                               ; preds = %76
+  %81 = icmp eq i32 %77, 0
+  %82 = add nuw nsw i32 %74, 1
+  %83 = add nuw nsw i32 %73, 1
+  br i1 %81, label %72, label %98, !llvm.loop !39
+
+84:                                               ; preds = %76
+  %85 = getelementptr inbounds nuw [7 x i32], ptr %2, i32 0, i32 %78
+  %86 = load i32, ptr %85, align 4, !tbaa !3
+  %87 = icmp eq i32 %86, 0
+  %88 = select i1 %87, i32 0, i32 %77
+  %89 = add nuw nsw i32 %78, 1
+  br label %76, !llvm.loop !40
+
+90:                                               ; preds = %23, %93
+  %91 = phi i32 [ %97, %93 ], [ 1, %23 ]
+  %92 = icmp eq i32 %91, 7
+  br i1 %92, label %98, label %93
+
+93:                                               ; preds = %90
+  %94 = getelementptr inbounds nuw [7 x i32], ptr %2, i32 0, i32 %91
+  %95 = load i32, ptr %94, align 4, !tbaa !3
+  %96 = icmp eq i32 %95, 5
+  %97 = add nuw nsw i32 %91, 1
+  br i1 %96, label %98, label %90, !llvm.loop !41
+
+98:                                               ; preds = %80, %72, %62, %54, %24, %90, %93, %9, %31, %23, %40
+  %99 = phi i32 [ %44, %40 ], [ %4, %23 ], [ %32, %31 ], [ %14, %9 ], [ 0, %90 ], [ 50, %93 ], [ 0, %24 ], [ 30, %62 ], [ 0, %54 ], [ 30, %80 ], [ 0, %72 ]
   call void @llvm.lifetime.end.p0(i64 28, ptr nonnull %2) #8
-  ret i32 %79
+  ret i32 %99
 }
 
 ; Function Attrs: minsize optsize
@@ -938,7 +966,7 @@ declare dso_local void @gfx_rect(i32 noundef, i32 noundef, i32 noundef, i32 noun
 declare dso_local void @gfx_text2(i32 noundef, i32 noundef, ptr noundef, i16 noundef zeroext, i16 noundef zeroext) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
-declare dso_local void @numstr(ptr noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
+declare dso_local void @numsp(ptr noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(read, argmem: none, inaccessiblemem: none)
 define internal fastcc range(i32 0, -2147483648) i32 @total() unnamed_addr #3 {
@@ -959,11 +987,14 @@ define internal fastcc range(i32 0, -2147483648) i32 @total() unnamed_addr #3 {
   %9 = tail call i32 @llvm.smax.i32(i32 %8, i32 0)
   %10 = add nuw nsw i32 %9, %2
   %11 = add nuw nsw i32 %3, 1
-  br label %1, !llvm.loop !40
+  br label %1, !llvm.loop !42
 }
 
 ; Function Attrs: minsize optsize
 declare dso_local i32 @rng_below(i32 noundef) local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @numstr(ptr noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: mustprogress nocallback nofree nounwind willreturn memory(argmem: write)
 declare void @llvm.memset.p0.i32(ptr writeonly captures(none), i8, i32, i1 immarg) #4
@@ -1025,3 +1056,5 @@ attributes #8 = { nounwind }
 !38 = distinct !{!38, !8, !9}
 !39 = distinct !{!39, !8, !9}
 !40 = distinct !{!40, !8, !9}
+!41 = distinct !{!41, !8, !9}
+!42 = distinct !{!42, !8, !9}

@@ -85,7 +85,7 @@ define dso_local void @dino_run() local_unnamed_addr #0 {
   br i1 %24, label %25, label %31
 
 25:                                               ; preds = %21, %23, %22
-  %26 = phi i32 [ %13, %23 ], [ %13, %22 ], [ 2688, %21 ]
+  %26 = phi i32 [ %13, %23 ], [ %13, %22 ], [ 2400, %21 ]
   %27 = add nsw i32 %26, %14
   %28 = add nsw i32 %26, -256
   %29 = icmp slt i32 %27, 1

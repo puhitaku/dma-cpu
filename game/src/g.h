@@ -42,6 +42,7 @@ void uputs(const char *s);
 void uputn(uint v);
 void uputhex(uint v);
 void numstr(char *buf, int width, uint v); /* zero-padded decimal */
+void numsp(char *buf, int width, uint v);  /* space-padded decimal */
 uint now_us(void);
 void delay_us(uint us);
 void gpio_fn(int pin, uint funcsel);
@@ -83,14 +84,22 @@ void frame_sync(uint us); /* pace the caller's loop to one tick per us */
 
 /* fx.c: sound (PIO0 SM0 I2S + ring-streaming DMA) and light (PIO0
  * SM1 WS2811). snd_tick runs from frame_sync, so a tone's frame
- * budget counts in every loop that paces itself. */
+ * budget counts in every loop that paces itself.
+ * The audio ring is 16 KiB at a fixed 16 KiB-aligned address (the
+ * ring wrap is an address mask): 4096 L|R frames, which is also one
+ * sequencer step. Reserved region 0x2002C000..0x2003C000 holds the
+ * drum PCM then the ring; dmxgen asserts the image stays clear. */
+#define AURING 0x20038000u
+#define AURING_BYTES 16384u
 void fx_init(void);
 void snd_play(uint hz, uint vol, uint frames); /* vol 0..255 */
+void snd_rate(uint div_fp8); /* SM0 CLKDIV, keep 15900..26300 in-band */
 void snd_tick(void);
 void led(uint rgb0, uint rgb1); /* 0xRRGGBB each */
+void seq_run(void); /* the percussion sequencer demo */
 
 /* the games (each returns when the player exits to the menu) */
-int menu_run(void); /* 0 = Dinosaur, 1 = LANWalk, 2 = Yacht */
+int menu_run(void); /* 0 Dinosaur, 1 LANWalk, 2 Yacht, 3 Sequencer */
 void dino_run(void);
 void lanwalk_run(void);
 void yacht_run(void);

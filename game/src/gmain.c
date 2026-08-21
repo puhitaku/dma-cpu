@@ -17,8 +17,10 @@ gmain(void)
       dino_run();
     else if (g == 1)
       lanwalk_run();
-    else
+    else if (g == 2)
       yacht_run();
+    else
+      seq_run();
   }
   return 0; /* unreachable; the entry contract wants an int */
 }

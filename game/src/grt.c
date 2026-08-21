@@ -70,6 +70,21 @@ numstr(char *buf, int width, uint v)
   }
 }
 
+/* numsp: like numstr but space-padded (right-aligned, no leading
+ * zeros; a lone 0 still prints). */
+void
+numsp(char *buf, int width, uint v)
+{
+  buf[width] = 0;
+  for (int i = width - 1; i >= 0; i--) {
+    if (v || i == width - 1)
+      buf[i] = '0' + (char)(v % 10);
+    else
+      buf[i] = ' ';
+    v /= 10;
+  }
+}
+
 uint
 now_us(void)
 {

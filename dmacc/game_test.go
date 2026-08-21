@@ -41,7 +41,7 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	}
 	var mods []*llir.Module
 	for _, p := range []string{"gmain", "menu", "dino", "lanwalk", "yacht",
-		"input", "fx", "gfx", "lcd", "grt"} {
+		"input", "fx", "seq", "gfx", "lcd", "grt"} {
 		mods = append(mods, parseLL(t, "../game/ll/"+p+".ll"))
 	}
 	mod, err := llir.Merge(mods...)
@@ -75,7 +75,7 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	spictrl := emu.CtrlEN | emu.CtrlSize16 | emu.CtrlIncrRead |
 		v.CtrlChainTo(11) | v.CtrlTreq(v.DreqSPI0TX) | v.CtrlIRQQuiet
 	sndctrl := emu.CtrlEN | emu.CtrlSize32 | emu.CtrlIncrRead |
-		v.CtrlRingSize(12) | v.CtrlChainTo(9) | v.CtrlTreq(0) |
+		v.CtrlRingSize(14) | v.CtrlChainTo(9) | v.CtrlTreq(0) |
 		v.CtrlIRQQuiet
 	m.Poke32(mustSym(t, prog, "g_memctrl"), memctrl)
 	m.Poke32(mustSym(t, prog, "g_spictrl"), spictrl)
@@ -421,7 +421,9 @@ func TestGameYacht(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
-	press(t, m, prog, pinUp) // wraps to Yacht
+	press(t, m, prog, pinUp) // wraps to Sequencer...
+	at = runUntil(t, m, "menu: Sequencer", at, 100_000_000)
+	press(t, m, prog, pinUp) // ...then Yacht
 	at = runUntil(t, m, "menu: Yacht", at, 100_000_000)
 	press(t, m, prog, pinA)
 	at = runUntil(t, m, "yacht: start", at, 100_000_000)
@@ -437,5 +439,35 @@ func TestGameYacht(t *testing.T) {
 		t.Errorf("dice row: %d white pixels", n)
 	}
 	dumpPNG(t, p, "yacht.png")
+	_ = at
+}
+
+func TestGameSeq(t *testing.T) {
+	t.Parallel()
+	m, prog := bootGame(t)
+	at := runUntil(t, m, "menu up", 0, 300_000_000)
+	press(t, m, prog, pinUp)
+	at = runUntil(t, m, "menu: Sequencer", at, 100_000_000)
+	press(t, m, prog, pinA)
+	at = runUntil(t, m, "seq: up", at, 100_000_000)
+	// let the drums render and a few steps play: the default pattern
+	// opens with a kick, so the ring must carry non-silence.
+	audio0 := len(m.PIO0TX[0])
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 400_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	loud := 0
+	for _, w := range m.PIO0TX[0][audio0:] {
+		if w != 0 {
+			loud++
+		}
+	}
+	if loud < 100 {
+		t.Fatalf("sequencer made almost no sound: %d nonzero frames", loud)
+	}
+	// edit a step: cycle the cursor cell once
+	press(t, m, prog, pinA)
+	at = runUntil(t, m, "seq: step set", at, 100_000_000)
+	dumpPNG(t, decodeLCD(m, 16), "seq.png")
 	_ = at
 }

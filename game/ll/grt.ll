@@ -155,6 +155,45 @@ define dso_local void @numstr(ptr noundef writeonly captures(none) %0, i32 nound
   br label %5, !llvm.loop !16
 }
 
+; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: write)
+define dso_local void @numsp(ptr noundef writeonly captures(none) %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #3 {
+  %4 = getelementptr inbounds i8, ptr %0, i32 %1
+  store i8 0, ptr %4, align 1, !tbaa !3
+  %5 = add nsw i32 %1, -1
+  br label %6
+
+6:                                                ; preds = %19, %3
+  %7 = phi i32 [ %2, %3 ], [ %22, %19 ]
+  %8 = phi i32 [ %5, %3 ], [ %23, %19 ]
+  %9 = icmp sgt i32 %8, -1
+  br i1 %9, label %11, label %10
+
+10:                                               ; preds = %6
+  ret void
+
+11:                                               ; preds = %6
+  %12 = icmp eq i32 %7, 0
+  br i1 %12, label %13, label %15
+
+13:                                               ; preds = %11
+  %14 = icmp eq i32 %8, %5
+  br i1 %14, label %15, label %19
+
+15:                                               ; preds = %13, %11
+  %16 = urem i32 %7, 10
+  %17 = trunc nuw nsw i32 %16 to i8
+  %18 = or disjoint i8 %17, 48
+  br label %19
+
+19:                                               ; preds = %13, %15
+  %20 = phi i8 [ %18, %15 ], [ 32, %13 ]
+  %21 = getelementptr inbounds nuw i8, ptr %0, i32 %8
+  store i8 %20, ptr %21, align 1, !tbaa !3
+  %22 = udiv i32 %7, 10
+  %23 = add nsw i32 %8, -1
+  br label %6, !llvm.loop !17
+}
+
 ; Function Attrs: minsize mustprogress nofree norecurse nounwind optsize willreturn
 define dso_local i32 @now_us() local_unnamed_addr #4 {
   %1 = load volatile i32, ptr inttoptr (i32 1074085928 to ptr), align 8, !tbaa !9
@@ -170,7 +209,7 @@ define dso_local void @delay_us(i32 noundef %0) local_unnamed_addr #0 {
   %4 = load volatile i32, ptr inttoptr (i32 1074085928 to ptr), align 8, !tbaa !9
   %5 = sub i32 %4, %2
   %6 = icmp ult i32 %5, %0
-  br i1 %6, label %3, label %7, !llvm.loop !17
+  br i1 %6, label %3, label %7, !llvm.loop !18
 
 7:                                                ; preds = %3
   ret void
@@ -251,7 +290,7 @@ define dso_local void @gdma_copy(i32 noundef %0, i32 noundef %1, i32 noundef %2)
   %24 = getelementptr inbounds nuw i8, ptr %17, i32 %19
   store i8 %23, ptr %24, align 1, !tbaa !3
   %25 = add i32 %19, 1
-  br label %18, !llvm.loop !18
+  br label %18, !llvm.loop !19
 
 26:                                               ; preds = %18, %3, %13
   ret void
@@ -268,7 +307,7 @@ define internal fastcc void @gd_run(i32 noundef %0, i32 noundef %1, i32 noundef 
 5:                                                ; preds = %5, %4
   %6 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !9
   %7 = icmp eq i32 %6, 0
-  br i1 %7, label %8, label %5, !llvm.loop !19
+  br i1 %7, label %8, label %5, !llvm.loop !20
 
 8:                                                ; preds = %5
   ret void
@@ -308,7 +347,7 @@ define dso_local void @gdma_fill(i32 noundef %0, i32 noundef %1, i32 noundef %2)
   %21 = inttoptr i32 %18 to ptr
   store volatile i32 %1, ptr %21, align 4, !tbaa !9
   %22 = add i32 %18, 4
-  br label %17, !llvm.loop !20
+  br label %17, !llvm.loop !21
 
 23:                                               ; preds = %17, %3, %14
   ret void
@@ -324,7 +363,7 @@ define dso_local void @gdma_spi16(i32 noundef %0, i32 noundef %1) local_unnamed_
   %5 = load volatile i32, ptr inttoptr (i32 1073987596 to ptr), align 4, !tbaa !9
   %6 = and i32 %5, 16
   %7 = icmp eq i32 %6, 0
-  br i1 %7, label %8, label %4, !llvm.loop !21
+  br i1 %7, label %8, label %4, !llvm.loop !22
 
 8:                                                ; preds = %4
   ret void
@@ -363,3 +402,4 @@ attributes #6 = { nounwind }
 !19 = distinct !{!19, !7, !8}
 !20 = distinct !{!20, !7, !8}
 !21 = distinct !{!21, !7, !8}
+!22 = distinct !{!22, !7, !8}

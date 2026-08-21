@@ -96,17 +96,27 @@ cat_score(int cat)
     }
     return (has3 && has2) ? sum : 0;
   }
-  if (cat == 9) { /* Little Straight 1-5 */
-    for (int f = 1; f <= 5; f++)
-      if (cnt[f] != 1)
-        return 0;
-    return 30;
+  if (cat == 9) { /* Small Straight: any run of four faces */
+    for (int lo = 1; lo <= 3; lo++) {
+      int run = 1;
+      for (int f = lo; f <= lo + 3; f++)
+        if (!cnt[f])
+          run = 0;
+      if (run)
+        return 30;
+    }
+    return 0;
   }
-  if (cat == 10) { /* Big Straight 2-6 */
-    for (int f = 2; f <= 6; f++)
-      if (cnt[f] != 1)
-        return 0;
-    return 30;
+  if (cat == 10) { /* Big Straight: any run of five faces */
+    for (int lo = 1; lo <= 2; lo++) {
+      int run = 1;
+      for (int f = lo; f <= lo + 4; f++)
+        if (!cnt[f])
+          run = 0;
+      if (run)
+        return 30;
+    }
+    return 0;
   }
   for (int f = 1; f <= 6; f++) /* Yacht */
     if (cnt[f] == 5)
@@ -136,10 +146,10 @@ draw_cat(int c, int cursor)
            cursor ? C_PANEL : C_BG);
   char b[4];
   if (scores[c] >= 0) {
-    numstr(b, 3, (uint)scores[c]);
+    numsp(b, 3, (uint)scores[c]);
     gfx_text(200, y, b, C_SCORE, cursor ? C_PANEL : C_BG);
   } else {
-    numstr(b, 3, (uint)cat_score(c));
+    numsp(b, 3, (uint)cat_score(c));
     gfx_text(200, y, b, C_PREV, cursor ? C_PANEL : C_BG);
   }
 }
@@ -189,7 +199,7 @@ draw_total(void)
   gfx_fill(4, 212, 232, 20, C_BG);
   gfx_text(10, 218, "TOTAL", C_TEXT, C_BG);
   char b[4];
-  numstr(b, 3, (uint)total());
+  numsp(b, 3, (uint)total());
   gfx_text(200, 218, b, C_SCORE, C_BG);
 }
 
@@ -341,7 +351,7 @@ yacht_run(void)
   gfx_rect(30, 96, 180, 52, 2, C_HELD);
   gfx_text2(52, 104, "FINISHED", C_HELD, C_PANEL);
   char b[4];
-  numstr(b, 3, (uint)total());
+  numsp(b, 3, (uint)total());
   gfx_text(76, 124, "total", C_TEXT, C_PANEL);
   gfx_text(124, 124, b, C_SCORE, C_PANEL);
   gfx_text(74, 136, "press: menu", C_TEXT, C_PANEL);

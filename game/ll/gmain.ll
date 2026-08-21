@@ -18,9 +18,10 @@ define dso_local noundef i32 @gmain() local_unnamed_addr #0 {
 
 1:                                                ; preds = %5, %0
   %2 = tail call i32 @menu_run() #2
-  switch i32 %2, label %6 [
+  switch i32 %2, label %7 [
     i32 0, label %3
     i32 1, label %4
+    i32 2, label %6
   ]
 
 3:                                                ; preds = %1
@@ -31,11 +32,15 @@ define dso_local noundef i32 @gmain() local_unnamed_addr #0 {
   tail call void @lanwalk_run() #2
   br label %5
 
-5:                                                ; preds = %4, %6, %3
+5:                                                ; preds = %4, %7, %6, %3
   br label %1, !llvm.loop !3
 
 6:                                                ; preds = %1
   tail call void @yacht_run() #2
+  br label %5
+
+7:                                                ; preds = %1
+  tail call void @seq_run() #2
   br label %5
 }
 
@@ -59,6 +64,9 @@ declare dso_local void @lanwalk_run() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @yacht_run() local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @seq_run() local_unnamed_addr #1
 
 attributes #0 = { minsize noreturn nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { minsize optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }

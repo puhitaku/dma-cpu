@@ -4,7 +4,7 @@
  *
  *  - PIO0 SM0 clocks I2S to the MAX98357 (BCLK/LRCLK/DIN = GP13..15).
  *    A free DMA channel (9 — the compact machine's IRQ injector,
- *    which the game build never arms) streams a 4 KiB ring of 32-bit
+ *    which the game build never arms) streams a 16 KiB ring of 32-bit
  *    frames into TXF0 forever, paced by the TX DREQ. Audio costs the
  *    machine nothing once armed: tones are made by writing a square
  *    wave into the ring and setting the pitch with SM0's CLKDIV.
@@ -33,11 +33,6 @@
 #define SM1_INSTR (PIO0 + 0x0F0)
 #define SM1_PINCTRL (PIO0 + 0x0F4)
 
-/* The audio ring: fixed, 4096-aligned (the ring wrap is an address
- * mask), above the data segment and below the machine scratch word.
- * dmxgen asserts the segments stay clear of it. */
-#define AURING 0x2003C000u
-#define AURING_BYTES 4096u
 
 /* Hand-assembled PIO programs (encodings per RP2040 datasheet 3.4).
  * 0..7: audio_i2s (.side_set 2: bit0 BCLK, bit1 LRCLK), 16-bit
@@ -59,7 +54,13 @@ static const ushort pioprog[12] = {
     0xA442, /* nop          side 0 [4] */
 };
 
-uint sndctrl;     /* loader-poked ch9 CTRL: ring read -> TXF0, DREQ 0 */
+uint sndctrl; /* loader-poked ch9 CTRL: ring read -> TXF0, DREQ 0 */
+
+void
+snd_rate(uint div_fp8)
+{
+  W32(SM0_CLKDIV) = div_fp8 << 8;
+}
 static uint snd_frames; /* frames left of the current tone */
 
 void
@@ -103,7 +104,9 @@ fx_init(void)
  * 30.4-50.4 kHz band, and coarser pitch comes from the ring period P
  * (a power of two, so the 1024-frame ring wraps seamlessly):
  * f = fs / P. Bands touch at geometric midpoints; a requested pitch
- * in a gap lands on the nearest band edge — bleep-grade tuning. */
+ * in a gap lands on the nearest band edge — bleep-grade tuning.
+ * (The ring is 4096 frames now; the doubling loop just runs two more
+ * rounds.) */
 void
 snd_play(uint hz, uint vol, uint frames)
 {
