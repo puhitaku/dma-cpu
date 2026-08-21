@@ -1,0 +1,115 @@
+name: firmware
+
+# Build the deployable firmwares in CI. Triggers:
+#   - push to a branch named ci-*   -> build only
+#   - push a tag                    -> build AND publish a GitHub release
+#   - manual dispatch               -> build only
+on:
+  push:
+    branches:
+      - 'ci-*'
+    tags:
+      - '*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # the release job creates a release and uploads assets
+
+env:
+  # pico-sdk version to build against; override here to bump the SDK.
+  PICO_SDK_REF: '2.3.0'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # One entry per deployable target. The firmware is board-driven
+        # (host/boards), so adding a board here is all that a new target
+        # needs -- e.g. another RP2350 board next to the Feather.
+        include:
+          - board: gamepico       # RP2040 game console
+            label: game-rp2040
+          - board: feather        # RP2350 presentation console (HDMI via HSTX)
+            label: presentation-rp2350
+    name: build ${{ matrix.label }}
+    steps:
+      - uses: actions/checkout@v4
+        # No submodules: the firmware build needs none. The picolibc, xv6
+        # and libc IR is committed as goldens, and the references/* submodules
+        # use SSH URLs that CI cannot fetch anyway.
+
+      - name: Install cmake, ninja, clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build clang
+
+      # The Ubuntu gcc-arm-none-eabi package omits newlib (libc/libg); use the
+      # official ARM toolchain instead, which bundles it and matches the GCC
+      # version pico-sdk 2.3.0 expects.
+      - name: Install arm-none-eabi-gcc
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: '14.2.Rel1'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Cache pico-sdk
+        id: cache-sdk
+        uses: actions/cache@v4
+        with:
+          path: pico-sdk
+          key: pico-sdk-${{ env.PICO_SDK_REF }}
+
+      - name: Checkout pico-sdk
+        if: steps.cache-sdk.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: ${{ env.PICO_SDK_REF }}
+          path: pico-sdk
+          submodules: true
+
+      - name: Build firmware (release)
+        run: |
+          make firmware \
+            HIL_BOARD=${{ matrix.board }} \
+            HIL_DEV=0 \
+            PICO_TOOLS= \
+            PICO_SDK_PATH="$GITHUB_WORKSPACE/pico-sdk"
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p out
+          src="target/firmware/build-${{ matrix.board }}"
+          cp "$src/dma_hil.uf2" "out/dma-${{ matrix.label }}.uf2"
+          cp "$src/dma_hil.elf" "out/dma-${{ matrix.label }}.elf"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dma-${{ matrix.label }}
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            artifacts/*.uf2 artifacts/*.elf

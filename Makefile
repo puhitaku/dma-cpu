@@ -146,10 +146,22 @@ llgen:
 	  clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding -I$(CURDIR)/target/xv6 \
 	    -S -emit-llvm host/dmacc/testdata/$$f.c -o host/dmacc/testdata/$$f.ll || exit 1; done
 
-# --- Hardware-in-the-loop (see prompts/004-hw-calibration.md) ---
-# Environment (adjust to your install):
+# --- Firmware build + hardware-in-the-loop ---
+# Toolchain locations, all overridable from the environment or the make
+# command line so this builds on any machine (see docs/building-firmware.md):
+#   PICO_SDK_PATH  path to a pico-sdk checkout (2.3.0 or newer)
+#   PICO_TOOLS     ':'-separated dirs prepended to PATH for the build
+#                  (arm-none-eabi-gcc, cmake, ninja). Leave empty when they
+#                  are already on PATH, e.g. installed via apt in CI:
+#                  make firmware PICO_TOOLS= PICO_SDK_PATH=/path/to/pico-sdk
+#   OPENOCD        openocd binary for 'make test-hw'; RP2350 needs a build
+#                  with rp2350 support (e.g. the Raspberry Pi openocd fork).
+# The defaults below match a pico-sdk installer layout under ~/.pico-sdk.
 PICO_SDK_PATH ?= $(HOME)/.pico-sdk/sdk/2.3.0
 PICO_TOOLS ?= $(HOME)/.pico-sdk/toolchain/15_2_Rel1/bin:$(HOME)/.pico-sdk/cmake/v4.3.4/bin:$(HOME)/.pico-sdk/ninja/v1.13.2
+OPENOCD ?= openocd
+# Prepend PICO_TOOLS to PATH only when it is non-empty (avoids a stray ':').
+PATH_WITH_TOOLS = $(if $(strip $(PICO_TOOLS)),$(PICO_TOOLS):,)$$PATH
 
 # The deployable target, U-Boot style: a board (boards/boards.go) fixes
 # the SKU, memory partition, flash sections, and installed apps.
@@ -169,6 +181,7 @@ BUILD_DIR = target/firmware/build-$(HIL_BOARD)
 OPENOCD_TARGET_pico2 = target/rp2350.cfg
 OPENOCD_TARGET_pico = target/rp2040.cfg
 OPENOCD_TARGET_gamepico = target/rp2040.cfg
+OPENOCD_TARGET_feather = target/rp2350.cfg
 
 .PHONY: images firmware
 
@@ -187,12 +200,12 @@ HIL_DEV_OPT = -DHIL_DEV_TESTS=OFF
 endif
 
 firmware: images
-	PATH="$(PICO_TOOLS):$$PATH" PICO_SDK_PATH=$(PICO_SDK_PATH) \
+	PATH="$(PATH_WITH_TOOLS)" PICO_SDK_PATH="$(PICO_SDK_PATH)" \
 	  cmake -S target/firmware -B $(BUILD_DIR) -G Ninja -DPICO_BOARD=$(PICO_BOARD) $(HIL_DEV_OPT)
-	PATH="$(PICO_TOOLS):$$PATH" ninja -C $(BUILD_DIR)
+	PATH="$(PATH_WITH_TOOLS)" ninja -C $(BUILD_DIR)
 
 # Flash with OpenOCD over a Debug Probe, then watch the UART (115200) for
 # TEST/CAL lines. Automated capture-and-diff is a future CI stage.
 test-hw: firmware
-	openocd -f interface/cmsis-dap.cfg -c "adapter speed 5000" -f $(OPENOCD_TARGET_$(HIL_BOARD)) \
+	$(OPENOCD) -f interface/cmsis-dap.cfg -c "adapter speed 5000" -f $(OPENOCD_TARGET_$(HIL_BOARD)) \
 	  -c "program $(BUILD_DIR)/dma_hil.elf verify reset exit"
