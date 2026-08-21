@@ -102,6 +102,10 @@ void fx_init(void);
 void snd_play(uint hz, uint vol, uint frames); /* vol 0..255 */
 void snd_rate(uint div_fp8); /* SM0 CLKDIV, keep 15900..26300 in-band */
 void snd_off(void); /* silence immediately */
+extern uint sfx_tab[4]; /* {addr,samples} x {dino_fail, lanwalk_success} */
+void pcm_play(uint addr, uint samples); /* mono 16-bit clip from flash */
+void pcm_stop(void);
+void pcm_tick(void);
 void snd_tick(void);
 void led(uint rgb0, uint rgb1); /* 0xRRGGBB each; per-channel capped */
 void led_rainbow(uint frames);   /* fast hue loop, then back to base */

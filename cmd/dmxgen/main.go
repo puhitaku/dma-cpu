@@ -687,6 +687,49 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 // sticks of five, pulled up on the real board).
 const PinJoyAUp = 2
 
+// gameSFXHome is where the firmware stages the PCM blob (mono 16-bit
+// 44.1 kHz), well past the firmware image and below the game text.
+const gameSFXHome = 0x10140000
+
+// gameSFX lists the clips baked into the blob, in sfx_tab order.
+var gameSFX = []string{"game/sfx/dino_fail.wav", "game/sfx/lanwalk_success.wav"}
+
+// wavSamples extracts the raw sample bytes of a mono 16-bit WAV.
+func wavSamples(path string) ([]byte, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) < 44 || string(raw[0:4]) != "RIFF" || string(raw[8:12]) != "WAVE" {
+		return nil, fmt.Errorf("%s: not a RIFF/WAVE file", path)
+	}
+	var data []byte
+	for off := 12; off+8 <= len(raw); {
+		id := string(raw[off : off+4])
+		sz := int(binary.LittleEndian.Uint32(raw[off+4 : off+8]))
+		body := raw[off+8:]
+		if sz > len(body) {
+			sz = len(body)
+		}
+		switch id {
+		case "fmt ":
+			if binary.LittleEndian.Uint16(body[0:2]) != 1 || // PCM
+				binary.LittleEndian.Uint16(body[2:4]) != 1 || // mono
+				binary.LittleEndian.Uint32(body[4:8]) != 44100 ||
+				binary.LittleEndian.Uint16(body[14:16]) != 16 {
+				return nil, fmt.Errorf("%s: want mono 16-bit 44.1 kHz PCM", path)
+			}
+		case "data":
+			data = body[:sz]
+		}
+		off += 8 + sz + (sz & 1)
+	}
+	if data == nil {
+		return nil, fmt.Errorf("%s: no data chunk", path)
+	}
+	return data, nil
+}
+
 // buildGame: the gamepico bare-metal image (prompts/040) — one
 // dmacc-compiled program, no xv6: text executes from flash, .ramtext
 // and data (framebuffer included) in SRAM, entry straight into
@@ -734,6 +777,31 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			return nil, err
 		}
 	}
+	// The PCM blob: clips concatenated 4-aligned; sfx_tab gets
+	// {flash address, sample count} per clip.
+	var sfxBlob []byte
+	sfxTabAddr, err := sy("g_sfx_tab")
+	if err != nil {
+		return nil, err
+	}
+	for i, path := range gameSFX {
+		pcm, err := wavSamples(path)
+		if err != nil {
+			return nil, err
+		}
+		addr := uint32(gameSFXHome + len(sfxBlob))
+		if err := patchData(prog.Image, bd.GameData, sfxTabAddr+uint32(i*8), addr); err != nil {
+			return nil, err
+		}
+		if err := patchData(prog.Image, bd.GameData, sfxTabAddr+uint32(i*8+4),
+			uint32(len(pcm)/2)); err != nil {
+			return nil, err
+		}
+		sfxBlob = append(sfxBlob, pcm...)
+		for len(sfxBlob)%4 != 0 {
+			sfxBlob = append(sfxBlob, 0)
+		}
+	}
 	// Fixed audio region (fx.c/seq.c): drum PCM from 0x2002C000, the
 	// 16 KiB ring at 0x20038000. Nothing in the image may grow in.
 	const auBase, auEnd = 0x2002C000, 0x2003C000
@@ -749,6 +817,7 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	// exactly what the firmware's dmx_load replays.
 	m := emu.NewMachine(v)
 	m.Flash = make([]byte, bd.FlashSize)
+	copy(m.Flash[gameSFXHome-0x10000000:], sfxBlob)
 	for pin := PinJoyAUp; pin < PinJoyAUp+10; pin++ {
 		m.SetPadIn(pin, true) // pulled-up joysticks read released
 	}
@@ -784,6 +853,9 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	b.blobs = append(b.blobs, textBlob)
 	b.blobNames = append(b.blobNames, "text")
 	b.sym["TEXT_HOME"] = bd.GameTextXIP
+	b.blobs = append(b.blobs, pad4(sfxBlob))
+	b.blobNames = append(b.blobNames, "sfx")
+	b.sym["SFX_HOME"] = gameSFXHome
 	if err := finishBundle(b, []*dmaasm.Result{prog}); err != nil {
 		return nil, err
 	}

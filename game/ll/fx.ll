@@ -6,6 +6,8 @@ target triple = "thumbv6m-unknown-none-eabi"
 @pioprog = internal unnamed_addr constant [12 x i16] [i16 28673, i16 6208, i16 24577, i16 -6098, i16 24577, i16 2116, i16 28673, i16 -2002, i16 25121, i16 4395, i16 5128, i16 -23486], align 2
 @sndctrl = dso_local local_unnamed_addr global i32 0, align 4
 @snd_frames = internal unnamed_addr global i32 0, align 4
+@spictrl = external dso_local local_unnamed_addr global i32, align 4
+@pcm_active = internal unnamed_addr global i1 false, align 4
 @led_base0 = internal unnamed_addr global i32 0, align 4
 @led_base1 = internal unnamed_addr global i32 0, align 4
 @leda_mode = internal unnamed_addr global i32 0, align 4
@@ -13,6 +15,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @leda_hue = internal unnamed_addr global i32 0, align 4
 @leda_rgb = internal unnamed_addr global i32 0, align 4
 @leda_phase = internal unnamed_addr global i32 0, align 4
+@sfx_tab = dso_local local_unnamed_addr global [4 x i32] zeroinitializer, align 4
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
 define dso_local void @snd_rate(i32 noundef %0) local_unnamed_addr #0 {
@@ -174,9 +177,70 @@ define dso_local void @snd_play(i32 noundef %0, i32 noundef %1, i32 noundef %2) 
 declare dso_local void @gdma_copy(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize nounwind optsize
+define dso_local void @pcm_play(i32 noundef %0, i32 noundef %1) local_unnamed_addr #1 {
+  tail call void @snd_off() #8
+  store volatile i32 4643840, ptr inttoptr (i32 1344274632 to ptr), align 8, !tbaa !3
+  %3 = load i32, ptr @sndctrl, align 4, !tbaa !3
+  %4 = and i32 %3, -2
+  store volatile i32 %4, ptr inttoptr (i32 1342177872 to ptr), align 16, !tbaa !3
+  store volatile i32 %0, ptr inttoptr (i32 1342177984 to ptr), align 64, !tbaa !3
+  store volatile i32 1344274448, ptr inttoptr (i32 1342177988 to ptr), align 4, !tbaa !3
+  store volatile i32 %1, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
+  %5 = load i32, ptr @spictrl, align 4, !tbaa !3
+  %6 = and i32 %5, -2064385
+  store volatile i32 %6, ptr inttoptr (i32 1342177996 to ptr), align 4, !tbaa !3
+  store i1 true, ptr @pcm_active, align 4
+  ret void
+}
+
+; Function Attrs: minsize nounwind optsize
 define dso_local void @snd_off() local_unnamed_addr #1 {
   store i32 0, ptr @snd_frames, align 4, !tbaa !3
   tail call void @gdma_fill(i32 noundef 537100288, i32 noundef 0, i32 noundef 16384) #7
+  ret void
+}
+
+; Function Attrs: minsize nofree norecurse nounwind optsize
+define dso_local void @pcm_stop() local_unnamed_addr #0 {
+  %1 = load i1, ptr @pcm_active, align 4
+  br i1 %1, label %2, label %9
+
+2:                                                ; preds = %0
+  store volatile i32 0, ptr inttoptr (i32 1342178000 to ptr), align 16, !tbaa !3
+  store volatile i32 2048, ptr inttoptr (i32 1342178372 to ptr), align 4, !tbaa !3
+  br label %3
+
+3:                                                ; preds = %3, %2
+  %4 = load volatile i32, ptr inttoptr (i32 1342178372 to ptr), align 4, !tbaa !3
+  %5 = and i32 %4, 2048
+  %6 = icmp eq i32 %5, 0
+  br i1 %6, label %7, label %3, !llvm.loop !16
+
+7:                                                ; preds = %3
+  %8 = load i32, ptr @sndctrl, align 4, !tbaa !3
+  store volatile i32 %8, ptr inttoptr (i32 1342177872 to ptr), align 16, !tbaa !3
+  store i1 false, ptr @pcm_active, align 4
+  br label %9
+
+9:                                                ; preds = %0, %7
+  ret void
+}
+
+; Function Attrs: minsize nofree norecurse nounwind optsize
+define dso_local void @pcm_tick() local_unnamed_addr #0 {
+  %1 = load i1, ptr @pcm_active, align 4
+  br i1 %1, label %2, label %6
+
+2:                                                ; preds = %0
+  %3 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
+  %4 = icmp eq i32 %3, 0
+  br i1 %4, label %5, label %6
+
+5:                                                ; preds = %2
+  tail call void @pcm_stop() #8
+  br label %6
+
+6:                                                ; preds = %5, %2, %0
   ret void
 }
 
@@ -245,7 +309,7 @@ define internal fastcc void @led_raw(i32 noundef %0, i32 noundef %1) unnamed_add
   %15 = load volatile i32, ptr inttoptr (i32 1344274436 to ptr), align 4, !tbaa !3
   %16 = and i32 %15, 131072
   %17 = icmp eq i32 %16, 0
-  br i1 %17, label %18, label %14, !llvm.loop !16
+  br i1 %17, label %18, label %14, !llvm.loop !17
 
 18:                                               ; preds = %14
   %19 = shl i32 %13, 8
@@ -258,7 +322,7 @@ define internal fastcc void @led_raw(i32 noundef %0, i32 noundef %1) unnamed_add
   %26 = shl nuw i32 %25, 8
   store volatile i32 %26, ptr inttoptr (i32 1344274452 to ptr), align 4, !tbaa !3
   %27 = add nuw nsw i32 %8, 1
-  br label %7, !llvm.loop !17
+  br label %7, !llvm.loop !18
 }
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(write, argmem: none, inaccessiblemem: none)
@@ -445,3 +509,4 @@ attributes #9 = { nounwind }
 !15 = distinct !{!15, !8, !9}
 !16 = distinct !{!16, !8, !9}
 !17 = distinct !{!17, !8, !9}
+!18 = distinct !{!18, !8, !9}

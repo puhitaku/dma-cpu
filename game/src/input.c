@@ -84,6 +84,7 @@ frame_sync(uint us)
   static uint next;
   snd_tick();
   led_tick();
+  pcm_tick();
   uint now = now_us();
   if (next == 0 || now - next > us * 8)
     next = now;

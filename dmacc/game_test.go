@@ -62,6 +62,7 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	}
 	m := emu.NewMachine(v)
 	m.Flash = make([]byte, bd.FlashSize)
+	sfx := stageSFX(t, m)
 	for pin := 2; pin <= 11; pin++ {
 		m.SetPadIn(pin, true)
 	}
@@ -80,12 +81,60 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	m.Poke32(mustSym(t, prog, "g_memctrl"), memctrl)
 	m.Poke32(mustSym(t, prog, "g_spictrl"), spictrl)
 	m.Poke32(mustSym(t, prog, "g_sndctrl"), sndctrl)
+	tab := mustSym(t, prog, "g_sfx_tab")
+	for i, c := range sfx {
+		m.Poke32(tab+uint32(i*8), c.addr)
+		m.Poke32(tab+uint32(i*8+4), c.samples)
+	}
 	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
 		Compact: true, Entry: entry, Scratch: bd.Scratch,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	return m, prog
+}
+
+// sfxClip is one staged PCM clip: flash address and sample count.
+type sfxClip struct {
+	addr, samples uint32
+}
+
+// stageSFX loads the game's WAV clips into the emulated flash at the
+// same home dmxgen uses, returning the table the loader would poke.
+func stageSFX(t *testing.T, m *emu.Machine) []sfxClip {
+	t.Helper()
+	const home = 0x10140000
+	off := uint32(0)
+	var clips []sfxClip
+	for _, path := range []string{"../game/sfx/dino_fail.wav",
+		"../game/sfx/lanwalk_success.wav"} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// minimal RIFF walk for the data chunk
+		var data []byte
+		for o := 12; o+8 <= len(raw); {
+			id := string(raw[o : o+4])
+			sz := int(uint32(raw[o+4]) | uint32(raw[o+5])<<8 |
+				uint32(raw[o+6])<<16 | uint32(raw[o+7])<<24)
+			body := raw[o+8:]
+			if sz > len(body) {
+				sz = len(body)
+			}
+			if id == "data" {
+				data = body[:sz]
+			}
+			o += 8 + sz + (sz & 1)
+		}
+		if data == nil {
+			t.Fatalf("%s: no data chunk", path)
+		}
+		copy(m.Flash[home-0x10000000+off:], data)
+		clips = append(clips, sfxClip{home + off, uint32(len(data) / 2)})
+		off += uint32(len(data)+3) &^ 3
+	}
+	return clips
 }
 
 // runUntil advances the machine in slices until the console contains
@@ -353,7 +402,27 @@ func TestGameDino(t *testing.T) {
 	at = runUntil(t, m, "dino: start", at, 100_000_000)
 	// one jump, then let the first cactus win
 	press(t, m, prog, pinUp)
+	audio0 := len(m.PIO0TX[0])
 	at = runUntil(t, m, "dino: over score=", at, 2_000_000_000)
+	// the fail sting streams from flash: replicated mono frames
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 30_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	loud, badrep := 0, 0
+	for _, w := range m.PIO0TX[0][audio0:] {
+		if w != 0 {
+			loud++
+			if w>>16 != w&0xFFFF {
+				badrep++
+			}
+		}
+	}
+	if loud < 50 {
+		t.Errorf("fail sting made almost no sound: %d nonzero frames", loud)
+	}
+	if badrep > 0 {
+		t.Errorf("%d frames were not halfword-replicated", badrep)
+	}
 	p := decodeLCD(m, 16)
 	over := rgb565(200, 40, 40)
 	if n := p.countColor(48, 56, 192, 72, over); n < 100 {

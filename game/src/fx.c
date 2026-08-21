@@ -149,6 +149,64 @@ snd_play(uint hz, uint vol, uint frames)
   snd_frames = frames;
 }
 
+/* --- PCM playback: mono 16-bit clips streamed from flash ---
+ *
+ * The ring channel (9) pauses (EN clear is the documented pause) and
+ * the gdma helper channel (11) streams the clip as SIZE16 transfers
+ * into TXF0, paced by the same DREQ. The RP2040 bus fabric
+ * REPLICATES narrow IO writes across the 32-bit bus (datasheet
+ * 2.1.4), so each mono halfword arrives as S:S — a full L|R frame,
+ * full volume, zero conversion. The caller must sit on a static
+ * screen: gdma helpers are off-limits while a clip plays (the two
+ * users, the dino game-over and the LANWalk win, only poll input).
+ * pcm_tick (from frame_sync) restores the ring when the clip ends.
+ */
+
+uint sfx_tab[4]; /* loader-poked: {addr,samples} x {dino,lanwalk} */
+static uint pcm_active;
+
+void
+pcm_play(uint addr, uint samples)
+{
+  snd_off();        /* cancel any tone; uses ch11 BEFORE we take it */
+  snd_rate(18140);  /* clips are 44.1 kHz */
+  W32(DMACH(9) + 0x10) = sndctrl & ~1u; /* pause the ring stream */
+  /* ch11: like the SPI pixel ctrl but paced by DREQ 0 (PIO0 TX0).
+   * TREQ_SEL is bits 20:15 on RP2040 (this board is SKU-locked). */
+  extern uint spictrl;
+  W32(DMACH(11) + 0x0) = addr;
+  W32(DMACH(11) + 0x4) = PIO_TXF0;
+  W32(DMACH(11) + 0x8) = samples;
+  W32(DMACH(11) + 0xC) = spictrl & ~(0x3Fu << 15);
+  pcm_active = 1;
+}
+
+void
+pcm_stop(void)
+{
+  if (!pcm_active)
+    return;
+  /* The documented-safe abort: pause first (EN clear), THEN abort
+   * and wait for it to complete. Aborting a RUNNING channel is the
+   * silicon wedge from prompts/040; a paused, DREQ-idle one is the
+   * datasheet's own sequence. Without this, the next gdma helper
+   * call would RESUME the half-played clip with a mem-copy CTRL and
+   * sprint off through the address space (found in emulation). */
+  W32(DMACH(11) + 0x10) = 0;
+  W32(0x50000444u) = 1u << 11; /* CHAN_ABORT */
+  while (W32(0x50000444u) & (1u << 11))
+    ;
+  W32(DMACH(9) + 0x10) = sndctrl; /* resume the (silent) ring */
+  pcm_active = 0;
+}
+
+void
+pcm_tick(void)
+{
+  if (pcm_active && W32(DMACH(11) + 0x8) == 0)
+    pcm_stop();
+}
+
 /* snd_off: silence now — the ring zeroes and any pending tone
  * budget is dropped. */
 void

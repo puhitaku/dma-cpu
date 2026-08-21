@@ -371,6 +371,15 @@ func (m *Machine) Write(addr uint32, val uint32, size int) error {
 		}
 		if m.v.PIO0Base != 0 && addr >= m.v.PIO0Base+0x10 &&
 			addr < m.v.PIO0Base+0x20 { /* TXF0..TXF3 */
+			// Narrow IO writes replicate across the 32-bit bus
+			// (RP2040 datasheet 2.1.4) — the mono-PCM path leans on
+			// a halfword arriving as S:S.
+			switch size {
+			case 1:
+				val = (val & 0xFF) * 0x01010101
+			case 2:
+				val = (val & 0xFFFF) * 0x00010001
+			}
 			sm := (addr - m.v.PIO0Base - 0x10) / 4
 			if len(m.PIO0TX[sm]) < 1<<21 {
 				m.PIO0TX[sm] = append(m.PIO0TX[sm], val)

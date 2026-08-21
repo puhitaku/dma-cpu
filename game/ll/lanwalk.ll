@@ -12,6 +12,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @lit = internal unnamed_addr global [49 x i8] zeroinitializer, align 1
 @.str.3 = private unnamed_addr constant [10 x i8] c"CONNECTED\00", align 1
 @.str.4 = private unnamed_addr constant [12 x i8] c"press: menu\00", align 1
+@sfx_tab = external dso_local local_unnamed_addr global [4 x i32], align 4
 @.str.5 = private unnamed_addr constant [23 x i8] c"lanwalk: solved moves=\00", align 1
 @.str.6 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
 @stack = internal unnamed_addr global [49 x i8] zeroinitializer, align 1
@@ -187,10 +188,10 @@ define dso_local void @lanwalk_run() local_unnamed_addr #0 {
   tail call void @led(i32 noundef 3855, i32 noundef 3855) #6
   br label %97
 
-97:                                               ; preds = %197, %96
-  %98 = phi i32 [ %175, %197 ], [ 0, %96 ]
-  %99 = phi i32 [ %148, %197 ], [ 0, %96 ]
-  %100 = phi i32 [ %140, %197 ], [ 24, %96 ]
+97:                                               ; preds = %199, %96
+  %98 = phi i32 [ %175, %199 ], [ 0, %96 ]
+  %99 = phi i32 [ %148, %199 ], [ 0, %96 ]
+  %100 = phi i32 [ %140, %199 ], [ 24, %96 ]
   br label %105
 
 101:                                              ; preds = %93
@@ -274,7 +275,7 @@ define dso_local void @lanwalk_run() local_unnamed_addr #0 {
 
 150:                                              ; preds = %143
   tail call void @uputs(ptr noundef nonnull @.str.2) #6
-  br label %198
+  br label %200
 
 151:                                              ; preds = %143
   %152 = load i32, ptr @in_edge, align 4, !tbaa !10
@@ -322,7 +323,7 @@ define dso_local void @lanwalk_run() local_unnamed_addr #0 {
   tail call void @gfx_present() #6
   %176 = tail call fastcc i32 @all_lit() #8
   %177 = icmp eq i32 %176, 0
-  br i1 %177, label %197, label %191
+  br i1 %177, label %199, label %191
 
 178:                                              ; preds = %171
   %179 = getelementptr inbounds nuw [49 x i8], ptr %2, i32 0, i32 %172
@@ -352,30 +353,33 @@ define dso_local void @lanwalk_run() local_unnamed_addr #0 {
   tail call void @gfx_text2(i32 noundef 48, i32 noundef 108, ptr noundef nonnull @.str.3, i16 noundef zeroext 16175, i16 noundef zeroext 2148) #6
   tail call void @gfx_text(i32 noundef 74, i32 noundef 128, ptr noundef nonnull @.str.4, i16 noundef zeroext -21063, i16 noundef zeroext 2148) #6
   tail call void @gfx_present() #6
-  tail call void @snd_play(i32 noundef 880, i32 noundef 60, i32 noundef 20) #6
+  %192 = load i32, ptr getelementptr inbounds nuw (i8, ptr @sfx_tab, i32 8), align 4, !tbaa !10
+  %193 = load i32, ptr getelementptr inbounds nuw (i8, ptr @sfx_tab, i32 12), align 4, !tbaa !10
+  tail call void @pcm_play(i32 noundef %192, i32 noundef %193) #6
   tail call void @led(i32 noundef 16136, i32 noundef 16136) #6
   tail call void @uputs(ptr noundef nonnull @.str.5) #6
   tail call void @uputn(i32 noundef %175) #6
   tail call void @uputs(ptr noundef nonnull @.str.6) #6
-  br label %192
+  br label %194
 
-192:                                              ; preds = %192, %191
+194:                                              ; preds = %194, %191
   tail call void @frame_sync(i32 noundef 33000) #6
   tail call void @in_poll() #6
-  %193 = load i32, ptr @in_edge, align 4, !tbaa !10
-  %194 = and i32 %193, 16
-  %195 = icmp eq i32 %194, 0
-  br i1 %195, label %192, label %196, !llvm.loop !19
+  %195 = load i32, ptr @in_edge, align 4, !tbaa !10
+  %196 = and i32 %195, 16
+  %197 = icmp eq i32 %196, 0
+  br i1 %197, label %194, label %198, !llvm.loop !19
 
-196:                                              ; preds = %192
+198:                                              ; preds = %194
+  tail call void @pcm_stop() #6
   call void @llvm.lifetime.end.p0(i64 49, ptr nonnull %2) #7
-  br label %198
+  br label %200
 
-197:                                              ; preds = %174
+199:                                              ; preds = %174
   call void @llvm.lifetime.end.p0(i64 49, ptr nonnull %2) #7
   br label %97, !llvm.loop !16
 
-198:                                              ; preds = %150, %196
+200:                                              ; preds = %150, %198
   ret void
 }
 
@@ -688,7 +692,13 @@ declare dso_local void @gfx_rect(i32 noundef, i32 noundef, i32 noundef, i32 noun
 declare dso_local void @gfx_text2(i32 noundef, i32 noundef, ptr noundef, i16 noundef zeroext, i16 noundef zeroext) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
+declare dso_local void @pcm_play(i32 noundef, i32 noundef) local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
 declare dso_local void @uputn(i32 noundef) local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @pcm_stop() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local i32 @rng_below(i32 noundef) local_unnamed_addr #1

@@ -1216,6 +1216,20 @@ static void game_start(void)
         }
         printf("GAME: staged text (%u bytes)\n", (unsigned)len);
     }
+    /* stage the PCM blob the same way (skipped when unchanged) */
+    const uint8_t *sfx = hil_game_blob_sfx;
+    uint32_t sfxlen = (uint32_t)sizeof hil_game_blob_sfx;
+    if (memcmp((const void *)(uintptr_t)HIL_GAME_SFX_HOME, sfx, sfxlen) != 0) {
+        uint32_t soff = HIL_GAME_SFX_HOME - 0x10000000u;
+        for (uint32_t o = 0; o < sfxlen; o += 4096) {
+            uint32_t n = sfxlen - o > 4096 ? 4096 : sfxlen - o;
+            memcpy(game_sect, sfx + o, n);
+            memset(game_sect + n, 0xFF, 4096 - n);
+            flash_range_erase(soff + o, 4096);
+            flash_range_program(soff + o, game_sect, 4096);
+        }
+        printf("GAME: staged sfx (%u bytes)\n", (unsigned)sfxlen);
+    }
     uint32_t e;
     if (dmx_load(hil_game_prog_dmx, sizeof hil_game_prog_dmx, NULL, &e) != DMX_OK) {
         printf("GAME: FAIL load\n");

@@ -222,7 +222,7 @@ lanwalk_run(void)
         gfx_text2(48, 108, "CONNECTED", C_LIT, C_BG);
         gfx_text(74, 128, "press: menu", C_TEXT, C_BG);
         gfx_present();
-        snd_play(880, 60, 20);
+        pcm_play(sfx_tab[2], sfx_tab[3]); /* the success fanfare */
         led(LED_BRIGHT(0x00FF20), LED_BRIGHT(0x00FF20));
         uputs("lanwalk: solved moves=");
         uputn(moves);
@@ -230,8 +230,10 @@ lanwalk_run(void)
         for (;;) {
           frame_sync(33000);
           in_poll();
-          if (in_edge & BTN_A)
+          if (in_edge & BTN_A) {
+            pcm_stop();
             return;
+          }
         }
       }
     }

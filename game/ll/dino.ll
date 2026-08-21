@@ -24,6 +24,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @in_edge = external dso_local local_unnamed_addr global i32, align 4
 @.str.1 = private unnamed_addr constant [10 x i8] c"GAME OVER\00", align 1
 @.str.2 = private unnamed_addr constant [25 x i8] c"press: retry  down: menu\00", align 1
+@sfx_tab = external dso_local local_unnamed_addr global [4 x i32], align 4
 @.str.3 = private unnamed_addr constant [18 x i8] c"dino: over score=\00", align 1
 @.str.4 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
 @dashpat = internal global [264 x i16] zeroinitializer, align 2
@@ -91,7 +92,7 @@ define dso_local void @dino_run() local_unnamed_addr #0 {
   %30 = add nuw nsw i32 %21, 1
   br label %20, !llvm.loop !12
 
-31:                                               ; preds = %279, %23
+31:                                               ; preds = %285, %23
   tail call void @uputs(ptr noundef nonnull @.str) #5
   tail call void @led(i32 noundef 0, i32 noundef 0) #5
   tail call void @gfx_clear(i16 noundef zeroext -1) #5
@@ -475,7 +476,6 @@ define dso_local void @dino_run() local_unnamed_addr #0 {
   br label %254, !llvm.loop !31
 
 275:                                              ; preds = %262
-  tail call void @snd_play(i32 noundef 220, i32 noundef 70, i32 noundef 36) #5
   tail call void @led_blink(i32 noundef 16711680, i32 noundef 3) #5
   %276 = sub i32 162, %98
   %277 = add i32 %98, 28
@@ -484,25 +484,33 @@ define dso_local void @dino_run() local_unnamed_addr #0 {
   tail call void @gfx_text2(i32 noundef 48, i32 noundef 56, ptr noundef nonnull @.str.1, i16 noundef zeroext -14011, i16 noundef zeroext -1) #5
   tail call void @gfx_text(i32 noundef 24, i32 noundef 80, ptr noundef nonnull @.str.2, i16 noundef zeroext 14823, i16 noundef zeroext -1) #5
   tail call void @gfx_present() #5
+  %279 = load i32, ptr @sfx_tab, align 4, !tbaa !23
+  %280 = load i32, ptr getelementptr inbounds nuw (i8, ptr @sfx_tab, i32 4), align 4, !tbaa !23
+  tail call void @pcm_play(i32 noundef %279, i32 noundef %280) #5
   tail call void @uputs(ptr noundef nonnull @.str.3) #5
   tail call void @uputn(i32 noundef %236) #5
   tail call void @uputs(ptr noundef nonnull @.str.4) #5
-  br label %279
+  br label %281
 
-279:                                              ; preds = %283, %275
+281:                                              ; preds = %286, %275
   tail call void @frame_sync(i32 noundef 16667) #5
   tail call void @in_poll() #5
-  %280 = load i32, ptr @in_edge, align 4, !tbaa !23
-  %281 = and i32 %280, 17
-  %282 = icmp eq i32 %281, 0
-  br i1 %282, label %283, label %31
+  %282 = load i32, ptr @in_edge, align 4, !tbaa !23
+  %283 = and i32 %282, 17
+  %284 = icmp eq i32 %283, 0
+  br i1 %284, label %286, label %285
 
-283:                                              ; preds = %279
-  %284 = and i32 %280, 2
-  %285 = icmp eq i32 %284, 0
-  br i1 %285, label %279, label %286, !llvm.loop !32
+285:                                              ; preds = %281
+  tail call void @pcm_stop() #5
+  br label %31
 
-286:                                              ; preds = %283
+286:                                              ; preds = %281
+  %287 = and i32 %282, 2
+  %288 = icmp eq i32 %287, 0
+  br i1 %288, label %281, label %289, !llvm.loop !32
+
+289:                                              ; preds = %286
+  tail call void @pcm_stop() #5
   tail call void @led(i32 noundef 0, i32 noundef 0) #5
   ret void
 }
@@ -656,7 +664,13 @@ declare dso_local void @gfx_text2(i32 noundef, i32 noundef, ptr noundef, i16 nou
 declare dso_local void @gfx_text(i32 noundef, i32 noundef, ptr noundef, i16 noundef zeroext, i16 noundef zeroext) local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
+declare dso_local void @pcm_play(i32 noundef, i32 noundef) local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
 declare dso_local void @uputn(i32 noundef) local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @pcm_stop() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @gfx_fill(i32 noundef, i32 noundef, i32 noundef, i32 noundef, i16 noundef zeroext) local_unnamed_addr #1

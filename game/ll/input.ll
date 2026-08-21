@@ -133,6 +133,7 @@ define dso_local range(i32 0, -1) i32 @rng_below(i32 noundef %0) local_unnamed_a
 define dso_local void @frame_sync(i32 noundef %0) local_unnamed_addr #0 {
   tail call void @snd_tick() #5
   tail call void @led_tick() #5
+  tail call void @pcm_tick() #5
   %2 = tail call i32 @now_us() #5
   %3 = load i32, ptr @frame_sync.next, align 4, !tbaa !9
   %4 = icmp eq i32 %3, 0
@@ -169,6 +170,9 @@ declare dso_local void @snd_tick() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @led_tick() local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @pcm_tick() local_unnamed_addr #1
 
 attributes #0 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { minsize optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }

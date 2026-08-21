@@ -496,22 +496,26 @@ restart:
     continue;
 
   dead:
-    snd_play(220, 70, 36);
     led_blink(0xFF0000, 3); /* rapid tri-ramp, three times */
     gfx_blit(DINO_X, dy - DM, cell_dead, DW,
              GROUND_Y - (dy - DM) > DCH ? DCH : GROUND_Y - (dy - DM));
     gfx_text2(48, 56, "GAME OVER", C_OVER, C_BG);
     gfx_text(24, 80, "press: retry  down: menu", C_FG, C_BG);
     gfx_present();
+    pcm_play(sfx_tab[0], sfx_tab[1]); /* AFTER the last draw: the clip
+                                       * borrows the gdma channel */
     uputs("dino: over score=");
     uputn(score);
     uputs("\n");
     for (;;) {
       frame_sync(16667);
       in_poll();
-      if (in_edge & (BTN_A | BTN_UP))
+      if (in_edge & (BTN_A | BTN_UP)) {
+        pcm_stop(); /* the screen is about to redraw over ch11 */
         goto restart;
+      }
       if (in_edge & BTN_DOWN) {
+        pcm_stop();
         led(0, 0);
         return;
       }
