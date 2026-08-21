@@ -178,10 +178,40 @@ rt_shl_done:
 	},
 	{
 		name: "lshr",
-		data: "rt_lres: .word 0\nrt_lcnt: .word 0\n",
-		text: `; r0 >> r1 by consuming the top 32-n bits of r0 MSB-first.
+		data: "rt_lres: .word 0\nrt_lcnt: .word 0\nrt_lrev: .word 0\nrt_lnorm: .word 0\n",
+		text: `; r0 >> r1. Shifts below 16 go through the sniffer's OUT_REV bit
+; reversal: x >> n == rev(rev(x) << n), so reverse, do n cheap left
+; doublings, reverse back — ~21 + 4n instructions instead of
+; ~7*(32-n). Larger shifts keep the MSB-first rebuild loop, whose
+; cost falls as n rises. OUT_REV lives in SNIFF_CTRL (bit 10) and
+; transforms SNIFF_DATA reads only (writes store raw). Both CTRL
+; flavors are computed BEFORE engaging: while OUT_REV is on, any
+; accumulator read is reversed, so the restore must be a plain store
+; of a precomputed word, never a read-modify-write. %sniff is
+; caller-saved per the ABI, so clobbering the accumulator is free.
 __rt_lshr:
     andn r1, $0xFFFFFFE0, r1
+    jlt r1, $16, rt_lshr_rev, rt_lshr_slow
+rt_lshr_rev:
+    or %sniffctrl, $0x400, rt_lrev
+    andn rt_lrev, $0x400, rt_lnorm
+    move rt_lrev, %sniffctrl
+    move r0, %sniff
+    move %sniff, rt_lres
+    move rt_lnorm, %sniffctrl
+rt_lshr_dbl:
+    sub r1, $1, r1
+    jneg r1, rt_lshr_out, rt_lshr_go2
+rt_lshr_go2:
+    shl rt_lres, rt_lres
+    jump rt_lshr_dbl
+rt_lshr_out:
+    move rt_lrev, %sniffctrl
+    move rt_lres, %sniff
+    move %sniff, r0
+    move rt_lnorm, %sniffctrl
+    ret
+rt_lshr_slow:
     move zero, rt_lres
     move $31, rt_lcnt
     sub rt_lcnt, r1, rt_lcnt
