@@ -1610,7 +1610,11 @@ int main(void)
            (unsigned long)(clock_get_hz(clk_sys) / 1000),
            (unsigned long)(clock_get_hz(clk_peri) / 1000));
 #endif
-    sleep_ms(3000);
+#ifdef HIL_DEV_TESTS
+    sleep_ms(3000); /* generous serial-attach window for capture scripts */
+#else
+    sleep_ms(500);
+#endif
 
     /* Startup insurance: begin from a virgin DMA block. The SDK
      * runtime resets peripherals at boot, but a debugger-resumed or
@@ -1666,6 +1670,17 @@ int main(void)
             sleep_ms(5000);
             continue;
         }
+        /* The on-boot suite is a development tool; release builds
+         * (the default) skip straight to the payload. Build with
+         * `make firmware HIL_DEV=1` to keep it. A runtime `if` rather
+         * than preprocessor removal: every suite function stays
+         * compiled (no unused-function noise), flash is plentiful. */
+#ifdef HIL_DEV_TESTS
+        const int devtests = 1;
+#else
+        const int devtests = 0;
+#endif
+        if (devtests) {
         for (int i = 0; i < HIL_N_TESTS; i++) {
             if (hil_tests[i].name[0] == 'c' && hil_tests[i].name[1] == 'a' &&
                 hil_tests[i].name[2] == 'l' && hil_tests[i].name[3] == '_') {
@@ -1699,6 +1714,7 @@ int main(void)
         exp_exec();
 #endif
         printf("=== END iter=%u\n", iter);
+        } /* devtests */
 #ifdef HIL_HAS_GAME
         game_start(); /* the machine IS the console from here */
 #elif defined(HIL_HAS_XSH)

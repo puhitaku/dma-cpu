@@ -27,9 +27,9 @@ int
 menu_run(void)
 {
   gfx_clear(C_BG);
-  gfx_text2(56, 24, "GAMEPICO", C_TITLE, C_BG);
+  gfx_text2(56, 24, "DMA PICO", C_TITLE, C_BG);
   gfx_fill(56, 44, 128, 2, C_TITLE);
-  gfx_text(28, 60, "a DMA-CPU game console", C_ITEM, C_BG);
+  gfx_text(8, 60, "Enjoy purely DMA-coded games", C_ITEM, C_BG);
   int sel = 0;
   for (int i = 0; i < 3; i++)
     draw_item(i, i == sel);

@@ -12,12 +12,17 @@ static uint rng_state = 0x9E3779B9u;
 static uint in_prev;
 static int in_primed; /* first poll only baselines (no phantom edges) */
 
+/* Per-stick pin tables in BTN bit order (up, down, left, right,
+ * press) — the harness wires roles out of GPIO order (g.h). */
+static const uchar joyA[5] = {3, 4, 2, 5, 6};
+static const uchar joyB[5] = {8, 9, 7, 10, 11};
+
 static uint
-stick(int base)
+stick(const uchar *pins)
 {
   uint m = 0;
   for (int i = 0; i < 5; i++)
-    if (!gpio_in_pu(base + i)) /* low = pressed */
+    if (!gpio_in_pu(pins[i])) /* low = pressed */
       m |= 1u << i;
   return m;
 }
@@ -25,7 +30,7 @@ stick(int base)
 void
 in_poll(void)
 {
-  uint now = stick(PIN_JOYA_UP) | stick(PIN_JOYB_UP);
+  uint now = stick(joyA) | stick(joyB);
   if (!in_primed) {
     in_primed = 1;
     in_prev = now;

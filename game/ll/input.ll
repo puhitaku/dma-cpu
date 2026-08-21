@@ -3,6 +3,8 @@ source_filename = "input.c"
 target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
+@joyA = internal constant [5 x i8] c"\03\04\02\05\06", align 1
+@joyB = internal constant [5 x i8] c"\08\09\07\0A\0B", align 1
 @in_primed = internal unnamed_addr global i1 false, align 4
 @in_prev = internal unnamed_addr global i32 0, align 4
 @in_down = dso_local local_unnamed_addr global i32 0, align 4
@@ -12,8 +14,8 @@ target triple = "thumbv6m-unknown-none-eabi"
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @in_poll() local_unnamed_addr #0 {
-  %1 = tail call fastcc i32 @stick(i32 noundef 2) #4
-  %2 = tail call fastcc i32 @stick(i32 noundef 7) #4
+  %1 = tail call fastcc i32 @stick(ptr noundef nonnull @joyA) #4
+  %2 = tail call fastcc i32 @stick(ptr noundef nonnull @joyB) #4
   %3 = or i32 %2, %1
   %4 = load i1, ptr @in_primed, align 4
   br i1 %4, label %6, label %5
@@ -47,12 +49,12 @@ define dso_local void @in_poll() local_unnamed_addr #0 {
 }
 
 ; Function Attrs: minsize nounwind optsize
-define internal fastcc range(i32 0, -2147483648) i32 @stick(i32 noundef range(i32 2, 8) %0) unnamed_addr #0 {
+define internal fastcc range(i32 0, -2147483648) i32 @stick(ptr noundef readonly captures(none) %0) unnamed_addr #0 {
   br label %2
 
 2:                                                ; preds = %7, %1
-  %3 = phi i32 [ 0, %1 ], [ %13, %7 ]
-  %4 = phi i32 [ 0, %1 ], [ %14, %7 ]
+  %3 = phi i32 [ 0, %1 ], [ %15, %7 ]
+  %4 = phi i32 [ 0, %1 ], [ %16, %7 ]
   %5 = icmp eq i32 %4, 5
   br i1 %5, label %6, label %7
 
@@ -60,14 +62,16 @@ define internal fastcc range(i32 0, -2147483648) i32 @stick(i32 noundef range(i3
   ret i32 %3
 
 7:                                                ; preds = %2
-  %8 = add nuw nsw i32 %4, %0
-  %9 = tail call i32 @gpio_in_pu(i32 noundef %8) #5
-  %10 = icmp eq i32 %9, 0
-  %11 = shl nuw nsw i32 1, %4
-  %12 = select i1 %10, i32 %11, i32 0
-  %13 = or i32 %12, %3
-  %14 = add nuw nsw i32 %4, 1
-  br label %2, !llvm.loop !7
+  %8 = getelementptr inbounds nuw i8, ptr %0, i32 %4
+  %9 = load i8, ptr %8, align 1, !tbaa !7
+  %10 = zext i8 %9 to i32
+  %11 = tail call i32 @gpio_in_pu(i32 noundef %10) #5
+  %12 = icmp eq i32 %11, 0
+  %13 = shl nuw nsw i32 1, %4
+  %14 = select i1 %12, i32 %13, i32 0
+  %15 = or i32 %14, %3
+  %16 = add nuw nsw i32 %4, 1
+  br label %2, !llvm.loop !8
 }
 
 ; Function Attrs: minsize optsize
@@ -121,7 +125,7 @@ define dso_local void @frame_sync(i32 noundef %0) local_unnamed_addr #0 {
   %15 = tail call i32 @now_us() #5
   %16 = sub i32 %14, %15
   %17 = icmp sgt i32 %16, 0
-  br i1 %17, label %13, label %18, !llvm.loop !10
+  br i1 %17, label %13, label %18, !llvm.loop !11
 
 18:                                               ; preds = %13
   ret void
@@ -150,7 +154,8 @@ attributes #5 = { minsize nobuiltin nounwind optsize "no-builtins" }
 !4 = !{!"int", !5, i64 0}
 !5 = !{!"omnipotent char", !6, i64 0}
 !6 = !{!"Simple C/C++ TBAA"}
-!7 = distinct !{!7, !8, !9}
-!8 = !{!"llvm.loop.mustprogress"}
-!9 = !{!"llvm.loop.unroll.disable"}
-!10 = distinct !{!10, !8, !9}
+!7 = !{!5, !5, i64 0}
+!8 = distinct !{!8, !9, !10}
+!9 = !{!"llvm.loop.mustprogress"}
+!10 = !{!"llvm.loop.unroll.disable"}
+!11 = distinct !{!11, !9, !10}

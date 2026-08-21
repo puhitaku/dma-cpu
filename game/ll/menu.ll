@@ -3,8 +3,8 @@ source_filename = "menu.c"
 target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
-@.str = private unnamed_addr constant [9 x i8] c"GAMEPICO\00", align 1
-@.str.1 = private unnamed_addr constant [23 x i8] c"a DMA-CPU game console\00", align 1
+@.str = private unnamed_addr constant [9 x i8] c"DMA PICO\00", align 1
+@.str.1 = private unnamed_addr constant [29 x i8] c"Enjoy purely DMA-coded games\00", align 1
 @.str.2 = private unnamed_addr constant [14 x i8] c"up/down: pick\00", align 1
 @.str.3 = private unnamed_addr constant [14 x i8] c"press:   play\00", align 1
 @.str.4 = private unnamed_addr constant [9 x i8] c"menu up\0A\00", align 1
@@ -24,7 +24,7 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
   tail call void @gfx_clear(i16 noundef zeroext 2181) #2
   tail call void @gfx_text2(i32 noundef 56, i32 noundef 24, ptr noundef nonnull @.str, i16 noundef zeroext -377, i16 noundef zeroext 2181) #2
   tail call void @gfx_fill(i32 noundef 56, i32 noundef 44, i32 noundef 128, i32 noundef 2, i16 noundef zeroext -377) #2
-  tail call void @gfx_text(i32 noundef 28, i32 noundef 60, ptr noundef nonnull @.str.1, i16 noundef zeroext -18950, i16 noundef zeroext 2181) #2
+  tail call void @gfx_text(i32 noundef 8, i32 noundef 60, ptr noundef nonnull @.str.1, i16 noundef zeroext -18950, i16 noundef zeroext 2181) #2
   br label %1
 
 1:                                                ; preds = %10, %0

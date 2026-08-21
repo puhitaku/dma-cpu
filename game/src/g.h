@@ -18,9 +18,11 @@ typedef unsigned char uchar;
 #define SPI0 0x4003C000u     /* PL022: CR0 +0, CR1 +4, DR +8, SR +C, CPSR +10 */
 #define DMACH(n) (0x50000000u + (uint)(n) * 0x40u)
 
-/* --- board wiring (see prompts/040) --- */
-#define PIN_JOYA_UP 2 /* joystick A: GP2..GP6 = U D L R press */
-#define PIN_JOYB_UP 7 /* joystick B: GP7..GP11 */
+/* --- board wiring (see prompts/040) ---
+ * Joysticks occupy GP2..GP11 but NOT in role order — the as-built
+ * harness (input.c holds the tables):
+ *   A: up=GP3 down=GP4 left=GP2 right=GP5 press=GP6
+ *   B: up=GP8 down=GP9 left=GP7 right=GP10 press=GP11 */
 #define PIN_WS 12     /* two chained WS2811 */
 #define PIN_I2S_BCLK 13
 #define PIN_I2S_LRCLK 14

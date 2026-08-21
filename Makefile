@@ -176,9 +176,19 @@ OPENOCD_TARGET_gamepico = target/rp2040.cfg
 images: game-ll
 	go run ./cmd/dmxgen -board $(HIL_BOARD) -o target/firmware/generated/images.h
 
+# HIL_DEV=1 keeps the on-boot test/calibration suite (development);
+# the default is a release boot straight to the game/shell. Passed
+# explicitly both ways so the CMake cache can't leak a stale ON.
+HIL_DEV ?= 0
+ifeq ($(HIL_DEV),1)
+HIL_DEV_OPT = -DHIL_DEV_TESTS=ON
+else
+HIL_DEV_OPT = -DHIL_DEV_TESTS=OFF
+endif
+
 firmware: images
 	PATH="$(PICO_TOOLS):$$PATH" PICO_SDK_PATH=$(PICO_SDK_PATH) \
-	  cmake -S target/firmware -B $(BUILD_DIR) -G Ninja -DPICO_BOARD=$(PICO_BOARD)
+	  cmake -S target/firmware -B $(BUILD_DIR) -G Ninja -DPICO_BOARD=$(PICO_BOARD) $(HIL_DEV_OPT)
 	PATH="$(PICO_TOOLS):$$PATH" ninja -C $(BUILD_DIR)
 
 # Flash with OpenOCD over a Debug Probe, then watch the UART (115200) for

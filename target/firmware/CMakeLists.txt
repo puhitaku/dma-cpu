@@ -35,6 +35,15 @@ if(PICO_RP2350)
     target_compile_definitions(dma_hil PRIVATE DMX_TARGET_RP2350)
 endif()
 
+# Development builds keep the on-boot test/calibration suite; release
+# builds (the default) boot straight to the payload. The Makefile
+# passes this explicitly both ways so a cached ON never leaks into a
+# release flash.
+option(HIL_DEV_TESTS "Run the HIL test suite at every boot" OFF)
+if(HIL_DEV_TESTS)
+    target_compile_definitions(dma_hil PRIVATE HIL_DEV_TESTS)
+endif()
+
 target_link_libraries(dma_hil pico_stdlib hardware_pio
         hardware_flash)
 

@@ -15,15 +15,19 @@ import (
 	"github.com/puhitaku/dma-cpu/llir"
 )
 
-// The joystick pins (GP2..GP6 = up/down/left/right/press; second
-// stick GP7..GP11 mirrors them).
+// Joystick A's pins, in the as-built harness order (input.c): the
+// roles are shuffled within GP2..GP6; stick B mirrors on GP7..GP11.
 const (
-	pinUp    = 2
-	pinDown  = 3
-	pinLeft  = 4
+	pinUp    = 3
+	pinDown  = 4
+	pinLeft  = 2
 	pinRight = 5
 	pinA     = 6
 )
+
+// btnBit maps a stick-A pin to its BTN_* bit in g_in_down.
+var btnBit = map[int]uint32{pinUp: 0x1, pinDown: 0x2, pinLeft: 0x4,
+	pinRight: 0x8, pinA: 0x10}
 
 // bootGame compiles and boots the gamepico bare-metal image exactly
 // as dmxgen ships it (XIP text, SRAM data+ramtext, baked ctrl words).
@@ -58,7 +62,7 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	}
 	m := emu.NewMachine(v)
 	m.Flash = make([]byte, bd.FlashSize)
-	for pin := pinUp; pin <= pinUp+9; pin++ {
+	for pin := 2; pin <= 11; pin++ {
 		m.SetPadIn(pin, true)
 	}
 	entry, err := prog.Image.Load(m, nil)
@@ -112,7 +116,7 @@ func runUntil(t *testing.T, m *emu.Machine, marker string, from0 int,
 // flush), and overstayed holds trip hold-to-quit gestures.
 func press(t *testing.T, m *emu.Machine, prog *dmaasm.Result, pin int) {
 	t.Helper()
-	bit := uint32(1) << ((pin - 2) % 5)
+	bit := btnBit[pin]
 	down := mustSym(t, prog, "g_in_down")
 	wait := func(want bool) {
 		for spent := 0; spent < 400; spent++ {
