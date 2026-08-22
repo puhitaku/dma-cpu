@@ -47,7 +47,9 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 )
 
 const (
@@ -115,22 +117,56 @@ func main() {
 	if err := os.MkdirAll(*outdir, 0o755); err != nil {
 		fatal(err)
 	}
+	// Convert in parallel: images fan out across a worker pool (which
+	// also bounds how many decoded sources are resident at once), and
+	// each image's four series variants render concurrently. Every
+	// slide is deterministic in isolation, and results land by index,
+	// so the outputs — files, deck layout, log lines — are byte- and
+	// order-identical to the old serial loop.
+	n := flag.NArg()
 	deck := []series{{name: "43"}, {name: "169"}, {name: "43u"}, {name: "169u"}}
+	for s := range deck {
+		deck[s].slides = make([][]byte, n)
+	}
+	variants := [4]struct{ hsqueeze, under float64 }{
+		{1, 1}, {squeeze169, 1}, {1, *under}, {squeeze169, *under},
+	}
+	names := make([]string, n)
+	errs := make([]error, n)
+	sem := make(chan struct{}, runtime.NumCPU())
+	var wg sync.WaitGroup
 	for i, path := range flag.Args() {
-		src, err := load(path)
-		if err != nil {
-			fatal(fmt.Errorf("%s: %w", path, err))
+		wg.Add(1)
+		go func(i int, path string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			src, err := load(path)
+			if err != nil {
+				errs[i] = fmt.Errorf("%s: %w", path, err)
+				return
+			}
+			var inner sync.WaitGroup
+			for s := range variants {
+				inner.Add(1)
+				go func(s int) {
+					defer inner.Done()
+					deck[s].slides[i] = render(src, variants[s].hsqueeze,
+						variants[s].under, !*nodither)
+				}(s)
+			}
+			inner.Wait()
+			names[i] = fmt.Sprintf("%02d-%s.sld", i+1, stem(path))
+			errs[i] = os.WriteFile(filepath.Join(*outdir, names[i]),
+				deck[0].slides[i], 0o644)
+		}(i, path)
+	}
+	wg.Wait()
+	for i, path := range flag.Args() {
+		if errs[i] != nil {
+			fatal(errs[i])
 		}
-		sld := render(src, 1, 1, !*nodither)
-		name := fmt.Sprintf("%02d-%s.sld", i+1, stem(path))
-		if err := os.WriteFile(filepath.Join(*outdir, name), sld, 0o644); err != nil {
-			fatal(err)
-		}
-		fmt.Printf("  %s -> %s\n", path, name)
-		deck[0].slides = append(deck[0].slides, sld)
-		deck[1].slides = append(deck[1].slides, render(src, squeeze169, 1, !*nodither))
-		deck[2].slides = append(deck[2].slides, render(src, 1, *under, !*nodither))
-		deck[3].slides = append(deck[3].slides, render(src, squeeze169, *under, !*nodither))
+		fmt.Printf("  %s -> %s\n", path, names[i])
 	}
 	if *deckName != "" {
 		p := filepath.Join(*outdir, *deckName)
