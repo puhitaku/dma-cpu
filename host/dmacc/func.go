@@ -32,6 +32,7 @@ type funcCtx struct {
 	pair64    map[*llir.Instr]*llir.Instr // i64 store -> its feeding i64 load (8-byte copy idiom)
 	pair64Ld  map[*llir.Instr]bool        // the loads consumed by pair64
 	poolable  map[string]bool             // block-local temps eligible for slot sharing
+	slotOf    map[string]string           // escaping values colored onto shared vs_ words
 	poolSym   map[string]string           // current block: value -> assigned pool slot
 	poolFree  []string                    // recycled slots (freed at block boundaries)
 	poolN     int                         // slots minted for this function
@@ -62,6 +63,7 @@ func (g *gen) emitFunc(f *llir.Func) error {
 		blockIdx:  map[string]int{},
 		directPhi: map[string]bool{},
 		poolable:  map[string]bool{},
+		slotOf:    map[string]string{},
 		poolSym:   map[string]string{},
 	}
 	if fc.rec {
@@ -82,6 +84,9 @@ func (g *gen) emitFunc(f *llir.Func) error {
 }
 
 func (fc *funcCtx) word(local string) string {
+	if s, ok := fc.slotOf[local]; ok {
+		return s
+	}
 	if fc.poolable[local] {
 		if s, ok := fc.poolSym[local]; ok {
 			return s
@@ -237,6 +242,8 @@ func (fc *funcCtx) prepass() error {
 		"inttoptr": true, "freeze": true, "sext": true, "trunc": true,
 		"insertvalue": true, "extractvalue": true, "getelementptr": true}
 	escape := map[string]bool{}
+	useBlks := map[string]map[int]bool{}  // value -> blocks where its word is read
+	fwdSrcs := map[string][]string{}      // fwd-op result -> sources it may alias
 	noteUse := func(v *llir.Value, useBlk int, byFwd bool) {
 		if v == nil || v.Kind != llir.VLocal {
 			return
@@ -244,17 +251,43 @@ func (fc *funcCtx) prepass() error {
 		if byFwd || fc.defBlock[v.Name] != useBlk {
 			escape[v.Name] = true
 		}
+		if useBlks[v.Name] == nil {
+			useBlks[v.Name] = map[int]bool{}
+		}
+		useBlks[v.Name][useBlk] = true
 	}
 	for i, b := range f.Blocks {
 		for _, ins := range b.Instrs {
 			for _, a := range ins.Args {
 				noteUse(a, i, fwdOps[ins.Op])
+				if fwdOps[ins.Op] && ins.Res != "" && a.Kind == llir.VLocal {
+					fwdSrcs[ins.Res] = append(fwdSrcs[ins.Res], a.Name)
+				}
 			}
 			noteUse(ins.CalleeVal, i, false)
 			for _, e := range ins.Phi {
 				// The edge copy reads the value at the END of the
 				// predecessor block.
 				noteUse(e.Val, fc.blockIdx[e.Pred], false)
+			}
+		}
+	}
+	// A forwarding op's result may resolve to its source's word (see
+	// forward()), so the source is read wherever the result is — charge
+	// those use blocks back through the alias chain to a fixpoint.
+	for changed := true; changed; {
+		changed = false
+		for res, srcs := range fwdSrcs {
+			for _, s := range srcs {
+				for b := range useBlks[res] {
+					if !useBlks[s][b] {
+						if useBlks[s] == nil {
+							useBlks[s] = map[int]bool{}
+						}
+						useBlks[s][b] = true
+						changed = true
+					}
+				}
 			}
 		}
 	}
@@ -286,6 +319,113 @@ func (fc *funcCtx) prepass() error {
 			fc.pair64[ins] = ld
 			fc.pair64Ld[ld] = true
 		}
+	}
+	// Cross-block slot coloring: an escaping value's live range, at
+	// block granularity, is its writer blocks, its (alias-charged) use
+	// blocks, and every block on a path between them. Values whose
+	// ranges never overlap share one vs_ word. Phi results join with
+	// the edge-copy sites as writers (all preds when the block's phis
+	// are direct, the head-latch block otherwise) — co-located phis
+	// and edge sources always interfere, so parallel copies never
+	// alias. Allocas and the pair64 ferry loads keep dedicated
+	// storage; block granularity absorbs edge-stub reads and fused
+	// compares conservatively.
+	fc.computeDirectPhis()
+	preds := make([][]int, len(f.Blocks))
+	for i, b := range f.Blocks {
+		term := b.Instrs[len(b.Instrs)-1]
+		for _, l := range term.Labels {
+			preds[fc.blockIdx[l]] = append(preds[fc.blockIdx[l]], i)
+		}
+		for _, c := range term.Cases {
+			preds[fc.blockIdx[c.Label]] = append(preds[fc.blockIdx[c.Label]], i)
+		}
+	}
+	writersOf := func(n string) map[int]bool {
+		d := fc.defs[n]
+		bi := fc.defBlock[n]
+		w := map[int]bool{bi: true}
+		if d.Op == "phi" && fc.directPhi[f.Blocks[bi].Name] {
+			for _, e := range d.Phi {
+				w[fc.blockIdx[e.Pred]] = true
+			}
+		}
+		return w
+	}
+	liveOf := func(n string) map[int]bool {
+		// The backward walk stops only at the def block — the one
+		// block guaranteed to dominate every use. A phi's edge-copy
+		// writers do NOT dominate uses reached through their other
+		// successors, so the walk continues through them; they still
+		// join the live set (the copy fires at their end, clashing
+		// with anything live across them).
+		def := fc.defBlock[n]
+		live := map[int]bool{}
+		var stack []int
+		for u := range useBlks[n] {
+			if u != def && !live[u] {
+				live[u] = true
+				stack = append(stack, u)
+			}
+		}
+		for len(stack) > 0 {
+			b := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			for _, p := range preds[b] {
+				if p != def && !live[p] {
+					live[p] = true
+					stack = append(stack, p)
+				}
+			}
+		}
+		for w := range writersOf(n) {
+			live[w] = true
+		}
+		return live
+	}
+	var cands []string
+	if !fc.g.forkSet[f.Name] {
+		for n, d := range fc.defs {
+			if (escape[n] || d.Op == "phi") && d.Op != "alloca" && !fc.pair64Ld[d] {
+				cands = append(cands, n)
+			}
+		}
+	}
+	sort.Slice(cands, func(i, j int) bool {
+		if a, b := fc.defBlock[cands[i]], fc.defBlock[cands[j]]; a != b {
+			return a < b
+		}
+		return cands[i] < cands[j]
+	})
+	type slot struct {
+		sym  string
+		live map[int]bool
+	}
+	var slots []slot
+	for _, n := range cands {
+		ln := liveOf(n)
+		at := -1
+		for i := range slots {
+			clash := false
+			for b := range ln {
+				if slots[i].live[b] {
+					clash = true
+					break
+				}
+			}
+			if !clash {
+				at = i
+				break
+			}
+		}
+		if at < 0 {
+			at = len(slots)
+			slots = append(slots, slot{sym: fmt.Sprintf("vs_%s_%d", sanitize(f.Name), at), live: map[int]bool{}})
+		}
+		for b := range ln {
+			slots[at].live[b] = true
+		}
+		fc.slotOf[n] = slots[at].sym
 	}
 	// Tail calls: a call immediately followed by a ret of its (sole-use)
 	// result — or a discarded/void result — jumps to the callee with the
@@ -349,7 +489,6 @@ func (fc *funcCtx) prepass() error {
 			}
 		}
 	}
-	fc.computeDirectPhis()
 	// Frame: params, results, phi shadows, allocas, lr slot.
 	for _, p := range f.Params {
 		fc.declWord(fc.word(p.Name))

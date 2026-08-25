@@ -165,6 +165,7 @@ type gen struct {
 	rt       map[string]bool   // runtime routines needed
 	ramSet   map[string]bool   // functions emitted into .ramtext (XIPText)
 	recSet   map[string]bool   // functions using the recursion frame stack
+	forkSet  map[string]bool   // functions that can reach fork() (no slot coloring)
 	frameSz  map[string]int    // measured frame bytes per recSet function
 	cmpUsed  map[string]bool   // comparison millicode helpers needed
 	cmpUsedD map[string]bool   // descriptor-form helpers needed
@@ -533,6 +534,19 @@ func (g *gen) computeRecursion() error {
 			g.recSet[n] = true
 		}
 	}
+	// Slot coloring is unsafe in any function that can experience
+	// fork()'s double return: the vfork child executes the pid==0
+	// path on the SHARED image, writing slots that SSA liveness calls
+	// dead on the parent's path, then the parent resumes with them
+	// clobbered. Same reachability rule as the clone set.
+	g.forkSet = map[string]bool{}
+	if hasFork {
+		for _, n := range names {
+			if reaches(n, "fork") {
+				g.forkSet[n] = true
+			}
+		}
+	}
 	g.frameSz = map[string]int{}
 	if len(clone) == 0 {
 		return nil
@@ -613,6 +627,7 @@ func (g *gen) expandClones(clone map[string]bool) error {
 			}
 			g.m.Funcs = append(g.m.Funcs, nf)
 			g.funcIdx[nf.Name] = nf
+			g.forkSet[nf.Name] = true // clones span forks by construction
 		}
 	}
 	for _, n := range cloneNames {
