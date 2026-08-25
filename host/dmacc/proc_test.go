@@ -179,7 +179,7 @@ func TestXv6Proc(t *testing.T) {
 				if _, err := m.Run(emu.RunConfig{MaxCycles: 200_000}); err != nil {
 					t.Fatal(err)
 				}
-				if strings.Contains(string(m.ConsoleOut), "parent: reaped") {
+				if strings.Contains(string(m.ConsoleOut), "parent: reaped\r\n") {
 					done = true
 					break
 				}

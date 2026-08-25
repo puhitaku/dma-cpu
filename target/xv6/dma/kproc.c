@@ -738,12 +738,15 @@ kenter(void)
   }
 }
 
-/* Round-robin: next RUNNABLE slot after curr (curr itself last). */
+/* Round-robin: next RUNNABLE slot after curr (curr itself last). The
+ * wrap stays UNSIGNED: signed % is a full runtime division on this
+ * machine (~2k records), and it sat in the tick path — the scheduler
+ * was spending more records picking a process than running it. */
 static int
 pick(void)
 {
   for (int off = 1; off <= NPROC; off++) {
-    int i = (int)(curr + (uint)off) % NPROC;
+    int i = (int)((curr + (uint)off) % (uint)NPROC);
     if (proc[i].state == RUNNABLE)
       return i;
   }
