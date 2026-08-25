@@ -131,6 +131,15 @@ func (b *Board) HasBundle(name string) bool {
 }
 
 var stdApps = []string{"echo", "cat", "ls", "toolbox", "hwtools"}
+
+// SizeApps compile with dmacc's OptSize (outlined comparison sites).
+// Exec copies a disk app's text+data whole into the arena, so every
+// byte is RAM; the descriptor form pays ~2x per branch, which stays
+// off the latency showcases (fbtest) and can't amortize its fixed
+// helper cost in the tiny apps (echo/cat/ls measured net-negative).
+// sh and the kernels stay fast: their text is XIP flash, so OptSize
+// would buy no SRAM there at all.
+var SizeApps = map[string]bool{"show": true, "toolbox": true, "hwtools": true}
 var fbApps = append(append([]string{}, stdApps...), "fbtest", "show")
 // spin/trap (signal demos), wc, and help left the toolbox: help is an
 // sh builtin now (it streams /dev/apps) and the rest earned no keep.

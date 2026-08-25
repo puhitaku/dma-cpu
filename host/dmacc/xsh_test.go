@@ -30,7 +30,7 @@ func buildUserScratch(t *testing.T, v *emu.Variant, scratch uint32, name string,
 	if err != nil {
 		t.Fatal(err)
 	}
-	dasm, err := dmacc.Compile(mod, dmacc.Options{})
+	dasm, err := dmacc.Compile(mod, dmacc.Options{OptSize: boards.SizeApps[name]})
 	if err != nil {
 		t.Fatal(err)
 	}

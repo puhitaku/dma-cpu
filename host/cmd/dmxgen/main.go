@@ -994,7 +994,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	appRes := map[string]*dmaasm.Result{}
 	for _, name := range bd.DiskApps {
 		udasm, err := compileLL([]string{"target/xv6/ll/" + name + ".ll", "target/xv6/ll/ulib.ll", "target/xv6/ll/usys.ll"},
-			dmacc.Options{})
+			dmacc.Options{OptSize: boards.SizeApps[name]})
 		if err != nil {
 			return nil, err
 		}
