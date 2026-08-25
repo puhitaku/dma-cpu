@@ -22,6 +22,8 @@ type Variant struct {
 	TimerRawL     uint32 // TIMERAWL: the free-running us counter
 	SPI0Base      uint32 // PL022; DR captured into Machine.SPIOut
 	DreqSPI0TX    uint32 // level-modeled: the TX FIFO always drains
+	DreqUART0TX   uint32 // level-modeled: paced by Machine.TXPace
+	DreqUART0RX   uint32 // level-modeled: asserted while ConsoleIn holds bytes
 	GPIOPins      int
 
 	// SelfCountWedge: a channel writing its own TRANS_COUNT (any alias)
@@ -92,6 +94,8 @@ var RP2040 = &Variant{
 	TimerRawL:      0x40054028,
 	SPI0Base:       0x4003C000,
 	DreqSPI0TX:     16,
+	DreqUART0TX:    20,
+	DreqUART0RX:    21,
 	GPIOPins:       30,
 
 	gpioOutoverLSB: 8,
@@ -133,7 +137,12 @@ var RP2350 = &Variant{
 	UART0Base:     0x40070000, // RP2350 datasheet §12.1
 	TimerRawL:     0x400B0028, // TIMER0
 	SPI0Base:      0x40080000,
-	DreqSPI0TX:    26,
+	// 24, not 26: the RP2350 table runs PIO2_RX0..3 = 20..23, then
+	// SPI0_TX = 24 (26 is SPI1_TX; the old value was a dormant slip —
+	// only the RP2040 game console paces on SPI0).
+	DreqSPI0TX:    24,
+	DreqUART0TX:   28,
+	DreqUART0RX:   29,
 	GPIOPins:      48,
 
 	gpioOutoverLSB: 12,
@@ -234,6 +243,41 @@ func (v *Variant) KDMACopyCtrl() uint32 {
 	return CtrlEN | CtrlHighPriority | CtrlSize32 | CtrlIncrRead |
 		v.CtrlIncrWrite | v.CtrlChainTo(11) |
 		v.CtrlTreq(TreqPermanent) | v.CtrlIRQQuiet
+}
+
+// Console-DMA channel convention for xsh systems on 16-channel SKUs
+// (boards with Board.ConsRings set): three board-pool channels take the
+// UART off the kernel's hands. TX drains a 512-byte ring into the DR at
+// the wire's pace; RX copies each received byte into a 1 KiB ring; the
+// wake channel, chained off every RX byte, patches the scheduler
+// dispatch word exactly like the tick injector — input becomes an
+// interrupt. kproc.c owns the software side (cons_dma_init and the
+// ring cursors); these words are poked into its g_c??_ctrl globals, and
+// a zero g_ctx_ctrl means "no console DMA" (the RP2040's 12 channels
+// have no room — its xsh keeps the polling paths).
+const (
+	ConsTxCh       = 10
+	ConsRxCh       = 12
+	ConsWakeCh     = 13
+	ConsRxRingSize = 1024 // at Board.ConsRings (1 KiB aligned)
+	ConsTxRingSize = 512  // at Board.ConsRings + ConsRxRingSize
+)
+
+func (v *Variant) ConsTxCtrl() uint32 {
+	return CtrlEN | CtrlSize8 | CtrlIncrRead |
+		v.CtrlRingSize(9) | // 512-byte read ring (RING_SEL=0)
+		v.CtrlTreq(v.DreqUART0TX) | v.CtrlChainTo(ConsTxCh) | v.CtrlIRQQuiet
+}
+
+func (v *Variant) ConsRxCtrl() uint32 {
+	return CtrlEN | CtrlSize8 | v.CtrlIncrWrite |
+		v.CtrlRingSel | v.CtrlRingSize(10) | // 1 KiB write ring
+		v.CtrlTreq(v.DreqUART0RX) | v.CtrlChainTo(ConsWakeCh) | v.CtrlIRQQuiet
+}
+
+func (v *Variant) ConsWakeCtrl() uint32 {
+	return CtrlEN | CtrlSize32 | v.CtrlTreq(TreqPermanent) |
+		v.CtrlChainTo(ConsRxCh) | v.CtrlIRQQuiet
 }
 
 func (v *Variant) SniffCtrlAddr() uint32 { return DMABase + v.offSniffCtrl }

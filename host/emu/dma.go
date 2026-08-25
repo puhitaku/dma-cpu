@@ -77,6 +77,8 @@ type dma struct {
 	timerActive uint32
 	timerListen [4]uint32
 	spiListen   uint32    // channels whose TREQ_SEL is the SPI0 TX DREQ
+	uartTxListen uint32   // channels on the UART0 TX DREQ (console drain)
+	uartRxListen uint32   // channels on the UART0 RX DREQ (console fill)
 	pioTx       [4]uint32 // channels on PIO0 TX0..3 (DREQ 0..3)
 	pioListen   uint32    // union of pioTx, the fast gate
 
@@ -213,6 +215,16 @@ func (d *dma) ctrlChanged(chIdx int) {
 		d.spiListen |= bit
 	} else {
 		d.spiListen &^= bit
+	}
+	if v.DreqUART0TX != 0 && c.treq == v.DreqUART0TX {
+		d.uartTxListen |= bit
+	} else {
+		d.uartTxListen &^= bit
+	}
+	if v.DreqUART0RX != 0 && c.treq == v.DreqUART0RX {
+		d.uartRxListen |= bit
+	} else {
+		d.uartRxListen &^= bit
 	}
 	// PIO0 TX DREQs are 0..3 on both SKUs. A zeroed CTRL decodes to
 	// TREQ_SEL 0 too, so require EN — otherwise every idle channel

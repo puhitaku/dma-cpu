@@ -536,6 +536,15 @@ func (m *Machine) step() (bool, error) {
 	if m.dma.spiListen != 0 && m.spiDmacr&0x2 != 0 {
 		m.dma.levelDreqMask(m.dma.spiListen)
 	}
+	// UART0 DREQs (console DMA): TX has FIFO room at the pace TXPace
+	// models (0 = drain instantly, like the FR read path); RX holds a
+	// byte while ConsoleIn is nonempty. Level-modeled like the SPI.
+	if m.dma.uartTxListen != 0 && (m.TXPace == 0 || m.Cycle-m.lastTX >= m.TXPace) {
+		m.dma.levelDreqMask(m.dma.uartTxListen)
+	}
+	if m.dma.uartRxListen != 0 && len(m.ConsoleIn) > 0 {
+		m.dma.levelDreqMask(m.dma.uartRxListen)
+	}
 	// PIO0 TX pacing stub: one word per 64 PIO cycles at the SM's
 	// CLKDIV (the gamepico I2S cadence), gated on the SM enable bit
 	// in the CTRL word remembered by the mmio map.
