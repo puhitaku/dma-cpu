@@ -22,7 +22,7 @@
 #include "file.h"
 
 #define PIPESIZE 512
-#define NPIPES 4
+#define NPIPES 2 /* one live pipeline + slack; each carries a 512 B buffer */
 
 /* kproc.c scheduler fence (see there). */
 extern int kfind_sleeper(uint chan);

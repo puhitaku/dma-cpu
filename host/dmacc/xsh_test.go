@@ -229,7 +229,7 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 12, XIPText: true})
+	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 8, XIPText: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -624,17 +624,17 @@ func TestXv6ShPico(t *testing.T) {
 	t.Parallel()
 	m, _ := bootXshBoard(t, nil, boards.Pico)
 	m.FeedConsole("ls\rcat README\recho pico > note\rcat note\r" +
-		"cat README | wc\rgpio write 5 1\rgpio read 5\rls /dev\rhelp\rfree\r")
+		"echo pipeflow | cat\rgpio write 5 1\rgpio read 5\rls /dev\rhelp\rfree\r")
 	runScript(t, m, 1_500_000_000)
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
 	t.Logf("console:\n%s", out)
 	for _, want := range []string{
 		"the DMA machine runs upstream xv6.", // cat via a flash registry row
 		"\npico\n",                           // redirection onto the RAM disk
-		"1 6 35",                             // pipe into wc (also flash-resident)
+		"\npipeflow\n",                       // pipe into cat (flash-resident)
 		"\n1\n",                              // gpio loopback on the rp2040 variant
 		"fat0",                               // devfs
-		"builtin: cd",                        // help header
+		"builtin: cd help",                   // help is an sh builtin now
 		"blink",                              // help lists the registry
 		"arena: total",                       // free
 	} {
@@ -1222,7 +1222,7 @@ func TestXv6Readline(t *testing.T) {
 func TestXv6Sh(t *testing.T) {
 	t.Parallel()
 	m, _ := bootXsh(t)
-	m.FeedConsole("ls\rcat README\recho booom > note\rcat note\recho one; echo two\rcat README | wc\r")
+	m.FeedConsole("ls\rcat README\recho booom > note\rcat note\recho one; echo two\recho pipeflow | cat\r")
 	runScript(t, m, 900_000_000)
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
 	t.Logf("console:\n%s", out)
@@ -1232,7 +1232,7 @@ func TestXv6Sh(t *testing.T) {
 		"the DMA machine runs upstream xv6.", // cat README
 		"booom",                              // cat note (redirected write)
 		"one\n", "two\n",                     // the ; list still works
-		"1 6 35", // wc on README: 1 line, 6 words, 35 bytes
+		"\npipeflow\n", // the pipe: echo's stdout through cat
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("console missing %q", want)

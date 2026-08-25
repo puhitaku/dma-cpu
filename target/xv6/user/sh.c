@@ -174,6 +174,20 @@ main(void)
         fputstr(2, cmd + 3);
         fputstr(2, "\n");
       }
+    } else if (cmd[0] == 'h' && cmd[1] == 'e' && cmd[2] == 'l' &&
+               cmd[3] == 'p' && (cmd[4] == '\n' || cmd[4] == 0)) {
+      // help is a builtin: the runnable commands live in the flash
+      // image registry (no disk file to ls), so just stream
+      // /dev/apps — cheaper than the old 1.6 KB toolbox formatter.
+      fputstr(1, "builtin: cd help\ncommands (/dev/apps):\n");
+      int hfd = open("/dev/apps", 0);
+      if (hfd >= 0) {
+        char hbuf[128];
+        int hn;
+        while ((hn = read(hfd, hbuf, sizeof(hbuf))) > 0)
+          write(1, hbuf, hn);
+        close(hfd);
+      }
     } else {
       if (fork1() == 0)
         runcmd(parsecmd(cmd));

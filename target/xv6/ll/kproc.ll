@@ -8,7 +8,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 
 @inj_wreg = dso_local local_unnamed_addr global i32 1342177476, align 4
 @inj_treg = dso_local local_unnamed_addr global i32 1342177500, align 4
-@kimages = dso_local global [24 x %struct.kimg] zeroinitializer, align 4
+@kimages = dso_local global [20 x %struct.kimg] zeroinitializer, align 4
 @cons_r = internal unnamed_addr global i32 0, align 4
 @cons_w = internal unnamed_addr global i32 0, align 4
 @cons_buf = internal unnamed_addr global [128 x i8] zeroinitializer, align 1
@@ -57,11 +57,11 @@ define dso_local ptr @kimg_name(i32 noundef %0) local_unnamed_addr #0 {
   br i1 %2, label %10, label %3
 
 3:                                                ; preds = %1
-  %4 = icmp samesign ugt i32 %0, 23
+  %4 = icmp samesign ugt i32 %0, 19
   br i1 %4, label %10, label %5
 
 5:                                                ; preds = %3
-  %6 = getelementptr inbounds nuw [24 x %struct.kimg], ptr @kimages, i32 0, i32 %0
+  %6 = getelementptr inbounds nuw [20 x %struct.kimg], ptr @kimages, i32 0, i32 %0
   %7 = load i8, ptr %6, align 4, !tbaa !3
   %8 = icmp eq i8 %7, 0
   %9 = select i1 %8, ptr null, ptr %6
@@ -1962,11 +1962,11 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 
 504:                                              ; preds = %523, %500
   %505 = phi i32 [ 0, %500 ], [ %524, %523 ]
-  %506 = icmp eq i32 %505, 24
+  %506 = icmp eq i32 %505, 20
   br i1 %506, label %658, label %507
 
 507:                                              ; preds = %504
-  %508 = getelementptr inbounds nuw [24 x %struct.kimg], ptr @kimages, i32 0, i32 %505
+  %508 = getelementptr inbounds nuw [20 x %struct.kimg], ptr @kimages, i32 0, i32 %505
   %509 = load i8, ptr %508, align 4, !tbaa !3
   %510 = icmp eq i8 %509, 0
   br i1 %510, label %658, label %511

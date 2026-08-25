@@ -950,7 +950,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	}
 	shDasm, err := compileLL([]string{"target/xv6/ll/sh.ll", "target/xv6/ll/ulib.ll",
 		"target/xv6/ll/umalloc.ll", "target/xv6/ll/usys.ll"},
-		dmacc.Options{RecursionDepth: 12, XIPText: true})
+		dmacc.Options{RecursionDepth: 8, XIPText: true})
 	if err != nil {
 		return nil, err
 	}
@@ -1254,6 +1254,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	b.sym["FSSLOT"] = roFSSlot(bd)
 	b.sym["DISK_LEN"] = uint32(len(disk))
 	b.sym["FLASHREQ"] = bd.Scratch + 0x10
+	b.sym["ARENA"] = arena /* the firmware's boot-staging bounce home */
 	b.sym["FBBUF"] = bd.FbBuf
 	b.sym["FBCTL"] = bd.FbHome
 	if bd.DTab != 0 {
@@ -1314,13 +1315,13 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	}); err != nil {
 		return nil, err
 	}
-	m.FeedConsole("ls\rcat README\recho booom > note\rcat note\rcat README | wc\r")
+	m.FeedConsole("ls\rcat README\recho booom > note\rcat note\recho pipeflow | cat\r")
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 900_000_000}); err != nil {
 		return nil, err
 	}
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
 	for _, want := range []string{"$ ", "README", "the DMA machine runs upstream xv6.",
-		"booom", "1 6 35"} {
+		"booom", "\npipeflow"} {
 		if !strings.Contains(out, want) {
 			return nil, fmt.Errorf("xsh bundle: session missing %q:\n%s", want, out)
 		}

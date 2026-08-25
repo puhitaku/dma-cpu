@@ -142,7 +142,7 @@ llgen:
 	(cd host/dmacc/testdata && $(LIBC_CLANG) shell.c -o shell.ll)
 	clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding -I$(CURDIR)/target/xv6 \
 	  -S -emit-llvm host/dmacc/testdata/xv6malloc.c -o host/dmacc/testdata/xv6malloc.ll
-	@for f in xv6sys xv6proc xv6spawn xv6hello xv6readline xv6kill xv6sig; do \
+	@for f in xv6sys xv6proc xv6spawn xv6hello xv6readline xv6kill xv6sig xv6trap; do \
 	  clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding -I$(CURDIR)/target/xv6 \
 	    -S -emit-llvm host/dmacc/testdata/$$f.c -o host/dmacc/testdata/$$f.ll || exit 1; done
 

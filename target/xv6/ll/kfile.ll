@@ -3,7 +3,7 @@ source_filename = "file.c"
 target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
-%struct.anon = type { %struct.spinlock, [100 x %struct.file] }
+%struct.anon = type { %struct.spinlock, [32 x %struct.file] }
 %struct.spinlock = type { i8 }
 %struct.file = type { i32, i32, i8, i8, ptr, ptr, i32, i16 }
 %struct.devsw = type { ptr, ptr }
@@ -33,7 +33,7 @@ define dso_local ptr @filealloc() local_unnamed_addr #0 {
 
 1:                                                ; preds = %10, %0
   %2 = phi ptr [ getelementptr inbounds nuw (i8, ptr @ftable, i32 4), %0 ], [ %11, %10 ]
-  %3 = icmp ult ptr %2, getelementptr inbounds nuw (i8, ptr @ftable, i32 2804)
+  %3 = icmp ult ptr %2, getelementptr inbounds nuw (i8, ptr @ftable, i32 900)
   br i1 %3, label %4, label %12
 
 4:                                                ; preds = %1

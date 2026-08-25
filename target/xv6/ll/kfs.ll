@@ -4,7 +4,7 @@ target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
 %struct.superblock = type { i32, i32, i32, i32, i32, i32, i32, i32 }
-%struct.anon = type { %struct.spinlock, [50 x %struct.inode] }
+%struct.anon = type { %struct.spinlock, [24 x %struct.inode] }
 %struct.spinlock = type { i8 }
 %struct.inode = type { i32, i32, i32, %struct.sleeplock, i32, i16, i16, i16, i16, i32, [13 x i32] }
 %struct.sleeplock = type { i8 }
@@ -119,7 +119,7 @@ define dso_local void @iinit() local_unnamed_addr #0 {
 
 1:                                                ; preds = %4, %0
   %2 = phi i32 [ 0, %0 ], [ %7, %4 ]
-  %3 = icmp eq i32 %2, 50
+  %3 = icmp eq i32 %2, 24
   br i1 %3, label %8, label %4
 
 4:                                                ; preds = %1
@@ -210,7 +210,7 @@ define internal fastcc ptr @iget(i32 noundef %0, i32 noundef %1) unnamed_addr #0
 3:                                                ; preds = %21, %2
   %4 = phi ptr [ getelementptr inbounds nuw (i8, ptr @itable, i32 4), %2 ], [ %26, %21 ]
   %5 = phi ptr [ null, %2 ], [ %25, %21 ]
-  %6 = icmp ult ptr %4, getelementptr inbounds nuw (i8, ptr @itable, i32 4204)
+  %6 = icmp ult ptr %4, getelementptr inbounds nuw (i8, ptr @itable, i32 2020)
   br i1 %6, label %7, label %27
 
 7:                                                ; preds = %3

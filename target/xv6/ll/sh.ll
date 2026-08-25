@@ -13,23 +13,25 @@ target triple = "thumbv6m-unknown-none-eabi"
 @.str.6 = private unnamed_addr constant [8 x i8] c"console\00", align 1
 @.str.7 = private unnamed_addr constant [11 x i8] c"cannot cd \00", align 1
 @.str.8 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
-@.str.9 = private unnamed_addr constant [5 x i8] c"fork\00", align 1
+@.str.9 = private unnamed_addr constant [40 x i8] c"builtin: cd help\0Acommands (/dev/apps):\0A\00", align 1
+@.str.10 = private unnamed_addr constant [10 x i8] c"/dev/apps\00", align 1
+@.str.11 = private unnamed_addr constant [5 x i8] c"fork\00", align 1
 @whitespace = dso_local global [6 x i8] c" \09\0D\0A\0B\00", align 1
 @symbols = dso_local global [8 x i8] c"<|>&;()\00", align 1
-@.str.10 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.11 = private unnamed_addr constant [12 x i8] c"leftovers: \00", align 1
-@.str.12 = private unnamed_addr constant [7 x i8] c"syntax\00", align 1
-@.str.13 = private unnamed_addr constant [2 x i8] c"&\00", align 1
-@.str.14 = private unnamed_addr constant [2 x i8] c";\00", align 1
-@.str.15 = private unnamed_addr constant [2 x i8] c"|\00", align 1
-@.str.16 = private unnamed_addr constant [3 x i8] c"<>\00", align 1
-@.str.17 = private unnamed_addr constant [29 x i8] c"missing file for redirection\00", align 1
-@.str.18 = private unnamed_addr constant [2 x i8] c"(\00", align 1
-@.str.19 = private unnamed_addr constant [11 x i8] c"parseblock\00", align 1
-@.str.20 = private unnamed_addr constant [2 x i8] c")\00", align 1
-@.str.21 = private unnamed_addr constant [19 x i8] c"syntax - missing )\00", align 1
-@.str.22 = private unnamed_addr constant [5 x i8] c"|)&;\00", align 1
-@.str.23 = private unnamed_addr constant [14 x i8] c"too many args\00", align 1
+@.str.12 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.13 = private unnamed_addr constant [12 x i8] c"leftovers: \00", align 1
+@.str.14 = private unnamed_addr constant [7 x i8] c"syntax\00", align 1
+@.str.15 = private unnamed_addr constant [2 x i8] c"&\00", align 1
+@.str.16 = private unnamed_addr constant [2 x i8] c";\00", align 1
+@.str.17 = private unnamed_addr constant [2 x i8] c"|\00", align 1
+@.str.18 = private unnamed_addr constant [3 x i8] c"<>\00", align 1
+@.str.19 = private unnamed_addr constant [29 x i8] c"missing file for redirection\00", align 1
+@.str.20 = private unnamed_addr constant [2 x i8] c"(\00", align 1
+@.str.21 = private unnamed_addr constant [11 x i8] c"parseblock\00", align 1
+@.str.22 = private unnamed_addr constant [2 x i8] c")\00", align 1
+@.str.23 = private unnamed_addr constant [19 x i8] c"syntax - missing )\00", align 1
+@.str.24 = private unnamed_addr constant [5 x i8] c"|)&;\00", align 1
+@.str.25 = private unnamed_addr constant [14 x i8] c"too many args\00", align 1
 
 ; Function Attrs: minsize noreturn nounwind optsize
 define dso_local void @runcmd(ptr noundef %0) local_unnamed_addr #0 {
@@ -224,7 +226,7 @@ define dso_local range(i32 0, -1) i32 @fork1() local_unnamed_addr #4 {
   br i1 %2, label %3, label %4
 
 3:                                                ; preds = %0
-  tail call void @panic(ptr noundef nonnull @.str.9) #8
+  tail call void @panic(ptr noundef nonnull @.str.11) #8
   unreachable
 
 4:                                                ; preds = %0
@@ -258,90 +260,142 @@ declare dso_local ptr @readline(ptr noundef, ptr noundef, i32 noundef) local_unn
 
 ; Function Attrs: minsize noreturn nounwind optsize
 define dso_local noundef i32 @main() local_unnamed_addr #0 {
-  br label %1
+  %1 = alloca [128 x i8], align 1
+  br label %2
 
-1:                                                ; preds = %4, %0
-  %2 = tail call i32 @open(ptr noundef nonnull @.str.6, i32 noundef 2) #9
-  %3 = icmp sgt i32 %2, -1
-  br i1 %3, label %4, label %8
+2:                                                ; preds = %5, %0
+  %3 = tail call i32 @open(ptr noundef nonnull @.str.6, i32 noundef 2) #9
+  %4 = icmp sgt i32 %3, -1
+  br i1 %4, label %5, label %9
 
-4:                                                ; preds = %1
-  %5 = icmp samesign ugt i32 %2, 2
-  br i1 %5, label %6, label %1, !llvm.loop !27
+5:                                                ; preds = %2
+  %6 = icmp samesign ugt i32 %3, 2
+  br i1 %6, label %7, label %2, !llvm.loop !27
 
-6:                                                ; preds = %4
-  %7 = tail call i32 @close(i32 noundef %2) #9
-  br label %8
-
-8:                                                ; preds = %1, %6
+7:                                                ; preds = %5
+  %8 = tail call i32 @close(i32 noundef %3) #9
   br label %9
 
-9:                                                ; preds = %40, %8
-  %10 = tail call i32 @getcmd(ptr noundef nonnull @main.buf, i32 noundef 100) #8
-  %11 = icmp sgt i32 %10, -1
-  br i1 %11, label %12, label %41
+9:                                                ; preds = %2, %7
+  br label %10
 
-12:                                               ; preds = %9, %15
-  %13 = phi ptr [ %16, %15 ], [ @main.buf, %9 ]
-  %14 = load i8, ptr %13, align 1, !tbaa !26
-  switch i8 %14, label %33 [
-    i8 32, label %15
-    i8 9, label %15
-    i8 10, label %40
-    i8 99, label %17
+10:                                               ; preds = %34, %9
+  %11 = call i32 @getcmd(ptr noundef nonnull @main.buf, i32 noundef 100) #8
+  %12 = icmp sgt i32 %11, -1
+  br i1 %12, label %13, label %68
+
+13:                                               ; preds = %10, %16
+  %14 = phi ptr [ %17, %16 ], [ @main.buf, %10 ]
+  %15 = load i8, ptr %14, align 1, !tbaa !26
+  switch i8 %15, label %61 [
+    i8 32, label %16
+    i8 9, label %16
+    i8 10, label %34
+    i8 99, label %18
+    i8 104, label %35
   ]
 
-15:                                               ; preds = %12, %12
-  %16 = getelementptr inbounds nuw i8, ptr %13, i32 1
-  br label %12, !llvm.loop !30
+16:                                               ; preds = %13, %13
+  %17 = getelementptr inbounds nuw i8, ptr %14, i32 1
+  br label %13, !llvm.loop !30
 
-17:                                               ; preds = %12
-  %18 = getelementptr inbounds nuw i8, ptr %13, i32 1
-  %19 = load i8, ptr %18, align 1, !tbaa !26
-  %20 = icmp eq i8 %19, 100
-  br i1 %20, label %21, label %33
+18:                                               ; preds = %13
+  %19 = getelementptr inbounds nuw i8, ptr %14, i32 1
+  %20 = load i8, ptr %19, align 1, !tbaa !26
+  %21 = icmp eq i8 %20, 100
+  br i1 %21, label %22, label %61
 
-21:                                               ; preds = %17
-  %22 = getelementptr inbounds nuw i8, ptr %13, i32 2
-  %23 = load i8, ptr %22, align 1, !tbaa !26
-  %24 = icmp eq i8 %23, 32
-  br i1 %24, label %25, label %33
+22:                                               ; preds = %18
+  %23 = getelementptr inbounds nuw i8, ptr %14, i32 2
+  %24 = load i8, ptr %23, align 1, !tbaa !26
+  %25 = icmp eq i8 %24, 32
+  br i1 %25, label %26, label %61
 
-25:                                               ; preds = %21
-  %26 = tail call i32 @strlen(ptr noundef nonnull %13) #9
-  %27 = getelementptr i8, ptr %13, i32 %26
-  %28 = getelementptr i8, ptr %27, i32 -1
-  store i8 0, ptr %28, align 1, !tbaa !26
-  %29 = getelementptr inbounds nuw i8, ptr %13, i32 3
-  %30 = tail call i32 @chdir(ptr noundef nonnull %29) #9
-  %31 = icmp slt i32 %30, 0
-  br i1 %31, label %32, label %40
+26:                                               ; preds = %22
+  %27 = call i32 @strlen(ptr noundef nonnull %14) #9
+  %28 = getelementptr i8, ptr %14, i32 %27
+  %29 = getelementptr i8, ptr %28, i32 -1
+  store i8 0, ptr %29, align 1, !tbaa !26
+  %30 = getelementptr inbounds nuw i8, ptr %14, i32 3
+  %31 = call i32 @chdir(ptr noundef nonnull %30) #9
+  %32 = icmp slt i32 %31, 0
+  br i1 %32, label %33, label %34
 
-32:                                               ; preds = %25
-  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.7) #9
-  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull %29) #9
-  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.8) #9
-  br label %40
+33:                                               ; preds = %26
+  call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.7) #9
+  call void @fputstr(i32 noundef 2, ptr noundef nonnull %30) #9
+  call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.8) #9
+  br label %34
 
-33:                                               ; preds = %12, %21, %17
-  %34 = tail call i32 @fork1() #8
-  %35 = icmp eq i32 %34, 0
-  br i1 %35, label %36, label %38
+34:                                               ; preds = %13, %33, %26, %66, %59, %50
+  br label %10
 
-36:                                               ; preds = %33
-  %37 = tail call ptr @parsecmd(ptr noundef nonnull %13) #8
-  tail call void @runcmd(ptr noundef %37) #10
+35:                                               ; preds = %13
+  %36 = getelementptr inbounds nuw i8, ptr %14, i32 1
+  %37 = load i8, ptr %36, align 1, !tbaa !26
+  %38 = icmp eq i8 %37, 101
+  br i1 %38, label %39, label %61
+
+39:                                               ; preds = %35
+  %40 = getelementptr inbounds nuw i8, ptr %14, i32 2
+  %41 = load i8, ptr %40, align 1, !tbaa !26
+  %42 = icmp eq i8 %41, 108
+  br i1 %42, label %43, label %61
+
+43:                                               ; preds = %39
+  %44 = getelementptr inbounds nuw i8, ptr %14, i32 3
+  %45 = load i8, ptr %44, align 1, !tbaa !26
+  %46 = icmp eq i8 %45, 112
+  br i1 %46, label %47, label %61
+
+47:                                               ; preds = %43
+  %48 = getelementptr inbounds nuw i8, ptr %14, i32 4
+  %49 = load i8, ptr %48, align 1, !tbaa !26
+  switch i8 %49, label %61 [
+    i8 10, label %50
+    i8 0, label %50
+  ]
+
+50:                                               ; preds = %47, %47
+  call void @fputstr(i32 noundef 1, ptr noundef nonnull @.str.9) #9
+  %51 = call i32 @open(ptr noundef nonnull @.str.10, i32 noundef 0) #9
+  %52 = icmp sgt i32 %51, -1
+  br i1 %52, label %53, label %34
+
+53:                                               ; preds = %50
+  call void @llvm.lifetime.start.p0(i64 128, ptr nonnull %1) #6
+  br label %54
+
+54:                                               ; preds = %57, %53
+  %55 = call i32 @read(i32 noundef %51, ptr noundef nonnull %1, i32 noundef 128) #9
+  %56 = icmp sgt i32 %55, 0
+  br i1 %56, label %57, label %59
+
+57:                                               ; preds = %54
+  %58 = call i32 @write(i32 noundef 1, ptr noundef nonnull %1, i32 noundef %55) #9
+  br label %54, !llvm.loop !31
+
+59:                                               ; preds = %54
+  %60 = call i32 @close(i32 noundef %51) #9
+  call void @llvm.lifetime.end.p0(i64 128, ptr nonnull %1) #6
+  br label %34
+
+61:                                               ; preds = %13, %18, %22, %47, %43, %39, %35
+  %62 = call i32 @fork1() #8
+  %63 = icmp eq i32 %62, 0
+  br i1 %63, label %64, label %66
+
+64:                                               ; preds = %61
+  %65 = call ptr @parsecmd(ptr noundef nonnull %14) #8
+  call void @runcmd(ptr noundef %65) #10
   unreachable
 
-38:                                               ; preds = %33
-  %39 = tail call i32 @wait(ptr noundef null) #9
-  br label %40
+66:                                               ; preds = %61
+  %67 = call i32 @wait(ptr noundef null) #9
+  br label %34
 
-40:                                               ; preds = %12, %38, %32, %25
-  br label %9
-
-41:                                               ; preds = %9
-  %42 = tail call i32 @exit(i32 noundef 0) #7
+68:                                               ; preds = %10
+  %69 = call i32 @exit(i32 noundef 0) #7
   unreachable
 }
 
@@ -351,6 +405,15 @@ declare dso_local i32 @strlen(ptr noundef) local_unnamed_addr #3
 ; Function Attrs: minsize optsize
 declare dso_local i32 @chdir(ptr noundef) local_unnamed_addr #3
 
+; Function Attrs: minsize optsize
+declare dso_local i32 @read(i32 noundef, ptr noundef, i32 noundef) local_unnamed_addr #3
+
+; Function Attrs: minsize optsize
+declare dso_local i32 @write(i32 noundef, ptr noundef, i32 noundef) local_unnamed_addr #3
+
+; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
+declare void @llvm.lifetime.end.p0(i64 immarg, ptr captures(none)) #1
+
 ; Function Attrs: minsize nounwind optsize
 define dso_local ptr @parsecmd(ptr noundef %0) local_unnamed_addr #4 {
   %2 = alloca ptr, align 4
@@ -358,25 +421,22 @@ define dso_local ptr @parsecmd(ptr noundef %0) local_unnamed_addr #4 {
   %3 = tail call i32 @strlen(ptr noundef %0) #9
   %4 = getelementptr inbounds nuw i8, ptr %0, i32 %3
   %5 = call ptr @parseline(ptr noundef nonnull %2, ptr noundef %4) #8
-  %6 = call i32 @peek(ptr noundef nonnull %2, ptr noundef %4, ptr noundef nonnull @.str.10) #8
+  %6 = call i32 @peek(ptr noundef nonnull %2, ptr noundef %4, ptr noundef nonnull @.str.12) #8
   %7 = load ptr, ptr %2, align 4, !tbaa !8
   %8 = icmp eq ptr %7, %4
   br i1 %8, label %10, label %9
 
 9:                                                ; preds = %1
-  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.11) #9
+  tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.13) #9
   tail call void @fputstr(i32 noundef 2, ptr noundef %7) #9
   tail call void @fputstr(i32 noundef 2, ptr noundef nonnull @.str.8) #9
-  tail call void @panic(ptr noundef nonnull @.str.12) #8
+  tail call void @panic(ptr noundef nonnull @.str.14) #8
   unreachable
 
 10:                                               ; preds = %1
   %11 = tail call ptr @nulterminate(ptr noundef %5) #8
   ret ptr %5
 }
-
-; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
-declare void @llvm.lifetime.end.p0(i64 immarg, ptr captures(none)) #1
 
 ; Function Attrs: minsize optsize
 declare dso_local i32 @fork() local_unnamed_addr #3
@@ -385,7 +445,7 @@ declare dso_local i32 @fork() local_unnamed_addr #3
 define dso_local noundef ptr @execcmd() local_unnamed_addr #4 {
   %1 = tail call ptr @malloc(i32 noundef 84) #9
   %2 = tail call ptr @memset(ptr noundef %1, i32 noundef 0, i32 noundef 84) #9
-  store i32 1, ptr %1, align 4, !tbaa !31
+  store i32 1, ptr %1, align 4, !tbaa !32
   ret ptr %1
 }
 
@@ -396,13 +456,13 @@ declare dso_local ptr @malloc(i32 noundef) local_unnamed_addr #3
 define dso_local noundef ptr @redircmd(ptr noundef %0, ptr noundef %1, ptr noundef %2, i32 noundef %3, i32 noundef %4) local_unnamed_addr #4 {
   %6 = tail call ptr @malloc(i32 noundef 24) #9
   %7 = tail call ptr @memset(ptr noundef %6, i32 noundef 0, i32 noundef 24) #9
-  store i32 2, ptr %6, align 4, !tbaa !33
+  store i32 2, ptr %6, align 4, !tbaa !34
   %8 = getelementptr inbounds nuw i8, ptr %6, i32 4
   store ptr %0, ptr %8, align 4, !tbaa !16
   %9 = getelementptr inbounds nuw i8, ptr %6, i32 8
   store ptr %1, ptr %9, align 4, !tbaa !14
   %10 = getelementptr inbounds nuw i8, ptr %6, i32 12
-  store ptr %2, ptr %10, align 4, !tbaa !34
+  store ptr %2, ptr %10, align 4, !tbaa !35
   %11 = getelementptr inbounds nuw i8, ptr %6, i32 16
   store i32 %3, ptr %11, align 4, !tbaa !15
   %12 = getelementptr inbounds nuw i8, ptr %6, i32 20
@@ -414,7 +474,7 @@ define dso_local noundef ptr @redircmd(ptr noundef %0, ptr noundef %1, ptr nound
 define dso_local noundef ptr @pipecmd(ptr noundef %0, ptr noundef %1) local_unnamed_addr #4 {
   %3 = tail call ptr @malloc(i32 noundef 12) #9
   %4 = tail call ptr @memset(ptr noundef %3, i32 noundef 0, i32 noundef 12) #9
-  store i32 3, ptr %3, align 4, !tbaa !35
+  store i32 3, ptr %3, align 4, !tbaa !36
   %5 = getelementptr inbounds nuw i8, ptr %3, i32 4
   store ptr %0, ptr %5, align 4, !tbaa !21
   %6 = getelementptr inbounds nuw i8, ptr %3, i32 8
@@ -426,7 +486,7 @@ define dso_local noundef ptr @pipecmd(ptr noundef %0, ptr noundef %1) local_unna
 define dso_local noundef ptr @listcmd(ptr noundef %0, ptr noundef %1) local_unnamed_addr #4 {
   %3 = tail call ptr @malloc(i32 noundef 12) #9
   %4 = tail call ptr @memset(ptr noundef %3, i32 noundef 0, i32 noundef 12) #9
-  store i32 4, ptr %3, align 4, !tbaa !36
+  store i32 4, ptr %3, align 4, !tbaa !37
   %5 = getelementptr inbounds nuw i8, ptr %3, i32 4
   store ptr %0, ptr %5, align 4, !tbaa !17
   %6 = getelementptr inbounds nuw i8, ptr %3, i32 8
@@ -438,7 +498,7 @@ define dso_local noundef ptr @listcmd(ptr noundef %0, ptr noundef %1) local_unna
 define dso_local noundef ptr @backcmd(ptr noundef %0) local_unnamed_addr #4 {
   %2 = tail call ptr @malloc(i32 noundef 8) #9
   %3 = tail call ptr @memset(ptr noundef %2, i32 noundef 0, i32 noundef 8) #9
-  store i32 5, ptr %2, align 4, !tbaa !37
+  store i32 5, ptr %2, align 4, !tbaa !38
   %4 = getelementptr inbounds nuw i8, ptr %2, i32 4
   store ptr %0, ptr %4, align 4, !tbaa !24
   ret ptr %2
@@ -462,7 +522,7 @@ define dso_local range(i32 0, 128) i32 @gettoken(ptr noundef captures(none) %0, 
 
 13:                                               ; preds = %9
   %14 = getelementptr inbounds nuw i8, ptr %7, i32 1
-  br label %6, !llvm.loop !38
+  br label %6, !llvm.loop !39
 
 15:                                               ; preds = %6, %9
   %16 = icmp eq ptr %2, null
@@ -519,7 +579,7 @@ define dso_local range(i32 0, 128) i32 @gettoken(ptr noundef captures(none) %0, 
 
 40:                                               ; preds = %36
   %41 = getelementptr inbounds nuw i8, ptr %30, i32 1
-  br label %29, !llvm.loop !39
+  br label %29, !llvm.loop !40
 
 42:                                               ; preds = %36, %29, %32, %23, %27, %20, %18
   %43 = phi ptr [ %7, %18 ], [ %22, %20 ], [ %28, %27 ], [ %24, %23 ], [ %30, %32 ], [ %30, %29 ], [ %30, %36 ]
@@ -547,7 +607,7 @@ define dso_local range(i32 0, 128) i32 @gettoken(ptr noundef captures(none) %0, 
 
 55:                                               ; preds = %51
   %56 = getelementptr inbounds nuw i8, ptr %49, i32 1
-  br label %48, !llvm.loop !40
+  br label %48, !llvm.loop !41
 
 57:                                               ; preds = %48, %51
   store ptr %49, ptr %0, align 4, !tbaa !8
@@ -575,7 +635,7 @@ define dso_local range(i32 0, 2) i32 @peek(ptr noundef captures(none) %0, ptr no
 
 12:                                               ; preds = %8
   %13 = getelementptr inbounds nuw i8, ptr %6, i32 1
-  br label %5, !llvm.loop !41
+  br label %5, !llvm.loop !42
 
 14:                                               ; preds = %5, %8
   store ptr %6, ptr %0, align 4, !tbaa !8
@@ -601,17 +661,17 @@ define dso_local ptr @parseline(ptr noundef captures(none) %0, ptr noundef readn
 
 4:                                                ; preds = %8, %2
   %5 = phi ptr [ %3, %2 ], [ %10, %8 ]
-  %6 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.13) #8
+  %6 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.15) #8
   %7 = icmp eq i32 %6, 0
   br i1 %7, label %11, label %8
 
 8:                                                ; preds = %4
   %9 = tail call i32 @gettoken(ptr noundef %0, ptr noundef %1, ptr noundef null, ptr noundef null) #8
   %10 = tail call ptr @backcmd(ptr noundef %5) #8
-  br label %4, !llvm.loop !42
+  br label %4, !llvm.loop !43
 
 11:                                               ; preds = %4
-  %12 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.14) #8
+  %12 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.16) #8
   %13 = icmp eq i32 %12, 0
   br i1 %13, label %14, label %16
 
@@ -662,7 +722,7 @@ define dso_local noundef ptr @nulterminate(ptr noundef readonly returned capture
   %17 = load ptr, ptr %16, align 4, !tbaa !8
   store i8 0, ptr %17, align 1, !tbaa !26
   %18 = add nuw nsw i32 %11, 1
-  br label %10, !llvm.loop !43
+  br label %10, !llvm.loop !44
 
 19:                                               ; preds = %10, %5, %2, %21
   %20 = phi ptr [ %0, %21 ], [ %0, %2 ], [ %0, %5 ], [ %0, %10 ]
@@ -673,27 +733,27 @@ define dso_local noundef ptr @nulterminate(ptr noundef readonly returned capture
   %23 = load ptr, ptr %22, align 4, !tbaa !16
   %24 = tail call ptr @nulterminate(ptr noundef %23) #8
   %25 = getelementptr inbounds nuw i8, ptr %3, i32 12
-  %26 = load ptr, ptr %25, align 4, !tbaa !34
+  %26 = load ptr, ptr %25, align 4, !tbaa !35
   store i8 0, ptr %26, align 1, !tbaa !26
   br label %19
 
 27:                                               ; preds = %5, %5
   %28 = getelementptr inbounds nuw i8, ptr %3, i32 4
-  %29 = load ptr, ptr %28, align 4, !tbaa !44
+  %29 = load ptr, ptr %28, align 4, !tbaa !45
   %30 = tail call ptr @nulterminate(ptr noundef %29) #8
   br label %31
 
 31:                                               ; preds = %27, %5
   %32 = phi i32 [ 4, %5 ], [ 8, %27 ]
   %33 = getelementptr inbounds nuw i8, ptr %3, i32 %32
-  %34 = load ptr, ptr %33, align 4, !tbaa !44
+  %34 = load ptr, ptr %33, align 4, !tbaa !45
   br label %2
 }
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local ptr @parsepipe(ptr noundef captures(none) %0, ptr noundef readnone captures(address) %1) local_unnamed_addr #4 {
   %3 = tail call ptr @parseexec(ptr noundef %0, ptr noundef %1) #8
-  %4 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.15) #8
+  %4 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.17) #8
   %5 = icmp eq i32 %4, 0
   br i1 %5, label %6, label %8
 
@@ -714,7 +774,7 @@ define dso_local ptr @parseexec(ptr noundef captures(none) %0, ptr noundef readn
   %4 = alloca ptr, align 4
   call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %3) #6
   call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %4) #6
-  %5 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.18) #8
+  %5 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.20) #8
   %6 = icmp eq i32 %5, 0
   br i1 %6, label %9, label %7
 
@@ -732,7 +792,7 @@ define dso_local ptr @parseexec(ptr noundef captures(none) %0, ptr noundef readn
 14:                                               ; preds = %29, %9
   %15 = phi i32 [ 0, %9 ], [ %30, %29 ]
   %16 = phi ptr [ %11, %9 ], [ %31, %29 ]
-  %17 = call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.22) #8
+  %17 = call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.24) #8
   %18 = icmp eq i32 %17, 0
   br i1 %18, label %19, label %32
 
@@ -744,7 +804,7 @@ define dso_local ptr @parseexec(ptr noundef captures(none) %0, ptr noundef readn
   ]
 
 21:                                               ; preds = %19
-  call void @panic(ptr noundef nonnull @.str.12) #8
+  call void @panic(ptr noundef nonnull @.str.14) #8
   unreachable
 
 22:                                               ; preds = %19
@@ -758,13 +818,13 @@ define dso_local ptr @parseexec(ptr noundef captures(none) %0, ptr noundef readn
   br i1 %27, label %28, label %29
 
 28:                                               ; preds = %22
-  call void @panic(ptr noundef nonnull @.str.23) #8
+  call void @panic(ptr noundef nonnull @.str.25) #8
   unreachable
 
 29:                                               ; preds = %22
   %30 = add nuw nsw i32 %15, 1
   %31 = call ptr @parseredirs(ptr noundef %16, ptr noundef %0, ptr noundef %1) #8
-  br label %14, !llvm.loop !45
+  br label %14, !llvm.loop !46
 
 32:                                               ; preds = %19, %14
   %33 = getelementptr inbounds nuw [10 x ptr], ptr %12, i32 0, i32 %15
@@ -793,7 +853,7 @@ define dso_local ptr @parseredirs(ptr noundef %0, ptr noundef captures(none) %1,
   br label %8
 
 8:                                                ; preds = %6, %16
-  %9 = call i32 @peek(ptr noundef %1, ptr noundef %2, ptr noundef nonnull @.str.16) #8
+  %9 = call i32 @peek(ptr noundef %1, ptr noundef %2, ptr noundef nonnull @.str.18) #8
   %10 = icmp eq i32 %9, 0
   br i1 %10, label %31, label %11
 
@@ -804,7 +864,7 @@ define dso_local ptr @parseredirs(ptr noundef %0, ptr noundef captures(none) %1,
   br i1 %14, label %16, label %15
 
 15:                                               ; preds = %11
-  call void @panic(ptr noundef nonnull @.str.17) #8
+  call void @panic(ptr noundef nonnull @.str.19) #8
   unreachable
 
 16:                                               ; preds = %11
@@ -812,7 +872,7 @@ define dso_local ptr @parseredirs(ptr noundef %0, ptr noundef captures(none) %1,
     i32 60, label %17
     i32 62, label %23
     i32 43, label %27
-  ], !llvm.loop !46
+  ], !llvm.loop !47
 
 17:                                               ; preds = %16
   %18 = load ptr, ptr %4, align 4, !tbaa !8
@@ -822,7 +882,7 @@ define dso_local ptr @parseredirs(ptr noundef %0, ptr noundef captures(none) %1,
 
 21:                                               ; preds = %17, %23, %27
   %22 = phi ptr [ %30, %27 ], [ %26, %23 ], [ %20, %17 ]
-  br label %6, !llvm.loop !46
+  br label %6, !llvm.loop !47
 
 23:                                               ; preds = %16
   %24 = load ptr, ptr %4, align 4, !tbaa !8
@@ -844,23 +904,23 @@ define dso_local ptr @parseredirs(ptr noundef %0, ptr noundef captures(none) %1,
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local ptr @parseblock(ptr noundef captures(none) %0, ptr noundef readnone captures(address) %1) local_unnamed_addr #4 {
-  %3 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.18) #8
+  %3 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.20) #8
   %4 = icmp eq i32 %3, 0
   br i1 %4, label %5, label %6
 
 5:                                                ; preds = %2
-  tail call void @panic(ptr noundef nonnull @.str.19) #8
+  tail call void @panic(ptr noundef nonnull @.str.21) #8
   unreachable
 
 6:                                                ; preds = %2
   %7 = tail call i32 @gettoken(ptr noundef %0, ptr noundef %1, ptr noundef null, ptr noundef null) #8
   %8 = tail call ptr @parseline(ptr noundef %0, ptr noundef %1) #8
-  %9 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.20) #8
+  %9 = tail call i32 @peek(ptr noundef %0, ptr noundef %1, ptr noundef nonnull @.str.22) #8
   %10 = icmp eq i32 %9, 0
   br i1 %10, label %11, label %12
 
 11:                                               ; preds = %6
-  tail call void @panic(ptr noundef nonnull @.str.21) #8
+  tail call void @panic(ptr noundef nonnull @.str.23) #8
   unreachable
 
 12:                                               ; preds = %6
@@ -915,19 +975,20 @@ attributes #10 = { minsize nobuiltin noreturn optsize "no-builtins" }
 !28 = !{!"llvm.loop.mustprogress"}
 !29 = !{!"llvm.loop.unroll.disable"}
 !30 = distinct !{!30, !28, !29}
-!31 = !{!32, !5, i64 0}
-!32 = !{!"execcmd", !5, i64 0, !6, i64 4, !6, i64 44}
-!33 = !{!12, !5, i64 0}
-!34 = !{!12, !9, i64 12}
-!35 = !{!22, !5, i64 0}
-!36 = !{!18, !5, i64 0}
-!37 = !{!25, !5, i64 0}
-!38 = distinct !{!38, !28, !29}
+!31 = distinct !{!31, !28, !29}
+!32 = !{!33, !5, i64 0}
+!33 = !{!"execcmd", !5, i64 0, !6, i64 4, !6, i64 44}
+!34 = !{!12, !5, i64 0}
+!35 = !{!12, !9, i64 12}
+!36 = !{!22, !5, i64 0}
+!37 = !{!18, !5, i64 0}
+!38 = !{!25, !5, i64 0}
 !39 = distinct !{!39, !28, !29}
 !40 = distinct !{!40, !28, !29}
 !41 = distinct !{!41, !28, !29}
 !42 = distinct !{!42, !28, !29}
 !43 = distinct !{!43, !28, !29}
-!44 = !{!13, !13, i64 0}
-!45 = distinct !{!45, !28, !29}
+!44 = distinct !{!44, !28, !29}
+!45 = !{!13, !13, i64 0}
 !46 = distinct !{!46, !28, !29}
+!47 = distinct !{!47, !28, !29}

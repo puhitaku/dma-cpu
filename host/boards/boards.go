@@ -132,8 +132,10 @@ func (b *Board) HasBundle(name string) bool {
 
 var stdApps = []string{"echo", "cat", "ls", "toolbox", "hwtools"}
 var fbApps = append(append([]string{}, stdApps...), "fbtest", "show")
-var stdLinks = []string{"kill", "spin", "trap", "free", "sync", "mount",
-	"umount", "wc", "mkdir", "rm", "help", "clear"}
+// spin/trap (signal demos), wc, and help left the toolbox: help is an
+// sh builtin now (it streams /dev/apps) and the rest earned no keep.
+var stdLinks = []string{"kill", "free", "sync", "mount",
+	"umount", "mkdir", "rm", "clear"}
 
 // LinksFor returns the multi-call names linked onto the given app
 // image (busybox-style argv[0] dispatch): the toolbox carries the
@@ -220,23 +222,24 @@ var Feather = &Board{
 	SKU:       "rp2350",
 	PicoBoard: "adafruit_feather_rp2350",
 
-	// KernText sits 2 KiB above the family floor: linking the SDK's
-	// hardware_psram grows the firmware's .bss past 0x20002000 (the
-	// boot check caught the overlap on silicon, prompts/036).
-	KernText: 0x20002800, KernData: 0x20003400,
-	KernCRText: 0x20004000, KernCData: 0x2000C000,
-	// ShRText sits 2 KiB above the pico2 map: the fb kernel's data
-	// (LUTs + the 24-row image registry) outgrew the 0xD800 window.
-	ShRText: 0x2001A000, ShData: 0x2001C800,
+	// Repacked tight (measured sizes + ~0x200-0x400 margins): the
+	// firmware's staging buffer now borrows the arena, so the family
+	// floor (0x20002000) is back; the param.h shim trimmed the fs
+	// tables; sh runs RecursionDepth 8. Every byte reclaimed here is
+	// arena — the window that decides whether `show` fits beside the
+	// scanout table.
+	KernText: 0x20002000, KernData: 0x20002400,
+	KernCRText: 0x20002600, KernCData: 0x2000A200,
+	ShRText: 0x20017000, ShData: 0x20019000,
 	// 480p squeeze (prompts/039): the disk shrinks to an echo-redirect
 	// showcase and the arena to one exec'd app (show, the largest at
 	// ~39 KiB, is the one binary a presentation needs) — the freed
 	// 126 KiB doubles the framebuffer's rows.
 	// idle and the disk tuck into sh-data's slack (sh uses ~17 KiB of
 	// its old 32 KiB window); every reclaimed KiB is arena.
-	IdleText: 0x20021000, IdleData: 0x20021400,
-	DiskHome: 0x20021800, DiskMax: 0x2800, // 10 KiB: write showcase only
-	Arena: 0x20024000, ArenaEnd: 0x20030000, // clamped by the table
+	IdleText: 0x2001D000, IdleData: 0x2001D400,
+	DiskHome: 0x2001D800, DiskMax: 0x2000, // 8 KiB: the fs floor (6 was under it)
+	Arena: 0x2001F800, ArenaEnd: 0x20030000, // 66 KiB up to the table
 	ConsRings: 0x20034400, // UART rings; FbBuf follows at 0x20034C00
 	Scratch:   0x2007FE00,
 
@@ -289,8 +292,9 @@ var Feather = &Board{
 	// USB, not the fs). The sync machinery itself remains validated
 	// (silicon + TestXv6ShFeather re-arms it in the emulator).
 	ReadOnlyFS:   true,
-	DiskBlocks:   10,
-	DiskInodes:   16,
+	DiskBlocks:   8,
+	DiskInodes:   8, /* one inode block; frees a data block for the
+	                  * write showcase + the SD mount point */
 	DiskApps:     fbApps,
 	ToolboxLinks: stdLinks,
 	Bundles:      []string{"shell", "syscall", "exec", "xsh"},

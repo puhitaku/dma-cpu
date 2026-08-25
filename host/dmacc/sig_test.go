@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/puhitaku/dma-cpu/host/boards"
 	"github.com/puhitaku/dma-cpu/host/dmaasm"
 	"github.com/puhitaku/dma-cpu/host/dmacc"
 	"github.com/puhitaku/dma-cpu/host/emu"
@@ -138,7 +139,39 @@ func TestXv6ShSigint(t *testing.T) {
 	if testing.Short() {
 		t.Skip("full-system boot")
 	}
-	m, _ := bootXsh(t)
+	m, kernC := bootXsh(t)
+	// The trap demo left the shipped toolbox; register the test-only
+	// image (testdata/xv6trap.c) under the old name so the coverage —
+	// sh's foreground SIGINT into a userspace handler — survives.
+	{
+		bd := boards.Pico2
+		mod, err := llir.Merge(parseLL(t, "testdata/xv6trap.ll"),
+			parseLL(t, "../../target/xv6/ll/ulib.ll"), parseLL(t, "../../target/xv6/ll/usys.ll"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		dasm, err := dmacc.Compile(mod, dmacc.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := dmaasm.Assemble(dasm, dmaasm.Options{
+			Variant: m.Variant(), Compact: true,
+			TextBase: 0x10000000, DataBase: 0x10040000})
+		if err != nil {
+			t.Fatal(err)
+		}
+		text, data := res.Image.Segments[0].Data, res.Image.Segments[1].Data
+		dHome, rHome, _ := stageFlashImage(m, res, bd.ViHome)
+		base := mustSym(t, kernC, "g_kimages")
+		idx := 0
+		for ; idx < 20; idx++ {
+			if m.Peek32(base+uint32(idx)*72)&0xFF == 0 {
+				break
+			}
+		}
+		registerRow(t, m, kernC, idx, "trap", res, bd.ViHome, uint32(len(text)),
+			dHome, uint32(len(data)), rHome, uint32(len(res.Image.Relocs)))
+	}
 	// cat with no args reads the console: a sleeping foreground job.
 	m.FeedConsole("cat\r")
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 120_000_000}); err != nil {

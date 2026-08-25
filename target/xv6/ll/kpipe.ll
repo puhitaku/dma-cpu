@@ -5,7 +5,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 
 %struct.pipe = type { [512 x i8], i32, i32, i32, i32, i32 }
 
-@pipes = internal global [4 x %struct.pipe] zeroinitializer, align 4
+@pipes = internal global [2 x %struct.pipe] zeroinitializer, align 4
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local range(i32 -1, 1) i32 @pipealloc(ptr noundef captures(none) %0, ptr noundef writeonly captures(none) %1) local_unnamed_addr #0 {
@@ -13,7 +13,7 @@ define dso_local range(i32 -1, 1) i32 @pipealloc(ptr noundef captures(none) %0, 
 
 3:                                                ; preds = %7, %2
   %4 = phi i32 [ 0, %2 ], [ %12, %7 ]
-  %5 = icmp eq i32 %4, 4
+  %5 = icmp eq i32 %4, 2
   br i1 %5, label %6, label %7
 
 6:                                                ; preds = %3
@@ -22,7 +22,7 @@ define dso_local range(i32 -1, 1) i32 @pipealloc(ptr noundef captures(none) %0, 
   br label %35
 
 7:                                                ; preds = %3
-  %8 = getelementptr inbounds nuw [4 x %struct.pipe], ptr @pipes, i32 0, i32 %4
+  %8 = getelementptr inbounds nuw [2 x %struct.pipe], ptr @pipes, i32 0, i32 %4
   %9 = getelementptr inbounds nuw i8, ptr %8, i32 528
   %10 = load i32, ptr %9, align 4, !tbaa !8
   %11 = icmp eq i32 %10, 0

@@ -1325,7 +1325,15 @@ static void game_start(void)
  * content-compared so an unchanged build never reflashes. Same RAM
  * bounce as the fat golden: the blob source is itself in flash rodata
  * and flash_range_program runs with XIP disabled. */
+#ifdef HIL_XSH_ARENA
+/* The staging bounce buffer borrows the exec arena: every use runs
+ * strictly before dmx_start (the machine has never touched the arena
+ * yet), and the firmware's own .bss drops 4 KiB — RAM the map hands
+ * straight back to that same arena. */
+#define stage_sect ((uint8_t *)HIL_XSH_ARENA)
+#else
 static uint8_t stage_sect[4096]; /* shared with the fat-golden staging */
+#endif
 
 static void stage_xip_text(uint32_t dst, const uint8_t *blob, uint32_t len,
                            const char *what)

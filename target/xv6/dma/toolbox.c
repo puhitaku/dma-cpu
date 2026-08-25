@@ -1,6 +1,6 @@
 /* toolbox: the dma utilities as ONE multi-call binary, dispatched on
  * argv[0] busybox-style — the disk stores a single blob with hard
- * links named kill, spin, trap, free, sync, mount, umount (fsimg
+ * links named kill, free, sync, mount, umount (fsimg
  * AddLink), so usys/ulib are paid for once instead of per tool
  * (prompts/029; the disk budget is real memory too). Printf-free. */
 #include "kernel/types.h"
@@ -61,40 +61,6 @@ t_kill(int argc, char **argv)
   return 0;
 }
 
-/* --- spin: visible background victim for the kill demo --- */
-static int
-t_spin(void)
-{
-  emit("spin: pid ");
-  emitn((uint)getpid());
-  emit("\n");
-  flush();
-  for (;;) {
-    pause(20);
-    write(1, ".", 1);
-  }
-}
-
-/* --- trap: SIGINT handler demo (bows out politely on Ctrl-C) --- */
-static void
-onint(int sig)
-{
-  (void)sig;
-  write(1, "\ncaught SIGINT; exiting politely\n", 33);
-  exit(0);
-}
-
-static int
-t_trap(void)
-{
-  signal(SIGINT, onint);
-  write(1, "trap: Ctrl-C me\n", 16);
-  for (;;) {
-    pause(20);
-    write(1, ".", 1);
-  }
-}
-
 /* --- free: real memory consumption (SYS_meminfo) --- */
 static int
 t_free(void)
@@ -134,56 +100,6 @@ t_sync(void)
   if (sync() < 0) {
     write(2, "sync: not supported\n", 20);
     return 1;
-  }
-  return 0;
-}
-
-/* --- wc: upstream user/wc.c's counting and output shape, printf-free
- * (the standalone upstream binary is a 24 KB printf tax) --- */
-static void
-wc_one(int fd, const char *name)
-{
-  static char buf[512];
-  int l = 0, w = 0, c = 0, inword = 0, n;
-  while ((n = read(fd, buf, sizeof(buf))) > 0) {
-    for (int i = 0; i < n; i++) {
-      c++;
-      if (buf[i] == '\n')
-        l++;
-      if (buf[i] == ' ' || buf[i] == '\t' || buf[i] == '\n' || buf[i] == '\r')
-        inword = 0;
-      else if (!inword) {
-        w++;
-        inword = 1;
-      }
-    }
-  }
-  emitn((uint)l);
-  emit(" ");
-  emitn((uint)w);
-  emit(" ");
-  emitn((uint)c);
-  emit(" ");
-  emit(name);
-  emit("\n");
-  flush();
-}
-
-static int
-t_wc(int argc, char **argv)
-{
-  if (argc <= 1) {
-    wc_one(0, "");
-    return 0;
-  }
-  for (int i = 1; i < argc; i++) {
-    int fd = open(argv[i], 0);
-    if (fd < 0) {
-      write(2, "wc: cannot open\n", 16);
-      return 1;
-    }
-    wc_one(fd, argv[i]);
-    close(fd);
   }
   return 0;
 }
@@ -229,49 +145,6 @@ static int
 t_clear(void)
 {
   write(1, "\x1b[2J\x1b[H", 7);
-  return 0;
-}
-
-/* --- help: what can be run --- The commands live in the flash
- * image registry, not on any disk (ls cannot see them), so this
- * lists /dev/apps in columns. */
-static int
-t_help(void)
-{
-  write(1, "builtin: cd\ncommands (flash registry, /dev/apps):\n", 50);
-  int fd = open("/dev/apps", 0);
-  if (fd < 0) {
-    write(2, "help: no /dev/apps\n", 19);
-    return 1;
-  }
-  char buf[400];
-  int n = read(fd, buf, sizeof(buf));
-  close(fd);
-  char line[80];
-  int col = 0, ln = 0;
-  for (int i = 0; i <= n; i++) {
-    char c = (i < n) ? buf[i] : '\n';
-    if (c != '\n') {
-      if (ln < 78)
-        line[ln++] = c;
-      continue;
-    }
-    if (ln == 0 && col == 0)
-      continue;
-    col++;
-    if (col == 6) { /* six 13-char columns per row */
-      line[ln++] = '\n';
-      write(1, line, ln);
-      col = ln = 0;
-    } else {
-      while (ln % 13)
-        line[ln++] = ' ';
-    }
-  }
-  if (ln) {
-    line[ln++] = '\n';
-    write(1, line, ln);
-  }
   return 0;
 }
 
@@ -330,24 +203,16 @@ main(int argc, char **argv)
   }
   if (streq(base, "kill"))
     exit(t_kill(argc, argv));
-  if (streq(base, "spin"))
-    exit(t_spin());
-  if (streq(base, "trap"))
-    exit(t_trap());
   if (streq(base, "free"))
     exit(t_free());
   if (streq(base, "sync"))
     exit(t_sync());
-  if (streq(base, "help"))
-    exit(t_help());
   if (streq(base, "clear"))
     exit(t_clear());
   if (streq(base, "mount"))
     exit(t_mount(argc, argv));
   if (streq(base, "umount"))
     exit(t_umount(argc, argv));
-  if (streq(base, "wc"))
-    exit(t_wc(argc, argv));
   if (streq(base, "mkdir"))
     exit(t_mkdir(argc, argv));
   if (streq(base, "rm"))
