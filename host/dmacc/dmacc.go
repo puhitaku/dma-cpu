@@ -328,7 +328,7 @@ func (g *gen) run() error {
 	fmt.Fprintf(w, "    halt\n")
 	// crtthunk is exported: kernels use it as the dispatch EOI value.
 	fmt.Fprintf(w, "crtthunk:\n    jumpr irqresume\n")
-	w.WriteString(g.text.String())
+	w.WriteString(elideFallthroughJumps(g.text.String()))
 	g.emitCmpHelpers()
 	if err := g.emitRuntime(); err != nil {
 		return err
@@ -342,7 +342,7 @@ func (g *gen) run() error {
 	}
 	if g.ram.Len() > 0 {
 		fmt.Fprintf(w, "\n; --- RAM-resident self-modifying records ---\n.ramtext\n")
-		w.WriteString(g.ram.String())
+		w.WriteString(elideFallthroughJumps(g.ram.String()))
 	}
 	return nil
 }
@@ -773,4 +773,69 @@ func (g *gen) flattenInit(in *llir.Init) ([]wordSpec, error) {
 		out = append(out, wordSpec{val: v})
 	}
 	return out, nil
+}
+
+// elideFallthroughJumps drops `jump L` instructions whose target label
+// is the very next line: the branch census found ~10% of all plain
+// jumps land on their own successor (if/else joins, loop exits), and
+// each costs a record, a pool word, and three transfer beats for
+// nothing. Any label naming the elided jump simply aliases L — same
+// destination, so other jumpers are unaffected. The one hazard is a
+// block-field reference (`X.read` etc.) to a label whose first record
+// was the jump: those labels are left alone.
+func elideFallthroughJumps(text string) string {
+	lines := strings.Split(text, "\n")
+	// labels referenced with a block-field suffix anywhere
+	fieldRef := map[string]bool{}
+	for _, l := range lines {
+		for _, f := range []string{".read", ".write", ".count", ".ctrl"} {
+			for i := strings.Index(l, f); i >= 0; {
+				j := i
+				for j > 0 && (isSymChar(l[j-1])) {
+					j--
+				}
+				if j < i {
+					fieldRef[l[j:i]] = true
+				}
+				next := strings.Index(l[i+1:], f)
+				if next < 0 {
+					break
+				}
+				i += 1 + next
+			}
+		}
+	}
+	out := make([]string, 0, len(lines))
+	for i := 0; i < len(lines); i++ {
+		l := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(l, "jump ") && !strings.Contains(l, ",") {
+			tgt := strings.TrimSpace(strings.TrimPrefix(l, "jump "))
+			// next non-empty line must be exactly the target label
+			k := i + 1
+			for k < len(lines) && strings.TrimSpace(lines[k]) == "" {
+				k++
+			}
+			if k < len(lines) && strings.TrimSpace(lines[k]) == tgt+":" {
+				// a label immediately above the jump would alias the
+				// target — safe, unless block-field-addressed
+				safe := true
+				if len(out) > 0 {
+					prev := strings.TrimSpace(out[len(out)-1])
+					if strings.HasSuffix(prev, ":") && fieldRef[strings.TrimSuffix(prev, ":")] {
+						safe = false
+					}
+				}
+				if safe {
+					continue // drop the jump
+				}
+			}
+		}
+		out = append(out, lines[i])
+	}
+	return strings.Join(out, "\n")
+}
+
+func isSymChar(c byte) bool {
+	return c == '_' || c == '.' && false ||
+		c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }
