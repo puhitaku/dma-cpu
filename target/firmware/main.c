@@ -87,11 +87,27 @@ static void dma_block_reset(void)
     }
 }
 
+/* HIL_VIDEO_CPU_FEEDER=1 restores the core-1 CPU feeder (the 036
+ * verdict's fix) instead of the pure-DMA scanout. */
+#ifndef HIL_VIDEO_CPU_FEEDER
+#define HIL_VIDEO_CPU_FEEDER 0
+#endif
+#if defined(ADAFRUIT_FEATHER_RP2350) && !HIL_VIDEO_CPU_FEEDER && defined(HIL_XSH_DTAB_HOME)
+/* The scanout walker/executor pair lives outside the machine and must
+ * survive every machine reset: the display is the one hard-real-time
+ * consumer in the system. */
+#define SCAN_CH_MASK ((1u << 14) | (1u << 15))
+#else
+#define SCAN_CH_MASK 0u
+#endif
+
 static void machine_reset(void)
 {
-    reg_wr(HIL_CHAN_ABORT_ADDR, (1u << HIL_NCHANNELS) - 1);
+    reg_wr(HIL_CHAN_ABORT_ADDR, ((1u << HIL_NCHANNELS) - 1) & ~SCAN_CH_MASK);
     busy_wait_us(10);
     for (int ch = 0; ch < HIL_NCHANNELS; ch++) {
+        if ((SCAN_CH_MASK >> ch) & 1u)
+            continue;
         reg_wr(0x50000000u + (uint32_t)ch * 0x40u + CH_AL1_CTRL, 0);
     }
     reg_wr(HIL_INTR_ADDR, 0xFFFFu); /* write-1-to-clear raw status */
@@ -99,6 +115,31 @@ static void machine_reset(void)
     reg_wr(HIL_SNIFF_DATA_ADDR, 0);
     reg_wr(HIL_TIMER0_ADDR, 0);
 }
+
+#if SCAN_CH_MASK
+/* The scanout reads its descriptor table through the XIP window, so
+ * every flash operation that kills the window must bracket it — the
+ * 036 lesson, relearned the hard way: one unbracketed staging pass at
+ * boot wedged the ring and the screen stayed black. Stop aborts the
+ * pair; start rebuilds the walker from the table top (one partial
+ * frame, sync holds). */
+static void video_dma_stop(void)
+{
+    reg_wr(HIL_CHAN_ABORT_ADDR, SCAN_CH_MASK);
+    busy_wait_us(10);
+    reg_wr(0x50000000u + 14u * 0x40u + CH_AL1_CTRL, 0);
+    reg_wr(0x50000000u + 15u * 0x40u + CH_AL1_CTRL, 0);
+}
+
+static void video_dma_start(void)
+{
+    video_dma_stop();
+    reg_wr(HIL_XSH_SCAN_WALKER + CH_READ_ADDR, HIL_XSH_DTAB_BLOCKS);
+    reg_wr(HIL_XSH_SCAN_WALKER + CH_WRITE_ADDR, HIL_XSH_SCAN_EXEC);
+    reg_wr(HIL_XSH_SCAN_WALKER + CH_TRANS_COUNT, 4);
+    reg_wr(HIL_XSH_SCAN_WALKER + CH_CTRL_TRIG, HIL_XSH_SCAN_WALKER_CTRL);
+}
+#endif
 
 static void run_test(const hil_test *t)
 {
@@ -1086,6 +1127,7 @@ static int sd_read_sector(uint32_t lba, uint8_t *dst)
 #define VF_CTRL_11 0x2ABu
 #define VF_L12 (VF_CTRL_00 << 10 | VF_CTRL_00 << 20)
 
+#if HIL_VIDEO_CPU_FEEDER
 static void __attribute__((noinline, section(".time_critical.vfeed"))) video_feeder(void)
 {
     volatile uint32_t *fifo = &hstx_fifo_hw->fifo;
@@ -1134,6 +1176,7 @@ static void __attribute__((noinline, section(".time_critical.vfeed"))) video_fee
         }
     }
 }
+#endif /* HIL_VIDEO_CPU_FEEDER */
 #endif
 
 static void __attribute__((noinline, section(".time_critical.park"))) park_forever(void)
@@ -1145,9 +1188,21 @@ static void __attribute__((noinline, section(".time_critical.park"))) park_forev
         if (req[3] != req[4]) {
             uint32_t op = req[0], off = req[1], src = req[2];
             if (op == 1) {
+#if SCAN_CH_MASK
+                video_dma_stop(); /* the erase kills the XIP window */
+#endif
                 flash_range_erase(off, 4096);
+#if SCAN_CH_MASK
+                video_dma_start();
+#endif
             } else if (op == 2) {
+#if SCAN_CH_MASK
+                video_dma_stop();
+#endif
                 flash_range_program(off, (const uint8_t *)src, 256);
+#if SCAN_CH_MASK
+                video_dma_start();
+#endif
 #if defined(ADAFRUIT_FEATHER_RP2350)
             } else if (op == 4) { /* SD: read sector `off` to `src` */
                 if (sd_read_sector(off, (uint8_t *)src) != 0)
@@ -1308,6 +1363,18 @@ static void xsh_start(void)
     stage_xip_text(HIL_XSH_APPS_HOME, hil_xsh_blob_apps,
                    (uint32_t)sizeof hil_xsh_blob_apps, "apps");
 #endif
+#if SCAN_CH_MASK
+#if HIL_XSH_DTAB_RAM
+    /* Flash-starvation isolation: the program runs from SRAM, so no
+     * scanout read ever touches the XIP window (the copy overlays fb
+     * rows 453+ — visible garbage, diagnostic builds only). */
+    memcpy((void *)(uintptr_t)HIL_XSH_DTAB_RAM, hil_xsh_blob_dtab,
+           sizeof hil_xsh_blob_dtab);
+#else
+    stage_xip_text(HIL_XSH_DTAB_HOME, hil_xsh_blob_dtab,
+                   (uint32_t)sizeof hil_xsh_blob_dtab, "scanout table");
+#endif
+#endif
     uint32_t e;
     if (dmx_load(hil_xsh_kernel_dmx, sizeof hil_xsh_kernel_dmx, NULL, &e) != DMX_OK ||
         dmx_load(hil_xsh_kernc_dmx, sizeof hil_xsh_kernc_dmx, NULL, &e) != DMX_OK ||
@@ -1372,6 +1439,36 @@ static void xsh_start(void)
            "entirely by the DMA controller) ===\n",
            fromflash ? "FLASH SLOT" : "golden", (unsigned long)slotgen);
     dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 1}; /* compact machine */
+#if SCAN_CH_MASK
+    video_dma_start();
+    busy_wait_us(2000); /* ~1/8 frame: let the ring prove itself */
+    printf("VID: walker rd=%08lx wr=%08lx exec ctrl=%08lx cnt=%lu "
+           "fifostat=%08lx tab0=%08lx\n",
+           (unsigned long)reg_rd(HIL_XSH_SCAN_WALKER + CH_READ_ADDR),
+           (unsigned long)reg_rd(HIL_XSH_SCAN_WALKER + CH_WRITE_ADDR),
+           (unsigned long)reg_rd(HIL_XSH_SCAN_EXEC + CH_AL1_CTRL),
+           (unsigned long)reg_rd(HIL_XSH_SCAN_EXEC + CH_TRANS_COUNT),
+           (unsigned long)reg_rd(0x50600000u),
+           (unsigned long)reg_rd(HIL_XSH_DTAB_BLOCKS));
+    printf("VID: cmds %08lx %08lx %08lx | %08lx %08lx | csr=%08lx\n",
+           (unsigned long)reg_rd(HIL_XSH_DTAB_HOME + 0),
+           (unsigned long)reg_rd(HIL_XSH_DTAB_HOME + 4),
+           (unsigned long)reg_rd(HIL_XSH_DTAB_HOME + 8),
+           (unsigned long)reg_rd(HIL_XSH_DTAB_BLOCKS + 8),
+           (unsigned long)reg_rd(HIL_XSH_DTAB_BLOCKS + 12),
+           (unsigned long)hstx_ctrl_hw->csr);
+    busy_wait_us(100000); /* 6 frames: sustained-rate check + WOF */
+    printf("VID: t+100ms walker rd=%08lx exec cnt=%lu ctrl=%08lx fifostat=%08lx\n",
+           (unsigned long)reg_rd(HIL_XSH_SCAN_WALKER + CH_READ_ADDR),
+           (unsigned long)reg_rd(HIL_XSH_SCAN_EXEC + CH_TRANS_COUNT),
+           (unsigned long)reg_rd(HIL_XSH_SCAN_EXEC + CH_AL1_CTRL),
+           (unsigned long)reg_rd(0x50600000u));
+    busy_wait_us(900000);
+    printf("VID: t+1s walker rd=%08lx exec cnt=%lu fifostat=%08lx\n",
+           (unsigned long)reg_rd(HIL_XSH_SCAN_WALKER + CH_READ_ADDR),
+           (unsigned long)reg_rd(HIL_XSH_SCAN_EXEC + CH_TRANS_COUNT),
+           (unsigned long)reg_rd(0x50600000u));
+#endif
     if (dmx_start(&cfg, HIL_XSH_ENTRY) != DMX_OK) {
         printf("XSH: FAIL start\n");
         return;
@@ -1661,12 +1758,19 @@ int main(void)
 
 #if defined(ADAFRUIT_FEATHER_RP2350)
     feather_video_init();
-    /* Blank the framebuffer and start the core-1 feeder: the display
-     * carries a clean 640x480@60 signal from here on, machine or not. */
+    /* Blank the framebuffer: the display carries a clean 640x480@60
+     * signal from here on, machine or not. */
     for (uint32_t a = HIL_XSH_FBBUF; a < HIL_XSH_FBBUF + VF_ROWS * VF_W; a += 4)
         *(volatile uint32_t *)a = 0;
     *(volatile uint32_t *)HIL_XSH_FBCTL = 0;
+#if HIL_VIDEO_CPU_FEEDER
+    /* Fallback: the core-1 CPU feeder (the 036 verdict's fix). */
     multicore_launch_core1(video_feeder);
+#endif
+    /* The pure-DMA scanout arms in xsh_start, AFTER every boot-time
+     * flash staging pass: its table reads go through the XIP window,
+     * which flash programming kills (video_dma_start / _stop). Core 1
+     * is not launched and stays asleep in the bootrom's wfe loop. */
 #endif
 
     /* GPIO2: input from the firmware's view; the DMA machine drives it

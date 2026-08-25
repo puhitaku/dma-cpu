@@ -1,19 +1,22 @@
-/* HDMI framebuffer state (prompts/036). The display pipeline is not
- * the kernel's: core 1 of the parked ARM feeds the HSTX FIFO from
- * SRAM with CPU stores (target/firmware main.c, video_feeder) — any
- * DMA-fed design shares the single DMA read master with this
- * machine's own XIP cache misses, and a one-microsecond stall drains
- * the 8-word FIFO and breaks sync (measured; the pure-DMA scanout
- * rings that preceded this are chronicled in prompts/036). The
- * machine's whole interface to video is memory:
+/* HDMI framebuffer state (prompts/036). The display pipeline is a
+ * pure-DMA scanout: two board-pool channels (a walker and an
+ * executor) run a descriptor program from a flash table — per line,
+ * command words then the fb row into the HSTX FIFO, paced by the HSTX
+ * DREQ; the tail descriptor re-triggers the walker, so the frame
+ * loops forever with no CPU. This is the third act of the 036 story:
+ * the ring was retired for a core-1 CPU feeder when XIP misses
+ * stalled the shared DMA read master; with console DMA + select() the
+ * machine's idle XIP churn is gone, and this build re-runs the
+ * experiment (the feeder remains in firmware as a fallback).
  *
+ * The machine's whole interface to video is memory:
  *   - the framebuffer: 640x480 RGB332 bytes in SRAM (fb_base), one
- *     row scanned twice — the wire format is VESA 640x480@60;
- *   - one control word (fb_ctl): the vertical pan in fb rows, read
- *     by the feeder once per scan line. Scroll is O(1).
+ *     row per scan line, rows at fixed addresses;
+ *   - scroll moves pixels (kfbcon, one ch11 burst) — the descriptor
+ *     table is immutable flash, so there is no pan.
  *
  * fb_base == 0 means the board has no display and every entry point
- * is a no-op. The feeder runs from ARM boot (showing black), so
+ * is a no-op. The scanout runs from ARM boot (showing black), so
  * pause/resume are vestigial no-ops kept for the sync bracket. */
 
 #include "kernel/types.h"
@@ -68,8 +71,10 @@ kfb_setowner(uint pid)
   fb_owner = pid;
 }
 
-/* kfb_setpan maps fb row `row0` onto scan line 0. One word: the
- * feeder samples it per scan line. */
+/* kfb_setpan is vestigial: the pure-DMA scanout reads fb rows at
+ * fixed addresses from its flash descriptor table, so there is no pan
+ * to set (kfbcon scrolls by moving pixels). The control word remains
+ * written for inspection/debug only. */
 void
 kfb_setpan(uint row0)
 {

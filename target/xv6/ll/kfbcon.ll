@@ -7,7 +7,6 @@ target triple = "thumbv6m-unknown-none-eabi"
 @fcx = internal unnamed_addr global i32 0, align 4
 @ffg = internal unnamed_addr global i32 0, align 4
 @fbg = internal unnamed_addr global i32 0, align 4
-@fpan = internal unnamed_addr global i32 0, align 4
 @fstate = internal unnamed_addr global i32 0, align 4
 @fcursor = internal unnamed_addr global i1 false, align 4
 @fnpar = internal unnamed_addr global i32 0, align 4
@@ -31,10 +30,8 @@ define dso_local void @kfbcon_reset() local_unnamed_addr #0 {
   store i32 0, ptr @fcx, align 4, !tbaa !3
   store i32 7, ptr @ffg, align 4, !tbaa !3
   store i32 0, ptr @fbg, align 4, !tbaa !3
-  store i32 0, ptr @fpan, align 4, !tbaa !3
   store i32 0, ptr @fstate, align 4, !tbaa !3
   store i1 false, ptr @fcursor, align 4
-  tail call void @kfb_setpan(i32 noundef 0) #4
   tail call fastcc void @lut_build() #5
   tail call fastcc void @clear_screen() #5
   br label %4
@@ -45,9 +42,6 @@ define dso_local void @kfbcon_reset() local_unnamed_addr #0 {
 
 ; Function Attrs: minsize optsize
 declare dso_local i32 @kfb_active() local_unnamed_addr #1
-
-; Function Attrs: minsize optsize
-declare dso_local void @kfb_setpan(i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(readwrite, argmem: none, inaccessiblemem: none)
 define internal fastcc void @lut_build() unnamed_addr #2 {
@@ -637,20 +631,16 @@ define internal fastcc void @newline() unnamed_addr #0 {
 3:                                                ; preds = %0
   %4 = add nsw i32 %1, 1
   store i32 %4, ptr @fcy, align 4, !tbaa !3
-  br label %11
+  br label %8
 
 5:                                                ; preds = %0
-  %6 = load i32, ptr @fpan, align 4, !tbaa !3
-  %7 = add i32 %6, 1
-  %8 = icmp ugt i32 %7, 29
-  %9 = select i1 %8, i32 0, i32 %7
-  store i32 %9, ptr @fpan, align 4
-  %10 = shl i32 %9, 4
-  tail call void @kfb_setpan(i32 noundef %10) #4
+  %6 = tail call i32 @kfb_base() #4
+  %7 = add i32 %6, 10240
+  tail call void @kdmacpy(i32 noundef %6, i32 noundef %7, i32 noundef 296960) #4
   tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef 29, i32 noundef 80) #5
-  br label %11
+  br label %8
 
-11:                                               ; preds = %5, %3
+8:                                                ; preds = %5, %3
   ret void
 }
 
@@ -720,17 +710,12 @@ define internal fastcc void @clear_cells(i32 noundef %0, i32 noundef %1, i32 nou
 
 ; Function Attrs: minsize nounwind optsize
 define internal fastcc i32 @cell_addr(i32 noundef %0, i32 noundef %1) unnamed_addr #0 {
-  %3 = load i32, ptr @fpan, align 4, !tbaa !3
-  %4 = add i32 %3, %1
-  %5 = icmp ugt i32 %4, 29
-  %6 = add i32 %4, -30
-  %7 = select i1 %5, i32 %6, i32 %4
-  %8 = tail call i32 @kfb_base() #4
-  %9 = mul i32 %7, 10240
-  %10 = shl i32 %0, 3
-  %11 = add i32 %8, %10
-  %12 = add i32 %11, %9
-  ret i32 %12
+  %3 = tail call i32 @kfb_base() #4
+  %4 = mul i32 %1, 10240
+  %5 = shl i32 %0, 3
+  %6 = add i32 %4, %5
+  %7 = add i32 %6, %3
+  ret i32 %7
 }
 
 ; Function Attrs: minsize optsize
@@ -738,6 +723,9 @@ declare dso_local void @kdmaset(i32 noundef, i32 noundef, i32 noundef) local_unn
 
 ; Function Attrs: minsize optsize
 declare dso_local i32 @kfb_base() local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @kdmacpy(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
 declare i32 @llvm.smin.i32(i32, i32) #3

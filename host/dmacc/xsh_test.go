@@ -346,7 +346,11 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 	m.Poke32(mustSym(t, kernC, "g_dma_disksize"), uint32(len(disk)))
 	// exec arena.
 	m.Poke32(mustSym(t, kernC, "g_arena"), bd.Arena)
-	m.Poke32(mustSym(t, kernC, "g_arena_end"), bd.ArenaEnd)
+	arenaEnd := bd.ArenaEnd
+	if bd.DTabRAM != 0 && bd.DTabRAM > bd.Arena && bd.DTabRAM < arenaEnd {
+		arenaEnd = bd.DTabRAM /* the SRAM scanout-table experiment */
+	}
+	m.Poke32(mustSym(t, kernC, "g_arena_end"), arenaEnd)
 	m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 	m.Poke32(mustSym(t, kernC, "g_initpid"), 2)
 	m.Poke32(mustSym(t, kernC, "g_fgpid"), 1)
@@ -358,7 +362,37 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 	m.Poke32(mustSym(t, kernC, "g_gpiopins"), uint32(v.GPIOPins))
 	m.Poke32(mustSym(t, kernC, "g_gpio_hi"), v.GPIOOutCtrl(true))
 	m.Poke32(mustSym(t, kernC, "g_gpio_lo"), v.GPIOOutCtrl(false))
-	m.Poke32(mustSym(t, kernC, "g_dmacpy_ctrl"), v.KDMACopyCtrl())
+	kdctrl := v.KDMACopyCtrl()
+	if bd.DTab != 0 {
+		kdctrl &^= emu.CtrlHighPriority /* the pixel pair is the only HP user */
+	}
+	m.Poke32(mustSym(t, kernC, "g_dmacpy_ctrl"), kdctrl)
+	if bd.DTab != 0 && v.DreqXIPStream != 0 { /* streamer-paced flash copies */
+		m.Poke32(mustSym(t, kernC, "g_dmacpy_sctrl"),
+			emu.CtrlEN|emu.CtrlSize32|v.CtrlIncrWrite|
+				v.CtrlTreq(v.DreqXIPStream)|v.CtrlChainTo(11)|v.CtrlIRQQuiet)
+		m.Poke32(mustSym(t, kernC, "g_xip_stream"), v.XIPStreamAddr)
+		m.Poke32(mustSym(t, kernC, "g_xip_aux"), v.XIPAuxBase)
+	}
+	if bd.DTab != 0 {
+		// Pure-DMA scanout, armed exactly as the firmware arms it: the
+		// whole suite then runs with the display pipeline live — a
+		// standing machine/console/scanout coexistence test.
+		m.HSTXPace = 48 // wire-rate drain: 1 word per ~48 bus cycles
+		tab := boards.ScanoutTable(bd, v)
+		if base := boards.ScanoutBase(bd); base >= 0x20000000 {
+			for i := 0; i < len(tab); i += 4 {
+				m.Poke32(base+uint32(i), binary.LittleEndian.Uint32(tab[i:]))
+			}
+		} else {
+			copy(m.Flash[base-0x10000000:], tab)
+		}
+		walker := emu.ChanRegAddr(boards.ScanWalkerCh, 0)
+		m.Poke32(walker+emu.OffReadAddr, boards.ScanoutBlocks(bd))
+		m.Poke32(walker+emu.OffWriteAddr, emu.ChanRegAddr(boards.ScanExecCh, 0))
+		m.Poke32(walker+emu.OffTransCount, 4)
+		m.Poke32(walker+emu.OffCtrlTrig, boards.ScanoutWalkerCtrl(v))
+	}
 	if bd.ConsRings != 0 { // console DMA (kproc.c cons_dma_init)
 		m.Poke32(mustSym(t, kernC, "g_ctx_base"), emu.ChanRegAddr(emu.ConsTxCh, 0))
 		m.Poke32(mustSym(t, kernC, "g_ctx_ring"), bd.ConsRings+emu.ConsRxRingSize)
@@ -662,9 +696,10 @@ func TestXv6ShFeather(t *testing.T) {
 // `echo zqzq`, the framebuffer must contain the cell sequence
 // z,q,z,q (identical 64-byte glyph cells at positions 0 and 2, a
 // different one at 1) at least twice — the typed echo and the output
-// line. Then enough output to scroll: the kick table's READ column
-// must rotate away from the framebuffer base (the pan IS the scroll),
-// and rendering must still work.
+// line. Then enough output to scroll: with the pure-DMA scanout the
+// fb rows are fixed and kfbcon scrolls by MOVING pixels (one ch11
+// burst per line), so the content must simply keep rendering while
+// the pan word stays parked at zero.
 func TestXv6Fbcon(t *testing.T) {
 	t.Parallel()
 	m, _ := bootXshBoard(t, nil, boards.Feather)
@@ -702,19 +737,17 @@ func TestXv6Fbcon(t *testing.T) {
 	if got := countZQZQ(); got < 2 {
 		t.Errorf("want >=2 rendered zqzq cell runs (echo + output), got %d", got)
 	}
-	// Scroll: twelve /dev listings overflow the 30-row screen.
-	panWord := boards.Feather.FbHome // the feeder's pan control word
-	if got := m.Peek32(panWord); got != 0 {
-		t.Fatalf("pan should be 0 before scrolling, got %#x", got)
-	}
+	// Scroll: twelve /dev listings overflow the 30-row screen. The
+	// memmove scroll keeps the pan at zero and the content readable.
+	panWord := boards.Feather.FbHome // the (vestigial) pan word
 	var lots strings.Builder
 	for i := 0; i < 12; i++ {
 		lots.WriteString("ls /dev\r")
 	}
 	m.FeedConsole(lots.String() + "echo zqzq\r")
 	runScript(t, m, 2_500_000_000)
-	if got := m.Peek32(panWord); got == 0 {
-		t.Errorf("the pan word did not advance: scroll is not panning")
+	if got := m.Peek32(panWord); got != 0 {
+		t.Errorf("the pan word moved (%#x): nothing should pan anymore", got)
 	}
 	if got := countZQZQ(); got < 1 {
 		t.Errorf("no rendered zqzq after scrolling")

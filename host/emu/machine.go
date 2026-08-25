@@ -67,6 +67,9 @@ type Machine struct {
 	// HSTXOut collects words written to the HSTX FIFO (RP2350 only) —
 	// the video scanout stream, captured for tests.
 	HSTXOut []uint32
+	// HSTXPace: cycles per granted FIFO word (see step()); 0 = free-run.
+	HSTXPace uint64
+	hstxNext uint64
 
 	// SPIOut collects frames written to SPI0's data register — the
 	// LCD stream on the gamepico board. Size is the bus access width
@@ -358,7 +361,12 @@ func (m *Machine) Write(addr uint32, val uint32, size int) error {
 			return nil
 		}
 		if m.v.HSTXFifoBase != 0 && addr == m.v.HSTXFifoBase {
-			m.HSTXOut = append(m.HSTXOut, val)
+			// Cap the capture: a free-running scanout writes ~5M words
+			// per emulated second, and long boots would hoard RAM. Two
+			// full frames plus slack is all any test reads.
+			if len(m.HSTXOut) < 1<<20 {
+				m.HSTXOut = append(m.HSTXOut, val)
+			}
 			return nil
 		}
 		if m.v.SPI0Base != 0 && addr == m.v.SPI0Base+0x8 { /* SSPDR */
@@ -544,6 +552,15 @@ func (m *Machine) step() (bool, error) {
 	}
 	if m.dma.uartRxListen != 0 && len(m.ConsoleIn) > 0 {
 		m.dma.levelDreqMask(m.dma.uartRxListen)
+	}
+	// HSTX drain pacing: one FIFO word per HSTXPace cycles (the wire
+	// consumes 4 px/word at 25.2 MHz ≈ one word per 48 bus cycles at
+	// 300 MHz). 0 = unpaced free-run (the frame test's fast path).
+	// Without pacing an HP scanout would hog the emulated bus in a
+	// way the DREQ-paced silicon never does.
+	if m.dma.hstxListen != 0 && (m.HSTXPace == 0 || m.Cycle >= m.hstxNext) {
+		m.dma.levelDreqMask(m.dma.hstxListen)
+		m.hstxNext = m.Cycle + m.HSTXPace
 	}
 	// PIO0 TX pacing stub: one word per 64 PIO cycles at the SM's
 	// CLKDIV (the gamepico I2S cadence), gated on the SM enable bit
@@ -971,6 +988,7 @@ func (m *Machine) Clone() *Machine {
 		n.mmio[k] = v
 	}
 	n.GPIOEvents = append([]GPIOEvent(nil), m.GPIOEvents...)
+	n.HSTXOut = nil /* clones start a fresh capture (and drop the cap) */
 	for i := range m.PIO0TX {
 		n.PIO0TX[i] = append([]uint32(nil), m.PIO0TX[i]...)
 	}

@@ -12,8 +12,10 @@
  * fully unrolled — no shifts, no masks, no loop compares. (A naive
  * `bits >> 4` costs thousands of cycles here: dmacc lowers right
  * shifts through a per-bit runtime loop; the benchmark caught it at
- * ~50k cycles per glyph.) Scrolling is a pan (kfb_setpan) plus one
- * cleared row — never a framebuffer move. The screen has no text
+ * ~50k cycles per glyph.) Scrolling is one bulk-DMA row move (ch11,
+ * ~2.7 ms) plus a cleared row: the pure-DMA scanout reads fb rows at
+ * fixed addresses from its flash descriptor table, so the old O(1)
+ * vertical pan has no consumer anymore. The screen has no text
  * shadow buffer; the cursor is an XOR-inverted underline (cell rows
  * 6-7) so it un-draws by re-XOR. */
 
@@ -27,9 +29,9 @@ int kfb_active(void);
 uint kfb_base(void);
 uint kfb_owner(void);
 extern void kdmaset(uint dst, uint word, uint len); /* kdma.c */
+extern void kdmacpy(uint dst, uint src, uint len); /* kdma.c */
 int kfb_w(void);
 int kfb_h(void);
-void kfb_setpan(uint row0);
 
 #define CELLW 8
 #define FONTH 8  /* the font bitmap is 8 rows */
@@ -48,7 +50,7 @@ static const uchar fbpal[16] = {
 
 static int fcx, fcy;      /* cursor cell */
 static uint ffg, fbg;     /* palette indices */
-static uint fpan;         /* cell row of the fb shown at screen row 0 */
+
 static uint flut16[16];   /* font nibble -> 4-pixel word (rebuild scratch) */
 static uint fluthi[256];  /* font byte -> left 4-pixel word, current colors */
 static uint flutlo[256];  /* font byte -> right 4-pixel word */
@@ -83,15 +85,12 @@ lut_build(void)
   }
 }
 
-/* cell_addr maps a screen cell to its PSRAM address through the pan
- * (the fb is a circular row buffer). */
+/* cell_addr: screen cells map straight onto fb rows (scroll moves
+ * the pixels; the scanout's row addresses are fixed). */
 static uint
 cell_addr(int cx, int cy)
 {
-  uint row = (uint)cy + fpan;
-  if (row >= ROWS)
-    row -= ROWS;
-  return kfb_base() + row * (CELLH * PITCH) + (uint)cx * CELLW;
+  return kfb_base() + (uint)cy * (CELLH * PITCH) + (uint)cx * CELLW;
 }
 
 static void
@@ -149,10 +148,10 @@ clear_cells(int cx0, int cy, int n)
 static void
 scroll_up(void)
 {
-  fpan++;
-  if (fpan >= ROWS)
-    fpan = 0;
-  kfb_setpan(fpan * CELLH);
+  /* Move rows 1..29 up one cell row in one ch11 burst (dst < src:
+   * the ascending copy is overlap-safe), then blank the new bottom. */
+  uint fb = kfb_base();
+  kdmacpy(fb, fb + CELLH * PITCH, (ROWS - 1) * CELLH * PITCH);
   clear_cells(0, ROWS - 1, COLS);
 }
 
@@ -181,10 +180,8 @@ kfbcon_reset(void)
   fcx = fcy = 0;
   ffg = 7;
   fbg = 0;
-  fpan = 0;
   fstate = 0;
   fcursor = 0;
-  kfb_setpan(0);
   lut_build();
   clear_screen();
 }

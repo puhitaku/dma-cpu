@@ -25,6 +25,19 @@
 
 uint dmacpy_ctrl; /* loader-patched (symbol g_dmacpy_ctrl); 0 = plain loops */
 
+/* Flash sources on the video board go through the QMI's XIP streamer
+ * instead of memory-mapped XIP reads: the streamer prefetches into
+ * its own FIFO and the paced channel (TREQ = XIP_STREAM) only pops
+ * words that are ALREADY THERE — flash latency hides inside the QMI
+ * and the shared DMA read master never stalls on a miss. Without
+ * this, an exec's ~40 KB app copy parked the master on back-to-back
+ * QSPI reads for milliseconds and the HSTX scanout's 1.3 us FIFO
+ * had no chance. Zero-config-off, kdma-style. */
+uint dmacpy_sctrl; /* g_dmacpy_sctrl: the streamer-paced CTRL; 0 = off */
+uint xip_stream;   /* g_xip_stream: QMI STREAM_ADDR (CTR at +4) */
+uint xip_aux;      /* g_xip_aux: the stream drain port */
+#define W32(a) (*(volatile uint *)(a))
+
 /* kdmacpy: forward copy of len bytes. Word-aligned dst/src/len take
  * the hardware path; anything ragged runs a byte loop (callers here
  * never overlap backward). */
@@ -45,6 +58,17 @@ kdmacpy(uint dst, uint src, uint len)
     uchar *d = (uchar *)dst;
     for (uint i = 0; i < len; i++)
       d[i] = s[i];
+    return;
+  }
+  if (dmacpy_sctrl != 0 && (src >> 28) == 1) { /* flash: stream it */
+    W32(xip_stream) = src;
+    W32(xip_stream + 4) = len >> 2;
+    KCH(0) = xip_aux; /* fixed drain port, no INCR_READ */
+    KCH(1) = dst;
+    KCH(2) = len >> 2;
+    KCH(3) = dmacpy_sctrl;
+    while (KCH(2) != 0)
+      ;
     return;
   }
   KCH(0) = src;             /* READ_ADDR */

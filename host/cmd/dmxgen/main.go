@@ -388,6 +388,31 @@ func wireKernel(kern *dmaasm.Result, kData uint32, kernC *dmaasm.Result, cData u
 	return nil
 }
 
+// xshKdmaCtrl: on the video board the pixel pair is the machine's ONLY
+// high-priority consumer (the display is the one hard-real-time load);
+// the bulk copier runs at normal priority there so an exec's flash
+// copy can never crowd the scanout out of the priority tier. Other
+// boards keep the copier's HP (the gamepico tuning is deliberate).
+func xshKdmaCtrl(v *emu.Variant, bd *boards.Board) uint32 {
+	ctrl := v.KDMACopyCtrl()
+	if bd.DTab != 0 {
+		ctrl &^= emu.CtrlHighPriority
+	}
+	return ctrl
+}
+
+// xshKdmaStreamCtrl: the flash-source copy CTRL — paced by the XIP
+// streamer's DREQ, reading the fixed drain port (no INCR_READ), so
+// flash latency never parks the shared read master (kdma.c). Video
+// boards only; 0 keeps the memory-mapped path.
+func xshKdmaStreamCtrl(v *emu.Variant, bd *boards.Board) uint32 {
+	if bd.DTab == 0 || v.DreqXIPStream == 0 {
+		return 0
+	}
+	return emu.CtrlEN | emu.CtrlSize32 | v.CtrlIncrWrite |
+		v.CtrlTreq(v.DreqXIPStream) | v.CtrlChainTo(11) | v.CtrlIRQQuiet
+}
+
 func kernInjCtrlCh(v *emu.Variant, inj int) uint32 {
 	return emu.CtrlEN | emu.CtrlHighPriority | emu.CtrlSize32 |
 		v.CtrlTreq(emu.TreqTimer1) | v.CtrlChainTo(inj) | v.CtrlIRQQuiet
@@ -885,6 +910,9 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	diskHome := bd.DiskHome
 	diskMax := bd.DiskMax
 	arena, arenaEnd := bd.Arena, bd.ArenaEnd
+	if bd.DTabRAM != 0 && bd.DTabRAM > arena && bd.DTabRAM < arenaEnd {
+		arenaEnd = bd.DTabRAM /* the SRAM scanout-table experiment */
+	}
 
 	casm := func(src string, text, data, rtext uint32) (*dmaasm.Result, error) {
 		return dmaasm.Assemble(src, dmaasm.Options{
@@ -1062,7 +1090,10 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		{"g_kflash_arm", flashArm(bd)}, /* 0: the MACHINE drives the
 		 * flash itself (RP2350 QMI, prompts/028); else the parked
 		 * ARM's mailbox loop at scratch+0x10 executes for it */
-		{"g_dmacpy_ctrl", v.KDMACopyCtrl()}, /* kdma.c bulk channel */
+		{"g_dmacpy_ctrl", xshKdmaCtrl(v, bd)}, /* kdma.c bulk channel */
+		{"g_dmacpy_sctrl", xshKdmaStreamCtrl(v, bd)},
+		{"g_xip_stream", v.XIPStreamAddr},
+		{"g_xip_aux", v.XIPAuxBase},
 	} {
 		if errs == nil {
 			if err := patchData(kernC.Image, cData, sy(kernC, g.name), g.val); err != nil {
@@ -1225,8 +1256,24 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	b.sym["FLASHREQ"] = bd.Scratch + 0x10
 	b.sym["FBBUF"] = bd.FbBuf
 	b.sym["FBCTL"] = bd.FbHome
+	if bd.DTab != 0 {
+		// Pure-DMA scanout (boards/scanout.go): the descriptor program
+		// staged to flash; the firmware arms the walker/executor pair
+		// and never touches the display again.
+		b.blobs = append(b.blobs, pad4(boards.ScanoutTable(bd, v)))
+		b.blobNames = append(b.blobNames, "dtab")
+		b.sym["DTAB_HOME"] = bd.DTab
+		b.sym["DTAB_RAM"] = bd.DTabRAM /* 0 = run from flash */
+		b.sym["DTAB_BLOCKS"] = boards.ScanoutBlocks(bd)
+		b.sym["SCAN_WALKER"] = emu.ChanRegAddr(boards.ScanWalkerCh, 0)
+		b.sym["SCAN_EXEC"] = emu.ChanRegAddr(boards.ScanExecCh, 0)
+		b.sym["SCAN_WALKER_CTRL"] = boards.ScanoutWalkerCtrl(v)
+	}
 	b.sym["GOLDSUM"] = checksum32(disk)
 	b.vec, b.disp0, b.inj = sy(kern, "vecSched"), sy(sh, "dispatch"), kernInjCtrlCh(v, inj)
+	if bd.DTab != 0 {
+		b.inj &^= emu.CtrlHighPriority /* pixel pair only (see xshKdmaCtrl) */
+	}
 	b.ticks = sy(kernC, "g_ticks")
 	if errs != nil {
 		return nil, errs

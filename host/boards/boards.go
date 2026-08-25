@@ -57,8 +57,18 @@ type Board struct {
 	PSRAMBase uint32
 	PSRAMSize uint32
 	FbBuf     uint32 // the SRAM framebuffer itself
-	FbHome    uint32 // scanout working area (ring, command buffers)
+	FbHome    uint32 // the (vestigial) pan word
 	FbEnd     uint32
+	// DTab marks a pure-DMA-scanout board and homes the descriptor
+	// program's staged blob (boards.ScanoutTable): two board-pool
+	// channels walk it forever, streaming HSTX command words and fb
+	// rows into the FIFO with zero CPU involvement. DTabRAM is the
+	// SRAM home the program RUNS from (the firmware copies it there at
+	// boot); silicon proved twice that the walker's reads cannot
+	// tolerate the XIP window. When DTabRAM lies inside the arena,
+	// ArenaEnd is clamped down to it.
+	DTab    uint32
+	DTabRAM uint32
 
 	// --- bare-metal game console (Bundles ["game"]; no xv6) ---
 	// One dmacc-compiled image: text executes from flash (XIP), the
@@ -178,10 +188,10 @@ var Pico = &Board{
 
 	KernText: 0x20002000, KernData: 0x20003000,
 	KernCRText: 0x20004000, KernCData: 0x2000B800,
-	ShRText: 0x20018800, ShData: 0x2001A800,
-	IdleText: 0x2001F000, IdleData: 0x20020000,
-	DiskHome: 0x20021000, DiskMax: 0x6000, // 24 KiB: data files only
-	Arena: 0x20027000, ArenaEnd: 0x2003FC00, // ~99 KiB
+	ShRText: 0x20018800, ShData: 0x2001B000,
+	IdleText: 0x2001F800, IdleData: 0x20020800,
+	DiskHome: 0x20021800, DiskMax: 0x6000, // 24 KiB: data files only
+	Arena: 0x20027800, ArenaEnd: 0x2003FC00, // ~97 KiB
 	Scratch: 0x2003FE00,
 
 	FlashSize:   0x200000,
@@ -217,16 +227,16 @@ var Feather = &Board{
 	KernCRText: 0x20004000, KernCData: 0x2000C000,
 	// ShRText sits 2 KiB above the pico2 map: the fb kernel's data
 	// (LUTs + the 24-row image registry) outgrew the 0xD800 window.
-	ShRText: 0x2001A000, ShData: 0x2001C000,
+	ShRText: 0x2001A000, ShData: 0x2001C800,
 	// 480p squeeze (prompts/039): the disk shrinks to an echo-redirect
 	// showcase and the arena to one exec'd app (show, the largest at
 	// ~39 KiB, is the one binary a presentation needs) — the freed
 	// 126 KiB doubles the framebuffer's rows.
 	// idle and the disk tuck into sh-data's slack (sh uses ~17 KiB of
 	// its old 32 KiB window); every reclaimed KiB is arena.
-	IdleText: 0x20020800, IdleData: 0x20020C00,
-	DiskHome: 0x20021000, DiskMax: 0x2800, // 10 KiB: write showcase only
-	Arena: 0x20023800, ArenaEnd: 0x20034400, // 67 KiB
+	IdleText: 0x20021000, IdleData: 0x20021400,
+	DiskHome: 0x20021800, DiskMax: 0x2800, // 10 KiB: write showcase only
+	Arena: 0x20024000, ArenaEnd: 0x20030000, // clamped by the table
 	ConsRings: 0x20034400, // UART rings; FbBuf follows at 0x20034C00
 	Scratch:   0x2007FE00,
 
@@ -256,7 +266,16 @@ var Feather = &Board{
 	// stays for bulk storage the ARM handles (slides over USB).
 	PSRAMBase: 0x15000000, PSRAMSize: 0x800000,
 	FbBuf:  0x20034C00,                    // 640x480 = 300 KiB, to 0x2007FC00
-	FbHome: 0x2007FC00, FbEnd: 0x2007FE00, // the feeder's pan word
+	FbHome: 0x2007FC00, FbEnd: 0x2007FE00, // the (vestigial) pan word
+	// The scanout descriptor program: staged via flash (DTab) but RUN
+	// from SRAM (DTabRAM) — the flash-resident table was tried twice
+	// (pre- and post-HP/streamer) and broke the display both times:
+	// the walker's own reads must never touch a stallable window. The
+	// SRAM home caps the arena (ArenaEnd is clamped to DTabRAM), which
+	// currently keeps `show` from fitting — the standing trade recorded
+	// in the map below.
+	DTab:    0x10540000,
+	DTabRAM: 0x20030000,
 
 	// Flash sync goes through the parked ARM's mailbox executor, NOT
 	// the machine's QMI direct-mode driver: that driver leaves XIP in

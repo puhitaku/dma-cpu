@@ -4,12 +4,15 @@ target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
 @dmacpy_ctrl = dso_local local_unnamed_addr global i32 0, align 4
+@dmacpy_sctrl = dso_local local_unnamed_addr global i32 0, align 4
+@xip_stream = dso_local local_unnamed_addr global i32 0, align 4
+@xip_aux = dso_local local_unnamed_addr global i32 0, align 4
 @kdmaset.fill = internal global i32 0, align 4
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
 define dso_local void @kdmacpy(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #0 {
   %4 = icmp eq i32 %2, 0
-  br i1 %4, label %43, label %5
+  br i1 %4, label %61, label %5
 
 5:                                                ; preds = %3
   %6 = load i32, ptr @dmacpy_ctrl, align 4, !tbaa !3
@@ -35,7 +38,7 @@ define dso_local void @kdmacpy(i32 noundef %0, i32 noundef %1, i32 noundef %2) l
 18:                                               ; preds = %21, %14
   %19 = phi i32 [ 0, %14 ], [ %25, %21 ]
   %20 = icmp eq i32 %19, %17
-  br i1 %20, label %43, label %21
+  br i1 %20, label %61, label %21
 
 21:                                               ; preds = %18
   %22 = getelementptr inbounds nuw i32, ptr %15, i32 %19
@@ -53,7 +56,7 @@ define dso_local void @kdmacpy(i32 noundef %0, i32 noundef %1, i32 noundef %2) l
 29:                                               ; preds = %32, %26
   %30 = phi i32 [ 0, %26 ], [ %36, %32 ]
   %31 = icmp eq i32 %30, %2
-  br i1 %31, label %43, label %32
+  br i1 %31, label %61, label %32
 
 32:                                               ; preds = %29
   %33 = getelementptr inbounds nuw i8, ptr %27, i32 %30
@@ -64,20 +67,50 @@ define dso_local void @kdmacpy(i32 noundef %0, i32 noundef %1, i32 noundef %2) l
   br label %29, !llvm.loop !11
 
 37:                                               ; preds = %12
+  %38 = load i32, ptr @dmacpy_sctrl, align 4, !tbaa !3
+  %39 = icmp ne i32 %38, 0
+  %40 = and i32 %1, -268435456
+  %41 = icmp eq i32 %40, 268435456
+  %42 = and i1 %41, %39
+  br i1 %42, label %43, label %55
+
+43:                                               ; preds = %37
+  %44 = load i32, ptr @xip_stream, align 4, !tbaa !3
+  %45 = inttoptr i32 %44 to ptr
+  store volatile i32 %1, ptr %45, align 4, !tbaa !3
+  %46 = lshr i32 %2, 2
+  %47 = load i32, ptr @xip_stream, align 4, !tbaa !3
+  %48 = add i32 %47, 4
+  %49 = inttoptr i32 %48 to ptr
+  store volatile i32 %46, ptr %49, align 4, !tbaa !3
+  %50 = load i32, ptr @xip_aux, align 4, !tbaa !3
+  store volatile i32 %50, ptr inttoptr (i32 1342177984 to ptr), align 64, !tbaa !3
+  store volatile i32 %0, ptr inttoptr (i32 1342177988 to ptr), align 4, !tbaa !3
+  store volatile i32 %46, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
+  %51 = load i32, ptr @dmacpy_sctrl, align 4, !tbaa !3
+  store volatile i32 %51, ptr inttoptr (i32 1342177996 to ptr), align 4, !tbaa !3
+  br label %52
+
+52:                                               ; preds = %52, %43
+  %53 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
+  %54 = icmp eq i32 %53, 0
+  br i1 %54, label %61, label %52, !llvm.loop !12
+
+55:                                               ; preds = %37
   store volatile i32 %1, ptr inttoptr (i32 1342177984 to ptr), align 64, !tbaa !3
   store volatile i32 %0, ptr inttoptr (i32 1342177988 to ptr), align 4, !tbaa !3
-  %38 = lshr i32 %2, 2
-  store volatile i32 %38, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
-  %39 = load i32, ptr @dmacpy_ctrl, align 4, !tbaa !3
-  store volatile i32 %39, ptr inttoptr (i32 1342177996 to ptr), align 4, !tbaa !3
-  br label %40
+  %56 = lshr i32 %2, 2
+  store volatile i32 %56, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
+  %57 = load i32, ptr @dmacpy_ctrl, align 4, !tbaa !3
+  store volatile i32 %57, ptr inttoptr (i32 1342177996 to ptr), align 4, !tbaa !3
+  br label %58
 
-40:                                               ; preds = %40, %37
-  %41 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
-  %42 = icmp eq i32 %41, 0
-  br i1 %42, label %43, label %40, !llvm.loop !12
+58:                                               ; preds = %58, %55
+  %59 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
+  %60 = icmp eq i32 %59, 0
+  br i1 %60, label %61, label %58, !llvm.loop !13
 
-43:                                               ; preds = %40, %29, %18, %3
+61:                                               ; preds = %58, %52, %29, %18, %3
   ret void
 }
 
@@ -110,7 +143,7 @@ define dso_local void @kdmaset(i32 noundef %0, i32 noundef %1, i32 noundef %2) l
   %18 = inttoptr i32 %15 to ptr
   store volatile i32 %1, ptr %18, align 4, !tbaa !3
   %19 = add i32 %15, 4
-  br label %14, !llvm.loop !13
+  br label %14, !llvm.loop !14
 
 20:                                               ; preds = %8
   store i32 %1, ptr @kdmaset.fill, align 4, !tbaa !3
@@ -126,7 +159,7 @@ define dso_local void @kdmaset(i32 noundef %0, i32 noundef %1, i32 noundef %2) l
 24:                                               ; preds = %24, %20
   %25 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
   %26 = icmp eq i32 %25, 0
-  br i1 %26, label %27, label %24, !llvm.loop !14
+  br i1 %26, label %27, label %24, !llvm.loop !15
 
 27:                                               ; preds = %24, %14, %3
   ret void
@@ -152,3 +185,4 @@ attributes #0 = { minsize nofree norecurse nounwind optsize "no-builtins" "no-tr
 !12 = distinct !{!12, !8, !9}
 !13 = distinct !{!13, !8, !9}
 !14 = distinct !{!14, !8, !9}
+!15 = distinct !{!15, !8, !9}
