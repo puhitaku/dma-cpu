@@ -88,7 +88,7 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 
 	casm := func(src string, text, data uint32) *dmaasm.Result {
 		res, err := dmaasm.Assemble(src, dmaasm.Options{
-			Variant: v, Compact: true, CompactScratch: 0x2007FE00,
+			Variant: v, Compact: true,
 			TextBase: text, DataBase: data})
 		if err != nil {
 			t.Fatal(err)
@@ -97,7 +97,7 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 	}
 	kern := casm(ksrc, 0x20002000, 0x20003000)
 	kernC, err := dmaasm.Assemble(kcDasm, dmaasm.Options{
-		Variant: v, Compact: true, CompactScratch: 0x2007FE00,
+		Variant: v, Compact: true,
 		TextBase: 0x10260000, DataBase: 0x2000C000, RAMTextBase: 0x20004000})
 	if err != nil {
 		t.Fatal(err)

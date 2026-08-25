@@ -749,7 +749,7 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		return nil, err
 	}
 	prog, err := dmaasm.Assemble(dasm, dmaasm.Options{
-		Variant: v, Compact: true, CompactScratch: bd.Scratch,
+		Variant: v, Compact: true,
 		TextBase: bd.GameTextXIP, DataBase: bd.GameData,
 		RAMTextBase: bd.GameRAMText})
 	if err != nil {
@@ -867,10 +867,10 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 // buildXsh: UPSTREAM user/sh.c as the boot shell on the FULL
 // filesystem kernel, the WHOLE SYSTEM in Tier-C compact encoding
 // (Phase 8, prompts/020): 8-byte records halve text, the tick
-// injector rides the compact machine's channel 9, and every image's
-// mode-switch records share one window-selector word at the machine
-// scratch (dmaasm CompactScratch). The RAM disk carries upstream
-// echo, cat, wc AND ls as DMX-exec files.
+// injector rides channel 9 of the board pool, and every image's
+// mode-switch records target fetch's own WRITE_ADDR register, so
+// images share the machine with no coordination word. The RAM disk
+// carries upstream echo, cat, wc AND ls as DMX-exec files.
 func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	// Everything positional comes from the board definition — the RAM
 	// partition, the flash sections, and the app set (boards/boards.go
@@ -887,7 +887,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 
 	casm := func(src string, text, data, rtext uint32) (*dmaasm.Result, error) {
 		return dmaasm.Assemble(src, dmaasm.Options{
-			Variant: v, Compact: true, CompactScratch: bd.Scratch,
+			Variant: v, Compact: true,
 			TextBase: text, DataBase: data, RAMTextBase: rtext})
 	}
 	ksrc, err := prog.HIL("kernel")
@@ -1873,21 +1873,22 @@ func emitHeader(bd *boards.Board, v *emu.Variant, lay layout, tests []*test, sch
 	p("#define HIL_INJ_CTRL_PIO0RX0 0x%08Xu", injBase|v.CtrlTreq(v.DreqPIO0RX0))
 	p("")
 	p("/* Tier-C compact-machine calibration: 8-byte records into a")
-	p(" * channel bank with static CTRLs (prompts/010). */")
-	const cmpP, cmpS, cmpB, cmpF, cmpX = 6, 7, 8, 9, 10
+	p(" * channel bank with static CTRLs (prompts/010). No fix channel:")
+	p(" * fetch's 8-byte write ring holds the window and the banks chain")
+	p(" * straight back to fetch; mode switches rewrite fetch's")
+	p(" * WRITE_ADDR through the AL3 non-trigger alias. */")
+	const cmpP, cmpS, cmpB, cmpF = 6, 7, 8, 9
 	p("#define HIL_CMP_EPLAIN %d", cmpP)
 	p("#define HIL_CMP_ESNIFF %d", cmpS)
 	p("#define HIL_CMP_EBSWAP %d", cmpB)
 	p("#define HIL_CMP_FETCH %d", cmpF)
-	p("#define HIL_CMP_FIX %d", cmpX)
-	cmpExec := emu.CtrlEN | emu.CtrlSize32 | v.CtrlTreq(emu.TreqPermanent) | v.CtrlChainTo(cmpX) | v.CtrlIRQQuiet
+	cmpExec := emu.CtrlEN | emu.CtrlSize32 | v.CtrlTreq(emu.TreqPermanent) | v.CtrlChainTo(cmpF) | v.CtrlIRQQuiet
 	p("#define HIL_CMP_CTRL_PLAIN 0x%08Xu", cmpExec)
 	p("#define HIL_CMP_CTRL_SNIFF 0x%08Xu", cmpExec|v.CtrlSniffEn)
 	p("#define HIL_CMP_CTRL_BSWAP 0x%08Xu", cmpExec|v.CtrlBswap)
-	p("#define HIL_CMP_CTRL_FIX 0x%08Xu",
-		emu.CtrlEN|emu.CtrlSize32|v.CtrlTreq(emu.TreqPermanent)|v.CtrlChainTo(cmpX)|v.CtrlIRQQuiet)
 	p("#define HIL_CMP_FETCH_CTRL 0x%08Xu",
 		emu.CtrlEN|emu.CtrlSize32|emu.CtrlIncrRead|v.CtrlIncrWrite|
+			v.CtrlRingSel|v.CtrlRingSize(3)|
 			v.CtrlTreq(emu.TreqPermanent)|v.CtrlChainTo(cmpF)|v.CtrlIRQQuiet)
 	p("#define HIL_CMP_SNIFF_CTRL 0x%08Xu",
 		emu.SniffCtrlEN|emu.SniffCtrlDmach(cmpS)|emu.SniffCtrlCalc(emu.SniffCalcSum))

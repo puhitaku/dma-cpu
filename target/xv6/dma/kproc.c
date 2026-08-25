@@ -141,9 +141,9 @@ extern void kfbcon_putc(int c);
 extern void kfbcon_reset(void);
 
 /* Tick injector registers (family-common DMA base). Classic machines
- * use ABI channel 3; the compact machine's injector is channel 9
- * (emu/compact.go), so the loader patches these when the system runs
- * in Tier-C encoding. */
+ * use ABI channel 3; a compact-machine system takes channel 9 of the
+ * board pool (the injector slot by convention, emu/compact.go), so
+ * the loader patches these when the system runs in Tier-C encoding. */
 uint inj_wreg = 0x500000C4u; /* CH3 WRITE_ADDR */
 uint inj_treg = 0x500000DCu; /* CH3 AL1_TRANS_COUNT_TRIG */
 #define INJ_WRITE_ADDR (*(volatile uint *)inj_wreg)

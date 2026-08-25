@@ -52,6 +52,7 @@
 #define CH_AL2_TRANS_COUNT 0x24u
 #define CH_AL2_READ_ADDR 0x28u
 #define CH_AL2_WRITE_ADDR_TRIG 0x2Cu
+#define CH_AL3_WRITE_ADDR 0x34u
 
 static inline void reg_wr(uint32_t addr, uint32_t val)
 {
@@ -320,20 +321,23 @@ static void exp_sched(void)
 }
 
 /* Tier-C compact machine (prompts/010): 8-byte records fetched into a
- * channel bank with static CTRLs; mode switch = one record rewriting
- * the fix channel's scratch word; the all-zero record is HALT (null
- * WRITE_ADDR trigger). Mirrors the emulator's TestCompactMachineRaw —
- * the load-bearing semantics are TRANS_COUNT reload on WRITE_ADDR
- * triggers, CTRL persistence, and exact data delivery on a sniffed read
- * of SNIFF_DATA. */
+ * channel bank with static CTRLs; the all-zero record is HALT (null
+ * WRITE_ADDR trigger). No fix channel: fetch's 8-byte write ring keeps
+ * its write pointer on the current bank window (every window is 8-byte
+ * aligned) and the banks chain straight back to fetch; a mode switch is
+ * one record rewriting fetch's WRITE_ADDR through the AL3 non-trigger
+ * alias. Mirrors the emulator's TestCompactMachineRaw — the
+ * load-bearing semantics are TRANS_COUNT reload on triggers (chain and
+ * WRITE_ADDR alike), the write ring wrap, CTRL persistence, and exact
+ * data delivery on a sniffed read of SNIFF_DATA. */
 static void cal_compact(void)
 {
     machine_reset();
     const int eP = HIL_CMP_EPLAIN, eS = HIL_CMP_ESNIFF, eB = HIL_CMP_EBSWAP;
-    const int cf = HIL_CMP_FETCH, cx = HIL_CMP_FIX;
+    const int cf = HIL_CMP_FETCH;
     const uint32_t text = HIL_MACHINE_RAM_START + 0x8000u;
     const uint32_t data = HIL_MACHINE_RAM_START + 0x9000u;
-    const uint32_t scr = HIL_MACHINE_RAM_START + 0x9F00u;
+    const uint32_t fwa = chreg(cf, CH_AL3_WRITE_ADDR);
     const uint32_t win_p = chreg(eP, CH_AL2_READ_ADDR);
     const uint32_t win_s = chreg(eS, CH_AL2_READ_ADDR);
     const uint32_t win_b = chreg(eB, CH_AL2_READ_ADDR);
@@ -354,15 +358,15 @@ static void cal_compact(void)
 
     const uint32_t recs[][2] = {
         {aA, dst0},                  /* E-plain: dst0 = A */
-        {aWb, scr},                  /* switch -> bswap bank */
+        {aWb, fwa},                  /* switch -> bswap bank */
         {aB, dst1},                  /* E-bswap: dst1 = bswap(B) */
-        {aWpSw, scr},                /* switch -> plain (pre-swapped literal) */
+        {aWpSw, fwa},                /* switch -> plain (pre-swapped literal) */
         {dst0, dst2},                /* dst2 = dst0 */
         {aSeed, HIL_SNIFF_DATA_ADDR},/* accumulator = 0x1000 (unsniffed) */
-        {aWs, scr},                  /* switch -> sniff bank */
+        {aWs, fwa},                  /* switch -> sniff bank */
         {aAdd, nul},                 /* accumulator += 0xF00D */
         {HIL_SNIFF_DATA_ADDR, sum},  /* sum read on the sniff channel */
-        {aWp, scr},                  /* switch -> plain (dead pollution) */
+        {aWp, fwa},                  /* switch -> plain (dead pollution) */
         {0, 0},                      /* HALT: null trigger */
     };
     uint32_t pp = text;
@@ -381,12 +385,6 @@ static void cal_compact(void)
     reg_wr(chreg(eS, CH_AL2_TRANS_COUNT), 1);
     reg_wr(chreg(eB, CH_AL1_CTRL), HIL_CMP_CTRL_BSWAP);
     reg_wr(chreg(eB, CH_AL2_TRANS_COUNT), 1);
-
-    reg_wr(scr, win_p);
-    reg_wr(chreg(cx, CH_AL1_READ_ADDR), scr);
-    reg_wr(chreg(cx, CH_AL1_WRITE_ADDR), chreg(cf, CH_AL2_WRITE_ADDR_TRIG));
-    reg_wr(chreg(cx, CH_AL2_TRANS_COUNT), 1);
-    reg_wr(chreg(cx, CH_AL1_CTRL), HIL_CMP_CTRL_FIX);
 
     reg_wr(chreg(cf, CH_READ_ADDR), text);
     reg_wr(chreg(cf, CH_WRITE_ADDR), win_p);

@@ -30,7 +30,7 @@ func TestCompactSched(t *testing.T) {
 		t.Run(v.Name, func(t *testing.T) {
 			asm := func(src string, text, data uint32) *dmaasm.Result {
 				res, err := dmaasm.Assemble(src, dmaasm.Options{
-					Variant: v, Compact: true, CompactScratch: 0x2003FF00,
+					Variant: v, Compact: true,
 					TextBase: text, DataBase: data})
 				if err != nil {
 					t.Fatal(err)

@@ -29,10 +29,6 @@ import (
 	"github.com/puhitaku/dma-cpu/host/img"
 )
 
-// cscrName is the hidden data word holding the current window address
-// (the fix channel's source; switch records rewrite it).
-const cscrName = "__cscr"
-
 // cshape abstracts one classic block for planning.
 type cshape struct {
 	bank     int    // emu.CompactPlain..CompactSize16

@@ -93,11 +93,6 @@ func (a *asm) emit() (*Result, error) {
 			}
 		}
 	}
-	// Compact: the window-selector word, initially the plain bank
-	// (in-image unless a machine-global CompactScratch hosts it).
-	if a.opts.Compact && a.opts.CompactScratch == 0 {
-		data.Word(emu.CompactWindow(emu.CompactPlain))
-	}
 	// Literal pool.
 	for _, k := range a.litOrder {
 		op := a.lits[k]
@@ -113,7 +108,7 @@ func (a *asm) emit() (*Result, error) {
 	}
 
 	// --- Init writes: sniffer first (ABI default), then machine config
-	// (compact banks + fix), then user writes ---
+	// (compact banks + cleanup), then user writes ---
 	if !a.noSniff {
 		bld.AddWrite(a.v.SniffCtrlAddr(),
 			emu.SniffCtrlEN|emu.SniffCtrlDmach(a.cfg.Exec)|emu.SniffCtrlCalc(emu.SniffCalcSum))
@@ -124,25 +119,14 @@ func (a *asm) emit() (*Result, error) {
 			bld.AddWrite(emu.ChanRegAddr(ch, emu.OffAl1Ctrl), emu.CompactBankCtrl(a.v, ch))
 			bld.AddWrite(emu.ChanRegAddr(ch, emu.OffAl2TransCount), 1)
 		}
-		if a.opts.CompactScratch != 0 {
-			bld.AddWrite(a.opts.CompactScratch, emu.CompactWindow(emu.CompactPlain))
-			bld.AddWrite(emu.ChanRegAddr(emu.CompactFix, emu.OffAl1ReadAddr), a.opts.CompactScratch)
-		} else {
-			bld.AddWriteRef(emu.ChanRegAddr(emu.CompactFix, emu.OffAl1ReadAddr), data, a.syms[cscrName].off)
-		}
-		bld.AddWrite(emu.ChanRegAddr(emu.CompactFix, emu.OffAl1WriteAddr),
-			emu.ChanRegAddr(emu.CompactFetch, emu.OffAl2WriteAddrTrig))
-		bld.AddWrite(emu.ChanRegAddr(emu.CompactFix, emu.OffAl2TransCount), 1)
-		bld.AddWrite(emu.ChanRegAddr(emu.CompactFix, emu.OffAl1Ctrl), emu.CompactFixCtrl(a.v))
-		// Cleanup: restores the window selector to the plain bank, then
-		// chains to fix (auto-return for the bswap/size banks).
+		// Cleanup: one transfer restoring fetch's write pointer to the
+		// plain window; the destination is the trigger alias, so the
+		// restore also fires the next fetch (auto-return for the
+		// bswap/size banks).
 		winPOff := a.litOffs[litKey(operand{kind: opLit, num: emu.CompactWindow(emu.CompactPlain), isNum: true})]
 		bld.AddWriteRef(emu.ChanRegAddr(emu.CompactCleanup, emu.OffAl1ReadAddr), data, winPOff)
-		if a.opts.CompactScratch != 0 {
-			bld.AddWrite(emu.ChanRegAddr(emu.CompactCleanup, emu.OffAl1WriteAddr), a.opts.CompactScratch)
-		} else {
-			bld.AddWriteRef(emu.ChanRegAddr(emu.CompactCleanup, emu.OffAl1WriteAddr), data, a.syms[cscrName].off)
-		}
+		bld.AddWrite(emu.ChanRegAddr(emu.CompactCleanup, emu.OffAl1WriteAddr),
+			emu.ChanRegAddr(emu.CompactFetch, emu.OffAl2WriteAddrTrig))
 		bld.AddWrite(emu.ChanRegAddr(emu.CompactCleanup, emu.OffAl2TransCount), 1)
 		bld.AddWrite(emu.ChanRegAddr(emu.CompactCleanup, emu.OffAl1Ctrl), emu.CompactCleanupCtrl(a.v))
 	}
@@ -190,13 +174,12 @@ func (a *asm) emit() (*Result, error) {
 		if !ok {
 			return nil, fmt.Errorf("compact mode requires the .regs directive")
 		}
-		scrP := img.In(data, a.syms[cscrName].off)
-		if a.opts.CompactScratch != 0 {
-			scrP = img.Abs(a.opts.CompactScratch)
-		}
+		// The current-window state is fetch's own WRITE_ADDR register;
+		// switch records rewrite it through the AL3 (non-trigger) alias
+		// and the bank's chain back to fetch does the actual trigger.
 		ce = &cemit{
 			a: a, text: text, st: newCstate(),
-			scrP: scrP,
+			scrP: img.Abs(emu.ChanRegAddr(emu.CompactFetch, emu.OffAl3WriteAddr)),
 			atP:  img.In(data, atSym.off),
 		}
 	}

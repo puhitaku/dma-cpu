@@ -11,8 +11,11 @@ import (
 // (READ_ADDR, WRITE_ADDR) into the alias-2 tail of one of several exec
 // channels — one per mode, each with a static CTRL (plain / always-
 // sniffed / bswap / ...). TRANS_COUNT reloads from its preset value on
-// every WRITE_ADDR trigger. Switching modes is one record that rewrites
-// the fix channel's scratch word with the new window address; no CTRL
+// every WRITE_ADDR trigger. Fetch carries an 8-byte write ring, so its
+// write pointer snaps back to the current window after each record and
+// the banks chain straight back to fetch — no fix channel. Switching
+// modes is one record that rewrites fetch's WRITE_ADDR register (via
+// the AL3 non-trigger alias) with the new window address; no CTRL
 // register is ever written by the machine. The all-zero record is HALT:
 // a null WRITE_ADDR trigger drops the transfer and raises the quiet
 // null-trigger IRQ (the silicon-verified classic HALT semantics).
@@ -30,11 +33,13 @@ func TestCompactMachineRaw(t *testing.T) {
 			m := emu.NewMachine(v)
 			const (
 				ePlain, eSniff, eBswap = 0, 1, 2
-				fetch, fix             = 4, 5
+				fetch                  = 4
 				text                   = uint32(0x20000000)
 				data                   = uint32(0x20010000)
-				scratch                = uint32(0x2003FF00)
 			)
+			// Mode switches write fetch's write pointer directly (the
+			// non-trigger AL3 alias; the bank's chain does the trigger).
+			fetchWA := emu.ChanRegAddr(fetch, emu.OffAl3WriteAddr)
 			window := func(ch int) uint32 { return emu.ChanRegAddr(ch, emu.OffAl2ReadAddr) }
 			bswap32 := func(x uint32) uint32 {
 				return x<<24 | x>>24 | x<<8&0x00FF0000 | x>>8&0x0000FF00
@@ -61,15 +66,15 @@ func TestCompactMachineRaw(t *testing.T) {
 			// Program.
 			recs := [][2]uint32{
 				{aA, dst0},                  // E0: dst0 = A
-				{aWinBswap, scratch},        // E0: switch -> bswap bank
+				{aWinBswap, fetchWA},        // E0: switch -> bswap bank
 				{aB, dst1},                  // E2: dst1 = bswap(B)
-				{aWinPlainSwapped, scratch}, // E2: switch -> plain (literal pre-swapped)
+				{aWinPlainSwapped, fetchWA}, // E2: switch -> plain (literal pre-swapped)
 				{dst0, dst2},                // E0: dst2 = dst0
 				{aSeed, v.SniffDataAddr()},  // E0: accumulator = 0x1000 (unsniffed, exact)
-				{aWinSniff, scratch},        // E0: switch -> sniff bank
+				{aWinSniff, fetchWA},        // E0: switch -> sniff bank
 				{aAddend, null},             // E1: accumulator += 0xF00D
 				{v.SniffDataAddr(), sum},    // E1: sum = 0x1F00D (read exact; self-add is dead)
-				{aWinPlain, scratch},        // E1: switch -> plain (dead pollution)
+				{aWinPlain, fetchWA},        // E1: switch -> plain (dead pollution)
 				{0, 0},                      // E0: HALT (null trigger)
 			}
 			p := text
@@ -92,26 +97,21 @@ func TestCompactMachineRaw(t *testing.T) {
 			for ch, extra := range bank {
 				regs := emu.ChanRegAddr(ch, 0)
 				m.Poke32(regs+emu.OffAl1Ctrl,
-					emu.CtrlEN|emu.CtrlSize32|v.CtrlTreq(emu.TreqPermanent)|v.CtrlChainTo(fix)|v.CtrlIRQQuiet|extra)
+					emu.CtrlEN|emu.CtrlSize32|v.CtrlTreq(emu.TreqPermanent)|v.CtrlChainTo(fetch)|v.CtrlIRQQuiet|extra)
 				m.Poke32(regs+emu.OffAl2TransCount, 1)
 			}
 
-			// Fix: scratch (current window pointer) -> fetch AL2_WRITE_ADDR_TRIG.
-			m.Poke32(scratch, window(ePlain))
-			fixRegs := emu.ChanRegAddr(fix, 0)
-			m.Poke32(fixRegs+emu.OffAl1ReadAddr, scratch)
-			m.Poke32(fixRegs+emu.OffAl1WriteAddr, emu.ChanRegAddr(fetch, emu.OffAl2WriteAddrTrig))
-			m.Poke32(fixRegs+emu.OffAl2TransCount, 1)
-			m.Poke32(fixRegs+emu.OffAl1Ctrl,
-				emu.CtrlEN|emu.CtrlSize32|v.CtrlTreq(emu.TreqPermanent)|v.CtrlChainTo(fix)|v.CtrlIRQQuiet)
-
-			// Fetch: two words per record into the current window.
+			// Fetch: two words per record into the current window; the
+			// 8-byte write ring wraps the write pointer back onto the
+			// window (every window is 8-byte aligned: +0x28 in a 0x40
+			// stride), so nothing needs to fix it between records.
 			fetchRegs := emu.ChanRegAddr(fetch, 0)
 			m.Poke32(fetchRegs+emu.OffReadAddr, text)
 			m.Poke32(fetchRegs+emu.OffWriteAddr, window(ePlain))
 			m.Poke32(fetchRegs+emu.OffTransCount, 2)
 			m.Poke32(fetchRegs+emu.OffCtrlTrig,
 				emu.CtrlEN|emu.CtrlSize32|emu.CtrlIncrRead|v.CtrlIncrWrite|
+					v.CtrlRingSel|v.CtrlRingSize(3)|
 					v.CtrlTreq(emu.TreqPermanent)|v.CtrlChainTo(fetch)|v.CtrlIRQQuiet)
 
 			res, err := m.Run(emu.RunConfig{MaxCycles: 10_000})

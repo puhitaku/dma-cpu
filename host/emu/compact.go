@@ -7,23 +7,34 @@ package emu
 // must live on channels 0..3: their window addresses share the upper
 // three bytes, which is what makes a byte-wide switch-out (a size8
 // transfer of the plain-window literal's low byte) land correctly.
+//
+// The machine is the contiguous block ch0..8. Fetch carries an 8-byte
+// write ring (every window is 8-byte aligned: +0x28 within a 0x40
+// stride), so its write pointer snaps back to the current window after
+// each record — there is no fix channel. Banks chain straight back to
+// fetch; the current-window state IS fetch's WRITE_ADDR register, which
+// mode-switch records rewrite through the AL3 (non-trigger) alias.
+// Channels 9 and up are the board-owned pool; 9 is the injector slot by
+// ABI convention (boards may repurpose it, as the game does for audio).
 const (
-	CompactPlain    = 0 // 32-bit moves, alias ops, jumps
-	CompactSize8    = 1 // byte moves
-	CompactSize8W   = 2 // byte moves, INCR_WRITE (memset)
-	CompactSize8RW  = 3 // byte moves, INCR_READ|INCR_WRITE (memcpy)
-	CompactSniff    = 4 // 32-bit moves observed by the sniffer
-	CompactBswap    = 5 // 32-bit byte-swapped moves
-	CompactSize16   = 6 // halfword moves
-	CompactFetch    = 7
-	CompactFix      = 8
-	CompactInjector = 9 // approach-B injector (parity with classic ch3)
-	// Cleanup restores the window selector to the plain bank and chains
-	// to fix. The bswap/size banks chain through it, so their records
-	// auto-return to plain — no switch-out record ever executes on them
-	// (which would repeat at their count and, on INCR banks, walk over
-	// memory).
-	CompactCleanup = 10
+	CompactPlain   = 0 // 32-bit moves, alias ops, jumps
+	CompactSize8   = 1 // byte moves
+	CompactSize8W  = 2 // byte moves, INCR_WRITE (memset)
+	CompactSize8RW = 3 // byte moves, INCR_READ|INCR_WRITE (memcpy)
+	CompactSniff   = 4 // 32-bit moves observed by the sniffer
+	CompactBswap   = 5 // 32-bit byte-swapped moves
+	CompactSize16  = 6 // halfword moves
+	CompactFetch   = 7
+	// Cleanup restores fetch's write pointer to the plain window and
+	// re-triggers fetch in the same single transfer (the write lands on
+	// fetch's AL2_WRITE_ADDR_TRIG). The bswap/size banks chain through
+	// it, so their records auto-return to plain — no switch-out record
+	// ever executes on them (which would repeat at their count and, on
+	// INCR banks, walk over memory).
+	CompactCleanup = 8
+	// CompactInjector is the ABI-convention interrupt slot in the
+	// board-owned pool (parity with classic ch3) — not machine-frozen.
+	CompactInjector = 9
 
 	CompactNumBanks = 7
 )
@@ -43,9 +54,10 @@ func CompactAutoReturn(ch int) bool {
 func CompactWindow(ch int) uint32 { return ChanRegAddr(ch, OffAl2ReadAddr) }
 
 // CompactBankCtrl returns the static CTRL word of a bank channel.
-// Auto-return banks chain through cleanup instead of straight to fix.
+// Banks chain straight back to fetch (whose write ring holds the
+// window); auto-return banks chain through cleanup instead.
 func CompactBankCtrl(v *Variant, ch int) uint32 {
-	chain := CompactFix
+	chain := CompactFetch
 	if CompactAutoReturn(ch) {
 		chain = CompactCleanup
 	}
@@ -69,16 +81,19 @@ func CompactBankCtrl(v *Variant, ch int) uint32 {
 	return 0
 }
 
-// CompactFixCtrl / CompactFetchCtrl: the machinery channels.
-func CompactFixCtrl(v *Variant) uint32 {
-	return CtrlEN | CtrlSize32 | v.CtrlTreq(TreqPermanent) | v.CtrlChainTo(CompactFix) | v.CtrlIRQQuiet
-}
-
+// CompactCleanupCtrl: cleanup's one transfer targets fetch's
+// AL2_WRITE_ADDR_TRIG, so the restore is itself the re-trigger — its
+// own chain stays disabled (self).
 func CompactCleanupCtrl(v *Variant) uint32 {
-	return CtrlEN | CtrlSize32 | v.CtrlTreq(TreqPermanent) | v.CtrlChainTo(CompactFix) | v.CtrlIRQQuiet
+	return CtrlEN | CtrlSize32 | v.CtrlTreq(TreqPermanent) | v.CtrlChainTo(CompactCleanup) | v.CtrlIRQQuiet
 }
 
+// CompactFetchCtrl: both pointers increment; the 8-byte write ring
+// (RING_SEL=1, RING_SIZE=3) snaps the write pointer back to the current
+// bank window after each record. Chain-to-self keeps fetch's own chain
+// disabled — the banks' chains re-trigger it.
 func CompactFetchCtrl(v *Variant) uint32 {
 	return CtrlEN | CtrlSize32 | CtrlIncrRead | v.CtrlIncrWrite |
+		v.CtrlRingSel | v.CtrlRingSize(3) |
 		v.CtrlTreq(TreqPermanent) | v.CtrlChainTo(CompactFetch) | v.CtrlIRQQuiet
 }

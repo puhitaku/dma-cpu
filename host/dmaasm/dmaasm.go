@@ -32,16 +32,13 @@ type Options struct {
 	// loader's concern, not the image's.
 	Fetch, Exec, Fix int
 	// Compact emits the Tier-C 8-byte-record encoding (compact.go).
-	// Channels follow the fixed emu.Compact* map; the image carries the
-	// bank/fix configuration as init writes and loaders do fetch-only
-	// setup (emu.FetchExecConfig.Compact).
+	// Channels follow the fixed emu.Compact* map (the contiguous ch0..8
+	// machine); the image carries the bank/cleanup configuration as init
+	// writes and loaders do fetch-only setup
+	// (emu.FetchExecConfig.Compact). The current-window state lives in
+	// fetch's WRITE_ADDR register, so several compact images sharing one
+	// machine need no coordination word.
 	Compact bool
-	// CompactScratch, when nonzero, places the window-selector word at
-	// this absolute address instead of in the image's data segment.
-	// REQUIRED when several compact images share one machine: the fix
-	// channel reads a single selector, so every image's mode-switch
-	// records must target the same word (prompts/020).
-	CompactScratch uint32
 	// RAMTextBase enables the `.ramtext` directive: text after the
 	// directive links at this base as a third image segment. XIP images
 	// place TextBase in flash (immutable) and keep every self-modifying
@@ -190,7 +187,10 @@ func Assemble(src string, opts Options) (*Result, error) {
 	}
 	if opts.Compact {
 		// %pc and the sniffer DMACH resolve against the compact map.
-		opts.Fetch, opts.Exec, opts.Fix = emu.CompactFetch, emu.CompactSniff, emu.CompactFix
+		// Fix (the classic chain target field) is fetch here: bank
+		// records return straight to fetch, whose write ring holds the
+		// window.
+		opts.Fetch, opts.Exec, opts.Fix = emu.CompactFetch, emu.CompactSniff, emu.CompactFetch
 	} else if opts.Fetch == 0 && opts.Exec == 0 && opts.Fix == 0 {
 		opts.Fetch, opts.Exec, opts.Fix = 0, 1, 2
 	}
@@ -716,15 +716,9 @@ func (a *asm) layout() error {
 		if !a.hasRegs {
 			return fmt.Errorf("compact mode requires the .regs directive")
 		}
-		// The window-selector word the fix channel reads (and switch
-		// records rewrite). Placed before the literal pool — unless a
-		// machine-global CompactScratch hosts it. The plain window
-		// literal always exists: the cleanup channel reads it.
+		// The plain window literal always exists: the cleanup channel
+		// reads it to restore fetch's write pointer.
 		a.internLit(operand{kind: opLit, num: emu.CompactWindow(emu.CompactPlain), isNum: true})
-		if a.opts.CompactScratch == 0 {
-			a.syms[cscrName] = symbol{off: a.dataOff}
-			a.dataOff += 4
-		}
 	}
 	// Literal pool goes after all explicit data.
 	for _, k := range a.litOrder {

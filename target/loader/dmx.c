@@ -27,11 +27,15 @@
 #define CTRL_INCR_READ (1u << 4)
 #if defined(DMX_TARGET_RP2350)
 #define CTRL_INCR_WRITE (1u << 6)
+#define CTRL_RING_SIZE(n) ((uint32_t)(n) << 8)
+#define CTRL_RING_SEL (1u << 12)
 #define CTRL_CHAIN_TO(ch) ((uint32_t)(ch) << 13)
 #define CTRL_TREQ_PERMANENT (0x3Fu << 17)
 #define CTRL_IRQ_QUIET (1u << 23)
 #else /* RP2040 */
 #define CTRL_INCR_WRITE (1u << 5)
+#define CTRL_RING_SIZE(n) ((uint32_t)(n) << 6)
+#define CTRL_RING_SEL (1u << 10)
 #define CTRL_CHAIN_TO(ch) ((uint32_t)(ch) << 11)
 #define CTRL_TREQ_PERMANENT (0x3Fu << 15)
 #define CTRL_IRQ_QUIET (1u << 21)
@@ -166,8 +170,11 @@ int dmx_load(const uint8_t *image, size_t len, const dmx_placement *pl,
 int dmx_start(const dmx_machine_cfg *cfg, uint32_t entry)
 {
     if (cfg->compact) {
-        /* Mirrors emu.SetupFetchExec's compact branch: banks and fix
-         * were configured by the image's init writes; fetch only. */
+        /* Mirrors emu.SetupFetchExec's compact branch: banks and
+         * cleanup were configured by the image's init writes; fetch
+         * only. The 8-byte write ring holds fetch's write pointer on
+         * the current bank window (every window is 8-byte aligned), so
+         * there is no fix channel — banks chain straight back here. */
         if ((entry % 8) != 0) {
             return DMX_ERR_ALIGN;
         }
@@ -178,6 +185,7 @@ int dmx_start(const dmx_machine_cfg *cfg, uint32_t entry)
         mmio_write(ch_reg(cfetch, DMA_CH_TRANS_COUNT), 2);
         mmio_write(ch_reg(cfetch, DMA_CH_CTRL_TRIG),
                    CTRL_EN | CTRL_SIZE32 | CTRL_INCR_READ | CTRL_INCR_WRITE |
+                       CTRL_RING_SEL | CTRL_RING_SIZE(3) |
                        CTRL_TREQ_PERMANENT | CTRL_CHAIN_TO(cfetch) |
                        CTRL_IRQ_QUIET);
         return DMX_OK;

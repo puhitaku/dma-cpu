@@ -2,9 +2,10 @@
  * the Linux sense, on a machine that is itself made of DMA. The
  * compiler lowers C loops to interpreted control-block traffic (tens
  * of transfers per copied word); one hardware sequence moves a word
- * per bus slot. Channel 11 is unused by the compact machine (banks
- * 0-6, fetch 7, fix 8, injector 9, cleanup 10) on BOTH SKUs (the
- * RP2040 has 12 channels).
+ * per bus slot. Channel 11 is outside the compact machine (the
+ * contiguous ch0..8: banks 0-6, fetch 7, cleanup 8) on BOTH SKUs;
+ * ch9+ is the board pool (9 = the injector slot by convention, and
+ * the RP2040 has 12 channels in total).
  *
  * dmacpy_ctrl arrives loader-patched with the SKU's CTRL encoding
  * (EN | HIGH_PRIORITY | SIZE32 | INCR_READ | INCR_WRITE | TREQ_PERM |

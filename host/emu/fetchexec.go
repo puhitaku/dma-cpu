@@ -21,10 +21,11 @@ type FetchExecConfig struct {
 	Entry            uint32 // address of the first control block (initial PC)
 	Scratch          uint32 // SRAM word the machine may clobber (holds &Exec regs)
 
-	// Compact selects the Tier-C 8-byte-record machine (emu/compact.go).
-	// The channel map is fixed (Fetch/Exec/Fix/Scratch are ignored); the
-	// bank and fix configuration arrive as image init writes, so setup
-	// here is fetch-only.
+	// Compact selects the Tier-C 8-byte-record machine (emu/compact.go):
+	// the contiguous ch0..8 map, no fix channel — fetch's write ring
+	// holds the window. Fetch/Exec/Fix/Scratch are ignored; the bank and
+	// cleanup configuration arrive as image init writes, so setup here
+	// is fetch-only.
 	Compact bool
 }
 
@@ -45,8 +46,9 @@ func SetupFetchExec(m *Machine, cfg FetchExecConfig) error {
 		if cfg.Entry%8 != 0 {
 			return fmt.Errorf("compact entry %#08x is not 8-byte aligned", cfg.Entry)
 		}
-		// Banks, fix, and the window-selector word were configured by
-		// the image's init writes; only fetch remains.
+		// Banks and cleanup were configured by the image's init writes;
+		// only fetch remains. Its 8-byte write ring holds the window,
+		// so no other machinery channel needs arming.
 		fetchRegs := ChanRegAddr(CompactFetch, 0)
 		m.Poke32(fetchRegs+OffReadAddr, cfg.Entry)
 		m.Poke32(fetchRegs+OffWriteAddr, CompactWindow(CompactPlain))

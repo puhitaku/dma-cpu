@@ -35,7 +35,7 @@ func buildUserScratch(t *testing.T, v *emu.Variant, scratch uint32, name string,
 		t.Fatal(err)
 	}
 	res, err := dmaasm.Assemble(dasm, dmaasm.Options{
-		Variant: v, Compact: true, CompactScratch: scratch,
+		Variant: v, Compact: true,
 		TextBase: 0x10000000, DataBase: 0x10040000})
 	if err != nil {
 		t.Fatal(err)
@@ -245,7 +245,7 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 
 	casm := func(src string, text, data, rtext uint32) (*dmaasm.Result, error) {
 		return dmaasm.Assemble(src, dmaasm.Options{
-			Variant: v, Compact: true, CompactScratch: bd.Scratch,
+			Variant: v, Compact: true,
 			TextBase: text, DataBase: data, RAMTextBase: rtext})
 	}
 	// XIP layout (prompts/030): kernC and sh text executes from the
@@ -471,7 +471,7 @@ func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result) {
 		t.Fatal(err)
 	}
 	res, err := dmaasm.Assemble(dasm, dmaasm.Options{
-		Variant: m.Variant(), Compact: true, CompactScratch: bd.Scratch,
+		Variant: m.Variant(), Compact: true,
 		TextBase: 0x10000000, DataBase: 0x10040000})
 	if err != nil {
 		t.Fatal(err)

@@ -56,7 +56,7 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 		t.Fatal(err)
 	}
 	prog, err := dmaasm.Assemble(dasm, dmaasm.Options{
-		Variant: v, Compact: true, CompactScratch: bd.Scratch,
+		Variant: v, Compact: true,
 		TextBase: bd.GameTextXIP, DataBase: bd.GameData,
 		RAMTextBase: bd.GameRAMText})
 	if err != nil {

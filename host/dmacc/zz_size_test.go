@@ -14,7 +14,7 @@ func TestZZAllSizes(t *testing.T) {
 	v, _ := emu.VariantByName("rp2350")
 	meas := func(name, dasm string, compact bool) {
 		res, err := dmaasm.Assemble(dasm, dmaasm.Options{
-			Variant: v, Compact: compact, CompactScratch: 0x2007FE00,
+			Variant: v, Compact: compact,
 			TextBase: 0x40000000, DataBase: 0x50000000, RAMTextBase: 0x60000000})
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
