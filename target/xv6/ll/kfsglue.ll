@@ -1108,6 +1108,45 @@ define dso_local i32 @kfs_read(i32 noundef %0, i32 noundef %1, i32 noundef %2) l
 declare dso_local i32 @fileread(ptr noundef, i32 noundef, i32 noundef) local_unnamed_addr #3
 
 ; Function Attrs: minsize nounwind optsize
+define dso_local i32 @kfs_selready(i32 noundef %0) local_unnamed_addr #1 {
+  %2 = icmp slt i32 %0, 0
+  br i1 %2, label %19, label %3
+
+3:                                                ; preds = %1
+  %4 = icmp samesign ugt i32 %0, 15
+  br i1 %4, label %19, label %5
+
+5:                                                ; preds = %3
+  %6 = load i32, ptr @curr, align 4, !tbaa !11
+  %7 = getelementptr inbounds nuw [8 x %struct.proc], ptr @fsproc, i32 0, i32 %6, i32 3, i32 %0
+  %8 = load ptr, ptr %7, align 4, !tbaa !35
+  %9 = icmp eq ptr %8, null
+  br i1 %9, label %19, label %10
+
+10:                                               ; preds = %5
+  %11 = load i32, ptr %8, align 4, !tbaa !28
+  %12 = icmp eq i32 %11, 3
+  br i1 %12, label %13, label %19
+
+13:                                               ; preds = %10
+  %14 = getelementptr inbounds nuw i8, ptr %8, i32 24
+  %15 = load i16, ptr %14, align 4, !tbaa !31
+  %16 = icmp eq i16 %15, 1
+  br i1 %16, label %17, label %19
+
+17:                                               ; preds = %13
+  %18 = tail call i32 @kcons_ready() #9
+  br label %19
+
+19:                                               ; preds = %1, %3, %10, %13, %5, %17
+  %20 = phi i32 [ %18, %17 ], [ 1, %5 ], [ 1, %13 ], [ 1, %10 ], [ 1, %3 ], [ 1, %1 ]
+  ret i32 %20
+}
+
+; Function Attrs: minsize optsize
+declare dso_local i32 @kcons_ready() local_unnamed_addr #3
+
+; Function Attrs: minsize nounwind optsize
 define dso_local i32 @kfs_write(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #1 {
   %4 = icmp slt i32 %0, 0
   br i1 %4, label %14, label %5

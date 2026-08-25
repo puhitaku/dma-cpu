@@ -18,6 +18,7 @@ int mount(const char *, const char *);
 int umount(const char *);
 int ttyraw(int);
 int read_nb(int, void *, int);
+int select(unsigned mask, int timeout); /* readiness wait; see usys.c */
 int seek(int, uint);
 // GPIO / pin-mux / PIO (kernel API, gpiod-style — prompts/034)
 #define GPIO_WRITE 0

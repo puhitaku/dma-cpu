@@ -112,6 +112,7 @@ extern int kfs_close(int fd);
 extern int kfs_dup(int fd);
 extern int kfs_fstat(int fd, uint staddr);
 extern int kfs_seek(int fd, uint off);
+extern int kfs_selready(int fd); /* select: read would not block */
 extern void kdmacpy(uint dst, uint src, uint len); /* kdma.c */
 extern int kfs_pipe(uint fdarray);
 extern int kfs_chdir(uint pathaddr);
@@ -531,6 +532,38 @@ kconsread(uint dst, int n)
   return got;
 }
 
+/* --- select (SYS_select): readiness wait, a Linux-flavored subset.
+ * v1 readiness is the console (cooked: a committed line; raw: any
+ * byte). Pipe reads already block kernel-side (the peer deposits) and
+ * file reads never spin, so their bits report ready immediately — a
+ * select that SLEEPS is therefore always waiting on the console, and
+ * the wake can deposit the caller's full mask without re-checking
+ * per-fd state. Two channels split the deadline bookkeeping: timed
+ * sleepers park on selwait_to (tick_income scans their wake_tick),
+ * untimed on selwait_inf. */
+static uint selwait_inf, selwait_to;
+
+int
+kcons_ready(void)
+{
+  return cons_r != cons_w;
+}
+
+static void
+sel_wake(void)
+{
+  for (int i = 0; i < NPROC; i++) {
+    struct proc *q = &proc[i];
+    if (q->state != SLEEPING ||
+        (q->chan != (uint)&selwait_inf && q->chan != (uint)&selwait_to))
+      continue;
+    volatile struct dma_sysmail *qm = (volatile struct dma_sysmail *)q->pmail;
+    setret(q, qm->a0); /* console-waiters only: the whole mask is ready */
+    q->chan = 0;
+    q->state = RUNNABLE;
+  }
+}
+
 static void deliver_sigint(void);
 int kgpio(uint op, uint pin, uint val);   /* kgpio.c */
 int kpinmux(uint pin, uint func);
@@ -552,6 +585,7 @@ crx_next(void)
 static void
 cons_poll(void)
 {
+  uint w0 = cons_w;
   /* Stop draining when the cooked buffer is full: popping a byte
    * would DROP it, and the every-tick drain (fgpid systems) outruns
    * readers on scripted input. Backpressure leaves the rest in the
@@ -598,6 +632,8 @@ cons_poll(void)
         cons_w = cons_e;
     }
   }
+  if (cons_w != w0)
+    sel_wake(); /* committed input: readiness for select sleepers */
 }
 
 static void
@@ -605,10 +641,13 @@ tick_income(void)
 {
   ticks++;
   rearm = 1;
-  /* wakeup(&ticks): timer sleepers whose deadline passed. */
+  /* wakeup(&ticks): timer sleepers whose deadline passed — and timed
+   * select sleepers, whose 0-on-timeout return was deposited at sleep
+   * time. */
   for (int i = 0; i < NPROC; i++) {
     struct proc *p = &proc[i];
-    if (p->state == SLEEPING && p->chan == (uint)&ticks &&
+    if (p->state == SLEEPING &&
+        (p->chan == (uint)&ticks || p->chan == (uint)&selwait_to) &&
         (int)(ticks - p->wake_tick) >= 0) {
       p->chan = 0;
       p->state = RUNNABLE;
@@ -1167,6 +1206,31 @@ dma_ksyscall(void)
     ret = 0;
     block = 1;
     break;
+  case SYS_select: { /* a0: fd readiness bitmask (fds 0..30); a1:
+                      * timeout in ticks, 0 = wait forever. Returns the
+                      * ready subset of a0, 0 on timeout. */
+    uint mask = m->a0, rdy = 0;
+    for (uint fd = 0; fd < 31; fd++) {
+      if (!((mask >> fd) & 1))
+        continue;
+      int r = fsready ? kfs_selready((int)fd) : kcons_ready();
+      if (r)
+        rdy |= 1u << fd;
+    }
+    if (rdy != 0 || mask == 0) {
+      ret = rdy;
+      break;
+    }
+    if (m->a1 != 0) {
+      p->wake_tick = ticks + m->a1;
+      sleep((uint)&selwait_to);
+    } else {
+      sleep((uint)&selwait_inf);
+    }
+    ret = 0; /* the timeout answer; sel_wake overwrites with the mask */
+    block = 1;
+    break;
+  }
   case SYS_wait: { /* a0: int* status (0 = don't care) */
     int have = 0, zomb = -1;
     for (int i = 0; i < NPROC; i++) {

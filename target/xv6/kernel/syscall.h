@@ -32,3 +32,4 @@
 #define SYS_pio    31
 #define SYS_fb     32
 #define SYS_seek   33
+#define SYS_select 34

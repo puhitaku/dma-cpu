@@ -645,6 +645,23 @@ kfs_read(int fd, uint addr, int n)
   return fileread(f, addr, n);
 }
 
+/* kfs_selready: would a read on fd return without spinning? Console:
+ * only when input is committed (kproc's cooked/raw cursors). Pipes
+ * block kernel-side (the peer deposits) and files return data, so
+ * both report ready — select never needs to sleep for them. */
+extern int kcons_ready(void);
+
+int
+kfs_selready(int fd)
+{
+  struct file *f = fdget(fd);
+  if (!f)
+    return 1; /* bad fd: the read returns -1 immediately */
+  if (f->type == FD_DEVICE && f->major == CONSOLE)
+    return kcons_ready();
+  return 1;
+}
+
 int
 kfs_write(int fd, uint addr, int n)
 {

@@ -11,6 +11,8 @@ void kfs_start(void) {}
 void kfs_forkcopy(int parent, int child) { (void)parent; (void)child; }
 void kfs_exit(int slot) { (void)slot; }
 int kfs_read(int fd, uint addr, int n) { (void)fd; (void)addr; (void)n; return -1; }
+extern int kcons_ready(void);
+int kfs_selready(int fd) { (void)fd; return kcons_ready(); }
 int kfs_write(int fd, uint addr, int n) { (void)fd; (void)addr; (void)n; return -1; }
 int kfs_open(uint pathaddr, int omode) { (void)pathaddr; (void)omode; return -1; }
 int kfs_close(int fd) { (void)fd; return -1; }

@@ -80,9 +80,23 @@ read(int fd, void *buf, int n)
     int r = dma_trap();
     if (r != -2) /* -2: console has no cooked line yet; 0 is EOF */
       return r;
-    fill(SYS_pause, 1, 0, 0);
+    /* Block until the console is actually readable (select, no
+     * timeout) instead of the old wake-every-tick pause loop: the
+     * sleeping reader costs nothing and resumes on the RX wake. */
+    fill(SYS_select, 1u << ((uint)fd & 31), 0, 0);
     dma_trap();
   }
+}
+
+/* select: block until a read on some fd in `mask` (bit per fd) would
+ * not spin; `timeout` ticks (0 = forever). Returns the ready subset,
+ * 0 on timeout. v1 readiness is the console; pipes and files always
+ * report ready (their reads block properly on their own). */
+int
+select(unsigned mask, int timeout)
+{
+  fill(SYS_select, (uint)mask, (uint)timeout, 0);
+  return dma_trap();
 }
 
 /* vfork semantics (xv6/PORT.md): the child shares the parent's image

@@ -481,7 +481,7 @@ func libcPaths(first ...string) ([]string, error) {
 // buildSched: the scheduler-only bundle (two counter processes, no
 // syscalls). Fits the narrow rp2040 layout.
 func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
-	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x1A800)
+	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x1C000)
 	if err != nil {
 		return nil, err
 	}
@@ -489,20 +489,20 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1D000, DataBase: lay.text + 0x1E000})
+	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1F000, DataBase: lay.text + 0x20000})
 	if err != nil {
 		return nil, err
 	}
-	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1F000, DataBase: lay.text + 0x20000})
+	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x21000, DataBase: lay.text + 0x22000})
 	if err != nil {
 		return nil, err
 	}
 	b := &kernBundle{names: []string{"kernel", "kernc", "proca", "procb"}, sym: map[string]uint32{}}
-	b.entry0 = lay.text + 0x1D000 + procA.Image.EntryOff
-	entryB := lay.text + 0x1F000 + procB.Image.EntryOff
-	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x1A800, []kprocSpec{
-		{procA, lay.text + 0x1E000, b.entry0, 1, 0, false},
-		{procB, lay.text + 0x20000, entryB, 2, 0, false},
+	b.entry0 = lay.text + 0x1F000 + procA.Image.EntryOff
+	entryB := lay.text + 0x21000 + procB.Image.EntryOff
+	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x1C000, []kprocSpec{
+		{procA, lay.text + 0x20000, b.entry0, 1, 0, false},
+		{procB, lay.text + 0x22000, entryB, 2, 0, false},
 	}); err != nil {
 		return nil, err
 	}
@@ -556,11 +556,11 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 // Needs the wide rp2350 layout.
 func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x1D800
-	sText, sData := lay.text+0x21000, lay.text+0x36000
-	pText, pData := lay.text+0x2E000, lay.text+0x2F000
-	blobHome := lay.text + 0x3E000
-	arena, arenaEnd := lay.text+0x40000, lay.text+0x56000
+	cText, cData := lay.text+0x4000, lay.text+0x1F800
+	sText, sData := lay.text+0x23000, lay.text+0x37000
+	pText, pData := lay.text+0x30000, lay.text+0x31000
+	blobHome := lay.text + 0x3F000
+	arena, arenaEnd := lay.text+0x41000, lay.text+0x57000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {
 		return nil, err
@@ -1223,7 +1223,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	b.sym["FSSLOT"] = roFSSlot(bd)
 	b.sym["DISK_LEN"] = uint32(len(disk))
 	b.sym["FLASHREQ"] = bd.Scratch + 0x10
-	b.sym["FBBUF"] = bd.FbBuf /* the core-1 video feeder's inputs */
+	b.sym["FBBUF"] = bd.FbBuf
 	b.sym["FBCTL"] = bd.FbHome
 	b.sym["GOLDSUM"] = checksum32(disk)
 	b.vec, b.disp0, b.inj = sy(kern, "vecSched"), sy(sh, "dispatch"), kernInjCtrlCh(v, inj)
@@ -1314,9 +1314,9 @@ const sysWantConsole = "hello from pid 1 via SYS_write\n" +
 // (dmacc/testdata/xv6sys.c + xv6/dma/usys.c). Wide layout.
 func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x1D800
-	aText, aData := lay.text+0x21000, lay.text+0x25000
-	bText, bData := lay.text+0x29000, lay.text+0x2D000
+	cText, cData := lay.text+0x4000, lay.text+0x1F800
+	aText, aData := lay.text+0x23000, lay.text+0x27000
+	bText, bData := lay.text+0x2B000, lay.text+0x2F000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {
 		return nil, err
@@ -1561,11 +1561,11 @@ func stageBlobsEmu(m *emu.Machine, blobs [][]byte, names []string, syms map[stri
 // kernel places, relocates and runs it at exec() time.
 func buildExec(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x1D800
-	aText, aData := lay.text+0x21000, lay.text+0x25000
-	bText, bData := lay.text+0x29000, lay.text+0x2D000
-	blobHome := lay.text + 0x2F000
-	arena, arenaEnd := lay.text+0x33000, lay.text+0x3E000
+	cText, cData := lay.text+0x4000, lay.text+0x1F800
+	aText, aData := lay.text+0x23000, lay.text+0x27000
+	bText, bData := lay.text+0x2B000, lay.text+0x2F000
+	blobHome := lay.text + 0x31000
+	arena, arenaEnd := lay.text+0x35000, lay.text+0x3E000
 
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {

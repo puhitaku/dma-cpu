@@ -344,11 +344,17 @@ struct pollfd {
 #define POLLIN 1
 static int safe_poll(struct pollfd *pfd, int n, int ms)
 {
-  (void)pfd;
-  (void)n;
-  if (ms > 0)
-    pause(ms / 15 + 1); /* ~tick-granular sleep */
-  return 0;
+  /* Real now: select on the fd with the same tick granularity the old
+   * pause used — but a byte that arrives early returns immediately
+   * (vi's ESC disambiguation stops burning its full timeout). */
+  int t = ms > 0 ? ms / 15 + 1 : 1;
+  if (n <= 0) {
+    pause(t);
+    return 0;
+  }
+  int r = select(1u << (unsigned)pfd[0].fd, t);
+  pfd[0].revents = r ? POLLIN : 0;
+  return r ? 1 : 0;
 }
 
 /* --- terminal --- */

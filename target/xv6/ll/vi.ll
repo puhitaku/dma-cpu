@@ -214,53 +214,55 @@ define dso_local noundef i32 @vi_main(i32 noundef %0, ptr noundef readonly captu
 
 75:                                               ; preds = %52
   tail call fastcc void @redraw(i32 noundef 0) #16
-  %76 = load ptr, ptr @ptr_to_globals, align 4, !tbaa !3
-  br label %77
+  br label %76
 
-77:                                               ; preds = %101, %75
-  %78 = phi ptr [ %76, %75 ], [ %102, %101 ]
-  %79 = getelementptr inbounds nuw i8, ptr %78, i32 16
-  %80 = load i32, ptr %79, align 4, !tbaa !19
-  %81 = icmp sgt i32 %80, 0
-  br i1 %81, label %82, label %103
+76:                                               ; preds = %102, %75
+  %77 = load ptr, ptr @ptr_to_globals, align 4, !tbaa !3
+  %78 = getelementptr inbounds nuw i8, ptr %77, i32 16
+  %79 = load i32, ptr %78, align 4, !tbaa !19
+  %80 = icmp sgt i32 %79, 0
+  br i1 %80, label %81, label %103
 
-82:                                               ; preds = %77
-  %83 = tail call fastcc i32 @readit() #16
-  %84 = load ptr, ptr @ptr_to_globals, align 4, !tbaa !3
-  %85 = getelementptr inbounds nuw i8, ptr %84, i32 8
-  %86 = load ptr, ptr %85, align 4, !tbaa !43
-  %87 = tail call fastcc ptr @begin_line(ptr noundef %86) #16
-  %88 = getelementptr inbounds nuw i8, ptr %84, i32 108
-  %89 = load ptr, ptr %88, align 4, !tbaa !44
-  %90 = icmp eq ptr %87, %89
-  br i1 %90, label %94, label %91
+81:                                               ; preds = %76
+  %82 = tail call fastcc i32 @readit() #16
+  %83 = load ptr, ptr @ptr_to_globals, align 4, !tbaa !3
+  %84 = getelementptr inbounds nuw i8, ptr %83, i32 8
+  %85 = load ptr, ptr %84, align 4, !tbaa !43
+  %86 = tail call fastcc ptr @begin_line(ptr noundef %85) #16
+  %87 = getelementptr inbounds nuw i8, ptr %83, i32 108
+  %88 = load ptr, ptr %87, align 4, !tbaa !44
+  %89 = icmp eq ptr %86, %88
+  br i1 %89, label %93, label %90
 
-91:                                               ; preds = %82
-  store ptr %87, ptr %88, align 4, !tbaa !44
-  %92 = tail call fastcc ptr @begin_line(ptr noundef %86) #16
-  %93 = tail call fastcc ptr @end_line(ptr noundef %86) #16
-  tail call fastcc void @text_yank(ptr noundef %92, ptr noundef %93, i32 noundef 27, i32 noundef 0) #16
-  br label %94
+90:                                               ; preds = %81
+  store ptr %86, ptr %87, align 4, !tbaa !44
+  %91 = tail call fastcc ptr @begin_line(ptr noundef %85) #16
+  %92 = tail call fastcc ptr @end_line(ptr noundef %85) #16
+  tail call fastcc void @text_yank(ptr noundef %91, ptr noundef %92, i32 noundef 27, i32 noundef 0) #16
+  br label %93
 
-94:                                               ; preds = %91, %82
-  tail call fastcc void @do_cmd(i32 noundef %83) #16
-  %95 = load ptr, ptr @ptr_to_globals, align 4, !tbaa !3
-  %96 = getelementptr inbounds nuw i8, ptr %95, i32 392
-  %97 = load i8, ptr %96, align 4, !tbaa !24
-  %98 = icmp eq i8 %97, 0
-  br i1 %98, label %99, label %101
+93:                                               ; preds = %90, %81
+  tail call fastcc void @do_cmd(i32 noundef %82) #16
+  %94 = load ptr, ptr @ptr_to_globals, align 4, !tbaa !3
+  %95 = getelementptr inbounds nuw i8, ptr %94, i32 392
+  %96 = load i8, ptr %95, align 4, !tbaa !24
+  %97 = icmp eq i8 %96, 0
+  br i1 %97, label %98, label %102
 
-99:                                               ; preds = %94
+98:                                               ; preds = %93
+  %99 = tail call i32 @select(i32 noundef 1, i32 noundef 1) #17
+  %100 = icmp eq i32 %99, 0
+  br i1 %100, label %101, label %102
+
+101:                                              ; preds = %98
   tail call fastcc void @refresh(i32 noundef 0) #16
   tail call fastcc void @show_status_line() #16
-  %100 = load ptr, ptr @ptr_to_globals, align 4, !tbaa !3
-  br label %101
+  br label %102
 
-101:                                              ; preds = %99, %94
-  %102 = phi ptr [ %100, %99 ], [ %95, %94 ]
-  br label %77, !llvm.loop !45
+102:                                              ; preds = %101, %98, %93
+  br label %76, !llvm.loop !45
 
-103:                                              ; preds = %77
+103:                                              ; preds = %76
   tail call fastcc void @go_bottom_and_clear_to_eol() #16
   tail call fastcc void @cookmode() #16
   %104 = load i32, ptr @optind, align 4, !tbaa !16
@@ -6857,6 +6859,9 @@ define internal fastcc range(i32 0, 2) i32 @at_eof(ptr noundef readonly captures
   %16 = phi i32 [ 1, %7 ], [ %14, %11 ]
   ret i32 %16
 }
+
+; Function Attrs: minsize optsize
+declare dso_local i32 @select(i32 noundef, i32 noundef) local_unnamed_addr #4
 
 ; Function Attrs: minsize nounwind optsize
 define internal fastcc void @place_cursor(i32 noundef %0, i32 noundef %1) unnamed_addr #0 {

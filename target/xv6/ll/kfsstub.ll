@@ -28,6 +28,15 @@ define dso_local noundef i32 @kfs_read(i32 noundef %0, i32 noundef %1, i32 nound
   ret i32 -1
 }
 
+; Function Attrs: minsize nounwind optsize
+define dso_local i32 @kfs_selready(i32 noundef %0) local_unnamed_addr #1 {
+  %2 = tail call i32 @kcons_ready() #3
+  ret i32 %2
+}
+
+; Function Attrs: minsize optsize
+declare dso_local i32 @kcons_ready() local_unnamed_addr #2
+
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none)
 define dso_local noundef i32 @kfs_write(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #0 {
   ret i32 -1
@@ -119,6 +128,9 @@ define dso_local noundef i32 @kfs_umount(i32 noundef %0) local_unnamed_addr #0 {
 }
 
 attributes #0 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #1 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #2 = { minsize optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #3 = { minsize nobuiltin nounwind optsize "no-builtins" }
 
 !llvm.module.flags = !{!0, !1}
 !llvm.ident = !{!2}
