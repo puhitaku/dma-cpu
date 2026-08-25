@@ -31,7 +31,11 @@ type Board struct {
 	DiskHome              uint32 // the RAM disk
 	DiskMax               uint32 // its budget (also the fsimg size)
 	Arena, ArenaEnd       uint32 // the exec/heap arena
-	Scratch               uint32 // compact window-selector word
+	// ConsRings, when nonzero, enables console DMA (emu.ConsTxCh and
+	// friends): a 1 KiB-aligned block holding the UART RX ring (1 KiB
+	// at +0) and TX ring (512 B at +0x400). 16-channel SKUs only.
+	ConsRings uint32
+	Scratch   uint32 // ARM mailbox page (flash executor at +0x10)
 
 	// --- flash sections (absolute XIP addresses) ---
 	FlashSize   uint32
@@ -145,8 +149,9 @@ var Pico2 = &Board{
 	ShRText: 0x20019800, ShData: 0x2001C000,
 	IdleText: 0x20024000, IdleData: 0x20025000,
 	DiskHome: 0x20026000, DiskMax: 0x6000, // 24 KiB: data only — apps in flash
-	Arena: 0x2002C000, ArenaEnd: 0x2007FC00, // ~335 KiB
-	Scratch: 0x2007FE00,
+	Arena: 0x2002C000, ArenaEnd: 0x2007F800, // ~334 KiB
+	ConsRings: 0x2007F800, // UART rings fill the gap up to the scratch page
+	Scratch:   0x2007FE00,
 
 	FlashSize:   0x400000,
 	FSSlot:      0x10200000,
@@ -221,8 +226,9 @@ var Feather = &Board{
 	// its old 32 KiB window); every reclaimed KiB is arena.
 	IdleText: 0x20020800, IdleData: 0x20020C00,
 	DiskHome: 0x20021000, DiskMax: 0x2800, // 10 KiB: write showcase only
-	Arena: 0x20023800, ArenaEnd: 0x20034C00, // 69 KiB
-	Scratch: 0x2007FE00,
+	Arena: 0x20023800, ArenaEnd: 0x20034400, // 67 KiB
+	ConsRings: 0x20034400, // UART rings; FbBuf follows at 0x20034C00
+	Scratch:   0x2007FE00,
 
 	// Flash sections sit in the upper 4 MiB: the feather firmware ELF
 	// (all bundles + vi + apps + the golden disk) exceeds 2 MiB, so

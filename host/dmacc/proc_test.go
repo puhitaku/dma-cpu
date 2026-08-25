@@ -68,9 +68,9 @@ func compileKernelFull(t *testing.T, fs, xip, size, fb bool) string {
 	if fb {
 		fbmods = []string{"kfb", "kfbcon"}
 	}
-	list := append([]string{"kproc", "kgpio", "kdma"}, append(fbmods, "kfsstub")...)
+	list := append([]string{"kproc", "kconsstub", "kgpio", "kdma"}, append(fbmods, "kfsstub")...)
 	if fs {
-		list = append([]string{"kproc", "kgpio", "kdma"}, append(fbmods,
+		list = append([]string{"kproc", "kcons", "kgpio", "kdma"}, append(fbmods,
 			"kfs", "kfile", "kbio", "kfsglue", "kpipe", "kflash", "kfat", "kdev", "string")...)
 	}
 	var mods []*llir.Module
@@ -136,7 +136,7 @@ func TestXv6Proc(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x20004000, 0x2001D000)
+			kernC := buildKernelC(t, v, 0x20004000, 0x2001D800)
 			asm := func(text, data uint32) *dmaasm.Result {
 				res, err := dmaasm.Assemble(pdasm, dmaasm.Options{
 					Variant: v, TextBase: text, DataBase: data})

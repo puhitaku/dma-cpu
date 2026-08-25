@@ -148,9 +148,26 @@ uint inj_wreg = 0x500000C4u; /* CH3 WRITE_ADDR */
 uint inj_treg = 0x500000DCu; /* CH3 AL1_TRANS_COUNT_TRIG */
 #define INJ_WRITE_ADDR (*(volatile uint *)inj_wreg)
 #define INJ_COUNT_TRIG (*(volatile uint *)inj_treg)
+/* The injector's plain-alias register block: WRITE_ADDR sits at +0x04,
+ * so READ_ADDR is one word below and TRANS_COUNT one above. The count
+ * read distinguishes fire sources once console DMA is on: 0 means the
+ * timer fired (and needs the kexit re-arm), nonzero means the fire was
+ * the console wake channel. */
+#define INJ_READ_ADDR (*(volatile uint *)(inj_wreg - 4))
+#define INJ_COUNT (*(volatile uint *)(inj_wreg + 4))
 
 #define W(a) (*(volatile uint *)(a))
 
+/* Console DMA (kcons.c / kconsstub.c, kfsstub-style): the three
+ * board-pool channels that take the UART wire off the kernel's hands.
+ * kproc keeps only the seams — cputc_wire and crx_next fall back to
+ * the classic polling paths when kcons_tx/kcons_rx report "off". */
+extern int kcons_on(void);
+extern int kcons_tx(uint b); /* 1 = queued; 0 = console DMA off */
+extern void kcons_kick(void);
+extern int kcons_rx(void); /* byte; -1 ring empty; -2 off */
+extern void kcons_aim(uint addr); /* wake target; 0 = kernel scrap */
+static uint tick_taken; /* this kernel entry consumed the timer fire */
 
 /* --- Process creation (Phase 5e): image registry + region allocator.
  * The registry rows are pre-parsed DMX images (segments + a packed
@@ -463,17 +480,24 @@ static uint cons_r, cons_w, cons_e; /* read, committed, edit (free-running) */
  * the enabling process so a dying editor cannot wedge the console. */
 static uint cons_raw, cons_raw_pid;
 
+/* cputc_wire: one byte onto the UART — through the console-DMA TX
+ * ring when configured (kcons.c), else the classic FIFO-full poll. */
+static void
+cputc_wire(uint b)
+{
+  if (kcons_tx(b))
+    return;
+  while (__dma_uart_fr & (1u << 5))
+    ;
+  __dma_uart_dr = b;
+}
+
 static void
 cputc(int c)
 {
-  if (c == '\n') {
-    while (__dma_uart_fr & (1u << 5))
-      ;
-    __dma_uart_dr = '\r';
-  }
-  while (__dma_uart_fr & (1u << 5))
-    ;
-  __dma_uart_dr = (uchar)c;
+  if (c == '\n')
+    cputc_wire('\r');
+  cputc_wire((uchar)c);
   kfbcon_putc(c); /* the console tee: every byte goes to UART and fbcon */
 }
 
@@ -512,16 +536,31 @@ int kgpio(uint op, uint pin, uint val);   /* kgpio.c */
 int kpinmux(uint pin, uint func);
 int kpio(uint op, uint a, uint b);
 
+/* crx_next: one input byte, or -1 when none waits — from the
+ * console-DMA RX ring when configured, else the UART FIFO. */
+static int
+crx_next(void)
+{
+  int c = kcons_rx();
+  if (c != -2)
+    return c;
+  if (__dma_uart_fr & (1u << 4)) /* RXFE: nothing buffered */
+    return -1;
+  return (int)(__dma_uart_dr & 0xFFu);
+}
+
 static void
 cons_poll(void)
 {
-  /* Stop draining when the cooked buffer is full: popping the DR
-   * would DROP the byte, and the every-tick drain (fgpid systems)
-   * outruns readers on scripted input. Backpressure keeps the rest
-   * in the RX FIFO until a reader makes room. */
-  while (cons_e - cons_r < INPUT_BUF &&
-         !(__dma_uart_fr & (1u << 4))) { /* RXFE clear: a byte waits */
-    uint c = __dma_uart_dr & 0xFFu;
+  /* Stop draining when the cooked buffer is full: popping a byte
+   * would DROP it, and the every-tick drain (fgpid systems) outruns
+   * readers on scripted input. Backpressure leaves the rest in the
+   * RX ring (or FIFO) until a reader makes room. */
+  while (cons_e - cons_r < INPUT_BUF) {
+    int ci = crx_next();
+    if (ci < 0)
+      break;
+    uint c = (uint)ci;
     if (cons_raw) { /* uncooked: every byte, immediately, no echo */
       cons_buf[cons_e % INPUT_BUF] = (char)c;
       cons_e++;
@@ -581,6 +620,27 @@ tick_income(void)
    * interrupt key being configured: a system without fgpid may read
    * the UART raw from user space (dma-sh does), and the drain would
    * steal its bytes. */
+  if (fgpid != 0)
+    cons_poll();
+}
+
+/* fire_income: a dispatch fire was consumed. Without console DMA every
+ * fire is the timer. With it, the wake channel patches the same words,
+ * and the tick injector's own TRANS_COUNT tells the sources apart
+ * (0 = the timer fired and awaits kexit's re-arm; tick_taken dedups
+ * the double-checked kenter/kexit window). Input is drained either
+ * way — immediate echo and Ctrl-C are the point of the wake. */
+static void
+fire_income(void)
+{
+  if (!kcons_on()) {
+    tick_income();
+    return;
+  }
+  if (INJ_COUNT == 0 && !tick_taken) {
+    tick_taken = 1;
+    tick_income();
+  }
   if (fgpid != 0)
     cons_poll();
 }
@@ -704,6 +764,8 @@ static void
 kenter(void)
 {
   rearm = 0;
+  tick_taken = 0;
+  kcons_aim(0); /* in-kernel wake fires land on kcons's scrap word */
   if (!fsready && dma_disk) {
     int fbkb = kfb_init();
     if (fbkb > 0) {
@@ -728,13 +790,13 @@ kenter(void)
     entry_thunk = p->thunk;
     if (W(entry_disp) != entry_thunk) { /* fire landed just before entry */
       W(entry_disp) = entry_thunk;
-      tick_income();
+      fire_income();
     }
   }
   INJ_WRITE_ADDR = (uint)&tickpending;
   if (tickpending) {
     tickpending = 0;
-    tick_income();
+    fire_income();
   }
 }
 
@@ -763,7 +825,7 @@ kexit(uint next, uint resume)
    * between its check and the retarget. */
   if (entry_disp && W(entry_disp) != entry_thunk) {
     W(entry_disp) = entry_thunk;
-    tick_income();
+    fire_income();
   }
   struct proc *p = &proc[next];
   if (p->sigpend == 1 && p->sigctx != 0) {
@@ -786,7 +848,17 @@ kexit(uint next, uint resume)
   INJ_WRITE_ADDR = p->pdispatch;
   if (tickpending) { /* fired while the kernel ran */
     tickpending = 0;
-    tick_income();
+    fire_income();
+  }
+  if (kcons_on()) {
+    /* Bytes that arrived while the kernel ran raised no visible fire
+     * (the wake aimed at the scrap word): drain them now, then hand
+     * any buffered output to the drain channel and aim the wake at
+     * the resuming process's dispatch word, tick-injector style. */
+    if (fgpid != 0)
+      cons_poll();
+    kcons_kick();
+    kcons_aim(p->pdispatch);
   }
   if (rearm)
     INJ_COUNT_TRIG = 1;
@@ -807,7 +879,7 @@ swtch(void)
      * make someone runnable again — they run one fire later. */
     if (entry_disp && W(entry_disp) != entry_thunk) {
       W(entry_disp) = entry_thunk;
-      tick_income();
+      fire_income();
     }
     *kw_parkvec = (uint)kw_park;
     *kw_pcurdisp = (uint)kw_parkvec;
@@ -818,7 +890,15 @@ swtch(void)
     parked = 1;
     if (tickpending) {
       tickpending = 0;
-      tick_income();
+      fire_income();
+    }
+    if (kcons_on()) {
+      /* Drain before parking (a byte already in the ring raises no
+       * further wake) and let input break the park like a tick. */
+      if (fgpid != 0)
+        cons_poll();
+      kcons_kick();
+      kcons_aim((uint)kw_parkvec);
     }
     if (rearm)
       INJ_COUNT_TRIG = 1;
@@ -916,7 +996,7 @@ void
 dma_ktick(void)
 {
   kenter();
-  tick_income(); /* the delivered detour that brought us here */
+  fire_income(); /* the delivered detour that brought us here */
   /* A park-loop wake arrives with curr sleeping (or gone): nothing
    * was executing, so there is nothing to save or kill here. */
   if (!waspark) {

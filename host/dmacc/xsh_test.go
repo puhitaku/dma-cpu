@@ -359,6 +359,17 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 	m.Poke32(mustSym(t, kernC, "g_gpio_hi"), v.GPIOOutCtrl(true))
 	m.Poke32(mustSym(t, kernC, "g_gpio_lo"), v.GPIOOutCtrl(false))
 	m.Poke32(mustSym(t, kernC, "g_dmacpy_ctrl"), v.KDMACopyCtrl())
+	if bd.ConsRings != 0 { // console DMA (kproc.c cons_dma_init)
+		m.Poke32(mustSym(t, kernC, "g_ctx_base"), emu.ChanRegAddr(emu.ConsTxCh, 0))
+		m.Poke32(mustSym(t, kernC, "g_ctx_ring"), bd.ConsRings+emu.ConsRxRingSize)
+		m.Poke32(mustSym(t, kernC, "g_ctx_ctrl"), v.ConsTxCtrl())
+		m.Poke32(mustSym(t, kernC, "g_crx_base"), emu.ChanRegAddr(emu.ConsRxCh, 0))
+		m.Poke32(mustSym(t, kernC, "g_crx_ring"), bd.ConsRings)
+		m.Poke32(mustSym(t, kernC, "g_crx_ctrl"), v.ConsRxCtrl())
+		m.Poke32(mustSym(t, kernC, "g_cwk_base"), emu.ChanRegAddr(emu.ConsWakeCh, 0))
+		m.Poke32(mustSym(t, kernC, "g_cwk_ctrl"), v.ConsWakeCtrl())
+		m.Poke32(mustSym(t, kernC, "g_cuart_dr"), v.UARTDRAddr())
+	}
 	if !bd.MachineFlashExec {
 		/* Boards without the QMI machine executor use the parked
 		 * ARM's mailbox for flash sync AND SD reads — the executor

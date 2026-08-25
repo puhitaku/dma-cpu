@@ -47,7 +47,7 @@ libc:
 # committed and linked by dmacc like the libc ones.
 XV6_SRCS = kernel/string.c user/umalloc.c user/ulib.c user/printf.c user/echo.c user/sh.c \
            user/cat.c user/ls.c user/wc.c user/vi.c \
-           dma/usys.c dma/kproc.c dma/kgpio.c dma/kfb.c dma/kfbcon.c \
+           dma/usys.c dma/kproc.c dma/kcons.c dma/kconsstub.c dma/kgpio.c dma/kfb.c dma/kfbcon.c \
            dma/kfbstub.c dma/kdma.c dma/kfsstub.c dma/calflash.c dma/toolbox.c dma/hwtools.c dma/fbtest.c dma/show.c
 XV6_CLANG = clang --target=armv6m-none-eabi $(LLGEN_FLAGS) -ffreestanding \
             -I$(CURDIR)/target/xv6 -S -emit-llvm

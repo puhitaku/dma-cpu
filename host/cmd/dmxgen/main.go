@@ -296,7 +296,8 @@ func buildKernelPair(v *emu.Variant, kText, kData, cText, cData uint32) (*dmaasm
 		return nil, nil, fmt.Errorf("kernel: %w", err)
 	}
 	dasm, err := compileLL([]string{"target/xv6/ll/kproc.ll", "target/xv6/ll/kgpio.ll",
-		"target/xv6/ll/kdma.ll", "target/xv6/ll/kfbstub.ll", "target/xv6/ll/kfsstub.ll"},
+		"target/xv6/ll/kdma.ll", "target/xv6/ll/kfbstub.ll", "target/xv6/ll/kfsstub.ll",
+		"target/xv6/ll/kconsstub.ll"},
 		dmacc.Options{Entry: "kmain", NoSafepoints: true})
 	if err != nil {
 		return nil, nil, err
@@ -480,7 +481,7 @@ func libcPaths(first ...string) ([]string, error) {
 // buildSched: the scheduler-only bundle (two counter processes, no
 // syscalls). Fits the narrow rp2040 layout.
 func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
-	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x1A000)
+	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x1A800)
 	if err != nil {
 		return nil, err
 	}
@@ -499,7 +500,7 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 	b := &kernBundle{names: []string{"kernel", "kernc", "proca", "procb"}, sym: map[string]uint32{}}
 	b.entry0 = lay.text + 0x1D000 + procA.Image.EntryOff
 	entryB := lay.text + 0x1F000 + procB.Image.EntryOff
-	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x1A000, []kprocSpec{
+	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x1A800, []kprocSpec{
 		{procA, lay.text + 0x1E000, b.entry0, 1, 0, false},
 		{procB, lay.text + 0x20000, entryB, 2, 0, false},
 	}); err != nil {
@@ -555,7 +556,7 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 // Needs the wide rp2350 layout.
 func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x1D000
+	cText, cData := lay.text+0x4000, lay.text+0x1D800
 	sText, sData := lay.text+0x21000, lay.text+0x36000
 	pText, pData := lay.text+0x2E000, lay.text+0x2F000
 	blobHome := lay.text + 0x3E000
@@ -905,7 +906,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	if bd.FbBuf != 0 {
 		fbMods = []string{"target/xv6/ll/kfb.ll", "target/xv6/ll/kfbcon.ll"}
 	}
-	kcDasm, err := compileLL(append(append([]string{"target/xv6/ll/kproc.ll", "target/xv6/ll/kgpio.ll"},
+	kcDasm, err := compileLL(append(append([]string{"target/xv6/ll/kproc.ll", "target/xv6/ll/kcons.ll", "target/xv6/ll/kgpio.ll"},
 		fbMods...), "target/xv6/ll/kfs.ll", "target/xv6/ll/kfile.ll",
 		"target/xv6/ll/kbio.ll", "target/xv6/ll/kfsglue.ll", "target/xv6/ll/kpipe.ll", "target/xv6/ll/kflash.ll",
 		"target/xv6/ll/kfat.ll", "target/xv6/ll/kdev.ll", "target/xv6/ll/kdma.ll", "target/xv6/ll/string.ll"),
@@ -1066,6 +1067,31 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		if errs == nil {
 			if err := patchData(kernC.Image, cData, sy(kernC, g.name), g.val); err != nil {
 				return nil, err
+			}
+		}
+	}
+	// Console DMA (kproc.c cons_dma_init): boards with the ring block
+	// get the three-channel UART engine; g_ctx_ctrl = 0 keeps the
+	// polling paths elsewhere.
+	if bd.ConsRings != 0 {
+		for _, g := range []struct {
+			name string
+			val  uint32
+		}{
+			{"g_ctx_base", emu.ChanRegAddr(emu.ConsTxCh, 0)},
+			{"g_ctx_ring", bd.ConsRings + emu.ConsRxRingSize},
+			{"g_ctx_ctrl", v.ConsTxCtrl()},
+			{"g_crx_base", emu.ChanRegAddr(emu.ConsRxCh, 0)},
+			{"g_crx_ring", bd.ConsRings},
+			{"g_crx_ctrl", v.ConsRxCtrl()},
+			{"g_cwk_base", emu.ChanRegAddr(emu.ConsWakeCh, 0)},
+			{"g_cwk_ctrl", v.ConsWakeCtrl()},
+			{"g_cuart_dr", v.UARTDRAddr()},
+		} {
+			if errs == nil {
+				if err := patchData(kernC.Image, cData, sy(kernC, g.name), g.val); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
@@ -1288,7 +1314,7 @@ const sysWantConsole = "hello from pid 1 via SYS_write\n" +
 // (dmacc/testdata/xv6sys.c + xv6/dma/usys.c). Wide layout.
 func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x1D000
+	cText, cData := lay.text+0x4000, lay.text+0x1D800
 	aText, aData := lay.text+0x21000, lay.text+0x25000
 	bText, bData := lay.text+0x29000, lay.text+0x2D000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
@@ -1535,7 +1561,7 @@ func stageBlobsEmu(m *emu.Machine, blobs [][]byte, names []string, syms map[stri
 // kernel places, relocates and runs it at exec() time.
 func buildExec(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x1D000
+	cText, cData := lay.text+0x4000, lay.text+0x1D800
 	aText, aData := lay.text+0x21000, lay.text+0x25000
 	bText, bData := lay.text+0x29000, lay.text+0x2D000
 	blobHome := lay.text + 0x2F000
