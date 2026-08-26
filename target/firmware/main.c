@@ -14,6 +14,7 @@
 #include "hardware/structs/accessctrl.h"
 #endif
 #include "hardware/gpio.h"
+#include "hardware/sync.h"
 
 #include "hardware/clocks.h"
 #include "hardware/pll.h"
@@ -136,6 +137,10 @@ void arm_tick_ch(int ch, uint32_t vec, uint32_t disp0, uint32_t ctrl)
 }
 
 extern char __bss_end__;
+
+#if defined(ADAFRUIT_FEATHER_RP2350)
+static void flash_continuous_read(void); /* defined by the overclock block */
+#endif
 
 /* Copies a build-embedded blob to its registered RAM home, word-wise
  * through the machine's bus view (shared by the exec/shell demos and
@@ -350,6 +355,9 @@ static void xsh_start(void)
         stage_blob(HIL_XSH_BLOB_DISK_HOME, hil_xsh_blob_disk, sizeof hil_xsh_blob_disk);
     }
     (void)slotgen;
+#if defined(ADAFRUIT_FEATHER_RP2350)
+    flash_continuous_read(); /* all flash writes are done for this boot */
+#endif
     printf("cpu0: starting DMA CPU, and going to sleep now\n");
     dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 1}; /* compact machine */
 #if SCAN_CH_MASK
@@ -524,6 +532,28 @@ static void feather_video_init(void)
     boot_m0[1] = qmi_hw->m[0].rfmt;
     boot_m0[2] = qmi_hw->m[0].rcmd;
     boot_m0_saved = 1;
+}
+#endif
+
+#if defined(ADAFRUIT_FEATHER_RP2350)
+/* Continuous-read XIP: after the LAST boot-time flash op, hand the
+ * W25Q its continuous-read mode byte (M = 0xA0) and drop the 8-cycle
+ * EB command prefix from every later transaction — ~20% shorter
+ * machine flash stalls (the display-starvation knob) at ZERO
+ * timing-margin cost, since only the transaction LENGTH changes.
+ * Feather-only: this flash is machine-read-only (no QMI direct-mode
+ * driver, no executor flash ops), so nothing ever fights the sticky
+ * mode state. The sequence must be airtight: once the flash latches
+ * M, any prefixed read decodes the command bits as address — SRAM
+ * code, IRQs off, straight line to the prefix-clear. */
+static void __no_inline_not_in_flash_func(flash_continuous_read)(void)
+{
+    uint32_t irqs = save_and_disable_interrupts();
+    qmi_hw->m[0].rcmd = (qmi_hw->m[0].rcmd & ~QMI_M0_RCMD_SUFFIX_BITS) |
+                        (0xA0u << QMI_M0_RCMD_SUFFIX_LSB);
+    (void)*(volatile uint32_t *)XIP_NOCACHE_NOALLOC_BASE; /* latch M */
+    hw_clear_bits(&qmi_hw->m[0].rfmt, QMI_M0_RFMT_PREFIX_LEN_BITS);
+    restore_interrupts(irqs);
 }
 #endif
 
