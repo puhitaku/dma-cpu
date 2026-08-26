@@ -933,7 +933,7 @@ define internal fastcc void @fire_income() unnamed_addr #1 {
 
 3:                                                ; preds = %0
   tail call fastcc void @tick_income() #12
-  br label %17
+  br label %20
 
 4:                                                ; preds = %0
   %5 = load i32, ptr @inj_wreg, align 4, !tbaa !6
@@ -955,13 +955,18 @@ define internal fastcc void @fire_income() unnamed_addr #1 {
 13:                                               ; preds = %12, %10, %4
   %14 = load i32, ptr @fgpid, align 4, !tbaa !6
   %15 = icmp eq i32 %14, 0
-  br i1 %15, label %17, label %16
+  br i1 %15, label %20, label %16
 
 16:                                               ; preds = %13
-  tail call fastcc void @cons_poll() #12
-  br label %17
+  %17 = tail call i32 @kcons_pending() #13
+  %18 = icmp eq i32 %17, 0
+  br i1 %18, label %20, label %19
 
-17:                                               ; preds = %3, %16, %13
+19:                                               ; preds = %16
+  tail call fastcc void @cons_poll() #12
+  br label %20
+
+20:                                               ; preds = %3, %19, %16, %13
   ret void
 }
 
@@ -1153,7 +1158,7 @@ define internal fastcc void @swtch() unnamed_addr #1 {
   %9 = load i32, ptr %8, align 4, !tbaa !14
   %10 = icmp eq i32 %9, 3
   %11 = add nuw nsw i32 %3, 1
-  br i1 %10, label %59, label %2, !llvm.loop !47
+  br i1 %10, label %62, label %2, !llvm.loop !47
 
 12:                                               ; preds = %2
   %13 = load i32, ptr @entry_disp, align 4, !tbaa !6
@@ -1211,41 +1216,46 @@ define internal fastcc void @swtch() unnamed_addr #1 {
 44:                                               ; preds = %43, %21
   %45 = tail call i32 @kcons_on() #13
   %46 = icmp eq i32 %45, 0
-  br i1 %46, label %54, label %47
+  br i1 %46, label %57, label %47
 
 47:                                               ; preds = %44
   %48 = load i32, ptr @fgpid, align 4, !tbaa !6
   %49 = icmp eq i32 %48, 0
-  br i1 %49, label %51, label %50
+  br i1 %49, label %54, label %50
 
 50:                                               ; preds = %47
-  tail call fastcc void @cons_poll() #12
-  br label %51
+  %51 = tail call i32 @kcons_pending() #13
+  %52 = icmp eq i32 %51, 0
+  br i1 %52, label %54, label %53
 
-51:                                               ; preds = %50, %47
-  tail call void @kcons_kick() #13
-  %52 = load volatile ptr, ptr @kw_parkvec, align 4, !tbaa !39
-  %53 = ptrtoint ptr %52 to i32
-  tail call void @kcons_aim(i32 noundef %53) #13
+53:                                               ; preds = %50
+  tail call fastcc void @cons_poll() #12
   br label %54
 
-54:                                               ; preds = %51, %44
-  %55 = load i1, ptr @rearm, align 4
-  br i1 %55, label %56, label %62
+54:                                               ; preds = %53, %50, %47
+  tail call void @kcons_kick() #13
+  %55 = load volatile ptr, ptr @kw_parkvec, align 4, !tbaa !39
+  %56 = ptrtoint ptr %55 to i32
+  tail call void @kcons_aim(i32 noundef %56) #13
+  br label %57
 
-56:                                               ; preds = %54
-  %57 = load i32, ptr @inj_treg, align 4, !tbaa !6
-  %58 = inttoptr i32 %57 to ptr
-  store volatile i32 1, ptr %58, align 4, !tbaa !6
-  br label %62
+57:                                               ; preds = %54, %44
+  %58 = load i1, ptr @rearm, align 4
+  br i1 %58, label %59, label %65
 
-59:                                               ; preds = %5
-  %60 = getelementptr inbounds nuw [8 x %struct.proc], ptr @proc, i32 0, i32 %7, i32 10
-  %61 = load i32, ptr %60, align 4, !tbaa !38
-  tail call fastcc void @kexit(i32 noundef %7, i32 noundef %61) #12
-  br label %62
+59:                                               ; preds = %57
+  %60 = load i32, ptr @inj_treg, align 4, !tbaa !6
+  %61 = inttoptr i32 %60 to ptr
+  store volatile i32 1, ptr %61, align 4, !tbaa !6
+  br label %65
 
-62:                                               ; preds = %54, %56, %59
+62:                                               ; preds = %5
+  %63 = getelementptr inbounds nuw [8 x %struct.proc], ptr @proc, i32 0, i32 %7, i32 10
+  %64 = load i32, ptr %63, align 4, !tbaa !38
+  tail call fastcc void @kexit(i32 noundef %7, i32 noundef %64) #12
+  br label %65
+
+65:                                               ; preds = %57, %59, %62
   ret void
 }
 
@@ -3321,34 +3331,39 @@ define internal fastcc void @kexit(i32 noundef %0, i32 noundef %1) unnamed_addr 
 58:                                               ; preds = %57, %40
   %59 = tail call i32 @kcons_on() #13
   %60 = icmp eq i32 %59, 0
-  br i1 %60, label %67, label %61
+  br i1 %60, label %70, label %61
 
 61:                                               ; preds = %58
   %62 = load i32, ptr @fgpid, align 4, !tbaa !6
   %63 = icmp eq i32 %62, 0
-  br i1 %63, label %65, label %64
+  br i1 %63, label %68, label %64
 
 64:                                               ; preds = %61
+  %65 = tail call i32 @kcons_pending() #13
+  %66 = icmp eq i32 %65, 0
+  br i1 %66, label %68, label %67
+
+67:                                               ; preds = %64
   tail call fastcc void @cons_poll() #12
-  br label %65
+  br label %68
 
-65:                                               ; preds = %64, %61
+68:                                               ; preds = %67, %64, %61
   tail call void @kcons_kick() #13
-  %66 = load i32, ptr %42, align 4, !tbaa !31
-  tail call void @kcons_aim(i32 noundef %66) #13
-  br label %67
+  %69 = load i32, ptr %42, align 4, !tbaa !31
+  tail call void @kcons_aim(i32 noundef %69) #13
+  br label %70
 
-67:                                               ; preds = %65, %58
-  %68 = load i1, ptr @rearm, align 4
-  br i1 %68, label %69, label %72
+70:                                               ; preds = %68, %58
+  %71 = load i1, ptr @rearm, align 4
+  br i1 %71, label %72, label %75
 
-69:                                               ; preds = %67
-  %70 = load i32, ptr @inj_treg, align 4, !tbaa !6
-  %71 = inttoptr i32 %70 to ptr
-  store volatile i32 1, ptr %71, align 4, !tbaa !6
-  br label %72
+72:                                               ; preds = %70
+  %73 = load i32, ptr @inj_treg, align 4, !tbaa !6
+  %74 = inttoptr i32 %73 to ptr
+  store volatile i32 1, ptr %74, align 4, !tbaa !6
+  br label %75
 
-72:                                               ; preds = %69, %67
+75:                                               ; preds = %72, %70
   ret void
 }
 
@@ -3440,7 +3455,7 @@ define internal fastcc void @tick_income() unnamed_addr #1 {
 6:                                                ; preds = %3
   %7 = load i32, ptr @fgpid, align 4, !tbaa !6
   %8 = icmp eq i32 %7, 0
-  br i1 %8, label %28, label %27
+  br i1 %8, label %31, label %27
 
 9:                                                ; preds = %3
   %10 = getelementptr inbounds nuw [8 x %struct.proc], ptr @proc, i32 0, i32 %4
@@ -3475,12 +3490,20 @@ define internal fastcc void @tick_income() unnamed_addr #1 {
   br label %3, !llvm.loop !106
 
 27:                                               ; preds = %6
-  tail call fastcc void @cons_poll() #12
-  br label %28
+  %28 = tail call i32 @kcons_pending() #13
+  %29 = icmp eq i32 %28, 0
+  br i1 %29, label %31, label %30
 
-28:                                               ; preds = %27, %6
+30:                                               ; preds = %27
+  tail call fastcc void @cons_poll() #12
+  br label %31
+
+31:                                               ; preds = %30, %27, %6
   ret void
 }
+
+; Function Attrs: minsize optsize
+declare dso_local i32 @kcons_pending() local_unnamed_addr #7
 
 ; Function Attrs: minsize optsize
 declare dso_local void @kcons_kick() local_unnamed_addr #7

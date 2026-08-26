@@ -33,3 +33,9 @@ kcons_aim(uint addr)
 {
   (void)addr;
 }
+
+int
+kcons_pending(void)
+{
+  return 1; /* polling kernels always run the classic drain */
+}

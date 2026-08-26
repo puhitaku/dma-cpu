@@ -167,6 +167,7 @@ extern int kcons_on(void);
 extern int kcons_tx(uint b); /* 1 = queued; 0 = console DMA off */
 extern void kcons_kick(void);
 extern int kcons_rx(void); /* byte; -1 ring empty; -2 off */
+extern int kcons_pending(void); /* cheap peek: input waiting? */
 extern void kcons_aim(uint addr); /* wake target; 0 = kernel scrap */
 static uint tick_taken; /* this kernel entry consumed the timer fire */
 
@@ -740,7 +741,7 @@ tick_income(void)
    * interrupt key being configured: a system without fgpid may read
    * the UART raw from user space (dma-sh does), and the drain would
    * steal its bytes. */
-  if (fgpid != 0)
+  if (fgpid != 0 && kcons_pending())
     cons_poll();
 }
 
@@ -761,7 +762,7 @@ fire_income(void)
     tick_taken = 1;
     tick_income();
   }
-  if (fgpid != 0)
+  if (fgpid != 0 && kcons_pending())
     cons_poll();
 }
 
@@ -989,7 +990,7 @@ kexit(uint next, uint resume)
      * (the wake aimed at the scrap word): drain them now, then hand
      * any buffered output to the drain channel and aim the wake at
      * the resuming process's dispatch word, tick-injector style. */
-    if (fgpid != 0)
+    if (fgpid != 0 && kcons_pending())
       cons_poll();
     kcons_kick();
     kcons_aim(p->pdispatch);
@@ -1029,7 +1030,7 @@ swtch(void)
     if (kcons_on()) {
       /* Drain before parking (a byte already in the ring raises no
        * further wake) and let input break the park like a tick. */
-      if (fgpid != 0)
+      if (fgpid != 0 && kcons_pending())
         cons_poll();
       kcons_kick();
       kcons_aim((uint)kw_parkvec);

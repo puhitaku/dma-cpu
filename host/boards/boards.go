@@ -188,7 +188,8 @@ var Pico2 = &Board{
 	SKU:  "rp2350",
 
 	KernText: 0x20002000, KernData: 0x20003000,
-	KernCRText: 0x20004000, KernCData: 0x2000C000,
+	KernCRText: 0x20004000, KernCData: 0x2000E800, /* +10K: the resident
+	// tick/console path (dmacc ResidentFuncs); the data window's slack pays */
 	ShRText: 0x20019800, ShData: 0x2001C000,
 	IdleText: 0x20024000, IdleData: 0x20025000,
 	DiskHome: 0x20026000, DiskMax: 0x6000, // 24 KiB: data only — apps in flash
@@ -222,7 +223,8 @@ var Pico = &Board{
 	// KernCData +1 KiB: the shared-runtime host plus the resident-exec
 	// path grew ramtext past the old window (the data side has slack).
 	KernText: 0x20002000, KernData: 0x20003000,
-	KernCRText: 0x20004000, KernCData: 0x2000C000,
+	KernCRText: 0x20004000, KernCData: 0x2000E800, /* +10K: the resident
+	// tick/console path (dmacc ResidentFuncs); the data window's slack pays */
 	ShRText: 0x20018800, ShData: 0x2001B000,
 	IdleText: 0x2001F800, IdleData: 0x20020800,
 	DiskHome: 0x20021800, DiskMax: 0x6000, // 24 KiB: data files only
@@ -265,17 +267,20 @@ var Feather = &Board{
 	// page + force-included bodies grew ramtext to ~31.6K, and the
 	// slot-colored data side had the slack to give.
 	KernText: 0x20002000, KernData: 0x20002400,
-	KernCRText: 0x20002600, KernCData: 0x2000AA00, /* ramtext ~32.8K, data ~33K */
+	KernCRText: 0x20002600, KernCData: 0x2000D200, /* ramtext grows +10K: the
+	// resident tick/console path (dmacc ResidentFuncs) joins the shared
+	// runtime so the idle machine never reads flash while the display
+	// scans */
 	// Repacked after the flash literal-pool split + const-global
 	// rodata (measured: kernel data 32.5K with the profiled hot pool
 	// resident, sh data 8.6K all-cold). The arena covers sh's heap
 	// (16.6K) + resident vi's [ramtext][data] claim (24.8K) + argv +
 	// vi's full 40K heap ask with ~15K to spare.
-	ShRText: 0x20013000, ShData: 0x20014200,
-	IdleText: 0x20016600, IdleData: 0x20016800,
-	DiskHome: 0x20016A00, DiskMax: 0x2800, // 10 KiB: room for a demo's
+	ShRText: 0x20015800, ShData: 0x20016A00,
+	IdleText: 0x20018E00, IdleData: 0x20019000,
+	DiskHome: 0x20019200, DiskMax: 0x2800, // 10 KiB: room for a demo's
 	// simultaneous files (a text file + a mount point + slack)
-	Arena: 0x20019200, ArenaEnd: 0x20030300, // 92.2 KiB up to the table
+	Arena: 0x2001BA00, ArenaEnd: 0x20030300, // 82.2 KiB up to the table
 	ConsRings: 0x20034400, // UART rings; FbBuf follows at 0x20034C00
 	Scratch:   0x2007FE00,
 

@@ -139,6 +139,20 @@ kcons_rx(void)
   return (int)c;
 }
 
+/* kcons_pending: is any input byte waiting? The cheap peek the tick
+ * path calls before the (flash-resident, 8 KB) cons_poll — the 10 kHz
+ * fire path must stay inside .ramtext (prompts/036: machine flash
+ * reads park the shared DMA read master against the HSTX FIFO).
+ * Console DMA off reports "unknown" (1): the caller's cons_poll owns
+ * the classic polling fallback. */
+int
+kcons_pending(void)
+{
+  if (!cons_on)
+    return 1;
+  return W(crx_base + CH_WRITE_ADDR) != crx_tail;
+}
+
 /* kcons_aim: retarget the wake channel, tick-injector style — at a
  * process dispatch word (or the park vector) on kernel exit, at the
  * internal scrap word (addr 0) while the kernel runs. */

@@ -952,6 +952,15 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		dmacc.Options{Entry: "kmain", NoSafepoints: true, XIPText: true,
 			/* the QMI sync session tears down XIP: it must run from SRAM */
 			RAMTextFuncs: []string{"kflash_sync"},
+			/* the 10 kHz tick/fire path + console ring hooks: resident
+			 * so the idle machine issues ZERO flash reads and a
+			 * keypress storm stays short — every machine flash read
+			 * parks the shared DMA read master against the HSTX
+			 * FIFO's ~1.26 us of slack (prompts/036; profiled by
+			 * TestProfileEnter: these were 95% of prompt-path reads) */
+			ResidentFuncs: []string{"dma_ktick", "kenter", "kexit", "swtch",
+				"fire_income", "tick_income", "kcons_aim", "kcons_kick",
+				"kcons_on", "kcons_rx", "kcons_tx", "kcons_pending"},
 			/* host the shared runtime for every guest image below */
 			RuntimeHost: true})
 	if err != nil {

@@ -41,6 +41,13 @@ type Options struct {
 	// direct-mode session would otherwise fetch its own records through
 	// the window it just tore down.
 	RAMTextFuncs []string
+	// ResidentFuncs (XIPText only): placement-only .ramtext residency,
+	// WITHOUT the transitive-closure pull of RAMTextFuncs — callees stay
+	// in flash text. For hot paths that must not thrash the XIP cache
+	// while the display scans (prompts/036: every machine flash read
+	// parks the shared DMA read master against the HSTX FIFO), not for
+	// flash-down correctness.
+	ResidentFuncs []string
 	// RuntimeHost emits the shared-runtime vector page at the start of
 	// .ramtext (XIPText only) and force-includes every rt_ routine and
 	// __cw_ helper, so guest images built with RuntimeExtern can call
@@ -235,6 +242,12 @@ func (g *gen) run() error {
 				return fmt.Errorf("dmacc: RAMTextFuncs: %q is not defined", name)
 			}
 			mark(name)
+		}
+		for _, name := range g.opts.ResidentFuncs {
+			if _, ok := g.funcIdx[name]; !ok {
+				return fmt.Errorf("dmacc: ResidentFuncs: %q is not defined", name)
+			}
+			g.ramSet[name] = true
 		}
 	}
 	if g.opts.RuntimeHost {

@@ -202,6 +202,26 @@ define dso_local range(i32 -2, 256) i32 @kcons_rx() local_unnamed_addr #2 {
   ret i32 %19
 }
 
+; Function Attrs: minsize mustprogress nofree norecurse nounwind optsize willreturn
+define dso_local range(i32 0, 2) i32 @kcons_pending() local_unnamed_addr #2 {
+  %1 = load i1, ptr @cons_on, align 4
+  br i1 %1, label %2, label %10
+
+2:                                                ; preds = %0
+  %3 = load i32, ptr @crx_base, align 4, !tbaa !3
+  %4 = add i32 %3, 4
+  %5 = inttoptr i32 %4 to ptr
+  %6 = load volatile i32, ptr %5, align 4, !tbaa !3
+  %7 = load i32, ptr @crx_tail, align 4, !tbaa !3
+  %8 = icmp ne i32 %6, %7
+  %9 = zext i1 %8 to i32
+  br label %10
+
+10:                                               ; preds = %0, %2
+  %11 = phi i32 [ %9, %2 ], [ 1, %0 ]
+  ret i32 %11
+}
+
 ; Function Attrs: minsize nofree norecurse nounwind optsize
 define dso_local void @kcons_aim(i32 noundef %0) local_unnamed_addr #1 {
   %2 = load i1, ptr @cons_on, align 4

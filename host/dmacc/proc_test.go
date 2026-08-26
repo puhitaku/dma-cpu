@@ -88,6 +88,12 @@ func compileKernelFull(t *testing.T, fs, xip, size, fb bool) string {
 		// The whole sync path must execute from SRAM: its QMI session
 		// tears down the XIP window the kernel text now lives behind.
 		opts.RAMTextFuncs = []string{"kflash_sync"}
+		// Mirror dmxgen: the 10 kHz tick/fire path stays resident so
+		// the idle machine issues zero flash reads while the display
+		// scans (prompts/036; ranked by TestProfileEnter).
+		opts.ResidentFuncs = []string{"dma_ktick", "kenter", "kexit", "swtch",
+			"fire_income", "tick_income", "kcons_aim", "kcons_kick",
+			"kcons_on", "kcons_rx", "kcons_tx", "kcons_pending"}
 	}
 	dasm, err := dmacc.Compile(merged, opts)
 	if err != nil {
