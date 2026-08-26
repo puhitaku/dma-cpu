@@ -84,7 +84,12 @@ type Machine struct {
 	// pulse per armed word up front (credit-capped), one more per
 	// drained word while the counter is live.
 	streamAddr uint32
-	streamCtr  uint32
+
+	// Read-profiling window (Profile): per-word read counts over
+	// [profLo, profHi) — literal-pool hotness for the flash-pool split.
+	profLo, profHi uint32
+	profCounts     []uint32
+	streamCtr      uint32
 
 	// SPI0 SSPDMACR as last written: the PL022 raises its TX DREQ only
 	// while TXDMAE (bit 1) is set — a paced channel starves without it
@@ -191,6 +196,9 @@ func applyAlias(cur, val, op uint32) uint32 {
 
 // Read performs a bus read of size bytes (1, 2, or 4).
 func (m *Machine) Read(addr uint32, size int) (uint32, error) {
+	if m.profCounts != nil && addr >= m.profLo && addr < m.profHi {
+		m.profCounts[(addr-m.profLo)>>2]++
+	}
 	if addr%uint32(size) != 0 {
 		return 0, fmt.Errorf("unaligned %d-byte read at %#08x", size, addr)
 	}
@@ -769,7 +777,7 @@ func (m *Machine) transfer(chIdx int) error {
 		if w.hi == 0 || ra < w.lo || ra >= w.hi {
 			*w = m.resolveWin(ra, false)
 		}
-		if w.buf != nil && ra >= w.lo && w.hi-ra >= sz && ra&(sz-1) == 0 {
+		if w.buf != nil && m.profCounts == nil && ra >= w.lo && w.hi-ra >= sz && ra&(sz-1) == 0 {
 			off := ra - w.lo
 			switch size {
 			case 1:
@@ -1013,3 +1021,18 @@ func (m *Machine) Clone() *Machine {
 
 // LoadedRanges exposes the LoadBytes bookkeeping (test/diagnostic use).
 func (m *Machine) LoadedRanges() [][2]uint32 { return m.loaded }
+
+// Profile starts counting bus reads per word over [lo, hi) — the
+// measurement side of the profile-guided literal-pool split. Counts
+// are indexed by (addr-lo)/4; pass lo==hi to stop.
+func (m *Machine) Profile(lo, hi uint32) {
+	if hi <= lo {
+		m.profCounts = nil
+		return
+	}
+	m.profLo, m.profHi = lo, hi
+	m.profCounts = make([]uint32, (hi-lo+3)/4)
+}
+
+// ProfileCounts returns the live count slice (nil when not profiling).
+func (m *Machine) ProfileCounts() []uint32 { return m.profCounts }
