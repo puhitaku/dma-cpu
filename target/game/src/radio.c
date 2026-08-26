@@ -1,8 +1,9 @@
 /* radio.c: progressive radiosity in the classic red/green light box,
  * rendered live — now with the two interior boxes (a tall cuboid and
  * a cube, both rotated about the vertical axis) that give the scene
- * its soft shadows. Five walls are split into 10x10 patches, each box
- * face into 4x4; a 2x2 ceiling light carries the initial energy. A
+ * its soft shadows. Five walls are split into 10x10 patches, box
+ * faces into per-visibility grids (the tall box's front at 6x12);
+ * a 2x2 ceiling light carries the initial energy. A
  * sixth, INVISIBLE wall closes the camera opening (5x5, never drawn):
  * without it the opening is an energy sink and the camera-facing box
  * sides — lit only by third-bounce light off the wall strips in front
@@ -47,14 +48,15 @@
 #define NBF 10         /* box faces: 2 boxes x (4 sides + top) */
 /* Per-face patch resolution, budgeted by what the camera sees
  * (f = box*5 + side; sides 0 right, 1 left, 2 back, 3 front, 4 top):
- * the fronts get 6x6, the tall box's left and the short box's top
- * 4x4, every face the camera cannot see 2x2 — finer where the eye
- * lives, and 32 patches CHEAPER than uniform 4x4. */
-#define NBOX 128 /* sum of NFQ[f]^2 */
+ * the tall box's front — the demo's biggest visible surface — gets
+ * 6 across x 12 down (~12-unit square patches over 72x150), the
+ * short box's front 6x6, the tall left / short top 4x4, every face
+ * the camera cannot see 2x2. */
+#define NBOX 164 /* sum of NFI[f]*NFK[f] */
 #define NFRONT (NWALL + NBOX) /* first invisible front-wall patch */
-#define NF 5                  /* front wall: 5x5, an energy mirror */
-#define PSIZEF 48
-#define NP (NFRONT + NF * NF) /* 653 patches */
+#define NF 4                  /* front wall: 4x4, an energy mirror */
+#define PSIZEF 60
+#define NP (NFRONT + NF * NF) /* 680 patches */
 #define HALF 120       /* box half-width in scene units */
 #define ZNEAR 200      /* opening (camera at z=0, focal ZNEAR) */
 #define PSIZE 24       /* wall patch edge: 240/10 */
@@ -84,40 +86,41 @@
 
 /* per-face patch grid edge, patch-index base, corner-grid base (in
  * uchar pairs) — all compile-time prefix sums over NFQ */
-static const uchar NFQ[NBF] = {2, 4, 2, 6, 2, 2, 2, 2, 6, 4};
-static const uchar PBASE[NBF] = {0, 4, 20, 24, 60, 64, 68, 72, 76, 112};
-static const ushort CGOFF[NBF] = {0, 9, 34, 43, 92, 101, 110, 119, 128, 177};
+static const uchar NFI[NBF] = {2, 4, 2, 6, 2, 2, 2, 2, 6, 4};  /* across */
+static const uchar NFK[NBF] = {2, 4, 2, 12, 2, 2, 2, 2, 6, 4}; /* down   */
+static const uchar PBASE[NBF] = {0, 4, 20, 24, 96, 100, 104, 108, 112, 148};
+static const ushort CGOFF[NBF] = {0, 9, 34, 43, 134, 143, 152, 161, 170, 219};
 
 /* --- state in free SRAM (see bench.c for the region's story) ---
- * ten NP-sized arrays at a 1306-byte stride, then the projected wall
+ * ten NP-sized arrays at a 1360-byte stride, then the projected wall
  * corner grid (5 walls x 11x11 uchar pairs), the box face corner
- * grids ((NFQ+1)^2 pairs each; the front wall projects to nothing
- * and has none), and two per-patch lookups the variable resolution
- * needs in the hot loop (face id, packed cell coords); ~14.7 KiB of
- * the 15.9 KiB window. */
+ * grids ((NFI+1)*(NFK+1) pairs each; the front wall projects to
+ * nothing and has none), and two per-patch lookups the variable
+ * resolution needs in the hot loop (face id, packed cell coords);
+ * ~15.4 KiB of the 15.9 KiB window. */
 #define RAD_RAM 0x2003C000u
 #define pcx ((short *)RAD_RAM)
-#define pcy ((short *)(RAD_RAM + 1306))
-#define pcz ((short *)(RAD_RAM + 2612))
-#define bR ((ushort *)(RAD_RAM + 3918))
-#define bG ((ushort *)(RAD_RAM + 5224))
-#define bB ((ushort *)(RAD_RAM + 6530))
-#define uR ((ushort *)(RAD_RAM + 7836))
-#define uG ((ushort *)(RAD_RAM + 9142))
-#define uB ((ushort *)(RAD_RAM + 10448))
-#define shown ((ushort *)(RAD_RAM + 11754))
-#define corn ((uchar *)(RAD_RAM + 13060))   /* walls: 1210 B */
-#define bcorn ((uchar *)(RAD_RAM + 14270))  /* boxes: 404 B */
-#define pface ((uchar *)(RAD_RAM + 14674))  /* box patch -> face */
-#define pcell ((uchar *)(RAD_RAM + 14802))  /* box patch cell: i | k<<4 */
+#define pcy ((short *)(RAD_RAM + 1360))
+#define pcz ((short *)(RAD_RAM + 2720))
+#define bR ((ushort *)(RAD_RAM + 4080))
+#define bG ((ushort *)(RAD_RAM + 5440))
+#define bB ((ushort *)(RAD_RAM + 6800))
+#define uR ((ushort *)(RAD_RAM + 8160))
+#define uG ((ushort *)(RAD_RAM + 9520))
+#define uB ((ushort *)(RAD_RAM + 10880))
+#define shown ((ushort *)(RAD_RAM + 12240))
+#define corn ((uchar *)(RAD_RAM + 13600))   /* walls: 1210 B */
+#define bcorn ((uchar *)(RAD_RAM + 14810))  /* boxes: 488 B */
+#define pface ((uchar *)(RAD_RAM + 15298))  /* box patch -> face */
+#define pcell ((uchar *)(RAD_RAM + 15462))  /* box patch cell: i | k<<4 */
 #define CI(w, i, k) ((w) * 242 + ((k) * 11 + (i)) * 2)
-#define BCI(f, i, k) ((CGOFF[f] + (k) * (NFQ[f] + 1) + (i)) * 2)
+#define BCI(f, i, k) ((CGOFF[f] + (k) * (NFI[f] + 1) + (i)) * 2)
 
 /* per-face normals (Q8) and shooter area ratios (Q8 vs a wall patch),
  * filled by setup(); +10 visibility flags */
-#define nrm ((short *)(RAD_RAM + 14930))   /* 10 x 3 */
-#define areaq ((short *)(RAD_RAM + 14990)) /* 10 */
-#define fvis ((short *)(RAD_RAM + 15010))  /* 10; ends 0x2003FAB6 */
+#define nrm ((short *)(RAD_RAM + 15626))   /* 10 x 3 */
+#define areaq ((short *)(RAD_RAM + 15686)) /* 10 */
+#define fvis ((short *)(RAD_RAM + 15706))  /* 10; ends 0x2003FD6E */
 
 /* reflectance per wall group, Q8; box faces are warm white */
 static const ushort rho[6][3] = {
@@ -186,11 +189,11 @@ box_world(int b, int lx, int lz, int *wx, int *wz)
 static void
 face_point(int f, int i, int k, int *wx, int *wy, int *wz)
 {
-  int b = f / 5, s = f % 5, n = NFQ[f];
+  int b = f / 5, s = f % 5;
   int h = b == 0 ? B0_H : B1_H;
   int top = b == 0 ? B0_TOP : B1_TOP;
-  int u = -h + 2 * h * i / n;         /* -h .. +h in n steps */
-  int v = top + (HALF - top) * k / n; /* top..floor for sides */
+  int u = -h + 2 * h * i / NFI[f];         /* -h .. +h across */
+  int v = top + (HALF - top) * k / NFK[f]; /* top..floor for sides */
   int lx, lz;
   switch (s) {
   case 0: lx = h; lz = u; break;
@@ -199,7 +202,7 @@ face_point(int f, int i, int k, int *wx, int *wy, int *wz)
   case 3: lx = u; lz = -h; break;
   default: /* top: u across x, second axis across z */
     lx = u;
-    lz = -h + 2 * h * k / n;
+    lz = -h + 2 * h * k / NFK[f];
     break;
   }
   box_world(b, lx, lz, wx, wz);
@@ -256,9 +259,8 @@ project(void)
   }
   /* box face corners: one true perspective divide per corner */
   for (int f = 0; f < NBF; f++) {
-    int n1 = NFQ[f] + 1;
-    for (int k = 0; k < n1; k++) {
-      for (int i = 0; i < n1; i++) {
+    for (int k = 0; k <= NFK[f]; k++) {
+      for (int i = 0; i <= NFI[f]; i++) {
         int wx, wy, wz;
         face_point(f, i, k, &wx, &wy, &wz);
         int rz = (int)((uint)(ZNEAR << 12) / (uint)wz);
@@ -305,12 +307,12 @@ setup(void)
     nrm[f * 3 + 1] = (short)ny;
     nrm[f * 3 + 2] = (short)nz;
     int h = b == 0 ? B0_H : B1_H, top = b == 0 ? B0_TOP : B1_TOP;
-    int n = NFQ[f];
-    int aq = (s == 4 ? 4 * h * h : 2 * h * (HALF - top)) / (n * n);
+    int ni = NFI[f], nk = NFK[f];
+    int aq = (s == 4 ? 4 * h * h : 2 * h * (HALF - top)) / (ni * nk);
     areaq[f] = (short)(aq * 256 / AREA);
-    for (int pb = 0; pb < n * n; pb++) {
+    for (int pb = 0; pb < ni * nk; pb++) {
       int p = NWALL + PBASE[f] + pb;
-      int i = pb % n, k = pb / n;
+      int i = pb % ni, k = pb / ni;
       pface[PBASE[f] + pb] = (uchar)f;
       pcell[PBASE[f] + pb] = (uchar)(i | (k << 4));
       int x0, y0, z0, x1, y1, z1;
@@ -322,7 +324,7 @@ setup(void)
     }
     /* visible from the camera at the origin? n . center < 0 */
     int cx, cy, cz2;
-    face_point(f, n / 2, n / 2, &cx, &cy, &cz2);
+    face_point(f, NFI[f] / 2, NFK[f] / 2, &cx, &cy, &cz2);
     fvis[f] = (short)((nx * cx + ny * cy + nz * cz2) < 0);
   }
   for (int j = 0; j < NF * NF; j++) { /* the invisible front wall */
@@ -550,7 +552,7 @@ clearance(int p, int q)
     t1 = 1;
   if (!t0 && !t1)
     return 5;
-  int ok = 0;
+  int inb = 0;
   for (int s = 1; s <= 5; s++) {
     /* t = s/6 via *43>>8 (43/256 = 0.168 ~ 1/5.95) */
     int t = s * 43;
@@ -558,10 +560,20 @@ clearance(int p, int q)
     int y = py + ((dy * t) >> 8);
     int z = pz + ((dz * t) >> 8);
     if ((t0 && in_box(0, x, y, z)) || (t1 && in_box(1, x, y, z)))
-      continue;
-    ok++;
+      inb++;
   }
-  return ok;
+  /* Opacity, not fog: a ray solidly through a box is BLOCKED — the
+   * old cleared/5 return made shadow strength equal the fraction of
+   * the SEGMENT inside the blocker, so grazing paths (light to the
+   * walls, or over the short box) transmitted 80-100% and cast no
+   * shadow at all (measured floor/wall maps). One interior sample
+   * keeps a soft 2/5 edge; two or more mean the ray runs through
+   * the volume — opaque. */
+  if (inb >= 2)
+    return 0;
+  if (inb == 1)
+    return 2;
+  return 5;
 }
 
 /* --- the shooter ---

@@ -51,7 +51,13 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 		t.Fatal(err)
 	}
 	dasm, err := dmacc.Compile(mod, dmacc.Options{
-		Entry: "gmain", NoSafepoints: true, XIPText: true})
+		Entry: "gmain", NoSafepoints: true, XIPText: true,
+		/* mirror dmxgen's buildGame: the harness must share the shipped
+		 * layout, or the data tail lands differently against the fixed
+		 * audio region (a divergence found as a PC of 0x23282328 —
+		 * replayed drum samples — in TestGameSeq) */
+		ResidentFuncs: []string{"shoot", "clearance", "in_box",
+			"normal_of"}})
 	if err != nil {
 		t.Fatal(err)
 	}
