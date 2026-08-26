@@ -263,6 +263,30 @@ func (g *gen) run() error {
 			}
 		}
 	}
+	// Globals referenced from RAMTextFuncs code must stay resident:
+	// that code runs while the XIP window is down, so a flash-homed
+	// constant would vanish under it. (Direct references only — the
+	// flash-session code is self-contained by the same discipline.)
+	ramGlob := map[string]bool{}
+	for name := range g.ramSet {
+		f := g.funcIdx[name]
+		seeG := func(v *llir.Value) {
+			if v != nil && v.Kind == llir.VGlobal {
+				ramGlob[v.Name] = true
+			}
+		}
+		for _, b := range f.Blocks {
+			for _, ins := range b.Instrs {
+				for _, a := range ins.Args {
+					seeG(a)
+				}
+				seeG(ins.CalleeVal)
+				for _, e := range ins.Phi {
+					seeG(e.Val)
+				}
+			}
+		}
+	}
 	for _, gl := range g.m.Globals {
 		if uartMMIO(gl.Name) != "" {
 			continue // hardware register, not storage
@@ -270,7 +294,7 @@ func (g *gen) run() error {
 		if gl.Name == "__dmacc_fsp" || gl.Name == "__dmacc_fstack" {
 			continue // the frame-stack cells are compiler-emitted
 		}
-		if err := g.emitGlobal(gl); err != nil {
+		if err := g.emitGlobal(gl, g.opts.XIPText && gl.Const && !ramGlob[gl.Name]); err != nil {
 			return err
 		}
 	}
@@ -694,7 +718,7 @@ func globalSym(name string) string { return "g_" + sanitize(name) }
 
 // --- Globals ---
 
-func (g *gen) emitGlobal(gl *llir.Global) error {
+func (g *gen) emitGlobal(gl *llir.Global, rodata bool) error {
 	sym := globalSym(gl.Name)
 	size := gl.Typ.Size()
 	if size == 0 {
@@ -709,16 +733,24 @@ func (g *gen) emitGlobal(gl *llir.Global) error {
 	if err != nil {
 		return fmt.Errorf("global %s: %v", gl.Name, err)
 	}
-	fmt.Fprintf(&g.data, "%s:", sym)
+	// LLVM `constant` globals on an XIP image are flash rodata: they
+	// ride the descriptor stream into the text segment (fonts, string
+	// tables — read-only by language rule, so SRAM owes them nothing).
+	out := &g.data
+	if rodata {
+		out = &g.desc
+		g.descWords += len(words)
+	}
+	fmt.Fprintf(out, "%s:", sym)
 	for _, w := range words {
 		if w.sym != "" {
 			if w.off != 0 {
-				fmt.Fprintf(&g.data, " .word %s+%d\n", w.sym, w.off)
+				fmt.Fprintf(out, " .word %s+%d\n", w.sym, w.off)
 			} else {
-				fmt.Fprintf(&g.data, " .word %s\n", w.sym)
+				fmt.Fprintf(out, " .word %s\n", w.sym)
 			}
 		} else {
-			fmt.Fprintf(&g.data, " .word 0x%x\n", w.val)
+			fmt.Fprintf(out, " .word 0x%x\n", w.val)
 		}
 	}
 	return nil
