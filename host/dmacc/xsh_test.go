@@ -313,6 +313,13 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 		{sh, entrySh, 1, 0, true},
 		{idle, entryI, 2, 0, false},
 	}, true)
+	if bd.MachineSDExec { /* ksd.c: the machine drives the card itself */
+		m.Poke32(mustSym(t, kernC, "g_sd_spi"), v.SPI0Base)
+		m.Poke32(mustSym(t, kernC, "g_sd_csreg"), v.IOBank0Base+uint32(bd.SDCSPin)*8+4)
+		m.Poke32(mustSym(t, kernC, "g_sd_cs_hi"), v.GPIOOutCtrl(true))
+		m.Poke32(mustSym(t, kernC, "g_sd_cs_lo"), v.GPIOOutCtrl(false))
+		m.Poke32(mustSym(t, kernC, "g_sd_rxctrl"), v.SDRxCtrl())
+	}
 	// Flash-apps boards: user programs live in flash as registry rows.
 	if bd.AppsHome != 0 {
 		registerFlashApps(t, m, v, kernC, bd)
@@ -344,13 +351,6 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 		}
 		m.Poke32(mustSym(t, kernC, "g_fsslot"), slotXIP)
 		m.Poke32(mustSym(t, kernC, "g_fatvol"), bd.FatVol)
-		if bd.MachineSDExec { /* ksd.c: the machine drives the card itself */
-			m.Poke32(mustSym(t, kernC, "g_sd_spi"), v.SPI0Base)
-			m.Poke32(mustSym(t, kernC, "g_sd_csreg"), v.IOBank0Base+uint32(bd.SDCSPin)*8+4)
-			m.Poke32(mustSym(t, kernC, "g_sd_cs_hi"), v.GPIOOutCtrl(true))
-			m.Poke32(mustSym(t, kernC, "g_sd_cs_lo"), v.GPIOOutCtrl(false))
-			m.Poke32(mustSym(t, kernC, "g_sd_rxctrl"), v.SDRxCtrl())
-		}
 		// The kernel posts erase/program requests to the ARM-executor
 		// mailbox; emulator tests service it via serviceFlashMailbox,
 		// playing the parked ARM (kflash.c explains why).
@@ -1062,8 +1062,12 @@ func TestXv6SD(t *testing.T) {
 					sdline = ln
 				}
 			}
-			if !strings.Contains(sdline, fmt.Sprint(len(sd))) {
-				t.Errorf("ls /dev sd0 row %q lacks capacity %d", sdline, len(sd))
+			// The card reports CSD-granular capacity (SDHC counts in
+			// 1024-sector units); the machine driver passes it through
+			// where the old mailbox path reported the raw image size.
+			cap := (uint32(len(sd)/512) + 1023) / 1024 * 1024 * 512
+			if !strings.Contains(sdline, fmt.Sprint(cap)) {
+				t.Errorf("ls /dev sd0 row %q lacks capacity %d", sdline, cap)
 			}
 			if !fed2 {
 				t.Errorf("the viewer never displayed slide A")

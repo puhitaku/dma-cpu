@@ -93,6 +93,7 @@ type Machine struct {
 	// SPI-mode SD card (sdcard.go): set SDImage to attach a card
 	// behind SPI0. spiRx is the RX FIFO the drain channel empties.
 	SDImage   []byte
+	SDReads   int // CMD17s served (diagnostic)
 	spiRx     []byte
 	sdc       sdCard
 	streamCtr uint32

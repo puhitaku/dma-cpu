@@ -79,7 +79,14 @@ func (m *Machine) sdStep(tx byte) byte {
 		c.resp = append(c.resp, csd[:]...)
 		c.resp = append(c.resp, 0, 0) // CRC
 	case cmd == 17: // READ_SINGLE_BLOCK (block-addressed: CCS=1)
-		c.resp = append(c.resp[:0], 0xFF, 0x00, 0xFF, 0xFE)
+		m.SDReads++
+		// Match silicon's shape: a dozen idle bytes of access time
+		// between R1 and the data token (real cards read NAND here).
+		c.resp = append(c.resp[:0], 0xFF, 0x00)
+		for i := 0; i < 12; i++ {
+			c.resp = append(c.resp, 0xFF)
+		}
+		c.resp = append(c.resp, 0xFE)
 		off := int(arg) * 512
 		for i := 0; i < 512; i++ {
 			b := byte(0xFF)
