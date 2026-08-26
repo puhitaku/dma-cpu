@@ -852,6 +852,11 @@ func TestXv6ViFeather(t *testing.T) {
 		}
 		return false
 	}
+	// Force the shell's heap first — the silicon boot's validation
+	// pipeline had already allocated it, which is exactly the state
+	// where the old fixed 16K chunk starved vi's text buffer.
+	m.FeedConsole("echo warm | cat\r")
+	run("", 400_000_000)
 	m.FeedConsole("vi note.txt\r")
 	if !run("\x1b[?1049h", 1_500_000_000) {
 		t.Fatalf("vi never reached the alternate screen; tail: %q", tailB(m.ConsoleOut, 300))

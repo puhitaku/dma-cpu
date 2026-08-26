@@ -257,16 +257,16 @@ var Feather = &Board{
 	// slot-colored data side had the slack to give.
 	KernText: 0x20002000, KernData: 0x20002400,
 	KernCRText: 0x20002600, KernCData: 0x2000A600,
-	ShRText: 0x20017000, ShData: 0x20019000,
-	// 480p squeeze (prompts/039): the disk shrinks to an echo-redirect
-	// showcase and the arena to one exec'd app (show, the largest at
-	// ~39 KiB, is the one binary a presentation needs) — the freed
-	// 126 KiB doubles the framebuffer's rows.
-	// idle and the disk tuck into sh-data's slack (sh uses ~17 KiB of
-	// its old 32 KiB window); every reclaimed KiB is arena.
-	IdleText: 0x2001D000, IdleData: 0x2001D400,
-	DiskHome: 0x2001D800, DiskMax: 0x2000, // 8 KiB: the fs floor (6 was under it)
-	Arena: 0x2001F800, ArenaEnd: 0x20030000, // 66 KiB up to the table
+	// Repacked for resident vi (measured slack, tight margins): the
+	// shared runtime emptied sh's ramtext (3.9K used) and the slot
+	// coloring shrank every data side, so the windows between kernel
+	// data and the arena gave back ~7.9 KiB. The arena must cover
+	// sh's heap chunk (16.6K) + vi's [ramtext][data] claim (41.2K) +
+	// argv + vi's own heap chunk (16.6K) = 75.0 KiB.
+	ShRText: 0x20016A00, ShData: 0x20017C00,
+	IdleText: 0x2001B800, IdleData: 0x2001BA00,
+	DiskHome: 0x2001BC00, DiskMax: 0x2000, // 8 KiB: the fs floor (6 was under it)
+	Arena: 0x2001DC00, ArenaEnd: 0x20030300, // 75.5 KiB up to the table
 	ConsRings: 0x20034400, // UART rings; FbBuf follows at 0x20034C00
 	Scratch:   0x2007FE00,
 
@@ -312,7 +312,7 @@ var Feather = &Board{
 	// currently keeps `show` from fitting — the standing trade recorded
 	// in the map below.
 	DTab:    0x10540000,
-	DTabRAM: 0x20030000,
+	DTabRAM: 0x20030300, /* table ends 16B shy of the console rings */
 
 	// Flash sync goes through the parked ARM's mailbox executor, NOT
 	// the machine's QMI direct-mode driver: that driver leaves XIP in

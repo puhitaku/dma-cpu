@@ -336,10 +336,10 @@ kfree_exec(int slot)
 
 /* SYS_sbrk (upstream sys_sbrk semantics, minus paging: the laziness
  * flag is meaningless and both flavors are eager). The heap region is
- * an arena chunk allocated at the first call — at least HEAPCHUNK so
- * later small growth (the sbrk* tests) has headroom, or the ask when
- * it is bigger (umalloc's morecore wants 32 KB in one call) or when
- * the arena cannot spare HEAPCHUNK — and the break moves within it;
+ * an arena chunk allocated at the first call — sized to twice the
+ * ask (floor HEAPCHUNK) so later growth has headroom, halved toward
+ * the ask when the arena cannot spare that — and the break moves
+ * within it;
  * there is no growth past the chunk. Newly exposed bytes are zeroed,
  * as upstream's fresh pages are. Returns the old break, or -1
  * (SBRK_ERROR). */
@@ -352,10 +352,17 @@ ksbrk(struct proc *p, int n)
     if (n < 0)
       return (uint)-1;
     uint want = ((uint)n + 0xFFu) & ~0xFFu;
+    /* The HEAPCHUNK floor is load-bearing: the chunk is one-shot,
+     * a fork child inherits the parent's (rwsbrk grows there), and a
+     * first ask says nothing about later ones (vi's first malloc is
+     * a tiny strdup; its 10 KB text buffer follows). Under pressure
+     * the halving loop degrades toward the ask instead of failing. */
     uint size = want < HEAPCHUNK ? HEAPCHUNK : want;
     uint chunk = kalloc_top(size);
-    if (chunk == 0 && size > want) {
-      size = want;
+    while (chunk == 0 && size > want) {
+      size /= 2u;
+      if (size < want)
+        size = want;
       chunk = kalloc_top(size);
     }
     if (chunk == 0)
