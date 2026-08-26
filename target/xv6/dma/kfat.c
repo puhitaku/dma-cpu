@@ -96,6 +96,11 @@ sd_up(void)
 struct fatmeta {
   uint clus;  /* first cluster (0 = empty file) */
   uint size;  /* bytes (dirs: 0 on disk, iterated by chain) */
+  /* Sequential-read position: the last resolved (cluster index,
+   * cluster) pair. Without it every read() walked the chain from the
+   * start — O(n^2) over a slide load, the top kernel cost in the
+   * show profile after the SD path itself. */
+  uint seqci, seqcl;
 };
 static struct inode fatnodes[NFATNODE];
 static struct fatmeta fatmeta[NFATNODE];
@@ -313,6 +318,8 @@ fat_getnode(uint clus, uint size, int isdir, uint ident)
   free->nlink = 1;
   free->size = isdir ? chainsize(clus) : size;
   fatmeta[idx].clus = clus;
+  fatmeta[idx].seqci = 0;
+  fatmeta[idx].seqcl = 0; /* fresh node: no resume position */
   fatmeta[idx].size = free->size;
   return free;
 }
@@ -533,10 +540,18 @@ fat_readi(struct inode *ip, uint dst, uint off, uint n)
     return 0;
   if (off + n > size)
     n = size - off;
-  uint cl = fatmeta[idx0].clus;
-  uint skip = off / clussz;
+  struct fatmeta *fm = &fatmeta[idx0];
+  uint ci = off / clussz;
+  uint cl = fm->clus;
+  uint skip = ci;
+  if (fm->seqcl >= 2 && fm->seqcl < 0x0FFFFFF8u && ci >= fm->seqci) {
+    cl = fm->seqcl;
+    skip = ci - fm->seqci;
+  }
   while (skip-- && cl >= 2 && cl < 0x0FFFFFF8u)
     cl = fat_next(cl);
+  fm->seqci = ci;
+  fm->seqcl = cl;
   uint done = 0, pos = off % clussz;
   while (done < n && cl >= 2 && cl < 0x0FFFFFF8u) {
     uint take = clussz - pos;

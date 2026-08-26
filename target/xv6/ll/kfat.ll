@@ -5,7 +5,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 
 %struct.inode = type { i32, i32, i32, %struct.sleeplock, i32, i16, i16, i16, i16, i32, [13 x i32] }
 %struct.sleeplock = type { i8 }
-%struct.fatmeta = type { i32, i32 }
+%struct.fatmeta = type { i32, i32, i32, i32 }
 %struct.dirent = type { i16, [62 x i8] }
 
 @fbase = internal unnamed_addr global i32 0, align 4
@@ -501,11 +501,11 @@ define internal fastcc ptr @fat_getnode(i32 noundef %0, i32 noundef %1, i32 noun
   %25 = getelementptr inbounds nuw i8, ptr %10, i32 8
   %26 = add nuw nsw i32 %12, 1
   store i32 %26, ptr %25, align 4, !tbaa !15
-  br label %53
+  br label %55
 
 27:                                               ; preds = %5
   %28 = icmp eq ptr %6, null
-  br i1 %28, label %53, label %29
+  br i1 %28, label %55, label %29
 
 29:                                               ; preds = %27
   %30 = ptrtoint ptr %6 to i32
@@ -543,13 +543,17 @@ define internal fastcc ptr @fat_getnode(i32 noundef %0, i32 noundef %1, i32 noun
   store i32 %49, ptr %50, align 4, !tbaa !26
   %51 = getelementptr inbounds [16 x %struct.fatmeta], ptr @fatmeta, i32 0, i32 %32
   store i32 %0, ptr %51, align 4, !tbaa !27
-  %52 = getelementptr inbounds nuw i8, ptr %51, i32 4
-  store i32 %49, ptr %52, align 4, !tbaa !29
-  br label %53
+  %52 = getelementptr inbounds nuw i8, ptr %51, i32 8
+  store i32 0, ptr %52, align 4, !tbaa !29
+  %53 = getelementptr inbounds nuw i8, ptr %51, i32 12
+  store i32 0, ptr %53, align 4, !tbaa !30
+  %54 = getelementptr inbounds nuw i8, ptr %51, i32 4
+  store i32 %49, ptr %54, align 4, !tbaa !31
+  br label %55
 
-53:                                               ; preds = %24, %27, %48
-  %54 = phi ptr [ %6, %48 ], [ %10, %24 ], [ null, %27 ]
-  ret ptr %54
+55:                                               ; preds = %24, %27, %48
+  %56 = phi ptr [ %6, %48 ], [ %10, %24 ], [ null, %27 ]
+  ret ptr %56
 }
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(argmem: readwrite)
@@ -632,7 +636,7 @@ define dso_local ptr @fat_lookup(ptr noundef %0, ptr noundef readonly captures(n
 33:                                               ; preds = %30
   %34 = call fastcc i32 @nameq(ptr noundef nonnull %8, ptr noundef %1) #10
   %35 = icmp eq i32 %34, 0
-  br i1 %35, label %27, label %36, !llvm.loop !30
+  br i1 %35, label %27, label %36, !llvm.loop !32
 
 36:                                               ; preds = %33, %30
   %37 = tail call fastcc i32 @nameq(ptr noundef %1, ptr noundef nonnull @.str.1) #10
@@ -700,7 +704,7 @@ define internal fastcc i32 @nameq(ptr noundef readonly captures(none) %0, ptr no
 22:                                               ; preds = %3
   %23 = getelementptr inbounds nuw i8, ptr %5, i32 1
   %24 = getelementptr inbounds nuw i8, ptr %6, i32 1
-  br label %3, !llvm.loop !31
+  br label %3, !llvm.loop !33
 
 25:                                               ; preds = %3
   ret i32 %20
@@ -737,7 +741,7 @@ define internal fastcc range(i32 0, 2) i32 @fat_iter(i32 noundef %0, ptr noundef
 23:                                               ; preds = %21
   %24 = sub nuw i32 %18, %15
   %25 = tail call fastcc i32 @fat_next(i32 noundef %17) #10
-  br label %16, !llvm.loop !32
+  br label %16, !llvm.loop !34
 
 26:                                               ; preds = %21
   %27 = load i32, ptr @fbase, align 4, !tbaa !10
@@ -760,7 +764,7 @@ define internal fastcc range(i32 0, 2) i32 @fat_iter(i32 noundef %0, ptr noundef
   switch i8 %40, label %41 [
     i8 0, label %155
     i8 -27, label %56
-  ], !llvm.loop !33
+  ], !llvm.loop !35
 
 41:                                               ; preds = %36
   %42 = add i32 %34, 11
@@ -790,7 +794,7 @@ define internal fastcc range(i32 0, 2) i32 @fat_iter(i32 noundef %0, ptr noundef
 
 56:                                               ; preds = %36, %55, %74
   %57 = phi i32 [ 0, %74 ], [ 1, %55 ], [ 0, %36 ]
-  br label %10, !llvm.loop !33
+  br label %10, !llvm.loop !35
 
 58:                                               ; preds = %52
   %59 = getelementptr inbounds nuw [13 x i32], ptr @fat_iter.slots, i32 0, i32 %53
@@ -820,7 +824,7 @@ define internal fastcc range(i32 0, 2) i32 @fat_iter(i32 noundef %0, ptr noundef
 
 72:                                               ; preds = %69, %58
   %73 = add nuw nsw i32 %53, 1
-  br label %52, !llvm.loop !34
+  br label %52, !llvm.loop !36
 
 74:                                               ; preds = %41
   %75 = and i32 %43, 8
@@ -856,7 +860,7 @@ define internal fastcc range(i32 0, 2) i32 @fat_iter(i32 noundef %0, ptr noundef
   %97 = add nuw nsw i32 %78, 1
   %98 = getelementptr inbounds nuw i8, ptr %3, i32 %78
   store i8 %96, ptr %98, align 1, !tbaa !14
-  br label %77, !llvm.loop !35
+  br label %77, !llvm.loop !37
 
 99:                                               ; preds = %84
   %100 = getelementptr inbounds nuw i8, ptr %3, i32 %78
@@ -889,7 +893,7 @@ define internal fastcc range(i32 0, 2) i32 @fat_iter(i32 noundef %0, ptr noundef
   %120 = getelementptr inbounds nuw i8, ptr %3, i32 %105
   store i8 %119, ptr %120, align 1, !tbaa !14
   %121 = add nuw nsw i32 %104, 1
-  br label %102, !llvm.loop !36
+  br label %102, !llvm.loop !38
 
 122:                                              ; preds = %107, %102, %84
   %123 = phi i32 [ %78, %84 ], [ %105, %102 ], [ %105, %107 ]
@@ -909,7 +913,7 @@ define internal fastcc range(i32 0, 2) i32 @fat_iter(i32 noundef %0, ptr noundef
   %132 = getelementptr inbounds nuw i8, ptr %2, i32 %127
   store i8 %131, ptr %132, align 1, !tbaa !14
   %133 = add nuw nsw i32 %127, 1
-  br label %126, !llvm.loop !37
+  br label %126, !llvm.loop !39
 
 134:                                              ; preds = %122, %139
   %135 = phi i32 [ %141, %139 ], [ 0, %122 ]
@@ -922,7 +926,7 @@ define internal fastcc range(i32 0, 2) i32 @fat_iter(i32 noundef %0, ptr noundef
   %140 = getelementptr inbounds nuw i8, ptr %2, i32 %135
   store i8 %137, ptr %140, align 1, !tbaa !14
   %141 = add nuw nsw i32 %135, 1
-  br label %134, !llvm.loop !38
+  br label %134, !llvm.loop !40
 
 142:                                              ; preds = %126, %134
   %143 = phi i32 [ %135, %134 ], [ 63, %126 ]
@@ -977,7 +981,7 @@ define dso_local ptr @fat_walk(ptr noundef %0, ptr noundef readonly captures(non
 15:                                               ; preds = %12
   %16 = getelementptr inbounds nuw i8, ptr %14, i32 1
   %17 = load i8, ptr %16, align 1, !tbaa !14
-  br label %12, !llvm.loop !39
+  br label %12, !llvm.loop !41
 
 18:                                               ; preds = %12, %27
   %19 = phi i8 [ %31, %27 ], [ %13, %12 ]
@@ -998,7 +1002,7 @@ define dso_local ptr @fat_walk(ptr noundef %0, ptr noundef readonly captures(non
   %30 = getelementptr inbounds nuw [64 x i8], ptr %3, i32 0, i32 %21
   store i8 %19, ptr %30, align 1, !tbaa !14
   %31 = load i8, ptr %28, align 1, !tbaa !14
-  br label %18, !llvm.loop !40
+  br label %18, !llvm.loop !42
 
 32:                                               ; preds = %23, %18
   %33 = getelementptr inbounds nuw [64 x i8], ptr %3, i32 0, i32 %21
@@ -1033,7 +1037,7 @@ define dso_local ptr @fat_walk(ptr noundef %0, ptr noundef readonly captures(non
 
 50:                                               ; preds = %48, %43
   %51 = icmp eq ptr %44, null
-  br i1 %51, label %52, label %7, !llvm.loop !41
+  br i1 %51, label %52, label %7, !llvm.loop !43
 
 52:                                               ; preds = %7, %50, %12, %41, %37
   %53 = phi ptr [ null, %37 ], [ null, %41 ], [ %9, %12 ], [ %9, %7 ], [ null, %50 ]
@@ -1089,7 +1093,7 @@ define dso_local i32 @fat_readi(ptr noundef %0, i32 noundef %1, i32 noundef %2, 
 32:                                               ; preds = %27
   %33 = add i32 %28, 1
   %34 = icmp ult i32 %28, %20
-  br i1 %34, label %27, label %35, !llvm.loop !42
+  br i1 %34, label %27, label %35, !llvm.loop !44
 
 35:                                               ; preds = %32, %35
   %36 = phi i32 [ %40, %35 ], [ 0, %32 ]
@@ -1097,14 +1101,14 @@ define dso_local i32 @fat_readi(ptr noundef %0, i32 noundef %1, i32 noundef %2, 
   %38 = load i8, ptr %37, align 1, !tbaa !14
   %39 = icmp eq i8 %38, 0
   %40 = add i32 %36, 1
-  br i1 %39, label %41, label %35, !llvm.loop !43
+  br i1 %39, label %41, label %35, !llvm.loop !45
 
 41:                                               ; preds = %35
   %42 = load i32, ptr %7, align 4, !tbaa !10
   %43 = icmp eq i32 %42, 0
   %44 = trunc i32 %42 to i16
   %45 = select i1 %43, i16 -1, i16 %44
-  store i16 %45, ptr %5, align 2, !tbaa !44
+  store i16 %45, ptr %5, align 2, !tbaa !46
   br label %46
 
 46:                                               ; preds = %52, %41
@@ -1121,7 +1125,7 @@ define dso_local i32 @fat_readi(ptr noundef %0, i32 noundef %1, i32 noundef %2, 
   %53 = getelementptr inbounds nuw [62 x i8], ptr %22, i32 0, i32 %47
   store i8 0, ptr %53, align 1, !tbaa !14
   %54 = add nuw nsw i32 %47, 1
-  br label %46, !llvm.loop !46
+  br label %46, !llvm.loop !48
 
 55:                                               ; preds = %49, %68
   %56 = phi i32 [ %70, %68 ], [ 0, %49 ]
@@ -1140,13 +1144,13 @@ define dso_local i32 @fat_readi(ptr noundef %0, i32 noundef %1, i32 noundef %2, 
   %65 = inttoptr i32 %64 to ptr
   %66 = call ptr @memmove(ptr noundef %65, ptr noundef nonnull %5, i32 noundef 64) #12
   %67 = add nuw nsw i32 %25, 1
-  br label %23, !llvm.loop !42
+  br label %23, !llvm.loop !44
 
 68:                                               ; preds = %58
   %69 = getelementptr inbounds nuw [62 x i8], ptr %22, i32 0, i32 %56
   store i8 %60, ptr %69, align 1, !tbaa !14
   %70 = add nuw nsw i32 %56, 1
-  br label %55, !llvm.loop !47
+  br label %55, !llvm.loop !49
 
 71:                                               ; preds = %23, %27
   %72 = phi i32 [ %25, %27 ], [ %19, %23 ]
@@ -1158,140 +1162,162 @@ define dso_local i32 @fat_readi(ptr noundef %0, i32 noundef %1, i32 noundef %2, 
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %7) #11
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %6) #11
   call void @llvm.lifetime.end.p0(i64 64, ptr nonnull %5) #11
-  br label %172
+  br label %186
 
 74:                                               ; preds = %4
   %75 = getelementptr inbounds [16 x %struct.fatmeta], ptr @fatmeta, i32 0, i32 %14
   %76 = getelementptr inbounds nuw i8, ptr %75, i32 4
-  %77 = load i32, ptr %76, align 4, !tbaa !29
+  %77 = load i32, ptr %76, align 4, !tbaa !31
   %78 = icmp ult i32 %2, %77
-  br i1 %78, label %79, label %172
+  br i1 %78, label %79, label %186
 
 79:                                               ; preds = %74
-  %80 = load i32, ptr %75, align 4, !tbaa !27
-  %81 = load i32, ptr @clussz, align 4, !tbaa !10
-  %82 = udiv i32 %2, %81
-  br label %83
+  %80 = add i32 %3, %2
+  %81 = icmp ugt i32 %80, %77
+  %82 = sub nuw i32 %77, %2
+  %83 = select i1 %81, i32 %82, i32 %3
+  %84 = load i32, ptr @clussz, align 4, !tbaa !10
+  %85 = udiv i32 %2, %84
+  %86 = load i32, ptr %75, align 4, !tbaa !27
+  %87 = getelementptr inbounds nuw i8, ptr %75, i32 12
+  %88 = load i32, ptr %87, align 4, !tbaa !30
+  %89 = add i32 %88, -2
+  %90 = icmp ult i32 %89, 268435446
+  br i1 %90, label %91, label %97
 
-83:                                               ; preds = %90, %79
-  %84 = phi i32 [ %80, %79 ], [ %92, %90 ]
-  %85 = phi i32 [ %82, %79 ], [ %91, %90 ]
-  %86 = icmp ne i32 %85, 0
-  %87 = add i32 %84, -2
-  %88 = icmp ult i32 %87, 268435446
-  %89 = select i1 %86, i1 %88, i1 false
-  br i1 %89, label %90, label %93
+91:                                               ; preds = %79
+  %92 = getelementptr inbounds nuw i8, ptr %75, i32 8
+  %93 = load i32, ptr %92, align 4, !tbaa !29
+  %94 = icmp ult i32 %85, %93
+  br i1 %94, label %97, label %95
 
-90:                                               ; preds = %83
-  %91 = add i32 %85, -1
-  %92 = tail call fastcc i32 @fat_next(i32 noundef %84) #10
-  br label %83, !llvm.loop !48
+95:                                               ; preds = %91
+  %96 = sub nuw i32 %85, %93
+  br label %97
 
-93:                                               ; preds = %83
-  %94 = add i32 %3, %2
-  %95 = icmp ugt i32 %94, %77
-  %96 = sub nuw i32 %77, %2
-  %97 = select i1 %95, i32 %96, i32 %3
-  %98 = load i32, ptr @clussz, align 4, !tbaa !10
-  %99 = urem i32 %2, %98
+97:                                               ; preds = %95, %91, %79
+  %98 = phi i32 [ %86, %79 ], [ %86, %91 ], [ %88, %95 ]
+  %99 = phi i32 [ %85, %79 ], [ %85, %91 ], [ %96, %95 ]
   br label %100
 
-100:                                              ; preds = %169, %93
-  %101 = phi i32 [ %84, %93 ], [ %171, %169 ]
-  %102 = phi i32 [ 0, %93 ], [ %170, %169 ]
-  %103 = phi i32 [ %99, %93 ], [ 0, %169 ]
-  %104 = icmp ult i32 %102, %97
-  %105 = add i32 %101, -2
-  %106 = icmp ult i32 %105, 268435446
-  %107 = select i1 %104, i1 %106, i1 false
-  br i1 %107, label %108, label %172
+100:                                              ; preds = %97, %107
+  %101 = phi i32 [ %109, %107 ], [ %98, %97 ]
+  %102 = phi i32 [ %108, %107 ], [ %99, %97 ]
+  %103 = icmp ne i32 %102, 0
+  %104 = add i32 %101, -2
+  %105 = icmp ult i32 %104, 268435446
+  %106 = select i1 %103, i1 %105, i1 false
+  br i1 %106, label %107, label %110
 
-108:                                              ; preds = %100
-  %109 = load i32, ptr @clussz, align 4, !tbaa !10
-  %110 = sub nsw i32 %109, %103
-  %111 = sub nuw i32 %97, %102
-  %112 = tail call i32 @llvm.umin.i32(i32 %110, i32 %111)
-  %113 = load i1, ptr @fat_sd, align 4
-  br i1 %113, label %114, label %161
-
-114:                                              ; preds = %108
-  %115 = load i32, ptr @fbase, align 4, !tbaa !10
-  %116 = load i32, ptr @dataoff, align 4, !tbaa !10
-  %117 = mul i32 %109, %105
-  %118 = add i32 %103, -134217728
-  %119 = add i32 %118, %117
-  %120 = add i32 %119, %115
-  %121 = add i32 %120, %116
-  %122 = add i32 %102, %1
-  br label %123
-
-123:                                              ; preds = %157, %114
-  %124 = phi i32 [ %121, %114 ], [ %158, %157 ]
-  %125 = phi i32 [ %112, %114 ], [ %159, %157 ]
-  %126 = phi i32 [ %122, %114 ], [ %160, %157 ]
-  %127 = icmp eq i32 %125, 0
-  br i1 %127, label %169, label %128
-
-128:                                              ; preds = %123
-  %129 = and i32 %124, 511
-  %130 = icmp eq i32 %129, 0
-  %131 = icmp ugt i32 %125, 511
-  %132 = and i1 %130, %131
-  %133 = and i32 %126, 3
-  %134 = icmp eq i32 %133, 0
-  %135 = select i1 %132, i1 %134, i1 false
-  br i1 %135, label %136, label %144
-
-136:                                              ; preds = %128
-  %137 = load i32, ptr @sdpart, align 4, !tbaa !10
-  %138 = lshr exact i32 %124, 9
-  %139 = add i32 %137, %138
-  %140 = tail call i32 @kflash_sd(i32 noundef 4, i32 noundef %139, i32 noundef %126) #12
-  %141 = add i32 %124, 512
-  %142 = add i32 %126, 512
-  %143 = add i32 %125, -512
-  br label %157
-
-144:                                              ; preds = %128
-  %145 = sub nuw nsw i32 512, %129
-  %146 = tail call i32 @llvm.umin.i32(i32 %145, i32 %125)
-  %147 = inttoptr i32 %126 to ptr
-  %148 = load i32, ptr @sdpart, align 4, !tbaa !10
-  %149 = lshr i32 %124, 9
-  %150 = add i32 %148, %149
-  %151 = tail call fastcc ptr @sdsec(i32 noundef %150) #10
-  %152 = getelementptr inbounds nuw i8, ptr %151, i32 %129
-  %153 = tail call ptr @memmove(ptr noundef %147, ptr noundef nonnull %152, i32 noundef %146) #12
-  %154 = add i32 %146, %124
-  %155 = add i32 %146, %126
-  %156 = sub i32 %125, %146
-  br label %157
-
-157:                                              ; preds = %144, %136
-  %158 = phi i32 [ %141, %136 ], [ %154, %144 ]
-  %159 = phi i32 [ %143, %136 ], [ %156, %144 ]
-  %160 = phi i32 [ %142, %136 ], [ %155, %144 ]
-  br label %123, !llvm.loop !49
-
-161:                                              ; preds = %108
-  %162 = add i32 %102, %1
-  %163 = load i32, ptr @fbase, align 4, !tbaa !10
-  %164 = load i32, ptr @dataoff, align 4, !tbaa !10
-  %165 = mul i32 %109, %105
-  %166 = add i32 %165, %103
-  %167 = add i32 %166, %163
-  %168 = add i32 %167, %164
-  tail call void @kdmacpy(i32 noundef %162, i32 noundef %168, i32 noundef %112) #12
-  br label %169
-
-169:                                              ; preds = %123, %161
-  %170 = add i32 %112, %102
-  %171 = tail call fastcc i32 @fat_next(i32 noundef %101) #10
+107:                                              ; preds = %100
+  %108 = add i32 %102, -1
+  %109 = tail call fastcc i32 @fat_next(i32 noundef %101) #10
   br label %100, !llvm.loop !50
 
-172:                                              ; preds = %100, %74, %71
-  %173 = phi i32 [ %73, %71 ], [ 0, %74 ], [ %102, %100 ]
-  ret i32 %173
+110:                                              ; preds = %100
+  %111 = getelementptr inbounds nuw i8, ptr %75, i32 8
+  store i32 %85, ptr %111, align 4, !tbaa !29
+  store i32 %101, ptr %87, align 4, !tbaa !30
+  %112 = load i32, ptr @clussz, align 4, !tbaa !10
+  %113 = urem i32 %2, %112
+  br label %114
+
+114:                                              ; preds = %183, %110
+  %115 = phi i32 [ %101, %110 ], [ %185, %183 ]
+  %116 = phi i32 [ 0, %110 ], [ %184, %183 ]
+  %117 = phi i32 [ %113, %110 ], [ 0, %183 ]
+  %118 = icmp ult i32 %116, %83
+  %119 = add i32 %115, -2
+  %120 = icmp ult i32 %119, 268435446
+  %121 = select i1 %118, i1 %120, i1 false
+  br i1 %121, label %122, label %186
+
+122:                                              ; preds = %114
+  %123 = load i32, ptr @clussz, align 4, !tbaa !10
+  %124 = sub nsw i32 %123, %117
+  %125 = sub nuw i32 %83, %116
+  %126 = tail call i32 @llvm.umin.i32(i32 %124, i32 %125)
+  %127 = load i1, ptr @fat_sd, align 4
+  br i1 %127, label %128, label %175
+
+128:                                              ; preds = %122
+  %129 = load i32, ptr @fbase, align 4, !tbaa !10
+  %130 = load i32, ptr @dataoff, align 4, !tbaa !10
+  %131 = mul i32 %123, %119
+  %132 = add i32 %117, -134217728
+  %133 = add i32 %132, %131
+  %134 = add i32 %133, %129
+  %135 = add i32 %134, %130
+  %136 = add i32 %116, %1
+  br label %137
+
+137:                                              ; preds = %171, %128
+  %138 = phi i32 [ %135, %128 ], [ %172, %171 ]
+  %139 = phi i32 [ %126, %128 ], [ %173, %171 ]
+  %140 = phi i32 [ %136, %128 ], [ %174, %171 ]
+  %141 = icmp eq i32 %139, 0
+  br i1 %141, label %183, label %142
+
+142:                                              ; preds = %137
+  %143 = and i32 %138, 511
+  %144 = icmp eq i32 %143, 0
+  %145 = icmp ugt i32 %139, 511
+  %146 = and i1 %144, %145
+  %147 = and i32 %140, 3
+  %148 = icmp eq i32 %147, 0
+  %149 = select i1 %146, i1 %148, i1 false
+  br i1 %149, label %150, label %158
+
+150:                                              ; preds = %142
+  %151 = load i32, ptr @sdpart, align 4, !tbaa !10
+  %152 = lshr exact i32 %138, 9
+  %153 = add i32 %151, %152
+  %154 = tail call i32 @kflash_sd(i32 noundef 4, i32 noundef %153, i32 noundef %140) #12
+  %155 = add i32 %138, 512
+  %156 = add i32 %140, 512
+  %157 = add i32 %139, -512
+  br label %171
+
+158:                                              ; preds = %142
+  %159 = sub nuw nsw i32 512, %143
+  %160 = tail call i32 @llvm.umin.i32(i32 %159, i32 %139)
+  %161 = inttoptr i32 %140 to ptr
+  %162 = load i32, ptr @sdpart, align 4, !tbaa !10
+  %163 = lshr i32 %138, 9
+  %164 = add i32 %162, %163
+  %165 = tail call fastcc ptr @sdsec(i32 noundef %164) #10
+  %166 = getelementptr inbounds nuw i8, ptr %165, i32 %143
+  %167 = tail call ptr @memmove(ptr noundef %161, ptr noundef nonnull %166, i32 noundef %160) #12
+  %168 = add i32 %160, %138
+  %169 = add i32 %160, %140
+  %170 = sub i32 %139, %160
+  br label %171
+
+171:                                              ; preds = %158, %150
+  %172 = phi i32 [ %155, %150 ], [ %168, %158 ]
+  %173 = phi i32 [ %157, %150 ], [ %170, %158 ]
+  %174 = phi i32 [ %156, %150 ], [ %169, %158 ]
+  br label %137, !llvm.loop !51
+
+175:                                              ; preds = %122
+  %176 = add i32 %116, %1
+  %177 = load i32, ptr @fbase, align 4, !tbaa !10
+  %178 = load i32, ptr @dataoff, align 4, !tbaa !10
+  %179 = mul i32 %123, %119
+  %180 = add i32 %179, %117
+  %181 = add i32 %180, %177
+  %182 = add i32 %181, %178
+  tail call void @kdmacpy(i32 noundef %176, i32 noundef %182, i32 noundef %126) #12
+  br label %183
+
+183:                                              ; preds = %137, %175
+  %184 = add i32 %126, %116
+  %185 = tail call fastcc i32 @fat_next(i32 noundef %115) #10
+  br label %114, !llvm.loop !52
+
+186:                                              ; preds = %114, %74, %71
+  %187 = phi i32 [ %73, %71 ], [ 0, %74 ], [ %116, %114 ]
+  ret i32 %187
 }
 
 ; Function Attrs: minsize nounwind optsize
@@ -1311,21 +1337,21 @@ declare dso_local void @kdmacpy(i32 noundef, i32 noundef, i32 noundef) local_unn
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(argmem: readwrite)
 define dso_local void @fat_stati(ptr noundef readonly captures(none) %0, ptr noundef writeonly captures(none) initializes((0, 16)) %1) local_unnamed_addr #7 {
-  store i32 4007, ptr %1, align 4, !tbaa !51
+  store i32 4007, ptr %1, align 4, !tbaa !53
   %3 = getelementptr inbounds nuw i8, ptr %0, i32 4
   %4 = load i32, ptr %3, align 4, !tbaa !21
   %5 = getelementptr inbounds nuw i8, ptr %1, i32 4
-  store i32 %4, ptr %5, align 4, !tbaa !54
+  store i32 %4, ptr %5, align 4, !tbaa !56
   %6 = getelementptr inbounds nuw i8, ptr %0, i32 20
   %7 = load i16, ptr %6, align 4, !tbaa !23
   %8 = getelementptr inbounds nuw i8, ptr %1, i32 8
-  store i16 %7, ptr %8, align 4, !tbaa !55
+  store i16 %7, ptr %8, align 4, !tbaa !57
   %9 = getelementptr inbounds nuw i8, ptr %1, i32 10
-  store i16 1, ptr %9, align 2, !tbaa !56
+  store i16 1, ptr %9, align 2, !tbaa !58
   %10 = getelementptr inbounds nuw i8, ptr %0, i32 28
   %11 = load i32, ptr %10, align 4, !tbaa !26
   %12 = getelementptr inbounds nuw i8, ptr %1, i32 12
-  store i32 %11, ptr %12, align 4, !tbaa !57
+  store i32 %11, ptr %12, align 4, !tbaa !59
   ret void
 }
 
@@ -1377,14 +1403,14 @@ attributes #12 = { minsize nobuiltin nounwind optsize "no-builtins" }
 !25 = distinct !{!25, !12, !13}
 !26 = !{!4, !5, i64 28}
 !27 = !{!28, !5, i64 0}
-!28 = !{!"fatmeta", !5, i64 0, !5, i64 4}
-!29 = !{!28, !5, i64 4}
-!30 = distinct !{!30, !12, !13}
-!31 = distinct !{!31, !13}
+!28 = !{!"fatmeta", !5, i64 0, !5, i64 4, !5, i64 8, !5, i64 12}
+!29 = !{!28, !5, i64 8}
+!30 = !{!28, !5, i64 12}
+!31 = !{!28, !5, i64 4}
 !32 = distinct !{!32, !12, !13}
 !33 = distinct !{!33, !13}
 !34 = distinct !{!34, !12, !13}
-!35 = distinct !{!35, !12, !13}
+!35 = distinct !{!35, !13}
 !36 = distinct !{!36, !12, !13}
 !37 = distinct !{!37, !12, !13}
 !38 = distinct !{!38, !12, !13}
@@ -1393,17 +1419,19 @@ attributes #12 = { minsize nobuiltin nounwind optsize "no-builtins" }
 !41 = distinct !{!41, !12, !13}
 !42 = distinct !{!42, !12, !13}
 !43 = distinct !{!43, !12, !13}
-!44 = !{!45, !9, i64 0}
-!45 = !{!"dirent", !9, i64 0, !6, i64 2}
-!46 = distinct !{!46, !12, !13}
-!47 = distinct !{!47, !12, !13}
+!44 = distinct !{!44, !12, !13}
+!45 = distinct !{!45, !12, !13}
+!46 = !{!47, !9, i64 0}
+!47 = !{!"dirent", !9, i64 0, !6, i64 2}
 !48 = distinct !{!48, !12, !13}
 !49 = distinct !{!49, !12, !13}
 !50 = distinct !{!50, !12, !13}
-!51 = !{!52, !5, i64 0}
-!52 = !{!"stat", !5, i64 0, !5, i64 4, !9, i64 8, !9, i64 10, !53, i64 12}
-!53 = !{!"long", !6, i64 0}
-!54 = !{!52, !5, i64 4}
-!55 = !{!52, !9, i64 8}
-!56 = !{!52, !9, i64 10}
-!57 = !{!52, !53, i64 12}
+!51 = distinct !{!51, !12, !13}
+!52 = distinct !{!52, !12, !13}
+!53 = !{!54, !5, i64 0}
+!54 = !{!"stat", !5, i64 0, !5, i64 4, !9, i64 8, !9, i64 10, !55, i64 12}
+!55 = !{!"long", !6, i64 0}
+!56 = !{!54, !5, i64 4}
+!57 = !{!54, !9, i64 8}
+!58 = !{!54, !9, i64 10}
+!59 = !{!54, !55, i64 12}
