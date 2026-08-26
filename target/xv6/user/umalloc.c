@@ -43,22 +43,36 @@ free(void *ap)
   freep = p;
 }
 
+/* The first ask sizes the process's whole heap chunk (ksbrk allots
+ * exactly one region, floored at its 16 KB HEAPCHUNK and halved
+ * toward the ask under arena pressure). Apps that live in their
+ * heap — vi's text buffer — raise the floor to claim real growth
+ * room while the kernel's halving still lets them fit a tight
+ * arena. */
+uint __malloc_chunkunits = 512;
+
 static Header *
 morecore(uint nu)
 {
   char *p;
   Header *hp;
 
-  if (nu < 512) /* was 4096 (32 KB): the first ask sizes the process's
-                 * whole heap chunk, and 32 KB of resident sh heap was
-                 * most of the feather's 480p arena (the kernel still
-                 * rounds small asks up to its 16 KB HEAPCHUNK) */
-    nu = 512;
-  p = sbrk(nu * sizeof(Header));
-  if (p == SBRK_ERROR)
-    return 0;
+  uint ask = nu;
+  if (ask < __malloc_chunkunits)
+    ask = __malloc_chunkunits;
+  /* Halve a generous ask toward the true need when the arena cannot
+   * seat it — the kernel's one-shot chunk makes the first ask the
+   * process's whole heap, so aim high and degrade gracefully. */
+  for (;;) {
+    p = sbrk(ask * sizeof(Header));
+    if (p != SBRK_ERROR)
+      break;
+    if (ask / 2 < nu)
+      return 0;
+    ask /= 2;
+  }
   hp = (Header *)p;
-  hp->s.size = nu;
+  hp->s.size = ask;
   free((void *)(hp + 1));
   return freep;
 }

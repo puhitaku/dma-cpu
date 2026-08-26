@@ -5010,7 +5010,13 @@ int vi_main(int argc, char **argv)
 
 /* dma: the xv6 entry point. Must exit() rather than return — a return
  * runs into crt0's halt and stops the whole machine. */
+extern unsigned __malloc_chunkunits;
+
 int main(int argc, char **argv)
 {
+	/* An editor lives in its heap: ask for a 40 KB first chunk (the
+	 * kernel halves toward the actual ask when the arena is tight),
+	 * so the text buffer can grow past its initial 10 KB. */
+	__malloc_chunkunits = 5120;
 	exit(vi_main(argc, argv));
 }

@@ -7,6 +7,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 %struct.anon = type { ptr, i32 }
 
 @freep = internal unnamed_addr global ptr null, align 4
+@__malloc_chunkunits = dso_local local_unnamed_addr global i32 512, align 4
 @base = internal global %union.header zeroinitializer, align 4
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(readwrite, inaccessiblemem: none)
@@ -91,68 +92,78 @@ define dso_local ptr @malloc(i32 noundef %0) local_unnamed_addr #1 {
   br label %8
 
 8:                                                ; preds = %7, %1
-  %9 = phi ptr [ @base, %7 ], [ %5, %1 ]
-  %10 = tail call i32 @llvm.umax.i32(i32 range(i32 1, 536870913) %4, i32 512)
-  %11 = shl i32 %10, 3
+  %9 = phi ptr [ %5, %1 ], [ @base, %7 ]
+  br label %10
+
+10:                                               ; preds = %8, %43
+  %11 = phi ptr [ %9, %8 ], [ %46, %43 ]
   br label %12
 
-12:                                               ; preds = %37, %8
-  %13 = phi ptr [ %40, %37 ], [ %9, %8 ]
-  br label %14
+12:                                               ; preds = %10, %30
+  %13 = phi ptr [ %14, %30 ], [ %11, %10 ]
+  %14 = load ptr, ptr %13, align 4, !tbaa !3
+  %15 = getelementptr inbounds nuw i8, ptr %14, i32 4
+  %16 = load i32, ptr %15, align 4, !tbaa !3
+  %17 = icmp ugt i32 %16, %3
+  br i1 %17, label %18, label %30
 
-14:                                               ; preds = %12, %32
-  %15 = phi ptr [ %16, %32 ], [ %13, %12 ]
-  %16 = load ptr, ptr %15, align 4, !tbaa !3
-  %17 = getelementptr inbounds nuw i8, ptr %16, i32 4
-  %18 = load i32, ptr %17, align 4, !tbaa !3
-  %19 = icmp ugt i32 %18, %3
-  br i1 %19, label %20, label %32
+18:                                               ; preds = %12
+  %19 = getelementptr inbounds nuw i8, ptr %14, i32 4
+  %20 = icmp eq i32 %16, %4
+  br i1 %20, label %21, label %23
 
-20:                                               ; preds = %14
-  %21 = getelementptr inbounds nuw i8, ptr %16, i32 4
-  %22 = icmp eq i32 %18, %4
-  br i1 %22, label %23, label %25
+21:                                               ; preds = %18
+  %22 = load ptr, ptr %14, align 4, !tbaa !3
+  store ptr %22, ptr %13, align 4, !tbaa !3
+  br label %27
 
-23:                                               ; preds = %20
-  %24 = load ptr, ptr %16, align 4, !tbaa !3
-  store ptr %24, ptr %15, align 4, !tbaa !3
-  br label %29
+23:                                               ; preds = %18
+  %24 = sub i32 %16, %4
+  store i32 %24, ptr %19, align 4, !tbaa !3
+  %25 = getelementptr inbounds nuw %union.header, ptr %14, i32 %24
+  %26 = getelementptr inbounds nuw i8, ptr %25, i32 4
+  store i32 %4, ptr %26, align 4, !tbaa !3
+  br label %27
 
-25:                                               ; preds = %20
-  %26 = sub i32 %18, %4
-  store i32 %26, ptr %21, align 4, !tbaa !3
-  %27 = getelementptr inbounds nuw %union.header, ptr %16, i32 %26
-  %28 = getelementptr inbounds nuw i8, ptr %27, i32 4
-  store i32 %4, ptr %28, align 4, !tbaa !3
-  br label %29
+27:                                               ; preds = %23, %21
+  %28 = phi ptr [ %14, %21 ], [ %25, %23 ]
+  store ptr %13, ptr @freep, align 4, !tbaa !9
+  %29 = getelementptr inbounds nuw i8, ptr %28, i32 8
+  br label %48
 
-29:                                               ; preds = %25, %23
-  %30 = phi ptr [ %16, %23 ], [ %27, %25 ]
-  store ptr %15, ptr @freep, align 4, !tbaa !9
-  %31 = getelementptr inbounds nuw i8, ptr %30, i32 8
-  br label %42
+30:                                               ; preds = %12
+  %31 = icmp eq ptr %14, %11
+  br i1 %31, label %32, label %12, !llvm.loop !12
 
-32:                                               ; preds = %14
-  %33 = icmp eq ptr %16, %13
-  br i1 %33, label %34, label %14, !llvm.loop !12
+32:                                               ; preds = %30
+  %33 = load i32, ptr @__malloc_chunkunits, align 4, !tbaa !13
+  %34 = tail call i32 @llvm.umax.i32(i32 range(i32 1, 536870913) %4, i32 %33)
+  br label %35
 
-34:                                               ; preds = %32
-  %35 = tail call ptr @sbrk(i32 noundef %11) #4
-  %36 = icmp eq ptr %35, inttoptr (i32 -1 to ptr)
-  br i1 %36, label %42, label %37
+35:                                               ; preds = %40, %32
+  %36 = phi i32 [ %34, %32 ], [ %41, %40 ]
+  %37 = shl i32 %36, 3
+  %38 = tail call ptr @sbrk(i32 noundef %37) #4
+  %39 = icmp eq ptr %38, inttoptr (i32 -1 to ptr)
+  br i1 %39, label %40, label %43
 
-37:                                               ; preds = %34
-  %38 = getelementptr inbounds nuw i8, ptr %35, i32 4
-  store i32 %10, ptr %38, align 4, !tbaa !3
-  %39 = getelementptr inbounds nuw i8, ptr %35, i32 8
-  tail call void @free(ptr noundef nonnull %39) #5
-  %40 = load ptr, ptr @freep, align 4, !tbaa !9
-  %41 = icmp eq ptr %40, null
-  br i1 %41, label %42, label %12, !llvm.loop !12
+40:                                               ; preds = %35
+  %41 = lshr i32 %36, 1
+  %42 = icmp samesign ugt i32 %41, %3
+  br i1 %42, label %35, label %48, !llvm.loop !15
 
-42:                                               ; preds = %34, %37, %29
-  %43 = phi ptr [ %31, %29 ], [ null, %37 ], [ null, %34 ]
-  ret ptr %43
+43:                                               ; preds = %35
+  %44 = getelementptr inbounds nuw i8, ptr %38, i32 4
+  store i32 %36, ptr %44, align 4, !tbaa !3
+  %45 = getelementptr inbounds nuw i8, ptr %38, i32 8
+  tail call void @free(ptr noundef nonnull %45) #5
+  %46 = load ptr, ptr @freep, align 4, !tbaa !9
+  %47 = icmp eq ptr %46, null
+  br i1 %47, label %48, label %10, !llvm.loop !12
+
+48:                                               ; preds = %43, %40, %27
+  %49 = phi ptr [ %29, %27 ], [ null, %40 ], [ null, %43 ]
+  ret ptr %49
 }
 
 ; Function Attrs: minsize optsize
@@ -184,3 +195,6 @@ attributes #5 = { minsize nobuiltin optsize "no-builtins" }
 !10 = !{!"p1 _ZTS6header", !11, i64 0}
 !11 = !{!"any pointer", !4, i64 0}
 !12 = distinct !{!12, !8}
+!13 = !{!14, !14, i64 0}
+!14 = !{!"int", !4, i64 0}
+!15 = distinct !{!15, !8}

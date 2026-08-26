@@ -10,6 +10,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @optind = internal unnamed_addr global i32 0, align 4
 @.str = private unnamed_addr constant [9 x i8] c"\1B[?1049h\00", align 1
 @.str.1 = private unnamed_addr constant [9 x i8] c"\1B[?1049l\00", align 1
+@__malloc_chunkunits = external dso_local local_unnamed_addr global i32, align 4
 @.str.2 = private unnamed_addr constant [19 x i8] c"vi: out of memory\0A\00", align 1
 @.str.3 = private unnamed_addr constant [27 x i8] c"'%s' is not a regular file\00", align 1
 @.str.4 = private unnamed_addr constant [16 x i8] c"can't read '%s'\00", align 1
@@ -300,6 +301,7 @@ declare void @llvm.lifetime.end.p0(i64 immarg, ptr captures(none)) #1
 
 ; Function Attrs: minsize noreturn nounwind optsize
 define dso_local noundef i32 @main(i32 noundef %0, ptr noundef readonly captures(none) %1) local_unnamed_addr #2 {
+  store i32 5120, ptr @__malloc_chunkunits, align 4, !tbaa !16
   %3 = tail call i32 @vi_main(i32 noundef %0, ptr noundef %1) #16
   %4 = tail call i32 @exit(i32 noundef 0) #18
   unreachable
