@@ -92,10 +92,10 @@ type Machine struct {
 
 	// SPI-mode SD card (sdcard.go): set SDImage to attach a card
 	// behind SPI0. spiRx is the RX FIFO the drain channel empties.
-	SDImage []byte
-	spiRx   []byte
-	sdc     sdCard
-	streamCtr      uint32
+	SDImage   []byte
+	spiRx     []byte
+	sdc       sdCard
+	streamCtr uint32
 
 	// SPI0 SSPDMACR as last written: the PL022 raises its TX DREQ only
 	// while TXDMAE (bit 1) is set — a paced channel starves without it

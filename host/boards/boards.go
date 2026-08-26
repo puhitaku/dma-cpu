@@ -159,6 +159,7 @@ var SizeApps = map[string]bool{"show": true, "toolbox": true, "hwtools": true}
 var XIPApps = map[string]bool{}
 
 var fbApps = append(append([]string{}, stdApps...), "fbtest", "show")
+
 // spin/trap (signal demos), wc, and help left the toolbox: help is an
 // sh builtin now (it streams /dev/apps) and the rest earned no keep.
 var stdLinks = []string{"kill", "free", "sync", "mount",
@@ -327,16 +328,16 @@ var Feather = &Board{
 	// path restores full quad XIP and re-runs the CS1 setup hook.
 	MachineFlashExec: false,
 	MachineSDExec:    true, /* ksd.c owns the card; ARM keeps only
-	                         * boot staging, USB and flash-sync */
-	SDCSPin:          10,   /* D10: the Adalogger FeatherWing CS */
+	 * boot staging, USB and flash-sync */
+	SDCSPin: 10, /* D10: the Adalogger FeatherWing CS */
 	// RO by default: the HDMI console is the product; persistence is
 	// a nice-to-have and stays off until wanted (slides arrive over
 	// USB, not the fs). The sync machinery itself remains validated
 	// (silicon + TestXv6ShFeather re-arms it in the emulator).
-	ReadOnlyFS:   true,
-	DiskBlocks:   10,
-	DiskInodes:   8, /* one inode block; frees data blocks for the
-	                  * write showcase + the SD mount point */
+	ReadOnlyFS: true,
+	DiskBlocks: 10,
+	DiskInodes: 8, /* one inode block; frees data blocks for the
+	 * write showcase + the SD mount point */
 	DiskApps:     fbApps,
 	ToolboxLinks: stdLinks,
 	Bundles:      []string{"shell", "syscall", "exec", "xsh"},
