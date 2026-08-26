@@ -1844,6 +1844,23 @@ func (fc *funcCtx) emitSwitch(b *llir.Block, ins *llir.Instr) error {
 	if err != nil {
 		return err
 	}
+	// Canonicalize case values to the scrutinee's width — the same
+	// rule op() applies to constant operands. A `switch i8` carries
+	// sign-extended case values (i8 -2 parses as 0x...FFFE) while the
+	// operand word holds the zero-extended truncation (0x000000FE):
+	// unmasked, the compare can never match. Found on silicon as the
+	// SD driver's data token (0xFE) sailing straight through its
+	// dispatch — the emulator agreed the moment it ran the real path.
+	cases := make([]llir.SwitchCase, len(ins.Cases))
+	copy(cases, ins.Cases)
+	if t := ins.Args[0].Typ; t != nil && t.Kind == llir.TInt && t.Bits < 32 {
+		mask := uint64(1)<<uint(t.Bits) - 1
+		for i := range cases {
+			cases[i].Val &= mask
+		}
+	}
+	ins = &llir.Instr{Op: ins.Op, Res: ins.Res, Typ: ins.Typ, Args: ins.Args,
+		Labels: ins.Labels, Cases: cases, Phi: ins.Phi}
 	p := &edgePlan{from: b, labels: map[string]string{}}
 	def, err := fc.planEdge(p, ins.Labels[0])
 	if err != nil {
