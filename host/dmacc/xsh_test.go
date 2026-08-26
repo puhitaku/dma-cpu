@@ -17,6 +17,11 @@ import (
 	"github.com/puhitaku/dma-cpu/host/prog"
 )
 
+// xshPoolSplit gates the flash literal-pool split for kernel/sh/
+// resident apps; the hot-pool profile generator turns it off to
+// measure an unsplit machine.
+var xshPoolSplit = true
+
 // buildUserScratch compiles an xv6 user program (name.ll + the userland
 // modules) and assembles it reloc-intact at canonical link bases.
 func buildUserScratch(t *testing.T, v *emu.Variant, bd *boards.Board, name string, extra ...string) *dmaasm.Result {
@@ -250,17 +255,26 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 			Variant: v, Compact: true,
 			TextBase: text, DataBase: data, RAMTextBase: rtext})
 	}
+	// The kernel splits its literal pool by the generated profile; sh
+	// is interactive and goes all-cold (xshPoolSplit gates both so the
+	// profile generator can build an unsplit machine to measure).
+	casmPool := func(src string, text, data, rtext uint32, hot map[string]bool) (*dmaasm.Result, error) {
+		return dmaasm.Assemble(src, dmaasm.Options{
+			Variant: v, Compact: true,
+			TextBase: text, DataBase: data, RAMTextBase: rtext,
+			PoolText: xshPoolSplit, HotLits: hot})
+	}
 	// XIP layout (prompts/030): kernC and sh text executes from the
 	// flash window; only their .ramtext stubs and data live in SRAM.
 	kern, err := casm(ksrc, bd.KernText, bd.KernData, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernC, err := casm(kcDasm, bd.KernTextXIP, bd.KernCData, bd.KernCRText)
+	kernC, err := casmPool(kcDasm, bd.KernTextXIP, bd.KernCData, bd.KernCRText, dmaasm.XSHHotLits)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sh, err := casm(shDasm, bd.ShTextXIP, bd.ShData, bd.ShRText)
+	sh, err := casmPool(shDasm, bd.ShTextXIP, bd.ShData, bd.ShRText, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -553,7 +567,8 @@ func buildUserResident(t *testing.T, v *emu.Variant, bd *boards.Board, tHome uin
 	sram := bd.Arena + 0x100
 	res, err := dmaasm.Assemble(dasm, dmaasm.Options{
 		Variant: v, Compact: true,
-		TextBase: tHome, DataBase: sram + rt, RAMTextBase: sram})
+		TextBase: tHome, DataBase: sram + rt, RAMTextBase: sram,
+		PoolText: xshPoolSplit})
 	if err != nil {
 		t.Fatal(err)
 	}

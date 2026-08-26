@@ -256,17 +256,16 @@ var Feather = &Board{
 	// page + force-included bodies grew ramtext to ~31.6K, and the
 	// slot-colored data side had the slack to give.
 	KernText: 0x20002000, KernData: 0x20002400,
-	KernCRText: 0x20002600, KernCData: 0x2000A600,
-	// Repacked for resident vi (measured slack, tight margins): the
-	// shared runtime emptied sh's ramtext (3.9K used) and the slot
-	// coloring shrank every data side, so the windows between kernel
-	// data and the arena gave back ~7.9 KiB. The arena must cover
-	// sh's heap chunk (16.6K) + vi's [ramtext][data] claim (41.2K) +
-	// argv + vi's own heap chunk (16.6K) = 75.0 KiB.
-	ShRText: 0x20016A00, ShData: 0x20017C00,
-	IdleText: 0x2001B800, IdleData: 0x2001BA00,
-	DiskHome: 0x2001BC00, DiskMax: 0x2000, // 8 KiB: the fs floor (6 was under it)
-	Arena: 0x2001DC00, ArenaEnd: 0x20030300, // 75.5 KiB up to the table
+	KernCRText: 0x20002600, KernCData: 0x2000A600, /* data now 32.5K used */
+	// Repacked after the flash literal-pool split + const-global
+	// rodata (measured: kernel data 32.5K with the profiled hot pool
+	// resident, sh data 8.6K all-cold). The arena covers sh's heap
+	// (16.6K) + resident vi's [ramtext][data] claim (24.8K) + argv +
+	// vi's full 40K heap ask with ~15K to spare.
+	ShRText: 0x20012800, ShData: 0x20013A00,
+	IdleText: 0x20015E00, IdleData: 0x20016000,
+	DiskHome: 0x20016200, DiskMax: 0x2000, // 8 KiB: the fs floor (6 was under it)
+	Arena: 0x20018200, ArenaEnd: 0x20030300, // 96.3 KiB up to the table
 	ConsRings: 0x20034400, // UART rings; FbBuf follows at 0x20034C00
 	Scratch:   0x2007FE00,
 

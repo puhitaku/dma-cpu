@@ -919,6 +919,15 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			Variant: v, Compact: true,
 			TextBase: text, DataBase: data, RAMTextBase: rtext})
 	}
+	// Flash literal-pool split: the kernel keeps its profiled hot set
+	// resident (dmaasm.XSHHotLits, generated); sh and the resident
+	// apps are interactive and go all-cold.
+	casmPool := func(src string, text, data, rtext uint32, hot map[string]bool) (*dmaasm.Result, error) {
+		return dmaasm.Assemble(src, dmaasm.Options{
+			Variant: v, Compact: true,
+			TextBase: text, DataBase: data, RAMTextBase: rtext,
+			PoolText: true, HotLits: hot})
+	}
 	ksrc, err := prog.HIL("kernel")
 	if err != nil {
 		return nil, err
@@ -946,7 +955,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	kernC, err := casm(kcDasm, cTextXIP, cData, cRText)
+	kernC, err := casmPool(kcDasm, cTextXIP, cData, cRText, dmaasm.XSHHotLits)
 	if err != nil {
 		return nil, fmt.Errorf("fs kernel: %w", err)
 	}
@@ -957,7 +966,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	sh, err := casm(shDasm, sTextXIP, sData, sRText)
+	sh, err := casmPool(shDasm, sTextXIP, sData, sRText, nil)
 	if err != nil {
 		return nil, fmt.Errorf("xv6 sh: %w", err)
 	}
@@ -1040,7 +1049,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		}
 		rt := pad8(probe.Image.Segments[2].Data)
 		sram := bd.Arena + 0x100 /* first-fit kalloc's first block */
-		res, err := casm(dasm, tHome, sram+uint32(len(rt)), sram)
+		res, err := casmPool(dasm, tHome, sram+uint32(len(rt)), sram, nil)
 		if err != nil {
 			return nil, nil, nil, nil, 0, err
 		}
