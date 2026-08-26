@@ -141,6 +141,229 @@ static void video_dma_start(void)
 }
 #endif
 
+#if defined(ADAFRUIT_FEATHER_RP2350)
+/* --- PSRAM probes (prompts/036 follow-up) ------------------------------
+ * The recorded ~1 ms/word machine-access figure was measured in the
+ * PSRAM-framebuffer era, with the line copier saturating CS1; the
+ * intrinsic DMA-master cost on today's quiet QMI was never separated
+ * from that contention. These probes decompose it:
+ *   psram_arm     ARM window baselines (the QSPI-transaction floor)
+ *   psram_dma     DMA-channel window access: burst and single-beat
+ *                 (machine-record-like), vs an SRAM-target control
+ *   psram_stream  the QMI XIP streamer against CS1 addresses — the
+ *                 flash-exec mechanism, maybe extended to PSRAM
+ *   psram_bw      sustained streamer bandwidth vs the 18.4 MB/s
+ *                 640x480@60 framebuffer refresh budget
+ *   psram_display announced phases while the scanout runs: the
+ *                 operator's eyes judge which traffic classes the
+ *                 display tolerates
+ * All figures are silicon-only (CAL lines, no emulator expectation).
+ * RP2350 encodings below match host/emu/{regs,variant}.go. */
+#define PSRAM_UC 0x15100000u /* uncached CS1 alias, 1 MiB in */
+#define PSRAM_C 0x14100000u  /* cached CS1 alias, same words */
+#define PROBE_CH 11u         /* kdma's channel: free during dev tests */
+#define PROBE_REG(off) (0x50000000u + PROBE_CH * 0x40u + (off))
+#define PROBE_SRAM (HIL_MACHINE_RAM_START + 0x1000u) /* pre-machine scratch */
+#define P_TREQ_PERM (0x3Fu << 17)
+#define P_TREQ_XSTREAM (49u << 17)
+#define P_QUIET (1u << 23)
+#define P_CHAIN_SELF (PROBE_CH << 13) /* chain-to-self = no chain */
+#define P_SIZE32 (2u << 2)
+#define P_INCR_R (1u << 4)
+#define P_INCR_W (1u << 6)
+#define P_BUSY (1u << 26)
+#define QMI_STREAM_ADDR 0x400C8014u
+#define QMI_STREAM_CTR 0x400C8018u
+#define XIP_AUX_PORT 0x50500000u
+
+/* One timed channel run; returns elapsed us, or 0 on timeout (channel
+ * aborted). The wait polls BUSY from the ARM — its bus traffic is APB
+ * register reads, not a stall on the measured port. */
+static uint32_t probe_run(uint32_t src, uint32_t dst, uint32_t n,
+                          uint32_t ctrl, uint32_t timeout_us)
+{
+    reg_wr(PROBE_REG(CH_AL1_READ_ADDR), src);
+    reg_wr(PROBE_REG(CH_AL1_WRITE_ADDR), dst);
+    reg_wr(PROBE_REG(CH_AL1_CTRL), ctrl);
+    uint32_t t0 = time_us_32();
+    reg_wr(PROBE_REG(CH_AL1_TRANS_COUNT_TRIG), n);
+    while (reg_rd(PROBE_REG(CH_AL1_CTRL)) & P_BUSY) {
+        if (time_us_32() - t0 > timeout_us) {
+            reg_wr(HIL_CHAN_ABORT_ADDR, 1u << PROBE_CH);
+            busy_wait_us(100);
+            reg_wr(PROBE_REG(CH_AL1_CTRL), 0);
+            return 0;
+        }
+    }
+    uint32_t dt = time_us_32() - t0;
+    return dt ? dt : 1;
+}
+
+/* Stop the streamer and drain its FIFO without ever touching the AUX
+ * port from the ARM while it might be empty (an empty-port read could
+ * stall the bus): DREQ-paced one-word drains simply time out clean. */
+static void stream_quiesce(void)
+{
+    reg_wr(QMI_STREAM_CTR, 0);
+    for (int i = 0; i < 64; i++) {
+        if (!probe_run(XIP_AUX_PORT, PROBE_SRAM, 1,
+                       1u | P_SIZE32 | P_INCR_W | P_TREQ_XSTREAM | P_QUIET |
+                           P_CHAIN_SELF,
+                       500))
+            break;
+    }
+}
+
+static void cal_psram(void)
+{
+    machine_reset();
+    volatile uint32_t *uc = (volatile uint32_t *)PSRAM_UC;
+    volatile uint32_t *cc = (volatile uint32_t *)PSRAM_C;
+    enum { N = 256 };
+
+    /* Canary: the window works at all (ARM write, ARM read back). */
+    for (uint32_t i = 0; i < N; i++)
+        uc[i] = 0xA5000000u | i;
+    uint32_t bad = 0;
+    for (uint32_t i = 0; i < N; i++)
+        if (uc[i] != (0xA5000000u | i))
+            bad++;
+    printf("CAL psram_canary: bad=%lu/%u\n", (unsigned long)bad, N);
+
+    /* A: ARM baselines, ns/word. */
+    uint32_t t0 = time_us_32();
+    for (uint32_t i = 0; i < N; i++)
+        uc[i] = i;
+    uint32_t wr = time_us_32() - t0;
+    uint32_t acc = 0;
+    t0 = time_us_32();
+    for (uint32_t i = 0; i < N; i++)
+        acc += uc[i];
+    uint32_t rd_uc = time_us_32() - t0;
+    t0 = time_us_32();
+    for (uint32_t i = 0; i < N; i++)
+        acc += cc[i];
+    uint32_t rd_c = time_us_32() - t0;
+    printf("CAL psram_arm: wr=%lu rd_uc=%lu rd_cached=%lu ns/word (acc=%08lx)\n",
+           (unsigned long)(wr * 1000u / N), (unsigned long)(rd_uc * 1000u / N),
+           (unsigned long)(rd_c * 1000u / N), (unsigned long)acc);
+
+    /* B: DMA-channel window access. Burst (count=N, the per-beat QMI
+     * cost) and single-beat retrigger (a machine record's shape), each
+     * against an SRAM-target control that prices the channel overhead.
+     * Reads use INCR_READ only (fixed SRAM sink) so only the measured
+     * port varies; 30 s timeout rides out even a true 1 ms/word. */
+    for (uint32_t i = 0; i < N; i++)
+        uc[i] = 0xB0000000u | i;
+    uint32_t ctrl_rd = 1u | P_SIZE32 | P_INCR_R | P_TREQ_PERM | P_QUIET | P_CHAIN_SELF;
+    uint32_t ctrl_wr = 1u | P_SIZE32 | P_INCR_W | P_TREQ_PERM | P_QUIET | P_CHAIN_SELF;
+    uint32_t b_sram = probe_run(PROBE_SRAM + 0x800, PROBE_SRAM, N, ctrl_rd, 30000000u);
+    uint32_t b_rd = probe_run(PSRAM_UC, PROBE_SRAM, N, ctrl_rd, 30000000u);
+    uint32_t b_wr = probe_run(PROBE_SRAM, PSRAM_UC, N, ctrl_wr, 30000000u);
+    printf("CAL psram_dma_burst: rd=%lu wr=%lu sram=%lu us /%u words"
+           " (rd %lu ns/w over control)\n",
+           (unsigned long)b_rd, (unsigned long)b_wr, (unsigned long)b_sram, N,
+           (unsigned long)(b_rd > b_sram ? (b_rd - b_sram) * 1000u / N : 0));
+    enum { NS = 64 };
+    uint32_t s_sram = 0, s_rd = 0;
+    t0 = time_us_32();
+    for (uint32_t i = 0; i < NS; i++)
+        if (!probe_run(PROBE_SRAM + 0x800, PROBE_SRAM, 1, ctrl_rd, 1000000u))
+            break;
+    s_sram = time_us_32() - t0;
+    t0 = time_us_32();
+    for (uint32_t i = 0; i < NS; i++)
+        if (!probe_run(PSRAM_UC + 4 * i, PROBE_SRAM, 1, ctrl_rd, 1000000u))
+            break;
+    s_rd = time_us_32() - t0;
+    printf("CAL psram_dma_single: rd=%lu sram=%lu us /%u beats (%lu ns/beat over control)\n",
+           (unsigned long)s_rd, (unsigned long)s_sram, NS,
+           (unsigned long)(s_rd > s_sram ? (s_rd - s_sram) * 1000u / NS : 0));
+
+    /* C: the XIP streamer against CS1 — try both aliases; verify data. */
+    for (uint32_t i = 0; i < N; i++)
+        uc[i] = 0xC0DE0000u | i;
+    __compiler_memory_barrier();
+    static const uint32_t bases[2] = {PSRAM_UC, PSRAM_C};
+    for (int v = 0; v < 2; v++) {
+        stream_quiesce();
+        reg_wr(QMI_STREAM_ADDR, bases[v]);
+        reg_wr(QMI_STREAM_CTR, N);
+        uint32_t ctrl = 1u | P_SIZE32 | P_INCR_W | P_TREQ_XSTREAM | P_QUIET | P_CHAIN_SELF;
+        uint32_t us = probe_run(XIP_AUX_PORT, PROBE_SRAM, N, ctrl, 2000000u);
+        uint32_t ok = 0;
+        if (us) {
+            ok = 1;
+            for (uint32_t i = 0; i < N; i++)
+                if (reg_rd(PROBE_SRAM + 4 * i) != (0xC0DE0000u | i))
+                    ok = 0;
+        }
+        printf("CAL psram_stream addr=%08lx: %s us=%lu (%lu ns/word)\n",
+               (unsigned long)bases[v], us ? (ok ? "OK" : "BAD DATA") : "TIMEOUT",
+               (unsigned long)us, (unsigned long)(us * 1000u / N));
+        stream_quiesce();
+    }
+
+    /* D: sustained streamer bandwidth, 256 KiB (fixed SRAM sink), vs
+     * the 18.4 MB/s 640x480@60 refresh budget. */
+    {
+        enum { NW = 65536 };
+        stream_quiesce();
+        reg_wr(QMI_STREAM_ADDR, PSRAM_UC);
+        reg_wr(QMI_STREAM_CTR, NW);
+        uint32_t ctrl = 1u | P_SIZE32 | P_TREQ_XSTREAM | P_QUIET | P_CHAIN_SELF;
+        uint32_t us = probe_run(XIP_AUX_PORT, PROBE_SRAM, NW, ctrl, 5000000u);
+        if (us)
+            printf("CAL psram_bw: 256KiB in %lu us = %lu KB/s (fb refresh needs 18432)\n",
+                   (unsigned long)us, (unsigned long)(262144000u / us));
+        else
+            printf("CAL psram_bw: TIMEOUT\n");
+        stream_quiesce();
+    }
+
+#if defined(HIL_XSH_DTAB_RAM) && HIL_XSH_DTAB_RAM
+    /* E: the operator watches the screen. Stage the scanout table and
+     * run the display through four announced traffic phases; sync loss
+     * (or not) tells us which access classes coexist with video. No
+     * flash op runs anywhere in this window, so arming here is safe. */
+    printf("CAL psram_display: arming scanout — watch the screen\n");
+    memcpy((void *)(uintptr_t)HIL_XSH_DTAB_RAM, hil_xsh_blob_dtab,
+           sizeof hil_xsh_blob_dtab);
+    video_dma_start();
+    sleep_ms(2000);
+    printf("CAL psram_display phase=0 idle 4s: expect stable black\n");
+    sleep_ms(4000);
+    printf("CAL psram_display phase=1 ARM window writes 4s\n");
+    t0 = time_us_32();
+    while (time_us_32() - t0 < 4000000u)
+        for (uint32_t i = 0; i < N; i++)
+            uc[i] = i;
+    printf("CAL psram_display phase=2 streamer drains 4s\n");
+    t0 = time_us_32();
+    while (time_us_32() - t0 < 4000000u) {
+        stream_quiesce();
+        reg_wr(QMI_STREAM_ADDR, PSRAM_UC);
+        reg_wr(QMI_STREAM_CTR, 4096);
+        probe_run(XIP_AUX_PORT, PROBE_SRAM, 4096,
+                  1u | P_SIZE32 | P_TREQ_XSTREAM | P_QUIET | P_CHAIN_SELF,
+                  1000000u);
+    }
+    stream_quiesce();
+    printf("CAL psram_display phase=3 DMA window reads 4s (predicted: sync loss)\n");
+    t0 = time_us_32();
+    while (time_us_32() - t0 < 4000000u)
+        probe_run(PSRAM_UC, PROBE_SRAM, 64,
+                  1u | P_SIZE32 | P_INCR_R | P_TREQ_PERM | P_QUIET | P_CHAIN_SELF,
+                  3000000u);
+    printf("CAL psram_display phase=4 recovery 4s: expect stable black again\n");
+    sleep_ms(4000);
+    video_dma_stop();
+    printf("CAL psram_display: done, scanout disarmed\n");
+#endif
+    machine_reset();
+}
+#endif /* ADAFRUIT_FEATHER_RP2350 */
+
 static void run_test(const hil_test *t)
 {
     machine_reset();
@@ -1846,6 +2069,9 @@ int main(void)
 #endif
 #ifdef HIL_HAS_EXEC
         exp_exec();
+#endif
+#if defined(ADAFRUIT_FEATHER_RP2350)
+        cal_psram();
 #endif
         printf("=== END iter=%u\n", iter);
         } /* devtests */
