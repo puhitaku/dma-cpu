@@ -25,7 +25,6 @@ uint sd_csreg;  /* g_sd_csreg: IO_BANK0 GPIOn_CTRL of the CS pin */
 uint sd_cs_hi;  /* g_sd_cs_hi: CTRL word driving CS high (deselect) */
 uint sd_cs_lo;  /* g_sd_cs_lo: CTRL word driving CS low (select) */
 uint sd_rxctrl; /* g_sd_rxctrl: ch11 drain CTRL (TREQ = SPI0 RX) */
-
 #define W(a) (*(volatile uint *)(a))
 #define SPI_CR0 (sd_spi + 0x00u)
 #define SPI_CR1 (sd_spi + 0x04u)
@@ -41,6 +40,30 @@ uint sd_rxctrl; /* g_sd_rxctrl: ch11 drain CTRL (TREQ = SPI0 RX) */
 
 static uint sd_hc;      /* SDHC/SDXC: block addressing */
 static uint sd_sectors; /* capacity from the CSD; 0 = card not up */
+
+/* Bring-up diagnostic: one line per init attempt over the kernel
+ * console — each handshake stage's response byte, so silicon
+ * failures name their stage instead of a bare "mount: failed". */
+extern void kconswrite(const char *b, int n);
+extern void klogts(void); /* kproc.c: "[sec.ms] " kernel-log stamp */
+static void
+sd_diag(const char *tag, uint v)
+{
+  char b[16];
+  int n = 0;
+  while (*tag)
+    b[n++] = *tag++;
+  const char *hx = "0123456789abcdef";
+  b[n++] = hx[(v >> 28) & 0xF];
+  b[n++] = hx[(v >> 24) & 0xF];
+  b[n++] = hx[(v >> 20) & 0xF];
+  b[n++] = hx[(v >> 16) & 0xF];
+  b[n++] = hx[(v >> 12) & 0xF];
+  b[n++] = hx[(v >> 8) & 0xF];
+  b[n++] = hx[(v >> 4) & 0xF];
+  b[n++] = hx[v & 0xF];
+  kconswrite(b, n);
+}
 
 int
 ksd_on(void)
@@ -66,9 +89,27 @@ cs(int assert)
   xf(0xFF); /* one clock either side of CS: cards want the edge idle */
 }
 
+/* sd_wait_ready: clock until the card outputs idle 0xFF — absorbs
+ * R1b busy states, residual bytes of an aborted block read, and the
+ * first-exchange-after-select glitch silicon showed. */
+static int
+sd_wait_ready(void)
+{
+  for (uint i = 0; i < 500000u; i++) {
+    if (xf(0xFF) == 0xFFu)
+      return 0;
+  }
+  return -1;
+}
+
 static uint
 sd_cmd(uint c, uint arg, uint crc)
 {
+  /* A stale RX byte desyncs every response that follows (the R1 poll
+   * eats it and the token wait then chews the real R1): start every
+   * command with an empty FIFO. */
+  while (W(SPI_SR) & SR_RNE)
+    (void)W(SPI_DR);
   xf(0xFF);
   xf(0x40u | c);
   xf(arg >> 24);
@@ -89,24 +130,45 @@ sd_cmd(uint c, uint arg, uint crc)
 static void
 sd_clock(uint cpsr, uint scr)
 {
-  W(SPI_CR1) = 0;
+  /* Live update, SDK-style: the PL022 takes CPSR/SCR changes while
+   * enabled (spi_set_baudrate does exactly this), and toggling SSE
+   * between init and reads left state that desynced the RX stream on
+   * silicon. Only the very first call finds SSE clear and sets it. */
   W(SPI_CR0) = (scr << 8) | 7u;
   W(SPI_CPSR) = cpsr;
-  W(SPI_DMACR) = 0;
-  W(SPI_CR1) = 2u; /* SSE */
+  W(SPI_CR1) = 2u; /* SSE (idempotent) */
 }
 
 static int
 sd_init_card(uint res)
 {
   sd_sectors = 0;
+  /* Bisect (silicon bring-up): attempt the handshake FIRST on the
+   * SDK's untouched boot configuration (400 kHz, mode 0) — no machine
+   * writes to CR0/CPSR at all — and only reprogram the block if that
+   * fails. Distinguishes "machine SPI-config corrupts the clock" from
+   * protocol-level trouble. */
   sd_clock(254u, 1u); /* ~295 kHz for the identification handshake */
   cs(0);
   for (int i = 0; i < 10; i++) /* 80 clocks, CS high: SPI-mode entry */
     xf(0xFF);
   cs(1);
-  if (sd_cmd(0, 0, 0x95) != 0x01) {
+  /* CMD0 with retries: the first exchange after power-up can carry a
+   * garbage byte in the response gap (silicon showed a stray 0x7F
+   * before the real 0x01), and the R1 poll takes the first bit7-clear
+   * byte. Fresh idle clocks between attempts let the card settle. */
+  uint r0 = 0xFF;
+  for (int t = 0; t < 8; t++) {
+    r0 = sd_cmd(0, 0, 0x95);
+    if (r0 == 0x01)
+      break;
+    sd_wait_ready();
+  }
+  klogts();
+  sd_diag("sd: cmd0=", r0);
+  if (r0 != 0x01) {
     cs(0);
+    kconswrite("\n", 1);
     return -1;
   }
   uint v2 = 0;
@@ -125,8 +187,11 @@ sd_init_card(uint res)
       break;
     }
   }
+  sd_diag(" v2=", v2);
+  sd_diag(" a41=", (uint)ok);
   if (!ok) {
     cs(0);
+    kconswrite("\n", 1);
     return -2;
   }
   sd_hc = 0;
@@ -136,6 +201,8 @@ sd_init_card(uint res)
       ocr = (ocr << 8) | xf(0xFF);
     sd_hc = (ocr >> 30) & 1u;
   }
+  sd_cmd(59, 0, 0x01); /* CRC explicitly OFF: CMD8's real-CRC frame
+                        * leaves some cards in an ambiguous state */
   if (!sd_hc)
     sd_cmd(16, 512, 0x01);
   if (sd_cmd(9, 0, 0x01) == 0x00) { /* SEND_CSD: capacity */
@@ -164,51 +231,142 @@ sd_init_card(uint res)
     }
   }
   cs(0);
-  sd_clock(6u, 0u); /* 25 MHz for data */
+  sd_clock(6u, 0u); /* 25 MHz for data. (The bring-up's "fast clock
+                     * failures" were the dmacc switch-width bug
+                     * wearing a signal-integrity costume: the token
+                     * check could never match at ANY clock.) */
+  sd_diag(" hc=", sd_hc);
+  sd_diag(" cap=", sd_sectors);
+  kconswrite("\n", 1);
   W(res) = sd_sectors ? 0 : (uint)-1;
   W(res + 4) = sd_sectors;
   return sd_sectors ? 0 : -3;
 }
+
+/* sd_begin_read: CMD17 + data-token wait. 0 on token. The wait is
+ * iteration-counted, so it must be sized for the FAST clock: the SD
+ * spec allows 100 ms of access time, and at 18.75 MHz two hundred
+ * thousand polled bytes was only ~100 ms of wall clock — the 295 kHz
+ * CSD read enjoyed a 60x longer budget purely by running slower. */
+static int
+sd_begin_read(uint lba)
+{
+  cs(1);
+  /* First-command-after-select retries, all within one CS session:
+   * silicon showed the first frame of a fresh session corrupting
+   * (CMD0 needed the same treatment), and the misheard command can
+   * leave the card busy — wait-ready between attempts clears it. */
+  uint r1 = 0xFFu;
+  for (int t = 0; t < 4; t++) {
+    sd_wait_ready();
+    r1 = sd_cmd(17, sd_hc ? lba : lba * 512u, 0x01);
+    if (r1 == 0x00)
+      break;
+  }
+  if (r1 != 0x00) {
+    cs(0);
+    sd_diag(" r1=", r1);
+    return -2;
+  }
+  for (uint i = 0; i < 2000000u; i++) {
+    uint r = xf(0xFF);
+    if (r == 0xFEu)
+      return 0; /* the data token */
+    if (r != 0xFFu && r != 0 && (r & 0xF0u) == 0)
+      break; /* a real error token (0x01..0x0F; 0x00 is data) */
+  }
+  cs(0);
+  return -3;
+}
+
+static uint sd_slow; /* the fast clock failed: stay at init speed */
+
+/* The speed ladder: reads run at 18.75 MHz; a failure drops to the
+ * proven identification clock permanently (one diag line marks it)
+ * after a wait-ready absorbs whatever the failed attempt left. */
+static int
+sd_begin_read_any(uint lba)
+{
+  int r = sd_begin_read(lba);
+  if (r == 0 || sd_slow)
+    return r;
+  sd_slow = 1;
+  sd_clock(254u, 1u);
+  klogts();
+  sd_diag("sd: rd=", (uint)-r);
+  kconswrite(" -> slow\n", 9);
+  return sd_begin_read(lba);
+}
+
+/* Polled payload: the certain path (one xf per byte). */
+static int
+sd_read_polled(uint lba, uint dst)
+{
+  int r = sd_begin_read_any(lba);
+  if (r != 0)
+    return r;
+  for (uint i = 0; i < 512u; i++)
+    *(volatile uchar *)(dst + i) = (uchar)xf(0xFF);
+  xf(0xFF); /* CRC */
+  xf(0xFF);
+  cs(0);
+  return 0;
+}
+
+static uint sd_burst_state; /* 0 untried, 1 works, 2 failed (diag once) */
 
 static int
 sd_read_sector(uint lba, uint dst)
 {
   if (sd_sectors == 0)
     return -1;
-  cs(1);
-  if (sd_cmd(17, sd_hc ? lba : lba * 512u, 0x01) != 0x00) {
-    cs(0);
-    return -2;
-  }
-  int tok = -3;
-  for (int i = 0; i < 200000; i++) {
-    uint r = xf(0xFF);
-    if (r == 0xFEu) {
-      tok = 0;
-      break;
-    }
-    if (r != 0xFFu && (r & 0xF0u) == 0) {
-      tok = -4;
-      break;
-    }
-  }
-  if (tok != 0) {
-    cs(0);
-    return tok;
-  }
+  if (sd_burst_state == 2)
+    return sd_read_polled(lba, dst);
+  int r = sd_begin_read_any(lba);
+  if (r != 0)
+    return r;
   /* Payload: ch11 drains SSPDR into the buffer at the RX DREQ's pace
-   * while this loop feeds the 512 TX clocks through the 8-deep FIFO.
-   * Drain any stray byte first so count and bytes line up. */
+   * while this loop feeds the 512 TX clocks in credit-batched runs.
+   * In-flight = fed - drained, with drained read once per batch from
+   * ch11's live TRANS_COUNT: pushing only while in-flight < 8 keeps
+   * the 8-deep FIFOs safe by arithmetic — one register read per
+   * batch instead of a status poll per byte (the poll made sector
+   * reads machine-bound at ~15x wire time on silicon). Drain any
+   * stray byte first so count and bytes line up. */
   while (W(SPI_SR) & SR_RNE)
     (void)W(SPI_DR);
-  W(SPI_DMACR) = 1u; /* RXDMAE */
+  W(SPI_DMACR) = 3u; /* RXDMAE|TXDMAE */
   SDCH(0) = SPI_DR;
   SDCH(1) = dst;
   SDCH(2) = 512u;
   SDCH(3) = sd_rxctrl;
+  /* TX clocks, credit-batched: in-flight = fed - drained, with
+   * drained read once per batch from ch11's live TRANS_COUNT —
+   * pushing only while in-flight < 8 keeps the 8-deep FIFOs safe by
+   * arithmetic, one register read per batch instead of a status poll
+   * per byte (the poll made sector reads machine-bound at ~15x wire
+   * time on silicon). */
   uint fed = 0;
   for (uint guard = 0; fed < 512u && guard < 4000000u; guard++) {
-    if (W(SPI_SR) & SR_TNF) {
+    uint inflight = fed - (512u - SDCH(2));
+    if (inflight == 0 && fed <= 504u) {
+      W(SPI_DR) = 0xFFu;
+      W(SPI_DR) = 0xFFu;
+      W(SPI_DR) = 0xFFu;
+      W(SPI_DR) = 0xFFu;
+      W(SPI_DR) = 0xFFu;
+      W(SPI_DR) = 0xFFu;
+      W(SPI_DR) = 0xFFu;
+      W(SPI_DR) = 0xFFu;
+      fed += 8u;
+      continue;
+    }
+    uint room = 0;
+    if (inflight < 8u)
+      room = 8u - inflight;
+    if (room > 512u - fed)
+      room = 512u - fed;
+    for (uint k = 0; k < room; k++) {
       W(SPI_DR) = 0xFFu;
       fed++;
     }
@@ -216,11 +374,24 @@ sd_read_sector(uint lba, uint dst)
   for (uint guard = 0; SDCH(2) != 0 && guard < 4000000u; guard++)
     ;
   W(SPI_DMACR) = 0;
-  if (SDCH(2) != 0) { /* drain wedged: abort the borrow, fail the read */
+  if (SDCH(2) != 0) { /* drain wedged: abort the borrow, go polled */
+    uint left = SDCH(2);
     W(0x50000000u + 0x464u) = 1u << SD_CH; /* CHAN_ABORT (RP2350) */
-    cs(0);
-    return -5;
+    for (uint guard = 0; (SDCH(4) & (1u << 26)) && guard < 100000u; guard++)
+      ; /* AL1_CTRL.BUSY: the abort is asynchronous on silicon */
+    SDCH(4) = 0;
+    if (sd_burst_state != 2) {
+      sd_burst_state = 2;
+      klogts();
+      sd_diag("sd: burst left=", left);
+      kconswrite(" -> polled\n", 11);
+    }
+    cs(0); /* deselect aborts the single-block read */
+    for (int i = 0; i < 4; i++)
+      xf(0xFF);
+    return sd_read_polled(lba, dst);
   }
+  sd_burst_state = 1;
   xf(0xFF); /* CRC */
   xf(0xFF);
   cs(0);
