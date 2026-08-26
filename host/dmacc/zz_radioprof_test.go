@@ -9,6 +9,7 @@ package dmacc_test
 // estimated analytically, not measured.
 
 import (
+	"os"
 	"fmt"
 	"sort"
 	"strings"
@@ -19,6 +20,9 @@ import (
 )
 
 func TestProfileRadio(t *testing.T) {
+	if os.Getenv("RADIO_PROBES") == "" {
+		t.Skip("diagnostic probe (~10 min of emulation): set RADIO_PROBES=1")
+	}
 	bd := boards.GamePico
 	run := func(lo, hi uint32) ([]uint32, map[string]uint32) {
 		m, prog := bootGame(t)

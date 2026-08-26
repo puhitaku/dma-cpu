@@ -249,6 +249,22 @@ sd_init_card(uint res)
   return sd_sectors ? 0 : -3;
 }
 
+/* sd_token_wait: clock until the 0xFE data token. 0 on token, -1 on
+ * an error token or exhaustion. Sized for the FAST clock (see
+ * sd_begin_read). */
+static int
+sd_token_wait(void)
+{
+  for (uint i = 0; i < 2000000u; i++) {
+    uint r = xf(0xFF);
+    if (r == 0xFEu)
+      return 0;
+    if (r != 0xFFu && r != 0 && (r & 0xF0u) == 0)
+      return -1; /* a real error token (0x01..0x0F; 0x00 is data) */
+  }
+  return -1;
+}
+
 /* sd_begin_read: CMD17 + data-token wait. 0 on token. The wait is
  * iteration-counted, so it must be sized for the FAST clock: the SD
  * spec allows 100 ms of access time, and at 18.75 MHz two hundred
@@ -274,13 +290,8 @@ sd_begin_read(uint lba)
     sd_diag(" r1=", r1);
     return -2;
   }
-  for (uint i = 0; i < 2000000u; i++) {
-    uint r = xf(0xFF);
-    if (r == 0xFEu)
-      return 0; /* the data token */
-    if (r != 0xFFu && r != 0 && (r & 0xF0u) == 0)
-      break; /* a real error token (0x01..0x0F; 0x00 is data) */
-  }
+  if (sd_token_wait() == 0)
+    return 0;
   cs(0);
   return -3;
 }
@@ -320,6 +331,7 @@ sd_read_polled(uint lba, uint dst)
 }
 
 static uint sd_burst_state; /* 0 untried, 1 works, 2 failed (diag once) */
+static int sd_payload(uint dst);
 
 static int
 sd_read_sector(uint lba, uint dst)
@@ -331,14 +343,31 @@ sd_read_sector(uint lba, uint dst)
   int r = sd_begin_read_any(lba);
   if (r != 0)
     return r;
-  /* Payload: ch11 drains SSPDR into the buffer at the RX DREQ's pace
-   * while this loop feeds the 512 TX clocks in credit-batched runs.
-   * In-flight = fed - drained, with drained read once per batch from
-   * ch11's live TRANS_COUNT: pushing only while in-flight < 8 keeps
-   * the 8-deep FIFOs safe by arithmetic — one register read per
-   * batch instead of a status poll per byte (the poll made sector
-   * reads machine-bound at ~15x wire time on silicon). Drain any
-   * stray byte first so count and bytes line up. */
+  r = sd_payload(dst);
+  if (r == -9) { /* drain wedged: caller-visible recovery below */
+    cs(0); /* deselect aborts the single-block read */
+    for (int i = 0; i < 4; i++)
+      xf(0xFF);
+    return sd_read_polled(lba, dst);
+  }
+  if (r != 0)
+    return r;
+  sd_burst_state = 1;
+  xf(0xFF); /* CRC */
+  xf(0xFF);
+  cs(0);
+  return 0;
+}
+
+/* sd_payload: one 512-byte block into dst — ch11 drains SSPDR at the
+ * RX DREQ's pace while the TX clocks come from the console-channel
+ * borrow (or the credit-batched machine feed). 0 on success; -9 when
+ * the drain wedged (ch11 aborted, sd_burst_state marked: the caller
+ * abandons the session). */
+static int
+sd_payload(uint dst)
+{
+  /* Drain any stray byte first so count and bytes line up. */
   while (W(SPI_SR) & SR_RNE)
     (void)W(SPI_DR);
   W(SPI_DMACR) = 3u; /* RXDMAE|TXDMAE */
@@ -394,7 +423,7 @@ sd_read_sector(uint lba, uint dst)
   for (uint guard = 0; SDCH(2) != 0 && guard < 4000000u; guard++)
     ;
   W(SPI_DMACR) = 0;
-  if (SDCH(2) != 0) { /* drain wedged: abort the borrow, go polled */
+  if (SDCH(2) != 0) { /* drain wedged: abort ch11, mark, bail */
     uint left = SDCH(2);
     W(0x50000000u + 0x464u) = 1u << SD_CH; /* CHAN_ABORT (RP2350) */
     for (uint guard = 0; (SDCH(4) & (1u << 26)) && guard < 100000u; guard++)
@@ -406,15 +435,50 @@ sd_read_sector(uint lba, uint dst)
       sd_diag("sd: burst left=", left);
       kconswrite(" -> polled\n", 11);
     }
-    cs(0); /* deselect aborts the single-block read */
-    for (int i = 0; i < 4; i++)
-      xf(0xFF);
-    return sd_read_polled(lba, dst);
+    return -9;
   }
-  sd_burst_state = 1;
-  xf(0xFF); /* CRC */
-  xf(0xFF);
+  return 0;
+}
+
+/* ksd_read_run: `n` contiguous sectors straight into dst via CMD18 —
+ * ONE command and ONE card access gap for the whole run instead of
+ * per sector (the per-CMD17 NAND access time dominated slide loads:
+ * ~600 sectors x hundreds of us of card latency). Any failure
+ * returns -1 with the session closed; the caller re-reads the span
+ * per-sector, so partial data never leaks. */
+int
+ksd_read_run(uint lba, uint dst, uint n)
+{
+  if (sd_spi == 0 || sd_sectors == 0 || sd_slow || sd_burst_state == 2)
+    return -1;
+  cs(1);
+  uint r1 = 0xFFu;
+  for (int t = 0; t < 4; t++) {
+    sd_wait_ready();
+    r1 = sd_cmd(18, sd_hc ? lba : lba * 512u, 0x01);
+    if (r1 == 0x00)
+      break;
+  }
+  if (r1 != 0x00) {
+    cs(0);
+    return -1;
+  }
+  for (uint i = 0; i < n; i++) {
+    if (sd_token_wait() != 0 || sd_payload(dst + 512u * i) != 0) {
+      sd_cmd(12, 0, 0x01); /* STOP, then absorb the busy tail */
+      sd_wait_ready();
+      cs(0);
+      xf(0xFF);
+      return -1;
+    }
+    xf(0xFF); /* block CRC */
+    xf(0xFF);
+  }
+  sd_cmd(12, 0, 0x01);
+  sd_wait_ready(); /* R1b: the card may hold busy after STOP */
   cs(0);
+  xf(0xFF);
+  sd_burst_state = 1;
   return 0;
 }
 

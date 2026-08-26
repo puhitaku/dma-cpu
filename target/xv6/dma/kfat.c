@@ -44,6 +44,9 @@ static uint rootclus;
 
 /* --- SD backend: a 2-sector LRU cache over ARM-mailbox reads --- */
 extern int kflash_sd(uint op, uint off, uint src); /* kflash.c */
+extern int ksd_read_run(uint lba, uint dst, uint n); /* ksd.c: CMD18;
+                         * -1 = unavailable/failed, caller re-reads
+                         * the span per-sector */
 extern void kdmacpy(uint dst, uint src, uint len);   /* kdma.c */
 #define SDBASE 0x08000000u /* fake volume base; never dereferenced */
 #define NSDCACHE 2
@@ -558,11 +561,42 @@ fat_readi(struct inode *ip, uint dst, uint off, uint n)
     if (take > n - done)
       take = n - done;
     if (fat_sd) {
-      /* Bulk fast path: for whole, aligned sectors the ARM writes
-       * the SPI data STRAIGHT into the caller's buffer (op 4 takes
-       * any SRAM address) — no cache slot, no machine-side memmove,
-       * which was interpreted word-at-a-time and dominated slide
-       * loads. Ragged head/tail bytes still go through the cache. */
+      /* CMD18 fast path: at an aligned whole-sector position, walk
+       * the chain while clusters are PHYSICALLY contiguous and read
+       * the whole span in one multi-block command — one card access
+       * gap for hundreds of sectors instead of one per CMD17 (the
+       * dominant cost of slide loads on silicon: real cards charge
+       * 100-400 us of NAND latency per command). Works at any
+       * cluster size; sequentially written files are contiguous. */
+      if (((clusaddr(cl) + pos) & 511) == 0 && ((dst + done) & 3) == 0 &&
+          n - done >= 1024) {
+        uint lba0 = sdpart + ((clusaddr(cl) + pos - SDBASE) >> 9);
+        uint want = (n - done) >> 9;
+        uint span = (clussz - pos) >> 9;
+        uint c2 = cl;
+        while (span < want) {
+          uint nx = fat_next(c2);
+          if (nx < 2 || nx >= 0x0FFFFFF8u ||
+              clusaddr(nx) != clusaddr(c2) + clussz)
+            break;
+          c2 = nx;
+          span += clussz >> 9;
+        }
+        if (span > want)
+          span = want;
+        if (span > 1 && ksd_read_run(lba0, dst + done, span) == 0) {
+          done += span << 9;
+          pos += span << 9;
+          while (pos >= clussz && cl >= 2 && cl < 0x0FFFFFF8u) {
+            pos -= clussz;
+            cl = fat_next(cl);
+          }
+          continue;
+        }
+      }
+      /* Bulk fallback: whole aligned sectors one at a time straight
+       * into the caller's buffer; ragged head/tail bytes through the
+       * cache. */
       uint voff = clusaddr(cl) + pos - SDBASE;
       uint left = take, d = dst + done;
       while (left) {

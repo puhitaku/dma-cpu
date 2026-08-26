@@ -8,6 +8,7 @@ package dmacc_test
 // times in an open file on the feather.
 
 import (
+	"os"
 	"fmt"
 	"testing"
 
@@ -16,6 +17,9 @@ import (
 )
 
 func TestProfileVi(t *testing.T) {
+	if os.Getenv("RADIO_PROBES") == "" {
+		t.Skip("diagnostic probe (~1 min of emulation): set RADIO_PROBES=1")
+	}
 	bd := boards.Feather
 	const keys = 24
 	settle := func(m *emu.Machine, feed string, budget uint64) {

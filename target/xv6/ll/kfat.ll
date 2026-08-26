@@ -1162,14 +1162,14 @@ define dso_local i32 @fat_readi(ptr noundef %0, i32 noundef %1, i32 noundef %2, 
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %7) #11
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %6) #11
   call void @llvm.lifetime.end.p0(i64 64, ptr nonnull %5) #11
-  br label %186
+  br label %256
 
 74:                                               ; preds = %4
   %75 = getelementptr inbounds [16 x %struct.fatmeta], ptr @fatmeta, i32 0, i32 %14
   %76 = getelementptr inbounds nuw i8, ptr %75, i32 4
   %77 = load i32, ptr %76, align 4, !tbaa !31
   %78 = icmp ult i32 %2, %77
-  br i1 %78, label %79, label %186
+  br i1 %78, label %79, label %256
 
 79:                                               ; preds = %74
   %80 = add i32 %3, %2
@@ -1222,106 +1222,202 @@ define dso_local i32 @fat_readi(ptr noundef %0, i32 noundef %1, i32 noundef %2, 
   %113 = urem i32 %2, %112
   br label %114
 
-114:                                              ; preds = %183, %110
-  %115 = phi i32 [ %101, %110 ], [ %185, %183 ]
-  %116 = phi i32 [ 0, %110 ], [ %184, %183 ]
-  %117 = phi i32 [ %113, %110 ], [ 0, %183 ]
+114:                                              ; preds = %251, %110
+  %115 = phi i32 [ %101, %110 ], [ %252, %251 ]
+  %116 = phi i32 [ 0, %110 ], [ %255, %251 ]
+  %117 = phi i32 [ %113, %110 ], [ %254, %251 ]
   %118 = icmp ult i32 %116, %83
   %119 = add i32 %115, -2
   %120 = icmp ult i32 %119, 268435446
   %121 = select i1 %118, i1 %120, i1 false
-  br i1 %121, label %122, label %186
+  br i1 %121, label %122, label %256
 
 122:                                              ; preds = %114
   %123 = load i32, ptr @clussz, align 4, !tbaa !10
-  %124 = sub nsw i32 %123, %117
+  %124 = sub i32 %123, %117
   %125 = sub nuw i32 %83, %116
   %126 = tail call i32 @llvm.umin.i32(i32 %124, i32 %125)
   %127 = load i1, ptr @fat_sd, align 4
-  br i1 %127, label %128, label %175
+  br i1 %127, label %128, label %241
 
 128:                                              ; preds = %122
   %129 = load i32, ptr @fbase, align 4, !tbaa !10
   %130 = load i32, ptr @dataoff, align 4, !tbaa !10
   %131 = mul i32 %123, %119
-  %132 = add i32 %117, -134217728
-  %133 = add i32 %132, %131
-  %134 = add i32 %133, %129
-  %135 = add i32 %134, %130
-  %136 = add i32 %116, %1
-  br label %137
+  %132 = add i32 %131, %117
+  %133 = add i32 %132, %129
+  %134 = add i32 %133, %130
+  %135 = and i32 %134, 511
+  %136 = icmp eq i32 %135, 0
+  %137 = add i32 %116, %1
+  br i1 %136, label %138, label %194
 
-137:                                              ; preds = %171, %128
-  %138 = phi i32 [ %135, %128 ], [ %172, %171 ]
-  %139 = phi i32 [ %126, %128 ], [ %173, %171 ]
-  %140 = phi i32 [ %136, %128 ], [ %174, %171 ]
-  %141 = icmp eq i32 %139, 0
-  br i1 %141, label %183, label %142
+138:                                              ; preds = %128
+  %139 = and i32 %137, 3
+  %140 = icmp eq i32 %139, 0
+  %141 = icmp ugt i32 %125, 1023
+  %142 = select i1 %140, i1 %141, i1 false
+  br i1 %142, label %143, label %194
 
-142:                                              ; preds = %137
-  %143 = and i32 %138, 511
-  %144 = icmp eq i32 %143, 0
-  %145 = icmp ugt i32 %139, 511
-  %146 = and i1 %144, %145
-  %147 = and i32 %140, 3
-  %148 = icmp eq i32 %147, 0
-  %149 = select i1 %146, i1 %148, i1 false
-  br i1 %149, label %150, label %158
+143:                                              ; preds = %138
+  %144 = load i32, ptr @sdpart, align 4, !tbaa !10
+  %145 = add i32 %134, -134217728
+  %146 = lshr exact i32 %145, 9
+  %147 = add i32 %144, %146
+  %148 = lshr i32 %125, 9
+  %149 = lshr i32 %124, 9
+  br label %150
 
-150:                                              ; preds = %142
-  %151 = load i32, ptr @sdpart, align 4, !tbaa !10
-  %152 = lshr exact i32 %138, 9
-  %153 = add i32 %151, %152
-  %154 = tail call i32 @kflash_sd(i32 noundef 4, i32 noundef %153, i32 noundef %140) #12
-  %155 = add i32 %138, 512
-  %156 = add i32 %140, 512
-  %157 = add i32 %139, -512
-  br label %171
+150:                                              ; preds = %171, %143
+  %151 = phi i32 [ %149, %143 ], [ %173, %171 ]
+  %152 = phi i32 [ %115, %143 ], [ %155, %171 ]
+  %153 = icmp samesign ult i32 %151, %148
+  br i1 %153, label %154, label %174
 
-158:                                              ; preds = %142
-  %159 = sub nuw nsw i32 512, %143
-  %160 = tail call i32 @llvm.umin.i32(i32 %159, i32 %139)
-  %161 = inttoptr i32 %140 to ptr
-  %162 = load i32, ptr @sdpart, align 4, !tbaa !10
-  %163 = lshr i32 %138, 9
-  %164 = add i32 %162, %163
-  %165 = tail call fastcc ptr @sdsec(i32 noundef %164) #10
-  %166 = getelementptr inbounds nuw i8, ptr %165, i32 %143
-  %167 = tail call ptr @memmove(ptr noundef %161, ptr noundef nonnull %166, i32 noundef %160) #12
-  %168 = add i32 %160, %138
-  %169 = add i32 %160, %140
-  %170 = sub i32 %139, %160
-  br label %171
+154:                                              ; preds = %150
+  %155 = tail call fastcc i32 @fat_next(i32 noundef %152) #10
+  %156 = add nsw i32 %155, -268435448
+  %157 = icmp ult i32 %156, -268435446
+  br i1 %157, label %174, label %158
 
-171:                                              ; preds = %158, %150
-  %172 = phi i32 [ %155, %150 ], [ %168, %158 ]
-  %173 = phi i32 [ %157, %150 ], [ %170, %158 ]
-  %174 = phi i32 [ %156, %150 ], [ %169, %158 ]
-  br label %137, !llvm.loop !51
+158:                                              ; preds = %154
+  %159 = load i32, ptr @fbase, align 4, !tbaa !10
+  %160 = load i32, ptr @dataoff, align 4, !tbaa !10
+  %161 = add i32 %160, %159
+  %162 = add nsw i32 %155, -2
+  %163 = load i32, ptr @clussz, align 4, !tbaa !10
+  %164 = mul i32 %163, %162
+  %165 = add i32 %164, %161
+  %166 = add nsw i32 %152, -2
+  %167 = mul i32 %163, %166
+  %168 = add i32 %163, %161
+  %169 = add i32 %168, %167
+  %170 = icmp eq i32 %165, %169
+  br i1 %170, label %171, label %174
 
-175:                                              ; preds = %122
-  %176 = add i32 %116, %1
-  %177 = load i32, ptr @fbase, align 4, !tbaa !10
-  %178 = load i32, ptr @dataoff, align 4, !tbaa !10
-  %179 = mul i32 %123, %119
-  %180 = add i32 %179, %117
-  %181 = add i32 %180, %177
-  %182 = add i32 %181, %178
-  tail call void @kdmacpy(i32 noundef %176, i32 noundef %182, i32 noundef %126) #12
+171:                                              ; preds = %158
+  %172 = lshr i32 %163, 9
+  %173 = add nuw nsw i32 %172, %151
+  br label %150
+
+174:                                              ; preds = %154, %158, %150
+  %175 = tail call i32 @llvm.umin.i32(i32 %151, i32 %148)
+  %176 = icmp samesign ugt i32 %175, 1
+  br i1 %176, label %177, label %194
+
+177:                                              ; preds = %174
+  %178 = tail call i32 @ksd_read_run(i32 noundef %147, i32 noundef %137, i32 noundef %175) #12
+  %179 = icmp eq i32 %178, 0
+  br i1 %179, label %180, label %194
+
+180:                                              ; preds = %177
+  %181 = shl nuw i32 %175, 9
+  %182 = add i32 %181, %117
   br label %183
 
-183:                                              ; preds = %137, %175
-  %184 = add i32 %126, %116
-  %185 = tail call fastcc i32 @fat_next(i32 noundef %115) #10
-  br label %114, !llvm.loop !52
+183:                                              ; preds = %191, %180
+  %184 = phi i32 [ %115, %180 ], [ %193, %191 ]
+  %185 = phi i32 [ %182, %180 ], [ %192, %191 ]
+  %186 = load i32, ptr @clussz, align 4, !tbaa !10
+  %187 = icmp uge i32 %185, %186
+  %188 = add nsw i32 %184, -2
+  %189 = icmp ult i32 %188, 268435446
+  %190 = select i1 %187, i1 %189, i1 false
+  br i1 %190, label %191, label %251, !llvm.loop !51
 
-186:                                              ; preds = %114, %74, %71
-  %187 = phi i32 [ %73, %71 ], [ 0, %74 ], [ %116, %114 ]
-  ret i32 %187
+191:                                              ; preds = %183
+  %192 = sub nuw i32 %185, %186
+  %193 = tail call fastcc i32 @fat_next(i32 noundef %184) #10
+  br label %183, !llvm.loop !52
+
+194:                                              ; preds = %128, %174, %177, %138
+  %195 = load i32, ptr @fbase, align 4, !tbaa !10
+  %196 = load i32, ptr @dataoff, align 4, !tbaa !10
+  %197 = load i32, ptr @clussz, align 4, !tbaa !10
+  %198 = mul i32 %197, %119
+  %199 = add i32 %117, -134217728
+  %200 = add i32 %199, %195
+  %201 = add i32 %200, %196
+  %202 = add i32 %201, %198
+  br label %203
+
+203:                                              ; preds = %237, %194
+  %204 = phi i32 [ %202, %194 ], [ %238, %237 ]
+  %205 = phi i32 [ %126, %194 ], [ %239, %237 ]
+  %206 = phi i32 [ %137, %194 ], [ %240, %237 ]
+  %207 = icmp eq i32 %205, 0
+  br i1 %207, label %249, label %208
+
+208:                                              ; preds = %203
+  %209 = and i32 %204, 511
+  %210 = icmp eq i32 %209, 0
+  %211 = icmp ugt i32 %205, 511
+  %212 = and i1 %210, %211
+  %213 = and i32 %206, 3
+  %214 = icmp eq i32 %213, 0
+  %215 = select i1 %212, i1 %214, i1 false
+  br i1 %215, label %216, label %224
+
+216:                                              ; preds = %208
+  %217 = load i32, ptr @sdpart, align 4, !tbaa !10
+  %218 = lshr exact i32 %204, 9
+  %219 = add i32 %217, %218
+  %220 = tail call i32 @kflash_sd(i32 noundef 4, i32 noundef %219, i32 noundef %206) #12
+  %221 = add i32 %204, 512
+  %222 = add i32 %206, 512
+  %223 = add i32 %205, -512
+  br label %237
+
+224:                                              ; preds = %208
+  %225 = sub nuw nsw i32 512, %209
+  %226 = tail call i32 @llvm.umin.i32(i32 %225, i32 %205)
+  %227 = inttoptr i32 %206 to ptr
+  %228 = load i32, ptr @sdpart, align 4, !tbaa !10
+  %229 = lshr i32 %204, 9
+  %230 = add i32 %228, %229
+  %231 = tail call fastcc ptr @sdsec(i32 noundef %230) #10
+  %232 = getelementptr inbounds nuw i8, ptr %231, i32 %209
+  %233 = tail call ptr @memmove(ptr noundef %227, ptr noundef nonnull %232, i32 noundef %226) #12
+  %234 = add i32 %226, %204
+  %235 = add i32 %226, %206
+  %236 = sub i32 %205, %226
+  br label %237
+
+237:                                              ; preds = %224, %216
+  %238 = phi i32 [ %221, %216 ], [ %234, %224 ]
+  %239 = phi i32 [ %223, %216 ], [ %236, %224 ]
+  %240 = phi i32 [ %222, %216 ], [ %235, %224 ]
+  br label %203, !llvm.loop !53
+
+241:                                              ; preds = %122
+  %242 = add i32 %116, %1
+  %243 = load i32, ptr @fbase, align 4, !tbaa !10
+  %244 = load i32, ptr @dataoff, align 4, !tbaa !10
+  %245 = mul i32 %123, %119
+  %246 = add i32 %245, %117
+  %247 = add i32 %246, %243
+  %248 = add i32 %247, %244
+  tail call void @kdmacpy(i32 noundef %242, i32 noundef %248, i32 noundef %126) #12
+  br label %249
+
+249:                                              ; preds = %203, %241
+  %250 = tail call fastcc i32 @fat_next(i32 noundef %115) #10
+  br label %251
+
+251:                                              ; preds = %183, %249
+  %252 = phi i32 [ %250, %249 ], [ %184, %183 ]
+  %253 = phi i32 [ %126, %249 ], [ %181, %183 ]
+  %254 = phi i32 [ 0, %249 ], [ %185, %183 ]
+  %255 = add i32 %253, %116
+  br label %114
+
+256:                                              ; preds = %114, %74, %71
+  %257 = phi i32 [ %73, %71 ], [ 0, %74 ], [ %116, %114 ]
+  ret i32 %257
 }
 
 ; Function Attrs: minsize nounwind optsize
-define internal fastcc range(i32 0, 268435456) i32 @fat_next(i32 noundef range(i32 2, 268435448) %0) unnamed_addr #2 {
+define internal fastcc range(i32 0, 268435456) i32 @fat_next(i32 noundef range(i32 0, 268435456) %0) unnamed_addr #2 {
   %2 = load i32, ptr @fbase, align 4, !tbaa !10
   %3 = load i32, ptr @fatoff, align 4, !tbaa !10
   %4 = shl nuw nsw i32 %0, 2
@@ -1333,25 +1429,28 @@ define internal fastcc range(i32 0, 268435456) i32 @fat_next(i32 noundef range(i
 }
 
 ; Function Attrs: minsize optsize
+declare dso_local i32 @ksd_read_run(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #6
+
+; Function Attrs: minsize optsize
 declare dso_local void @kdmacpy(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #6
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(argmem: readwrite)
 define dso_local void @fat_stati(ptr noundef readonly captures(none) %0, ptr noundef writeonly captures(none) initializes((0, 16)) %1) local_unnamed_addr #7 {
-  store i32 4007, ptr %1, align 4, !tbaa !53
+  store i32 4007, ptr %1, align 4, !tbaa !54
   %3 = getelementptr inbounds nuw i8, ptr %0, i32 4
   %4 = load i32, ptr %3, align 4, !tbaa !21
   %5 = getelementptr inbounds nuw i8, ptr %1, i32 4
-  store i32 %4, ptr %5, align 4, !tbaa !56
+  store i32 %4, ptr %5, align 4, !tbaa !57
   %6 = getelementptr inbounds nuw i8, ptr %0, i32 20
   %7 = load i16, ptr %6, align 4, !tbaa !23
   %8 = getelementptr inbounds nuw i8, ptr %1, i32 8
-  store i16 %7, ptr %8, align 4, !tbaa !57
+  store i16 %7, ptr %8, align 4, !tbaa !58
   %9 = getelementptr inbounds nuw i8, ptr %1, i32 10
-  store i16 1, ptr %9, align 2, !tbaa !58
+  store i16 1, ptr %9, align 2, !tbaa !59
   %10 = getelementptr inbounds nuw i8, ptr %0, i32 28
   %11 = load i32, ptr %10, align 4, !tbaa !26
   %12 = getelementptr inbounds nuw i8, ptr %1, i32 12
-  store i32 %11, ptr %12, align 4, !tbaa !59
+  store i32 %11, ptr %12, align 4, !tbaa !60
   ret void
 }
 
@@ -1428,10 +1527,11 @@ attributes #12 = { minsize nobuiltin nounwind optsize "no-builtins" }
 !50 = distinct !{!50, !12, !13}
 !51 = distinct !{!51, !12, !13}
 !52 = distinct !{!52, !12, !13}
-!53 = !{!54, !5, i64 0}
-!54 = !{!"stat", !5, i64 0, !5, i64 4, !9, i64 8, !9, i64 10, !55, i64 12}
-!55 = !{!"long", !6, i64 0}
-!56 = !{!54, !5, i64 4}
-!57 = !{!54, !9, i64 8}
-!58 = !{!54, !9, i64 10}
-!59 = !{!54, !55, i64 12}
+!53 = distinct !{!53, !12, !13}
+!54 = !{!55, !5, i64 0}
+!55 = !{!"stat", !5, i64 0, !5, i64 4, !9, i64 8, !9, i64 10, !56, i64 12}
+!56 = !{!"long", !6, i64 0}
+!57 = !{!55, !5, i64 4}
+!58 = !{!55, !9, i64 8}
+!59 = !{!55, !9, i64 10}
+!60 = !{!55, !56, i64 12}

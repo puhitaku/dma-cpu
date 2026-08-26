@@ -4,11 +4,15 @@ package dmacc_test
 // shadows? Dumps the 10x10 floor patch brightness (bR+bG+bB) after
 // ~256 shots. RAD_RAM layout mirrors radio.c.
 import (
+	"os"
 	"fmt"
 	"testing"
 )
 
 func TestShadowMap(t *testing.T) {
+	if os.Getenv("RADIO_PROBES") == "" {
+		t.Skip("diagnostic probe (~9 min of emulation): set RADIO_PROBES=1")
+	}
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
 	for _, marker := range []string{"menu: LANWalk", "menu: Yacht",
