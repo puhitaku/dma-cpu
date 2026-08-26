@@ -711,7 +711,7 @@ func TestGameRadio(t *testing.T) {
 	at = runUntil(t, m, "radio: up", at, 100_000_000)
 	// let a few dozen shots land: the ceiling light must have lit the
 	// floor, and the red/green walls must be bleeding their colors
-	at = runUntil(t, m, "radio: shot 32", at, 3_000_000_000)
+	at = runUntil(t, m, "radio: shot 32", at, 5_000_000_000)
 
 	p := decodeLCD(m, 16)
 	// the 2x2 ceiling light renders near-white in the upper middle

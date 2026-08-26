@@ -2,7 +2,12 @@
  * rendered live — now with the two interior boxes (a tall cuboid and
  * a cube, both rotated about the vertical axis) that give the scene
  * its soft shadows. Five walls are split into 10x10 patches, each box
- * face into 4x4; a 2x2 ceiling light carries the initial energy.
+ * face into 4x4; a 2x2 ceiling light carries the initial energy. A
+ * sixth, INVISIBLE wall closes the camera opening (5x5, never drawn):
+ * without it the opening is an energy sink and the camera-facing box
+ * sides — lit only by third-bounce light off the wall strips in front
+ * of them — quantize to black. The closed box bounces the ceiling
+ * light straight back at them.
  * Each step "shoots" the brightest patch's unshot energy at every
  * other patch and repaints what changed, so the room brightens and
  * color-bleeds in front of you — the whole point is WATCHING the
@@ -41,7 +46,11 @@
 #define NWALL (5 * NPW)
 #define NBF 10         /* box faces: 2 boxes x (4 sides + top) */
 #define NPBF 16        /* 4x4 patches per box face */
-#define NP (NWALL + NBF * NPBF) /* 660 patches */
+#define NBOX (NBF * NPBF)
+#define NFRONT (NWALL + NBOX) /* first invisible front-wall patch */
+#define NF 5                  /* front wall: 5x5, an energy mirror */
+#define PSIZEF 48
+#define NP (NFRONT + NF * NF) /* 685 patches */
 #define HALF 120       /* box half-width in scene units */
 #define ZNEAR 200      /* opening (camera at z=0, focal ZNEAR) */
 #define PSIZE 24       /* wall patch edge: 240/10 */
@@ -70,31 +79,31 @@
 #define B1_SIN (-79)
 
 /* --- state in free SRAM (see bench.c for the region's story) ---
- * ten NP-sized arrays at a 1320-byte stride, then the projected wall
+ * ten NP-sized arrays at a 1370-byte stride, then the projected wall
  * corner grid (5 walls x 11x11 uchar pairs), then the box face
- * corners (10 faces x 5x5 uchar pairs); ~14.7 KiB of the 15.9 KiB
- * window. */
+ * corners (10 faces x 5x5 uchar pairs; the front wall projects to
+ * nothing and has none); ~15.1 KiB of the 15.9 KiB window. */
 #define RAD_RAM 0x2003C000u
 #define pcx ((short *)RAD_RAM)
-#define pcy ((short *)(RAD_RAM + 1320))
-#define pcz ((short *)(RAD_RAM + 2640))
-#define bR ((ushort *)(RAD_RAM + 3960))
-#define bG ((ushort *)(RAD_RAM + 5280))
-#define bB ((ushort *)(RAD_RAM + 6600))
-#define uR ((ushort *)(RAD_RAM + 7920))
-#define uG ((ushort *)(RAD_RAM + 9240))
-#define uB ((ushort *)(RAD_RAM + 10560))
-#define shown ((ushort *)(RAD_RAM + 11880))
-#define corn ((uchar *)(RAD_RAM + 13200))  /* walls: 1210 B */
-#define bcorn ((uchar *)(RAD_RAM + 14412)) /* boxes: 500 B */
+#define pcy ((short *)(RAD_RAM + 1370))
+#define pcz ((short *)(RAD_RAM + 2740))
+#define bR ((ushort *)(RAD_RAM + 4110))
+#define bG ((ushort *)(RAD_RAM + 5480))
+#define bB ((ushort *)(RAD_RAM + 6850))
+#define uR ((ushort *)(RAD_RAM + 8220))
+#define uG ((ushort *)(RAD_RAM + 9590))
+#define uB ((ushort *)(RAD_RAM + 10960))
+#define shown ((ushort *)(RAD_RAM + 12330))
+#define corn ((uchar *)(RAD_RAM + 13700))  /* walls: 1210 B */
+#define bcorn ((uchar *)(RAD_RAM + 14912)) /* boxes: 500 B */
 #define CI(w, i, k) ((w) * 242 + ((k) * 11 + (i)) * 2)
 #define BCI(f, i, k) ((f) * 50 + ((k) * 5 + (i)) * 2)
 
 /* per-face normals (Q8) and shooter area ratios (Q8 vs a wall patch),
  * filled by setup(); +10 visibility flags */
-#define nrm ((short *)(RAD_RAM + 14912))   /* 10 x 3 */
-#define areaq ((short *)(RAD_RAM + 14972)) /* 10 */
-#define fvis ((short *)(RAD_RAM + 14992))  /* 10; ends 0x2003FAB4 */
+#define nrm ((short *)(RAD_RAM + 15412))   /* 10 x 3 */
+#define areaq ((short *)(RAD_RAM + 15472)) /* 10 */
+#define fvis ((short *)(RAD_RAM + 15492))  /* 10; ends 0x2003FCA4 */
 
 /* reflectance per wall group, Q8; box faces are warm white */
 static const ushort rho[6][3] = {
@@ -113,10 +122,13 @@ is_light(int p)
   return (i == 4 || i == 5) && (k == 4 || k == 5);
 }
 
-/* patch group: 0..4 walls, 5 boxes (for reflectance) */
+/* patch group: 0..4 walls, 5 boxes (for reflectance); the invisible
+ * front wall reflects like the white walls */
 static int
 group(int p)
 {
+  if (p >= NFRONT)
+    return 0;
   return p < NWALL ? p / NPW : 5;
 }
 
@@ -294,6 +306,12 @@ setup(void)
     face_point(f, 1, 1, &cx, &cy, &cz2);
     fvis[f] = (short)((nx * cx + ny * cy + nz * cz2) < 0);
   }
+  for (int j = 0; j < NF * NF; j++) { /* the invisible front wall */
+    int p = NFRONT + j, i = j % NF, k = j / NF;
+    pcx[p] = (short)(-HALF + PSIZEF / 2 + PSIZEF * i);
+    pcy[p] = (short)(-HALF + PSIZEF / 2 + PSIZEF * k);
+    pcz[p] = ZNEAR;
+  }
   for (int p = 0; p < NP; p++) {
     bR[p] = bG[p] = bB[p] = 0;
     uR[p] = uG[p] = uB[p] = 0;
@@ -456,13 +474,14 @@ repaint(int all)
     draw_wall_patch(p, c);
     wallchanged = 1;
   }
-  for (int p = NWALL; p < NP; p++) {
+  for (int p = NWALL; p < NFRONT; p++) {
     ushort c = patch_color(p);
     if (!all && !wallchanged && c == shown[p])
       continue;
     shown[p] = c;
     draw_box_patch(p, c);
   }
+  /* NFRONT..NP: the invisible front wall — never drawn */
   gfx_present();
 }
 
@@ -525,6 +544,12 @@ clearance(int p, int q)
 static void
 normal_of(int p, int *nx, int *ny, int *nz)
 {
+  if (p >= NFRONT) { /* the invisible front wall: into the room */
+    *nx = 0;
+    *ny = 0;
+    *nz = 256;
+    return;
+  }
   if (p >= NWALL) {
     int f = (p - NWALL) / NPBF;
     *nx = nrm[f * 3];
@@ -546,6 +571,8 @@ shooter_scale(int p) /* Q8 area ratio vs a wall patch */
 {
   if (p < NWALL)
     return 256;
+  if (p >= NFRONT)
+    return (PSIZEF * PSIZEF * 256) / AREA; /* 48x48 vs 24x24: 1024 */
   return areaq[(p - NWALL) / NPBF];
 }
 
