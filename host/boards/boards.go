@@ -276,10 +276,14 @@ var Feather = &Board{
 	// timing is untouched). Tick cycles scale via TickCycles().
 	ClkSysKHz: 300000,
 
-	// The framebuffer is SRAM: DMA-master accesses through the QMI
-	// PSRAM window cost ~1000x a CPU access on silicon (prompts/036),
-	// and this machine IS DMA. 640x240 bytes, scanned double; PSRAM
-	// stays for bulk storage the ARM handles (slides over USB).
+	// The framebuffer is SRAM. The 036-era "~1000x slower" DMA-window
+	// figure was copier contention, not silicon: probed quiet-bus
+	// access is wire-speed (~113 ns/word, prompts/041). What still
+	// forbids PSRAM here is the render side: sustained machine window
+	// traffic puts QSPI transactions on the shared DMA read master
+	// and breaks scanout sync. While scanning, QSPI rides the QMI
+	// streamer (43.5 MB/s, display-safe) or the ARM — never a machine
+	// record — which makes PSRAM a storage tier, not working memory.
 	PSRAMBase: 0x15000000, PSRAMSize: 0x800000,
 	FbBuf:  0x20034C00,                    // 640x480 = 300 KiB, to 0x2007FC00
 	FbHome: 0x2007FC00, FbEnd: 0x2007FE00, // the (vestigial) pan word
