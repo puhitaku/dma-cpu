@@ -772,7 +772,13 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		"target/game/ll/input.ll", "target/game/ll/fx.ll", "target/game/ll/seq.ll",
 		"target/game/ll/cpumon.ll", "target/game/ll/bench.ll", "target/game/ll/radio.ll", "target/game/ll/gfx.ll",
 		"target/game/ll/lcd.ll", "target/game/ll/grt.ll"},
-		dmacc.Options{Entry: "gmain", NoSafepoints: true, XIPText: true})
+		dmacc.Options{Entry: "gmain", NoSafepoints: true, XIPText: true,
+			/* the radiosity shooter is the one workload that wants the
+			 * machine's full speed: its inner loop visits all 660
+			 * patches per shot, and XIP misses are the bottleneck —
+			 * placement-only residency (no closure), feather-style */
+			ResidentFuncs: []string{"shoot", "clearance", "in_box",
+				"normal_of"}})
 	if err != nil {
 		return nil, err
 	}

@@ -468,7 +468,7 @@ repaint(int all)
 
 /* --- occlusion: 5 samples along the segment vs both boxes --- */
 
-static int
+static __attribute__((noinline)) int
 in_box(int b, int x, int y, int z)
 {
   int h, top, cx, cz, c, sn;
@@ -486,7 +486,7 @@ in_box(int b, int x, int y, int z)
 }
 
 /* fraction 0..5 of the p->q segment that clears both boxes */
-static int
+static __attribute__((noinline)) int
 clearance(int p, int q)
 {
   int px = pcx[p], py = pcy[p], pz = pcz[p];
@@ -517,7 +517,10 @@ clearance(int p, int q)
   return ok;
 }
 
-/* --- the shooter --- */
+/* --- the shooter ---
+ * shoot/clearance/in_box/normal_of/brightest are noinline: dmxgen
+ * places them (ResidentFuncs) in the game's SRAM ramtext, so the
+ * 660-receiver inner loop never touches XIP flash. --- */
 
 static void
 normal_of(int p, int *nx, int *ny, int *nz)
@@ -546,7 +549,7 @@ shooter_scale(int p) /* Q8 area ratio vs a wall patch */
   return areaq[(p - NWALL) / NPBF];
 }
 
-static uint
+static __attribute__((noinline)) uint
 shoot(int p)
 {
   uint sc = (uint)shooter_scale(p);
@@ -600,7 +603,7 @@ shoot(int p)
   return upr + upg + upb;
 }
 
-static int
+static __attribute__((noinline)) int
 brightest(void)
 {
   uint best = 0;

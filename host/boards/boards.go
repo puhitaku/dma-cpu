@@ -363,8 +363,10 @@ var GamePico = &Board{
 	Name: "gamepico",
 	SKU:  "rp2040",
 
-	GameRAMText: 0x20002000, // self-modifying records: 24 KiB window
-	GameData:    0x20008000, // data + the 240x240 RGB565 framebuffer
+	GameRAMText: 0x20002000, // self-modifying records + the radiosity
+	// shooter's resident hot path (dmxgen ResidentFuncs): 30 KiB window
+	GameData:    0x20009800, // data + the 240x240 RGB565 framebuffer;
+	// ends ~1 KiB under the reserved audio region at 0x2002E000
 	Scratch:     0x2003FE00,
 
 	FlashSize:   0x200000,
