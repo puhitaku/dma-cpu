@@ -25,6 +25,12 @@ uint sd_csreg;  /* g_sd_csreg: IO_BANK0 GPIOn_CTRL of the CS pin */
 uint sd_cs_hi;  /* g_sd_cs_hi: CTRL word driving CS high (deselect) */
 uint sd_cs_lo;  /* g_sd_cs_lo: CTRL word driving CS low (select) */
 uint sd_rxctrl; /* g_sd_rxctrl: ch11 drain CTRL (TREQ = SPI0 RX) */
+uint sd_txch;   /* g_sd_txch: console-TX channel regs (borrowed as the
+                 * TX-DREQ-paced clock feeder while it idles); 0 = off */
+uint sd_txctrl; /* g_sd_txctrl: the borrowed feeder's CTRL */
+
+static uint sd_ff = 0xFFFFFFFFu; /* idle-clock source byte */
+
 #define W(a) (*(volatile uint *)(a))
 #define SPI_CR0 (sd_spi + 0x00u)
 #define SPI_CR1 (sd_spi + 0x04u)
@@ -340,35 +346,49 @@ sd_read_sector(uint lba, uint dst)
   SDCH(1) = dst;
   SDCH(2) = 512u;
   SDCH(3) = sd_rxctrl;
-  /* TX clocks, credit-batched: in-flight = fed - drained, with
-   * drained read once per batch from ch11's live TRANS_COUNT —
-   * pushing only while in-flight < 8 keeps the 8-deep FIFOs safe by
-   * arithmetic, one register read per batch instead of a status poll
-   * per byte (the poll made sector reads machine-bound at ~15x wire
-   * time on silicon). */
-  uint fed = 0;
-  for (uint guard = 0; fed < 512u && guard < 4000000u; guard++) {
-    uint inflight = fed - (512u - SDCH(2));
-    if (inflight == 0 && fed <= 504u) {
-      W(SPI_DR) = 0xFFu;
-      W(SPI_DR) = 0xFFu;
-      W(SPI_DR) = 0xFFu;
-      W(SPI_DR) = 0xFFu;
-      W(SPI_DR) = 0xFFu;
-      W(SPI_DR) = 0xFFu;
-      W(SPI_DR) = 0xFFu;
-      W(SPI_DR) = 0xFFu;
-      fed += 8u;
-      continue;
-    }
-    uint room = 0;
-    if (inflight < 8u)
-      room = 8u - inflight;
-    if (room > 512u - fed)
-      room = 512u - fed;
-    for (uint k = 0; k < room; k++) {
-      W(SPI_DR) = 0xFFu;
-      fed++;
+  /* TX clocks: borrow the console drain channel while it idles (the
+   * kernel prints nothing mid-read) — both directions then run at
+   * DREQ pace and the whole payload costs ~machine-free wire time.
+   * Its registers are saved and restored around the borrow, and no
+   * kconswrite may happen in between (a console kick would fight
+   * it). Fallback: the credit-batched machine feed. */
+  uint tx = sd_txch;
+  if (tx != 0 && !(W(tx + 0x10u) & (1u << 26))) { /* BUSY (RP2350) */
+    uint s_r = W(tx + 0x00u), s_w = W(tx + 0x04u), s_c = W(tx + 0x10u);
+    W(tx + 0x00u) = (uint)&sd_ff;
+    W(tx + 0x04u) = SPI_DR;
+    W(tx + 0x10u) = sd_txctrl;
+    W(tx + 0x1Cu) = 512u; /* AL1 count trigger: the feed runs */
+    for (uint guard = 0; (W(tx + 0x10u) & (1u << 26)) && guard < 4000000u; guard++)
+      ; /* wire-paced (~165 us at 25 MHz) */
+    W(tx + 0x00u) = s_r;
+    W(tx + 0x04u) = s_w;
+    W(tx + 0x10u) = s_c;
+  } else {
+    uint fed = 0;
+    for (uint guard = 0; fed < 512u && guard < 4000000u; guard++) {
+      uint inflight = fed - (512u - SDCH(2));
+      if (inflight == 0 && fed <= 504u) {
+        W(SPI_DR) = 0xFFu;
+        W(SPI_DR) = 0xFFu;
+        W(SPI_DR) = 0xFFu;
+        W(SPI_DR) = 0xFFu;
+        W(SPI_DR) = 0xFFu;
+        W(SPI_DR) = 0xFFu;
+        W(SPI_DR) = 0xFFu;
+        W(SPI_DR) = 0xFFu;
+        fed += 8u;
+        continue;
+      }
+      uint room = 0;
+      if (inflight < 8u)
+        room = 8u - inflight;
+      if (room > 512u - fed)
+        room = 512u - fed;
+      for (uint k = 0; k < room; k++) {
+        W(SPI_DR) = 0xFFu;
+        fed++;
+      }
     }
   }
   for (uint guard = 0; SDCH(2) != 0 && guard < 4000000u; guard++)

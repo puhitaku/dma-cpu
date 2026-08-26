@@ -1126,6 +1126,8 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		{"g_sd_cs_hi", sdCsVal(v, bd, true)},
 		{"g_sd_cs_lo", sdCsVal(v, bd, false)},
 		{"g_sd_rxctrl", sdRxCtrl(v, bd)},
+		{"g_sd_txch", sdTxCh(v, bd)},
+		{"g_sd_txctrl", sdTxCtrl(v, bd)},
 		{"g_goldsum", checksum32(disk)},
 		{"g_iobank0", v.IOBank0Base}, {"g_padsbank0", v.PadsBank0Base},
 		{"g_pio0base", v.PIO0Base}, {"g_gpiopins", uint32(v.GPIOPins)},
@@ -1594,6 +1596,20 @@ func sdRxCtrl(v *emu.Variant, bd *boards.Board) uint32 {
 		return 0
 	}
 	return v.SDRxCtrl()
+}
+
+func sdTxCh(v *emu.Variant, bd *boards.Board) uint32 {
+	if !bd.MachineSDExec || bd.ConsRings == 0 {
+		return 0
+	}
+	return 0x50000000 + uint32(emu.ConsTxCh)*0x40
+}
+
+func sdTxCtrl(v *emu.Variant, bd *boards.Board) uint32 {
+	if !bd.MachineSDExec || bd.ConsRings == 0 {
+		return 0
+	}
+	return v.SDTxCtrl()
 }
 
 func pad8(b []byte) []byte {

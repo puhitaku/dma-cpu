@@ -319,6 +319,10 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 		m.Poke32(mustSym(t, kernC, "g_sd_cs_hi"), v.GPIOOutCtrl(true))
 		m.Poke32(mustSym(t, kernC, "g_sd_cs_lo"), v.GPIOOutCtrl(false))
 		m.Poke32(mustSym(t, kernC, "g_sd_rxctrl"), v.SDRxCtrl())
+		if bd.ConsRings != 0 { /* the console-TX borrow needs ch10 to exist */
+			m.Poke32(mustSym(t, kernC, "g_sd_txch"), 0x50000000+uint32(emu.ConsTxCh)*0x40)
+			m.Poke32(mustSym(t, kernC, "g_sd_txctrl"), v.SDTxCtrl())
+		}
 	}
 	// Flash-apps boards: user programs live in flash as registry rows.
 	if bd.AppsHome != 0 {

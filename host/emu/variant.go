@@ -257,6 +257,15 @@ func (v *Variant) SDRxCtrl() uint32 {
 		v.CtrlTreq(v.DreqSPI0RX) | v.CtrlChainTo(11) | v.CtrlIRQQuiet
 }
 
+// SDTxCtrl is the borrowed console-TX channel's CTRL while it feeds
+// the SD payload's 512 idle clocks: byte reads of one fixed source
+// word into SSPDR at the SPI0 TX DREQ's pace (ksd.c saves/restores
+// the console configuration around the borrow).
+func (v *Variant) SDTxCtrl() uint32 {
+	return CtrlEN | CtrlSize8 | v.CtrlTreq(v.DreqSPI0TX) |
+		v.CtrlChainTo(ConsTxCh) | v.CtrlIRQQuiet
+}
+
 // Console-DMA channel convention for xsh systems on 16-channel SKUs
 // (boards with Board.ConsRings set): three board-pool channels take the
 // UART off the kernel's hands. TX drains a 512-byte ring into the DR at

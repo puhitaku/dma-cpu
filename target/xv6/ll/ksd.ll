@@ -8,6 +8,8 @@ target triple = "thumbv6m-unknown-none-eabi"
 @sd_cs_hi = dso_local local_unnamed_addr global i32 0, align 4
 @sd_cs_lo = dso_local local_unnamed_addr global i32 0, align 4
 @sd_rxctrl = dso_local local_unnamed_addr global i32 0, align 4
+@sd_txch = dso_local local_unnamed_addr global i32 0, align 4
+@sd_txctrl = dso_local local_unnamed_addr global i32 0, align 4
 @sd_sectors = internal unnamed_addr global i32 0, align 4
 @.str = private unnamed_addr constant [10 x i8] c"sd: cmd0=\00", align 1
 @.str.1 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
@@ -18,6 +20,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @.str.5 = private unnamed_addr constant [6 x i8] c" cap=\00", align 1
 @.str.6 = private unnamed_addr constant [17 x i8] c"0123456789abcdef\00", align 1
 @sd_burst_state = internal unnamed_addr global i32 0, align 4
+@sd_ff = internal global i32 -1, align 4
 @.str.7 = private unnamed_addr constant [16 x i8] c"sd: burst left=\00", align 1
 @.str.8 = private unnamed_addr constant [12 x i8] c" -> polled\0A\00", align 1
 @sd_slow = internal unnamed_addr global i1 false, align 4
@@ -38,10 +41,10 @@ define dso_local range(i32 -1, 1) i32 @ksd_op(i32 noundef %0, i32 noundef %1, i3
   %4 = alloca [16 x i8], align 1
   %5 = load i32, ptr @sd_spi, align 4, !tbaa !3
   %6 = icmp eq i32 %5, 0
-  br i1 %6, label %307, label %7
+  br i1 %6, label %338, label %7
 
 7:                                                ; preds = %3
-  switch i32 %0, label %307 [
+  switch i32 %0, label %338 [
     i32 5, label %8
     i32 4, label %181
   ]
@@ -101,7 +104,7 @@ define dso_local range(i32 -1, 1) i32 @ksd_op(i32 noundef %0, i32 noundef %1, i3
 35:                                               ; preds = %32
   tail call fastcc void @cs(i32 noundef 0) #6
   tail call void @kconswrite(ptr noundef nonnull @.str.1, i32 noundef 1) #7
-  br label %307
+  br label %338
 
 36:                                               ; preds = %32
   %37 = tail call fastcc i32 @sd_cmd(i32 noundef 8, i32 noundef 426, i32 noundef 135) #6
@@ -150,7 +153,7 @@ define dso_local range(i32 -1, 1) i32 @ksd_op(i32 noundef %0, i32 noundef %1, i3
   tail call fastcc void @sd_diag(ptr noundef nonnull @.str.3, i32 noundef 0) #6
   tail call fastcc void @cs(i32 noundef 0) #6
   tail call void @kconswrite(ptr noundef nonnull @.str.1, i32 noundef 1) #7
-  br label %307
+  br label %338
 
 65:                                               ; preds = %59
   tail call fastcc void @sd_diag(ptr noundef nonnull @.str.2, i32 noundef %53) #6
@@ -319,12 +322,12 @@ define dso_local range(i32 -1, 1) i32 @ksd_op(i32 noundef %0, i32 noundef %1, i3
   %179 = add i32 %2, 4
   %180 = inttoptr i32 %179 to ptr
   store volatile i32 %178, ptr %180, align 4, !tbaa !3
-  br label %307
+  br label %338
 
 181:                                              ; preds = %7
   %182 = load i32, ptr @sd_sectors, align 4, !tbaa !3
   %183 = icmp eq i32 %182, 0
-  br i1 %183, label %303, label %184
+  br i1 %183, label %334, label %184
 
 184:                                              ; preds = %181
   %185 = load i32, ptr @sd_burst_state, align 4, !tbaa !3
@@ -333,12 +336,12 @@ define dso_local range(i32 -1, 1) i32 @ksd_op(i32 noundef %0, i32 noundef %1, i3
 
 187:                                              ; preds = %184
   %188 = tail call fastcc i32 @sd_read_polled(i32 noundef %1, i32 noundef %2) #6
-  br label %303
+  br label %334
 
 189:                                              ; preds = %184
   %190 = tail call fastcc i32 @sd_begin_read_any(i32 noundef %1) #6
   %191 = icmp eq i32 %190, 0
-  br i1 %191, label %192, label %303
+  br i1 %191, label %192, label %334
 
 192:                                              ; preds = %189
   %193 = load i32, ptr @sd_spi, align 4, !tbaa !3
@@ -369,165 +372,215 @@ define dso_local range(i32 -1, 1) i32 @ksd_op(i32 noundef %0, i32 noundef %1, i3
   store volatile i32 512, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
   %209 = load i32, ptr @sd_rxctrl, align 4, !tbaa !3
   store volatile i32 %209, ptr inttoptr (i32 1342177996 to ptr), align 4, !tbaa !3
-  br label %210
+  %210 = load i32, ptr @sd_txch, align 4, !tbaa !3
+  %211 = icmp eq i32 %210, 0
+  br i1 %211, label %212, label %213
 
-210:                                              ; preds = %260, %204
-  %211 = phi i32 [ 0, %204 ], [ %262, %260 ]
-  %212 = phi i32 [ 0, %204 ], [ %263, %260 ]
-  %213 = icmp ult i32 %211, 512
-  %214 = icmp samesign ult i32 %212, 4000000
-  %215 = select i1 %213, i1 %214, i1 false
-  br i1 %215, label %216, label %264
+212:                                              ; preds = %213, %204
+  br label %241
 
-216:                                              ; preds = %210
-  %217 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
-  %218 = or disjoint i32 %211, -512
-  %219 = add i32 %217, %218
-  %220 = icmp eq i32 %219, 0
-  %221 = icmp samesign ult i32 %211, 505
-  %222 = and i1 %221, %220
-  br i1 %222, label %223, label %248
+213:                                              ; preds = %204
+  %214 = add i32 %210, 16
+  %215 = inttoptr i32 %214 to ptr
+  %216 = load volatile i32, ptr %215, align 4, !tbaa !3
+  %217 = and i32 %216, 67108864
+  %218 = icmp eq i32 %217, 0
+  br i1 %218, label %219, label %212
 
-223:                                              ; preds = %216
-  %224 = load i32, ptr @sd_spi, align 4, !tbaa !3
-  %225 = add i32 %224, 8
-  %226 = inttoptr i32 %225 to ptr
-  store volatile i32 255, ptr %226, align 4, !tbaa !3
-  %227 = load i32, ptr @sd_spi, align 4, !tbaa !3
-  %228 = add i32 %227, 8
-  %229 = inttoptr i32 %228 to ptr
-  store volatile i32 255, ptr %229, align 4, !tbaa !3
-  %230 = load i32, ptr @sd_spi, align 4, !tbaa !3
-  %231 = add i32 %230, 8
-  %232 = inttoptr i32 %231 to ptr
-  store volatile i32 255, ptr %232, align 4, !tbaa !3
-  %233 = load i32, ptr @sd_spi, align 4, !tbaa !3
-  %234 = add i32 %233, 8
-  %235 = inttoptr i32 %234 to ptr
-  store volatile i32 255, ptr %235, align 4, !tbaa !3
-  %236 = load i32, ptr @sd_spi, align 4, !tbaa !3
-  %237 = add i32 %236, 8
-  %238 = inttoptr i32 %237 to ptr
-  store volatile i32 255, ptr %238, align 4, !tbaa !3
-  %239 = load i32, ptr @sd_spi, align 4, !tbaa !3
-  %240 = add i32 %239, 8
-  %241 = inttoptr i32 %240 to ptr
-  store volatile i32 255, ptr %241, align 4, !tbaa !3
-  %242 = load i32, ptr @sd_spi, align 4, !tbaa !3
-  %243 = add i32 %242, 8
-  %244 = inttoptr i32 %243 to ptr
-  store volatile i32 255, ptr %244, align 4, !tbaa !3
-  %245 = load i32, ptr @sd_spi, align 4, !tbaa !3
-  %246 = add i32 %245, 8
-  %247 = inttoptr i32 %246 to ptr
-  store volatile i32 255, ptr %247, align 4, !tbaa !3
-  br label %260
+219:                                              ; preds = %213
+  %220 = inttoptr i32 %210 to ptr
+  %221 = load volatile i32, ptr %220, align 4, !tbaa !3
+  %222 = add i32 %210, 4
+  %223 = inttoptr i32 %222 to ptr
+  %224 = load volatile i32, ptr %223, align 4, !tbaa !3
+  %225 = load volatile i32, ptr %215, align 4, !tbaa !3
+  store volatile i32 ptrtoint (ptr @sd_ff to i32), ptr %220, align 4, !tbaa !3
+  %226 = load i32, ptr @sd_spi, align 4, !tbaa !3
+  %227 = add i32 %226, 8
+  store volatile i32 %227, ptr %223, align 4, !tbaa !3
+  %228 = load i32, ptr @sd_txctrl, align 4, !tbaa !3
+  store volatile i32 %228, ptr %215, align 4, !tbaa !3
+  %229 = add i32 %210, 28
+  %230 = inttoptr i32 %229 to ptr
+  store volatile i32 512, ptr %230, align 4, !tbaa !3
+  br label %231
 
-248:                                              ; preds = %216
-  %249 = tail call i32 @llvm.usub.sat.i32(i32 8, i32 %219)
-  %250 = sub nuw nsw i32 512, %211
-  %251 = tail call i32 @llvm.umin.i32(i32 %249, i32 %250)
-  br label %252
+231:                                              ; preds = %231, %219
+  %232 = phi i32 [ 0, %219 ], [ %238, %231 ]
+  %233 = load volatile i32, ptr %215, align 4, !tbaa !3
+  %234 = and i32 %233, 67108864
+  %235 = icmp ne i32 %234, 0
+  %236 = icmp samesign ult i32 %232, 4000000
+  %237 = select i1 %235, i1 %236, i1 false
+  %238 = add nuw nsw i32 %232, 1
+  br i1 %237, label %231, label %239, !llvm.loop !18
 
-252:                                              ; preds = %255, %248
-  %253 = phi i32 [ 0, %248 ], [ %259, %255 ]
-  %254 = icmp eq i32 %253, %251
-  br i1 %254, label %260, label %255
+239:                                              ; preds = %231
+  store volatile i32 %221, ptr %220, align 4, !tbaa !3
+  store volatile i32 %224, ptr %223, align 4, !tbaa !3
+  store volatile i32 %225, ptr %215, align 4, !tbaa !3
+  br label %240
 
-255:                                              ; preds = %252
-  %256 = load i32, ptr @sd_spi, align 4, !tbaa !3
-  %257 = add i32 %256, 8
-  %258 = inttoptr i32 %257 to ptr
-  store volatile i32 255, ptr %258, align 4, !tbaa !3
-  %259 = add nuw nsw i32 %253, 1
-  br label %252, !llvm.loop !18
+240:                                              ; preds = %241, %239
+  br label %295
 
-260:                                              ; preds = %252, %223
-  %261 = phi i32 [ 8, %223 ], [ %251, %252 ]
-  %262 = add nuw nsw i32 %261, %211
-  %263 = add nuw nsw i32 %212, 1
-  br label %210, !llvm.loop !19
+241:                                              ; preds = %212, %291
+  %242 = phi i32 [ %293, %291 ], [ 0, %212 ]
+  %243 = phi i32 [ %294, %291 ], [ 0, %212 ]
+  %244 = icmp ult i32 %242, 512
+  %245 = icmp samesign ult i32 %243, 4000000
+  %246 = select i1 %244, i1 %245, i1 false
+  br i1 %246, label %247, label %240
 
-264:                                              ; preds = %210, %264
-  %265 = phi i32 [ %270, %264 ], [ 0, %210 ]
-  %266 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
-  %267 = icmp ne i32 %266, 0
-  %268 = icmp samesign ult i32 %265, 4000000
-  %269 = select i1 %267, i1 %268, i1 false
-  %270 = add nuw nsw i32 %265, 1
-  br i1 %269, label %264, label %271, !llvm.loop !20
+247:                                              ; preds = %241
+  %248 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
+  %249 = or disjoint i32 %242, -512
+  %250 = add i32 %248, %249
+  %251 = icmp eq i32 %250, 0
+  %252 = icmp samesign ult i32 %242, 505
+  %253 = and i1 %252, %251
+  br i1 %253, label %254, label %279
 
-271:                                              ; preds = %264
-  %272 = load i32, ptr @sd_spi, align 4, !tbaa !3
-  %273 = add i32 %272, 36
-  %274 = inttoptr i32 %273 to ptr
-  store volatile i32 0, ptr %274, align 4, !tbaa !3
-  %275 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
-  %276 = icmp eq i32 %275, 0
-  br i1 %276, label %300, label %277
-
-277:                                              ; preds = %271
-  %278 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
-  store volatile i32 2048, ptr inttoptr (i32 1342178404 to ptr), align 4, !tbaa !3
-  br label %279
-
-279:                                              ; preds = %279, %277
-  %280 = phi i32 [ 0, %277 ], [ %286, %279 ]
-  %281 = load volatile i32, ptr inttoptr (i32 1342178000 to ptr), align 16, !tbaa !3
-  %282 = and i32 %281, 67108864
-  %283 = icmp ne i32 %282, 0
-  %284 = icmp samesign ult i32 %280, 100000
-  %285 = select i1 %283, i1 %284, i1 false
-  %286 = add nuw nsw i32 %280, 1
-  br i1 %285, label %279, label %287, !llvm.loop !21
-
-287:                                              ; preds = %279
-  store volatile i32 0, ptr inttoptr (i32 1342178000 to ptr), align 16, !tbaa !3
-  %288 = load i32, ptr @sd_burst_state, align 4, !tbaa !3
-  %289 = icmp eq i32 %288, 2
-  br i1 %289, label %291, label %290
-
-290:                                              ; preds = %287
-  store i32 2, ptr @sd_burst_state, align 4, !tbaa !3
-  tail call void @klogts() #7
-  tail call fastcc void @sd_diag(ptr noundef nonnull @.str.7, i32 noundef %278) #6
-  tail call void @kconswrite(ptr noundef nonnull @.str.8, i32 noundef 11) #7
+254:                                              ; preds = %247
+  %255 = load i32, ptr @sd_spi, align 4, !tbaa !3
+  %256 = add i32 %255, 8
+  %257 = inttoptr i32 %256 to ptr
+  store volatile i32 255, ptr %257, align 4, !tbaa !3
+  %258 = load i32, ptr @sd_spi, align 4, !tbaa !3
+  %259 = add i32 %258, 8
+  %260 = inttoptr i32 %259 to ptr
+  store volatile i32 255, ptr %260, align 4, !tbaa !3
+  %261 = load i32, ptr @sd_spi, align 4, !tbaa !3
+  %262 = add i32 %261, 8
+  %263 = inttoptr i32 %262 to ptr
+  store volatile i32 255, ptr %263, align 4, !tbaa !3
+  %264 = load i32, ptr @sd_spi, align 4, !tbaa !3
+  %265 = add i32 %264, 8
+  %266 = inttoptr i32 %265 to ptr
+  store volatile i32 255, ptr %266, align 4, !tbaa !3
+  %267 = load i32, ptr @sd_spi, align 4, !tbaa !3
+  %268 = add i32 %267, 8
+  %269 = inttoptr i32 %268 to ptr
+  store volatile i32 255, ptr %269, align 4, !tbaa !3
+  %270 = load i32, ptr @sd_spi, align 4, !tbaa !3
+  %271 = add i32 %270, 8
+  %272 = inttoptr i32 %271 to ptr
+  store volatile i32 255, ptr %272, align 4, !tbaa !3
+  %273 = load i32, ptr @sd_spi, align 4, !tbaa !3
+  %274 = add i32 %273, 8
+  %275 = inttoptr i32 %274 to ptr
+  store volatile i32 255, ptr %275, align 4, !tbaa !3
+  %276 = load i32, ptr @sd_spi, align 4, !tbaa !3
+  %277 = add i32 %276, 8
+  %278 = inttoptr i32 %277 to ptr
+  store volatile i32 255, ptr %278, align 4, !tbaa !3
   br label %291
 
-291:                                              ; preds = %290, %287
+279:                                              ; preds = %247
+  %280 = tail call i32 @llvm.usub.sat.i32(i32 8, i32 %250)
+  %281 = sub nuw nsw i32 512, %242
+  %282 = tail call i32 @llvm.umin.i32(i32 %280, i32 %281)
+  br label %283
+
+283:                                              ; preds = %286, %279
+  %284 = phi i32 [ 0, %279 ], [ %290, %286 ]
+  %285 = icmp eq i32 %284, %282
+  br i1 %285, label %291, label %286
+
+286:                                              ; preds = %283
+  %287 = load i32, ptr @sd_spi, align 4, !tbaa !3
+  %288 = add i32 %287, 8
+  %289 = inttoptr i32 %288 to ptr
+  store volatile i32 255, ptr %289, align 4, !tbaa !3
+  %290 = add nuw nsw i32 %284, 1
+  br label %283, !llvm.loop !19
+
+291:                                              ; preds = %283, %254
+  %292 = phi i32 [ 8, %254 ], [ %282, %283 ]
+  %293 = add nuw nsw i32 %292, %242
+  %294 = add nuw nsw i32 %243, 1
+  br label %241, !llvm.loop !20
+
+295:                                              ; preds = %240, %295
+  %296 = phi i32 [ %301, %295 ], [ 0, %240 ]
+  %297 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
+  %298 = icmp ne i32 %297, 0
+  %299 = icmp samesign ult i32 %296, 4000000
+  %300 = select i1 %298, i1 %299, i1 false
+  %301 = add nuw nsw i32 %296, 1
+  br i1 %300, label %295, label %302, !llvm.loop !21
+
+302:                                              ; preds = %295
+  %303 = load i32, ptr @sd_spi, align 4, !tbaa !3
+  %304 = add i32 %303, 36
+  %305 = inttoptr i32 %304 to ptr
+  store volatile i32 0, ptr %305, align 4, !tbaa !3
+  %306 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
+  %307 = icmp eq i32 %306, 0
+  br i1 %307, label %331, label %308
+
+308:                                              ; preds = %302
+  %309 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !3
+  store volatile i32 2048, ptr inttoptr (i32 1342178404 to ptr), align 4, !tbaa !3
+  br label %310
+
+310:                                              ; preds = %310, %308
+  %311 = phi i32 [ 0, %308 ], [ %317, %310 ]
+  %312 = load volatile i32, ptr inttoptr (i32 1342178000 to ptr), align 16, !tbaa !3
+  %313 = and i32 %312, 67108864
+  %314 = icmp ne i32 %313, 0
+  %315 = icmp samesign ult i32 %311, 100000
+  %316 = select i1 %314, i1 %315, i1 false
+  %317 = add nuw nsw i32 %311, 1
+  br i1 %316, label %310, label %318, !llvm.loop !22
+
+318:                                              ; preds = %310
+  store volatile i32 0, ptr inttoptr (i32 1342178000 to ptr), align 16, !tbaa !3
+  %319 = load i32, ptr @sd_burst_state, align 4, !tbaa !3
+  %320 = icmp eq i32 %319, 2
+  br i1 %320, label %322, label %321
+
+321:                                              ; preds = %318
+  store i32 2, ptr @sd_burst_state, align 4, !tbaa !3
+  tail call void @klogts() #7
+  tail call fastcc void @sd_diag(ptr noundef nonnull @.str.7, i32 noundef %309) #6
+  tail call void @kconswrite(ptr noundef nonnull @.str.8, i32 noundef 11) #7
+  br label %322
+
+322:                                              ; preds = %321, %318
   tail call fastcc void @cs(i32 noundef 0) #6
-  br label %292
+  br label %323
 
-292:                                              ; preds = %297, %291
-  %293 = phi i32 [ 0, %291 ], [ %299, %297 ]
-  %294 = icmp eq i32 %293, 4
-  br i1 %294, label %295, label %297
+323:                                              ; preds = %328, %322
+  %324 = phi i32 [ 0, %322 ], [ %330, %328 ]
+  %325 = icmp eq i32 %324, 4
+  br i1 %325, label %326, label %328
 
-295:                                              ; preds = %292
-  %296 = tail call fastcc i32 @sd_read_polled(i32 noundef %1, i32 noundef %2) #6
-  br label %303
+326:                                              ; preds = %323
+  %327 = tail call fastcc i32 @sd_read_polled(i32 noundef %1, i32 noundef %2) #6
+  br label %334
 
-297:                                              ; preds = %292
-  %298 = tail call fastcc i32 @xf(i32 noundef 255) #6
-  %299 = add nuw nsw i32 %293, 1
-  br label %292, !llvm.loop !22
+328:                                              ; preds = %323
+  %329 = tail call fastcc i32 @xf(i32 noundef 255) #6
+  %330 = add nuw nsw i32 %324, 1
+  br label %323, !llvm.loop !23
 
-300:                                              ; preds = %271
+331:                                              ; preds = %302
   store i32 1, ptr @sd_burst_state, align 4, !tbaa !3
-  %301 = tail call fastcc i32 @xf(i32 noundef 255) #6
-  %302 = tail call fastcc i32 @xf(i32 noundef 255) #6
+  %332 = tail call fastcc i32 @xf(i32 noundef 255) #6
+  %333 = tail call fastcc i32 @xf(i32 noundef 255) #6
   tail call fastcc void @cs(i32 noundef 0) #6
-  br label %303
+  br label %334
 
-303:                                              ; preds = %181, %187, %189, %295, %300
-  %304 = phi i32 [ %188, %187 ], [ -1, %181 ], [ %190, %189 ], [ %296, %295 ], [ 0, %300 ]
-  %305 = icmp ne i32 %304, 0
-  %306 = sext i1 %305 to i32
-  br label %307
+334:                                              ; preds = %181, %187, %189, %326, %331
+  %335 = phi i32 [ %188, %187 ], [ -1, %181 ], [ %190, %189 ], [ %327, %326 ], [ 0, %331 ]
+  %336 = icmp ne i32 %335, 0
+  %337 = sext i1 %336 to i32
+  br label %338
 
-307:                                              ; preds = %163, %64, %35, %7, %3, %303
-  %308 = phi i32 [ %306, %303 ], [ -1, %3 ], [ -1, %7 ], [ 0, %35 ], [ 0, %64 ], [ 0, %163 ]
-  ret i32 %308
+338:                                              ; preds = %163, %64, %35, %7, %3, %334
+  %339 = phi i32 [ %337, %334 ], [ -1, %3 ], [ -1, %7 ], [ 0, %35 ], [ 0, %64 ], [ 0, %163 ]
+  ret i32 %339
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
@@ -567,7 +620,7 @@ define internal fastcc range(i32 0, 256) i32 @xf(i32 noundef %0) unnamed_addr #2
   %13 = and i32 %12, 4
   %14 = icmp eq i32 %13, 0
   %15 = add nuw nsw i32 %9, 1
-  br i1 %14, label %8, label %16, !llvm.loop !23
+  br i1 %14, label %8, label %16, !llvm.loop !24
 
 16:                                               ; preds = %11
   %17 = add i32 %5, 8
@@ -601,7 +654,7 @@ define internal fastcc range(i32 0, 256) i32 @sd_cmd(i32 noundef range(i32 0, 60
 
 13:                                               ; preds = %9
   %14 = load volatile i32, ptr %8, align 4, !tbaa !3
-  br label %9, !llvm.loop !24
+  br label %9, !llvm.loop !25
 
 15:                                               ; preds = %9
   %16 = tail call fastcc i32 @xf(i32 noundef 255) #6
@@ -626,7 +679,7 @@ define internal fastcc range(i32 0, 256) i32 @sd_cmd(i32 noundef range(i32 0, 60
   %31 = tail call fastcc i32 @xf(i32 noundef 255) #6
   %32 = icmp samesign ult i32 %31, 128
   %33 = add nuw nsw i32 %28, 1
-  br i1 %32, label %34, label %27, !llvm.loop !25
+  br i1 %32, label %34, label %27, !llvm.loop !26
 
 34:                                               ; preds = %27, %30
   %35 = phi i32 [ %31, %30 ], [ 255, %27 ]
@@ -646,7 +699,7 @@ define internal fastcc void @sd_wait_ready() unnamed_addr #2 {
   %5 = tail call fastcc i32 @xf(i32 noundef 255) #6
   %6 = icmp eq i32 %5, 255
   %7 = add nuw nsw i32 %2, 1
-  br i1 %6, label %8, label %1, !llvm.loop !26
+  br i1 %6, label %8, label %1, !llvm.loop !27
 
 8:                                                ; preds = %4, %1
   ret void
@@ -673,7 +726,7 @@ define internal fastcc void @sd_diag(ptr noundef readonly captures(none) %0, i32
   %11 = add nuw nsw i32 %5, 1
   %12 = getelementptr inbounds nuw [16 x i8], ptr %3, i32 0, i32 %5
   store i8 %7, ptr %12, align 1, !tbaa !15
-  br label %4, !llvm.loop !27
+  br label %4, !llvm.loop !28
 
 13:                                               ; preds = %4
   %14 = lshr i32 %1, 28
@@ -761,7 +814,7 @@ define internal fastcc range(i32 -3, 1) i32 @sd_read_polled(i32 noundef %0, i32 
   %14 = inttoptr i32 %13 to ptr
   store volatile i8 %12, ptr %14, align 1, !tbaa !15
   %15 = add nuw nsw i32 %6, 1
-  br label %5, !llvm.loop !28
+  br label %5, !llvm.loop !29
 
 16:                                               ; preds = %2, %9
   %17 = phi i32 [ 0, %9 ], [ %3, %2 ]
@@ -823,7 +876,7 @@ define internal fastcc range(i32 -3, 1) i32 @sd_begin_read(i32 noundef %0) unnam
   %11 = tail call fastcc i32 @sd_cmd(i32 noundef 17, i32 noundef %5, i32 noundef 1) #6
   %12 = icmp eq i32 %11, 0
   %13 = add nuw nsw i32 %8, 1
-  br i1 %12, label %15, label %6, !llvm.loop !29
+  br i1 %12, label %15, label %6, !llvm.loop !30
 
 14:                                               ; preds = %6
   tail call fastcc void @cs(i32 noundef 0) #6
@@ -850,7 +903,7 @@ define internal fastcc range(i32 -3, 1) i32 @sd_begin_read(i32 noundef %0) unnam
 
 23:                                               ; preds = %18, %18, %21
   %24 = add nuw nsw i32 %16, 1
-  br label %15, !llvm.loop !30
+  br label %15, !llvm.loop !31
 
 25:                                               ; preds = %21, %15
   tail call fastcc void @cs(i32 noundef 0) #6
@@ -911,3 +964,4 @@ attributes #8 = { nounwind }
 !28 = distinct !{!28, !8, !9}
 !29 = distinct !{!29, !8, !9}
 !30 = distinct !{!30, !8, !9}
+!31 = distinct !{!31, !8, !9}
