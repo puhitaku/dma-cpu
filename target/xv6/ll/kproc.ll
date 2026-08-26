@@ -40,13 +40,17 @@ target triple = "thumbv6m-unknown-none-eabi"
 @tickpending = dso_local global i32 0, align 4
 @initpid = dso_local local_unnamed_addr global i32 0, align 4
 @fgpid = dso_local local_unnamed_addr global i32 0, align 4
+@xv6_commit = dso_local local_unnamed_addr global i32 0, align 4
 @__dma_uart_fr = external dso_local global i32, align 4
 @__dma_uart_dr = external dso_local global i32, align 4
 @rearm = internal unnamed_addr global i1 false, align 4
 @tick_taken = internal unnamed_addr global i1 false, align 4
 @dma_disk = external dso_local local_unnamed_addr global i32, align 4
-@.str = private unnamed_addr constant [27 x i8] c"fb: 640x480x8 on hstx-dvi\0A\00", align 1
-@.str.1 = private unnamed_addr constant [16 x i8] c"fb: psram fail\0A\00", align 1
+@.str = private unnamed_addr constant [17 x i8] c"xv6-dma version \00", align 1
+@.str.1 = private unnamed_addr constant [17 x i8] c"0123456789abcdef\00", align 1
+@.str.2 = private unnamed_addr constant [49 x i8] c" based on xv6-riscv & xv6-ns (rp2dma-xv6-dmacc)\0A\00", align 1
+@.str.3 = private unnamed_addr constant [27 x i8] c"fb: 640x480x8 on hstx-dvi\0A\00", align 1
+@.str.4 = private unnamed_addr constant [16 x i8] c"fb: psram fail\0A\00", align 1
 @parked = internal unnamed_addr global i1 false, align 4
 @entry_disp = internal unnamed_addr global i32 0, align 4
 @entry_thunk = internal unnamed_addr global i32 0, align 4
@@ -811,85 +815,113 @@ define dso_local void @dma_ktick() local_unnamed_addr #1 {
 
 ; Function Attrs: minsize nounwind optsize
 define internal fastcc void @kenter() unnamed_addr #1 {
+  %1 = alloca [8 x i8], align 1
   store i1 false, ptr @rearm, align 4
   store i1 false, ptr @tick_taken, align 4
   tail call void @kcons_aim(i32 noundef 0) #13
-  %1 = load i32, ptr @fsready, align 4, !tbaa !6
-  %2 = icmp eq i32 %1, 0
-  %3 = load i32, ptr @dma_disk, align 4
-  %4 = icmp ne i32 %3, 0
-  %5 = select i1 %2, i1 %4, i1 false
-  br i1 %5, label %6, label %14
+  %2 = load i32, ptr @fsready, align 4, !tbaa !6
+  %3 = icmp eq i32 %2, 0
+  %4 = load i32, ptr @dma_disk, align 4
+  %5 = icmp ne i32 %4, 0
+  %6 = select i1 %3, i1 %5, i1 false
+  br i1 %6, label %7, label %29
 
-6:                                                ; preds = %0
-  %7 = tail call i32 @kfb_init() #13
-  %8 = icmp sgt i32 %7, 0
-  br i1 %8, label %9, label %10
+7:                                                ; preds = %0
+  tail call void @klogts() #12
+  tail call void @kconswrite(ptr noundef nonnull @.str, i32 noundef 16) #12
+  call void @llvm.lifetime.start.p0(i64 8, ptr nonnull %1) #11
+  %8 = load i32, ptr @xv6_commit, align 4, !tbaa !6
+  br label %9
 
-9:                                                ; preds = %6
+9:                                                ; preds = %15, %7
+  %10 = phi i32 [ 0, %7 ], [ %23, %15 ]
+  %11 = icmp eq i32 %10, 7
+  br i1 %11, label %12, label %15
+
+12:                                               ; preds = %9
+  call void @kconswrite(ptr noundef nonnull %1, i32 noundef 7) #12
+  call void @llvm.lifetime.end.p0(i64 8, ptr nonnull %1) #11
+  tail call void @kconswrite(ptr noundef nonnull @.str.2, i32 noundef 48) #12
+  %13 = tail call i32 @kfb_init() #13
+  %14 = icmp sgt i32 %13, 0
+  br i1 %14, label %24, label %25
+
+15:                                               ; preds = %9
+  %16 = shl nuw nsw i32 %10, 2
+  %17 = sub nuw nsw i32 24, %16
+  %18 = lshr i32 %8, %17
+  %19 = and i32 %18, 15
+  %20 = getelementptr inbounds nuw i8, ptr @.str.1, i32 %19
+  %21 = load i8, ptr %20, align 1, !tbaa !3
+  %22 = getelementptr inbounds nuw [8 x i8], ptr %1, i32 0, i32 %10
+  store i8 %21, ptr %22, align 1, !tbaa !3
+  %23 = add nuw nsw i32 %10, 1
+  br label %9, !llvm.loop !42
+
+24:                                               ; preds = %12
   tail call void @kfbcon_reset() #13
   tail call void @klogts() #12
-  tail call void @kconswrite(ptr noundef nonnull @.str, i32 noundef 26) #12
-  br label %13
+  tail call void @kconswrite(ptr noundef nonnull @.str.3, i32 noundef 26) #12
+  br label %28
 
-10:                                               ; preds = %6
-  %11 = icmp slt i32 %7, 0
-  br i1 %11, label %12, label %13
+25:                                               ; preds = %12
+  %26 = icmp slt i32 %13, 0
+  br i1 %26, label %27, label %28
 
-12:                                               ; preds = %10
+27:                                               ; preds = %25
   tail call void @klogts() #12
-  tail call void @kconswrite(ptr noundef nonnull @.str.1, i32 noundef 15) #12
-  br label %13
+  tail call void @kconswrite(ptr noundef nonnull @.str.4, i32 noundef 15) #12
+  br label %28
 
-13:                                               ; preds = %10, %12, %9
+28:                                               ; preds = %25, %27, %24
   tail call void @kfs_start() #13
   tail call void @kflash_init() #13
-  br label %14
+  br label %29
 
-14:                                               ; preds = %13, %0
-  %15 = load i1, ptr @parked, align 4
-  %16 = zext i1 %15 to i32
-  store i32 %16, ptr @waspark, align 4, !tbaa !6
-  br i1 %15, label %17, label %18
+29:                                               ; preds = %28, %0
+  %30 = load i1, ptr @parked, align 4
+  %31 = zext i1 %30 to i32
+  store i32 %31, ptr @waspark, align 4, !tbaa !6
+  br i1 %30, label %32, label %33
 
-17:                                               ; preds = %14
+32:                                               ; preds = %29
   store i1 false, ptr @parked, align 4
   store i32 0, ptr @entry_disp, align 4, !tbaa !6
-  br label %29
+  br label %44
 
-18:                                               ; preds = %14
-  %19 = load i32, ptr @curr, align 4, !tbaa !6
-  %20 = getelementptr inbounds nuw [8 x %struct.proc], ptr @proc, i32 0, i32 %19
-  %21 = getelementptr inbounds nuw i8, ptr %20, i32 24
-  %22 = load i32, ptr %21, align 4, !tbaa !31
-  store i32 %22, ptr @entry_disp, align 4, !tbaa !6
-  %23 = getelementptr inbounds nuw i8, ptr %20, i32 36
-  %24 = load i32, ptr %23, align 4, !tbaa !42
-  store i32 %24, ptr @entry_thunk, align 4, !tbaa !6
-  %25 = inttoptr i32 %22 to ptr
-  %26 = load volatile i32, ptr %25, align 4, !tbaa !6
-  %27 = icmp eq i32 %26, %24
-  br i1 %27, label %29, label %28
+33:                                               ; preds = %29
+  %34 = load i32, ptr @curr, align 4, !tbaa !6
+  %35 = getelementptr inbounds nuw [8 x %struct.proc], ptr @proc, i32 0, i32 %34
+  %36 = getelementptr inbounds nuw i8, ptr %35, i32 24
+  %37 = load i32, ptr %36, align 4, !tbaa !31
+  store i32 %37, ptr @entry_disp, align 4, !tbaa !6
+  %38 = getelementptr inbounds nuw i8, ptr %35, i32 36
+  %39 = load i32, ptr %38, align 4, !tbaa !43
+  store i32 %39, ptr @entry_thunk, align 4, !tbaa !6
+  %40 = inttoptr i32 %37 to ptr
+  %41 = load volatile i32, ptr %40, align 4, !tbaa !6
+  %42 = icmp eq i32 %41, %39
+  br i1 %42, label %44, label %43
 
-28:                                               ; preds = %18
-  store volatile i32 %24, ptr %25, align 4, !tbaa !6
+43:                                               ; preds = %33
+  store volatile i32 %39, ptr %40, align 4, !tbaa !6
   tail call fastcc void @fire_income() #12
-  br label %29
+  br label %44
 
-29:                                               ; preds = %18, %28, %17
-  %30 = load i32, ptr @inj_wreg, align 4, !tbaa !6
-  %31 = inttoptr i32 %30 to ptr
-  store volatile i32 ptrtoint (ptr @tickpending to i32), ptr %31, align 4, !tbaa !6
-  %32 = load i32, ptr @tickpending, align 4, !tbaa !6
-  %33 = icmp eq i32 %32, 0
-  br i1 %33, label %35, label %34
+44:                                               ; preds = %33, %43, %32
+  %45 = load i32, ptr @inj_wreg, align 4, !tbaa !6
+  %46 = inttoptr i32 %45 to ptr
+  store volatile i32 ptrtoint (ptr @tickpending to i32), ptr %46, align 4, !tbaa !6
+  %47 = load i32, ptr @tickpending, align 4, !tbaa !6
+  %48 = icmp eq i32 %47, 0
+  br i1 %48, label %50, label %49
 
-34:                                               ; preds = %29
+49:                                               ; preds = %44
   store i32 0, ptr @tickpending, align 4, !tbaa !6
   tail call fastcc void @fire_income() #12
-  br label %35
+  br label %50
 
-35:                                               ; preds = %34, %29
+50:                                               ; preds = %49, %44
   ret void
 }
 
@@ -967,7 +999,7 @@ define internal fastcc void @terminate(ptr noundef %0, i32 noundef %1) unnamed_a
 
 19:                                               ; preds = %18, %13
   %20 = getelementptr inbounds nuw i8, ptr %0, i32 20
-  store i32 %1, ptr %20, align 4, !tbaa !43
+  store i32 %1, ptr %20, align 4, !tbaa !44
   %21 = load i32, ptr @fsready, align 4, !tbaa !6
   %22 = icmp eq i32 %21, 0
   br i1 %22, label %24, label %23
@@ -1016,7 +1048,7 @@ define internal fastcc void @terminate(ptr noundef %0, i32 noundef %1) unnamed_a
 
 44:                                               ; preds = %41, %43, %36, %34, %30
   %45 = add nuw nsw i32 %28, 1
-  br label %27, !llvm.loop !44
+  br label %27, !llvm.loop !45
 
 46:                                               ; preds = %27, %24
   %47 = getelementptr inbounds nuw i8, ptr %0, i32 8
@@ -1058,7 +1090,7 @@ define internal fastcc void @terminate(ptr noundef %0, i32 noundef %1) unnamed_a
   br i1 %72, label %81, label %73
 
 73:                                               ; preds = %65
-  %74 = load i32, ptr %20, align 4, !tbaa !43
+  %74 = load i32, ptr %20, align 4, !tbaa !44
   %75 = load volatile i32, ptr %70, align 4, !tbaa !34
   %76 = inttoptr i32 %75 to ptr
   store volatile i32 %74, ptr %76, align 4, !tbaa !6
@@ -1068,7 +1100,7 @@ define internal fastcc void @terminate(ptr noundef %0, i32 noundef %1) unnamed_a
 
 79:                                               ; preds = %60, %57, %52
   %80 = add nuw nsw i32 %50, 1
-  br label %49, !llvm.loop !45
+  br label %49, !llvm.loop !46
 
 81:                                               ; preds = %73, %65
   %82 = phi ptr [ %78, %73 ], [ %69, %65 ]
@@ -1121,7 +1153,7 @@ define internal fastcc void @swtch() unnamed_addr #1 {
   %9 = load i32, ptr %8, align 4, !tbaa !14
   %10 = icmp eq i32 %9, 3
   %11 = add nuw nsw i32 %3, 1
-  br i1 %10, label %59, label %2, !llvm.loop !46
+  br i1 %10, label %59, label %2, !llvm.loop !47
 
 12:                                               ; preds = %2
   %13 = load i32, ptr @entry_disp, align 4, !tbaa !6
@@ -1239,7 +1271,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %11 = getelementptr inbounds nuw i8, ptr %5, i32 44
   %12 = load i32, ptr %11, align 4, !tbaa !27
   %13 = inttoptr i32 %12 to ptr
-  %14 = load volatile i32, ptr %13, align 4, !tbaa !47
+  %14 = load volatile i32, ptr %13, align 4, !tbaa !48
   switch i32 %14, label %1004 [
     i32 11, label %19
     i32 14, label %22
@@ -1295,9 +1327,9 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 
 24:                                               ; preds = %10
   %25 = getelementptr inbounds nuw i8, ptr %13, i32 8
-  %26 = load volatile i32, ptr %25, align 4, !tbaa !48
+  %26 = load volatile i32, ptr %25, align 4, !tbaa !49
   %27 = getelementptr inbounds nuw i8, ptr %13, i32 12
-  %28 = load volatile i32, ptr %27, align 4, !tbaa !49
+  %28 = load volatile i32, ptr %27, align 4, !tbaa !50
   %29 = tail call fastcc i32 @badbuf(ptr noundef nonnull %5, i32 noundef %26, i32 noundef %28) #12
   %30 = icmp eq i32 %29, 0
   br i1 %30, label %31, label %1004
@@ -1310,17 +1342,17 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 34:                                               ; preds = %31
   %35 = getelementptr inbounds nuw i8, ptr %13, i32 4
   %36 = load volatile i32, ptr %35, align 4, !tbaa !34
-  %37 = load volatile i32, ptr %25, align 4, !tbaa !48
-  %38 = load volatile i32, ptr %27, align 4, !tbaa !49
+  %37 = load volatile i32, ptr %25, align 4, !tbaa !49
+  %38 = load volatile i32, ptr %27, align 4, !tbaa !50
   %39 = tail call i32 @kfs_write(i32 noundef %36, i32 noundef %37, i32 noundef %38) #13
   br label %45
 
 40:                                               ; preds = %31
-  %41 = load volatile i32, ptr %25, align 4, !tbaa !48
+  %41 = load volatile i32, ptr %25, align 4, !tbaa !49
   %42 = inttoptr i32 %41 to ptr
-  %43 = load volatile i32, ptr %27, align 4, !tbaa !49
+  %43 = load volatile i32, ptr %27, align 4, !tbaa !50
   tail call void @kconswrite(ptr noundef %42, i32 noundef %43) #12
-  %44 = load volatile i32, ptr %27, align 4, !tbaa !49
+  %44 = load volatile i32, ptr %27, align 4, !tbaa !50
   br label %45
 
 45:                                               ; preds = %34, %40
@@ -1338,7 +1370,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %53 = getelementptr inbounds nuw i8, ptr %13, i32 4
   %54 = load volatile i32, ptr %53, align 4, !tbaa !34
   %55 = getelementptr inbounds nuw i8, ptr %13, i32 8
-  %56 = load volatile i32, ptr %55, align 4, !tbaa !48
+  %56 = load volatile i32, ptr %55, align 4, !tbaa !49
   %57 = tail call i32 @kfs_open(i32 noundef %54, i32 noundef %56) #13
   br label %1004
 
@@ -1373,7 +1405,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %76 = getelementptr inbounds nuw i8, ptr %13, i32 4
   %77 = load volatile i32, ptr %76, align 4, !tbaa !34
   %78 = getelementptr inbounds nuw i8, ptr %13, i32 8
-  %79 = load volatile i32, ptr %78, align 4, !tbaa !48
+  %79 = load volatile i32, ptr %78, align 4, !tbaa !49
   %80 = tail call i32 @kfs_fstat(i32 noundef %77, i32 noundef %79) #13
   br label %1004
 
@@ -1386,7 +1418,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %85 = getelementptr inbounds nuw i8, ptr %13, i32 4
   %86 = load volatile i32, ptr %85, align 4, !tbaa !34
   %87 = getelementptr inbounds nuw i8, ptr %13, i32 8
-  %88 = load volatile i32, ptr %87, align 4, !tbaa !48
+  %88 = load volatile i32, ptr %87, align 4, !tbaa !49
   %89 = tail call i32 @kfs_seek(i32 noundef %86, i32 noundef %88) #13
   br label %1004
 
@@ -1432,7 +1464,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %115 = getelementptr inbounds nuw i8, ptr %13, i32 4
   %116 = load volatile i32, ptr %115, align 4, !tbaa !34
   %117 = getelementptr inbounds nuw i8, ptr %13, i32 8
-  %118 = load volatile i32, ptr %117, align 4, !tbaa !48
+  %118 = load volatile i32, ptr %117, align 4, !tbaa !49
   %119 = tail call i32 @kfs_link(i32 noundef %116, i32 noundef %118) #13
   br label %1004
 
@@ -1464,9 +1496,9 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 
 134:                                              ; preds = %10
   %135 = getelementptr inbounds nuw i8, ptr %13, i32 8
-  %136 = load volatile i32, ptr %135, align 4, !tbaa !48
+  %136 = load volatile i32, ptr %135, align 4, !tbaa !49
   %137 = getelementptr inbounds nuw i8, ptr %13, i32 12
-  %138 = load volatile i32, ptr %137, align 4, !tbaa !49
+  %138 = load volatile i32, ptr %137, align 4, !tbaa !50
   %139 = tail call fastcc i32 @badbuf(ptr noundef nonnull %5, i32 noundef %136, i32 noundef %138) #12
   %140 = icmp eq i32 %139, 0
   br i1 %140, label %141, label %1004
@@ -1479,14 +1511,14 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 144:                                              ; preds = %141
   %145 = getelementptr inbounds nuw i8, ptr %13, i32 4
   %146 = load volatile i32, ptr %145, align 4, !tbaa !34
-  %147 = load volatile i32, ptr %135, align 4, !tbaa !48
-  %148 = load volatile i32, ptr %137, align 4, !tbaa !49
+  %147 = load volatile i32, ptr %135, align 4, !tbaa !49
+  %148 = load volatile i32, ptr %137, align 4, !tbaa !50
   %149 = tail call i32 @kfs_read(i32 noundef %146, i32 noundef %147, i32 noundef %148) #13
   br label %154
 
 150:                                              ; preds = %141
-  %151 = load volatile i32, ptr %135, align 4, !tbaa !48
-  %152 = load volatile i32, ptr %137, align 4, !tbaa !49
+  %151 = load volatile i32, ptr %135, align 4, !tbaa !49
+  %152 = load volatile i32, ptr %137, align 4, !tbaa !50
   %153 = tail call i32 @kconsread(i32 noundef %151, i32 noundef %152) #12
   br label %154
 
@@ -1500,13 +1532,13 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %159 = getelementptr inbounds nuw i8, ptr %13, i32 4
   %160 = load volatile i32, ptr %159, align 4, !tbaa !34
   %161 = getelementptr inbounds nuw i8, ptr %5, i32 52
-  %162 = load i32, ptr %161, align 4, !tbaa !50
+  %162 = load i32, ptr %161, align 4, !tbaa !51
   %163 = icmp eq i32 %162, 0
   br i1 %163, label %167, label %164
 
 164:                                              ; preds = %158
   %165 = getelementptr inbounds nuw i8, ptr %5, i32 60
-  %166 = load i32, ptr %165, align 4, !tbaa !51
+  %166 = load i32, ptr %165, align 4, !tbaa !52
   br label %230
 
 167:                                              ; preds = %158
@@ -1529,12 +1561,12 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   store i1 true, ptr @kheap_init, align 4
   %178 = load i32, ptr @arena, align 4, !tbaa !6
   %179 = inttoptr i32 %178 to ptr
-  store ptr %179, ptr @kfreelist, align 4, !tbaa !52
+  store ptr %179, ptr @kfreelist, align 4, !tbaa !53
   %180 = load i32, ptr @arena_end, align 4, !tbaa !6
   %181 = sub i32 %180, %178
-  store i32 %181, ptr %179, align 4, !tbaa !54
+  store i32 %181, ptr %179, align 4, !tbaa !55
   %182 = getelementptr inbounds nuw i8, ptr %179, i32 4
-  store ptr null, ptr %182, align 4, !tbaa !56
+  store ptr null, ptr %182, align 4, !tbaa !57
   br label %183
 
 183:                                              ; preds = %177, %174
@@ -1546,7 +1578,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 187:                                              ; preds = %194, %183
   %188 = phi ptr [ @kfreelist, %183 ], [ %198, %194 ]
   %189 = phi ptr [ null, %183 ], [ %197, %194 ]
-  %190 = load ptr, ptr %188, align 4, !tbaa !52
+  %190 = load ptr, ptr %188, align 4, !tbaa !53
   %191 = icmp eq ptr %190, null
   br i1 %191, label %192, label %194
 
@@ -1555,31 +1587,31 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   br i1 %193, label %215, label %199
 
 194:                                              ; preds = %187
-  %195 = load i32, ptr %190, align 4, !tbaa !54
+  %195 = load i32, ptr %190, align 4, !tbaa !55
   %196 = icmp ult i32 %195, %186
   %197 = select i1 %196, ptr %189, ptr %188
   %198 = getelementptr inbounds nuw i8, ptr %190, i32 4
-  br label %187, !llvm.loop !57
+  br label %187, !llvm.loop !58
 
 199:                                              ; preds = %192
-  %200 = load ptr, ptr %189, align 4, !tbaa !52
-  %201 = load i32, ptr %200, align 4, !tbaa !54
+  %200 = load ptr, ptr %189, align 4, !tbaa !53
+  %201 = load i32, ptr %200, align 4, !tbaa !55
   %202 = sub i32 %201, %186
   %203 = icmp ugt i32 %202, 511
   br i1 %203, label %204, label %208
 
 204:                                              ; preds = %199
-  store i32 %202, ptr %200, align 4, !tbaa !54
+  store i32 %202, ptr %200, align 4, !tbaa !55
   %205 = ptrtoint ptr %200 to i32
   %206 = add i32 %202, %205
   %207 = inttoptr i32 %206 to ptr
-  store i32 %186, ptr %207, align 4, !tbaa !54
+  store i32 %186, ptr %207, align 4, !tbaa !55
   br label %212
 
 208:                                              ; preds = %199
   %209 = getelementptr inbounds nuw i8, ptr %200, i32 4
-  %210 = load ptr, ptr %209, align 4, !tbaa !56
-  store ptr %210, ptr %189, align 4, !tbaa !52
+  %210 = load ptr, ptr %209, align 4, !tbaa !57
+  store ptr %210, ptr %189, align 4, !tbaa !53
   %211 = ptrtoint ptr %200 to i32
   br label %212
 
@@ -1598,7 +1630,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 220:                                              ; preds = %215
   %221 = lshr i32 %175, 1
   %222 = tail call i32 @llvm.umax.i32(i32 %221, i32 %171)
-  br label %174, !llvm.loop !58
+  br label %174, !llvm.loop !59
 
 223:                                              ; preds = %215
   br i1 %217, label %1004, label %224
@@ -1608,11 +1640,11 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %226 = getelementptr inbounds nuw [8 x i32], ptr @heapmem, i32 0, i32 %225
   store i32 %216, ptr %226, align 4, !tbaa !6
   %227 = getelementptr inbounds nuw i8, ptr %5, i32 60
-  store i32 %216, ptr %227, align 4, !tbaa !51
-  store i32 %216, ptr %161, align 4, !tbaa !50
+  store i32 %216, ptr %227, align 4, !tbaa !52
+  store i32 %216, ptr %161, align 4, !tbaa !51
   %228 = add i32 %216, %175
   %229 = getelementptr inbounds nuw i8, ptr %5, i32 56
-  store i32 %228, ptr %229, align 4, !tbaa !59
+  store i32 %228, ptr %229, align 4, !tbaa !60
   br label %230
 
 230:                                              ; preds = %224, %164
@@ -1624,7 +1656,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 
 235:                                              ; preds = %230
   %236 = getelementptr inbounds nuw i8, ptr %5, i32 56
-  %237 = load i32, ptr %236, align 4, !tbaa !59
+  %237 = load i32, ptr %236, align 4, !tbaa !60
   %238 = sub i32 %237, %232
   %239 = icmp ugt i32 %160, %238
   br i1 %239, label %1004, label %240
@@ -1639,14 +1671,14 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   br i1 %244, label %247, label %245
 
 245:                                              ; preds = %242
-  %246 = load i32, ptr %233, align 4, !tbaa !51
+  %246 = load i32, ptr %233, align 4, !tbaa !52
   br label %254
 
 247:                                              ; preds = %242
   %248 = inttoptr i32 %243 to ptr
   store volatile i8 0, ptr %248, align 1, !tbaa !3
   %249 = add nuw i32 %243, 1
-  br label %242, !llvm.loop !60
+  br label %242, !llvm.loop !61
 
 250:                                              ; preds = %230
   %251 = sub nsw i32 0, %160
@@ -1657,7 +1689,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 254:                                              ; preds = %250, %245
   %255 = phi i32 [ %246, %245 ], [ %232, %250 ]
   %256 = add i32 %255, %160
-  store i32 %256, ptr %233, align 4, !tbaa !51
+  store i32 %256, ptr %233, align 4, !tbaa !52
   %257 = getelementptr inbounds nuw i8, ptr %5, i32 56
   br label %258
 
@@ -1687,23 +1719,23 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 
 274:                                              ; preds = %270, %266
   %275 = add nuw nsw i32 %264, 1
-  br label %263, !llvm.loop !61
+  br label %263, !llvm.loop !62
 
 276:                                              ; preds = %270
   %277 = getelementptr inbounds nuw i8, ptr %267, i32 52
-  %278 = load i32, ptr %277, align 4, !tbaa !50
-  %279 = load i32, ptr %161, align 4, !tbaa !50
+  %278 = load i32, ptr %277, align 4, !tbaa !51
+  %279 = load i32, ptr %161, align 4, !tbaa !51
   %280 = icmp eq i32 %278, %279
   br i1 %280, label %286, label %281
 
 281:                                              ; preds = %276
-  store i32 %279, ptr %277, align 4, !tbaa !50
-  %282 = load i32, ptr %257, align 4, !tbaa !59
+  store i32 %279, ptr %277, align 4, !tbaa !51
+  %282 = load i32, ptr %257, align 4, !tbaa !60
   %283 = getelementptr inbounds nuw i8, ptr %267, i32 56
-  store i32 %282, ptr %283, align 4, !tbaa !59
-  %284 = load i32, ptr %161, align 4, !tbaa !50
+  store i32 %282, ptr %283, align 4, !tbaa !60
+  %284 = load i32, ptr %161, align 4, !tbaa !51
   %285 = getelementptr inbounds nuw i8, ptr %267, i32 60
-  store i32 %284, ptr %285, align 4, !tbaa !51
+  store i32 %284, ptr %285, align 4, !tbaa !52
   br label %286
 
 286:                                              ; preds = %281, %276
@@ -1719,7 +1751,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   br label %292
 
 292:                                              ; preds = %290, %286
-  br label %258, !llvm.loop !62
+  br label %258, !llvm.loop !63
 
 293:                                              ; preds = %10
   %294 = load i32, ptr @ticks, align 4, !tbaa !6
@@ -1727,7 +1759,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %296 = load volatile i32, ptr %295, align 4, !tbaa !34
   %297 = add i32 %296, %294
   %298 = getelementptr inbounds nuw i8, ptr %5, i32 16
-  store i32 %297, ptr %298, align 4, !tbaa !63
+  store i32 %297, ptr %298, align 4, !tbaa !64
   %299 = getelementptr inbounds nuw i8, ptr %5, i32 32
   %300 = load i32, ptr %299, align 4, !tbaa !37
   %301 = inttoptr i32 %300 to ptr
@@ -1785,7 +1817,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 332:                                              ; preds = %314, %328
   %333 = phi i32 [ %331, %328 ], [ %310, %314 ]
   %334 = add nuw nsw i32 %309, 1
-  br label %308, !llvm.loop !64
+  br label %308, !llvm.loop !65
 
 335:                                              ; preds = %312
   %336 = icmp eq i32 %307, 0
@@ -1793,16 +1825,16 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 
 337:                                              ; preds = %335
   %338 = getelementptr inbounds nuw i8, ptr %13, i32 8
-  %339 = load volatile i32, ptr %338, align 4, !tbaa !48
+  %339 = load volatile i32, ptr %338, align 4, !tbaa !49
   %340 = icmp eq i32 %339, 0
   br i1 %340, label %354, label %341
 
 341:                                              ; preds = %337
   %342 = load i32, ptr @ticks, align 4, !tbaa !6
-  %343 = load volatile i32, ptr %338, align 4, !tbaa !48
+  %343 = load volatile i32, ptr %338, align 4, !tbaa !49
   %344 = add i32 %343, %342
   %345 = getelementptr inbounds nuw i8, ptr %5, i32 16
-  store i32 %344, ptr %345, align 4, !tbaa !63
+  store i32 %344, ptr %345, align 4, !tbaa !64
   %346 = load i32, ptr @curr, align 4, !tbaa !6
   %347 = getelementptr inbounds nuw [8 x %struct.proc], ptr @proc, i32 0, i32 %346
   %348 = getelementptr inbounds nuw i8, ptr %347, i32 32
@@ -1863,7 +1895,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %383 = phi i32 [ %365, %374 ], [ %365, %370 ], [ %381, %379 ]
   %384 = phi i32 [ %366, %374 ], [ %366, %370 ], [ 1, %379 ]
   %385 = add nuw nsw i32 %364, 1
-  br label %363, !llvm.loop !65
+  br label %363, !llvm.loop !66
 
 386:                                              ; preds = %368
   %387 = getelementptr inbounds nuw i8, ptr %13, i32 4
@@ -1873,7 +1905,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 
 390:                                              ; preds = %386
   %391 = getelementptr inbounds nuw [8 x %struct.proc], ptr @proc, i32 0, i32 %365, i32 5
-  %392 = load i32, ptr %391, align 4, !tbaa !43
+  %392 = load i32, ptr %391, align 4, !tbaa !44
   %393 = load volatile i32, ptr %387, align 4, !tbaa !34
   %394 = inttoptr i32 %393 to ptr
   store volatile i32 %392, ptr %394, align 4, !tbaa !6
@@ -1918,10 +1950,10 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 
 418:                                              ; preds = %414
   %419 = add nuw nsw i32 %412, 1
-  br label %411, !llvm.loop !66
+  br label %411, !llvm.loop !67
 
 420:                                              ; preds = %414
-  tail call void @llvm.memcpy.p0.p0.i32(ptr noundef nonnull align 4 dereferenceable(72) %415, ptr noundef nonnull align 4 dereferenceable(72) %5, i32 72, i1 false), !tbaa.struct !67
+  tail call void @llvm.memcpy.p0.p0.i32(ptr noundef nonnull align 4 dereferenceable(72) %415, ptr noundef nonnull align 4 dereferenceable(72) %5, i32 72, i1 false), !tbaa.struct !68
   %421 = load i32, ptr @fsready, align 4, !tbaa !6
   %422 = icmp eq i32 %421, 0
   br i1 %422, label %424, label %423
@@ -1990,42 +2022,42 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %462 = getelementptr inbounds nuw i8, ptr %2, i32 12
   %463 = load i32, ptr %462, align 4, !tbaa !6
   %464 = getelementptr inbounds nuw i8, ptr %1, i32 28
-  store i32 %463, ptr %464, align 4, !tbaa !68
+  store i32 %463, ptr %464, align 4, !tbaa !69
   %465 = getelementptr inbounds nuw i8, ptr %2, i32 16
   %466 = load i32, ptr %465, align 4, !tbaa !6
   %467 = getelementptr inbounds nuw i8, ptr %1, i32 32
-  store i32 %466, ptr %467, align 4, !tbaa !70
+  store i32 %466, ptr %467, align 4, !tbaa !71
   %468 = getelementptr inbounds nuw i8, ptr %2, i32 20
   %469 = load i32, ptr %468, align 4, !tbaa !6
   %470 = getelementptr inbounds nuw i8, ptr %1, i32 40
   %471 = getelementptr inbounds nuw i8, ptr %2, i32 24
   %472 = load i32, ptr %471, align 4, !tbaa !6
   %473 = getelementptr inbounds nuw i8, ptr %1, i32 44
-  store i32 %472, ptr %473, align 4, !tbaa !71
+  store i32 %472, ptr %473, align 4, !tbaa !72
   %474 = getelementptr inbounds nuw i8, ptr %2, i32 28
   %475 = load i32, ptr %474, align 4, !tbaa !6
   %476 = getelementptr inbounds nuw i8, ptr %1, i32 48
-  store i32 %475, ptr %476, align 4, !tbaa !72
+  store i32 %475, ptr %476, align 4, !tbaa !73
   %477 = getelementptr inbounds nuw i8, ptr %2, i32 32
   %478 = load i32, ptr %477, align 4, !tbaa !6
   %479 = getelementptr inbounds nuw i8, ptr %1, i32 52
-  store i32 %478, ptr %479, align 4, !tbaa !73
+  store i32 %478, ptr %479, align 4, !tbaa !74
   %480 = getelementptr inbounds nuw i8, ptr %2, i32 36
   %481 = load i32, ptr %480, align 4, !tbaa !6
   %482 = getelementptr inbounds nuw i8, ptr %1, i32 56
-  store i32 %481, ptr %482, align 4, !tbaa !74
+  store i32 %481, ptr %482, align 4, !tbaa !75
   %483 = getelementptr inbounds nuw i8, ptr %2, i32 40
   %484 = load i32, ptr %483, align 4, !tbaa !6
   %485 = getelementptr inbounds nuw i8, ptr %1, i32 60
-  store i32 %484, ptr %485, align 4, !tbaa !75
+  store i32 %484, ptr %485, align 4, !tbaa !76
   %486 = getelementptr inbounds nuw i8, ptr %2, i32 44
   %487 = load i32, ptr %486, align 4, !tbaa !6
   %488 = getelementptr inbounds nuw i8, ptr %1, i32 64
-  store i32 %487, ptr %488, align 4, !tbaa !76
+  store i32 %487, ptr %488, align 4, !tbaa !77
   %489 = getelementptr inbounds nuw i8, ptr %2, i32 48
   %490 = load i32, ptr %489, align 4, !tbaa !6
   %491 = getelementptr inbounds nuw i8, ptr %1, i32 68
-  store i32 %490, ptr %491, align 4, !tbaa !77
+  store i32 %490, ptr %491, align 4, !tbaa !78
   %492 = call fastcc i32 @kalloc(i32 noundef %459) #12
   %493 = call fastcc i32 @kalloc(i32 noundef %461) #12
   %494 = add i32 %459, 52
@@ -2090,7 +2122,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %534 = add i32 %531, %533
   store volatile i32 %534, ptr %532, align 4, !tbaa !6
   %535 = add nuw nsw i32 %520, 1
-  br label %519, !llvm.loop !78
+  br label %519, !llvm.loop !79
 
 536:                                              ; preds = %519
   %537 = sub i32 %512, %515
@@ -2105,11 +2137,11 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 540:                                              ; preds = %514, %510
   call void @llvm.lifetime.end.p0(i64 256, ptr nonnull %3) #11
   call void @kfs_iclose(i32 noundef %448) #13
-  store i32 0, ptr %470, align 4, !tbaa !79
+  store i32 0, ptr %470, align 4, !tbaa !80
   %541 = getelementptr inbounds nuw i8, ptr %1, i32 36
-  store i32 0, ptr %541, align 4, !tbaa !80
+  store i32 0, ptr %541, align 4, !tbaa !81
   %542 = getelementptr inbounds nuw i8, ptr %1, i32 72
-  store i32 0, ptr %542, align 4, !tbaa !81
+  store i32 0, ptr %542, align 4, !tbaa !82
   call void @llvm.lifetime.end.p0(i64 52, ptr nonnull %2) #11
   br label %617
 
@@ -2146,44 +2178,44 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 563:                                              ; preds = %557
   %564 = icmp eq i8 %559, 0
   %565 = add nuw nsw i32 %555, 1
-  br i1 %564, label %568, label %554, !llvm.loop !82
+  br i1 %564, label %568, label %554, !llvm.loop !83
 
 566:                                              ; preds = %557
   %567 = add nuw nsw i32 %548, 1
-  br label %547, !llvm.loop !83
+  br label %547, !llvm.loop !84
 
 568:                                              ; preds = %563, %554
   %569 = getelementptr inbounds nuw i8, ptr %551, i32 72
-  %570 = load i32, ptr %569, align 4, !tbaa !81
+  %570 = load i32, ptr %569, align 4, !tbaa !82
   %571 = icmp eq i32 %570, 0
   br i1 %571, label %595, label %572
 
 572:                                              ; preds = %568
   %573 = getelementptr inbounds nuw i8, ptr %551, i32 80
-  %574 = load i32, ptr %573, align 4, !tbaa !84
+  %574 = load i32, ptr %573, align 4, !tbaa !85
   %575 = add i32 %574, 7
   %576 = and i32 %575, -8
   %577 = getelementptr inbounds nuw i8, ptr %551, i32 24
-  %578 = load i32, ptr %577, align 4, !tbaa !85
+  %578 = load i32, ptr %577, align 4, !tbaa !86
   %579 = add i32 %576, %578
   %580 = tail call fastcc i32 @kalloc(i32 noundef %579) #12
-  %581 = load i32, ptr %569, align 4, !tbaa !81
+  %581 = load i32, ptr %569, align 4, !tbaa !82
   %582 = icmp eq i32 %580, %581
   br i1 %582, label %583, label %594
 
 583:                                              ; preds = %572
   %584 = getelementptr inbounds nuw i8, ptr %551, i32 76
-  %585 = load i32, ptr %584, align 4, !tbaa !86
+  %585 = load i32, ptr %584, align 4, !tbaa !87
   tail call void @kdmacpy(i32 noundef %580, i32 noundef %585, i32 noundef %576) #13
   %586 = add i32 %580, %576
   %587 = getelementptr inbounds nuw i8, ptr %551, i32 20
-  %588 = load i32, ptr %587, align 4, !tbaa !87
-  %589 = load i32, ptr %577, align 4, !tbaa !85
+  %588 = load i32, ptr %587, align 4, !tbaa !88
+  %589 = load i32, ptr %577, align 4, !tbaa !86
   %590 = add i32 %589, 3
   %591 = and i32 %590, -4
   tail call void @kdmacpy(i32 noundef %586, i32 noundef %588, i32 noundef %591) #13
   %592 = getelementptr inbounds nuw i8, ptr %551, i32 12
-  %593 = load i32, ptr %592, align 4, !tbaa !88
+  %593 = load i32, ptr %592, align 4, !tbaa !89
   br label %617
 
 594:                                              ; preds = %572
@@ -2192,10 +2224,10 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 
 595:                                              ; preds = %568
   %596 = getelementptr inbounds nuw i8, ptr %551, i32 16
-  %597 = load i32, ptr %596, align 4, !tbaa !89
+  %597 = load i32, ptr %596, align 4, !tbaa !90
   %598 = tail call fastcc i32 @kalloc(i32 noundef %597) #12
   %599 = getelementptr inbounds nuw i8, ptr %551, i32 24
-  %600 = load i32, ptr %599, align 4, !tbaa !85
+  %600 = load i32, ptr %599, align 4, !tbaa !86
   %601 = tail call fastcc i32 @kalloc(i32 noundef %600) #12
   %602 = icmp ne i32 %598, 0
   %603 = icmp ne i32 %601, 0
@@ -2209,14 +2241,14 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 
 606:                                              ; preds = %595
   %607 = getelementptr inbounds nuw i8, ptr %551, i32 12
-  %608 = load i32, ptr %607, align 4, !tbaa !88
-  %609 = load i32, ptr %596, align 4, !tbaa !89
+  %608 = load i32, ptr %607, align 4, !tbaa !89
+  %609 = load i32, ptr %596, align 4, !tbaa !90
   %610 = add i32 %609, 3
   %611 = and i32 %610, -4
   tail call void @kdmacpy(i32 noundef %598, i32 noundef %608, i32 noundef %611) #13
   %612 = getelementptr inbounds nuw i8, ptr %551, i32 20
-  %613 = load i32, ptr %612, align 4, !tbaa !87
-  %614 = load i32, ptr %599, align 4, !tbaa !85
+  %613 = load i32, ptr %612, align 4, !tbaa !88
+  %614 = load i32, ptr %599, align 4, !tbaa !86
   %615 = add i32 %614, 3
   %616 = and i32 %615, -4
   tail call void @kdmacpy(i32 noundef %601, i32 noundef %613, i32 noundef %616) #13
@@ -2227,20 +2259,20 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %619 = phi i32 [ %492, %540 ], [ %598, %606 ], [ %593, %583 ]
   %620 = phi ptr [ %1, %540 ], [ %551, %606 ], [ %551, %583 ]
   %621 = getelementptr inbounds nuw i8, ptr %620, i32 28
-  %622 = load i32, ptr %621, align 4, !tbaa !68
+  %622 = load i32, ptr %621, align 4, !tbaa !69
   %623 = sub i32 %619, %622
   %624 = getelementptr inbounds nuw i8, ptr %620, i32 32
-  %625 = load i32, ptr %624, align 4, !tbaa !70
+  %625 = load i32, ptr %624, align 4, !tbaa !71
   %626 = sub i32 %618, %625
   %627 = getelementptr inbounds nuw i8, ptr %620, i32 36
-  %628 = load i32, ptr %627, align 4, !tbaa !80
+  %628 = load i32, ptr %627, align 4, !tbaa !81
   %629 = inttoptr i32 %628 to ptr
   %630 = getelementptr inbounds nuw i8, ptr %620, i32 40
   br label %631
 
 631:                                              ; preds = %675, %617
   %632 = phi i32 [ 0, %617 ], [ %688, %675 ]
-  %633 = load i32, ptr %630, align 4, !tbaa !79
+  %633 = load i32, ptr %630, align 4, !tbaa !80
   %634 = icmp ult i32 %632, %633
   br i1 %634, label %675, label %635
 
@@ -2274,25 +2306,25 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 
 653:                                              ; preds = %649, %645
   %654 = add nuw nsw i32 %643, 1
-  br label %642, !llvm.loop !90
+  br label %642, !llvm.loop !91
 
 655:                                              ; preds = %649
-  %656 = load i32, ptr %636, align 4, !tbaa !50
+  %656 = load i32, ptr %636, align 4, !tbaa !51
   %657 = getelementptr inbounds nuw i8, ptr %646, i32 52
-  store i32 %656, ptr %657, align 4, !tbaa !50
-  %658 = load i32, ptr %637, align 4, !tbaa !59
+  store i32 %656, ptr %657, align 4, !tbaa !51
+  %658 = load i32, ptr %637, align 4, !tbaa !60
   %659 = getelementptr inbounds nuw i8, ptr %646, i32 56
-  store i32 %658, ptr %659, align 4, !tbaa !59
-  %660 = load i32, ptr %638, align 4, !tbaa !51
+  store i32 %658, ptr %659, align 4, !tbaa !60
+  %660 = load i32, ptr %638, align 4, !tbaa !52
   %661 = getelementptr inbounds nuw i8, ptr %646, i32 60
-  store i32 %660, ptr %661, align 4, !tbaa !51
-  br label %639, !llvm.loop !91
+  store i32 %660, ptr %661, align 4, !tbaa !52
+  br label %639, !llvm.loop !92
 
 662:                                              ; preds = %642
   %663 = load i32, ptr @curr, align 4, !tbaa !6
   call fastcc void @kfree_exec(i32 noundef %663) #12
   %664 = getelementptr inbounds nuw i8, ptr %620, i32 72
-  %665 = load i32, ptr %664, align 4, !tbaa !81
+  %665 = load i32, ptr %664, align 4, !tbaa !82
   %666 = icmp eq i32 %665, 0
   %667 = load i32, ptr @curr, align 4, !tbaa !6
   %668 = getelementptr inbounds nuw [8 x [3 x i32]], ptr @execmem, i32 0, i32 %667
@@ -2302,7 +2334,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   store i32 %670, ptr %668, align 4, !tbaa !6
   store i32 %671, ptr %669, align 4, !tbaa !6
   %672 = getelementptr inbounds nuw i8, ptr %13, i32 8
-  %673 = load volatile i32, ptr %672, align 4, !tbaa !48
+  %673 = load volatile i32, ptr %672, align 4, !tbaa !49
   %674 = icmp eq i32 %673, 0
   br i1 %674, label %731, label %689
 
@@ -2321,7 +2353,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %687 = add i32 %684, %686
   store volatile i32 %687, ptr %685, align 4, !tbaa !6
   %688 = add nuw i32 %632, 1
-  br label %631, !llvm.loop !92
+  br label %631, !llvm.loop !93
 
 689:                                              ; preds = %662
   %690 = call fastcc i32 @kalloc(i32 noundef 256) #12
@@ -2329,7 +2361,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   br i1 %691, label %731, label %692
 
 692:                                              ; preds = %689
-  %693 = load volatile i32, ptr %672, align 4, !tbaa !48
+  %693 = load volatile i32, ptr %672, align 4, !tbaa !49
   %694 = inttoptr i32 %693 to ptr
   %695 = inttoptr i32 %690 to ptr
   %696 = add i32 %690, 64
@@ -2371,13 +2403,13 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %721 = getelementptr inbounds nuw i8, ptr %715, i32 1
   %722 = getelementptr inbounds nuw i8, ptr %714, i32 1
   store i8 %716, ptr %714, align 1, !tbaa !3
-  br label %713, !llvm.loop !93
+  br label %713, !llvm.loop !94
 
 723:                                              ; preds = %713
   %724 = getelementptr inbounds nuw i8, ptr %714, i32 1
   store i8 0, ptr %714, align 1, !tbaa !3
   %725 = add nuw nsw i32 %702, 1
-  br label %701, !llvm.loop !94
+  br label %701, !llvm.loop !95
 
 726:                                              ; preds = %701, %705
   %727 = getelementptr inbounds nuw i32, ptr %695, i32 %702
@@ -2395,40 +2427,40 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %732 = phi i32 [ 0, %662 ], [ %702, %726 ], [ 0, %689 ]
   %733 = phi i32 [ 0, %662 ], [ %690, %726 ], [ 0, %689 ]
   %734 = getelementptr inbounds nuw i8, ptr %620, i32 52
-  %735 = load i32, ptr %734, align 4, !tbaa !73
+  %735 = load i32, ptr %734, align 4, !tbaa !74
   %736 = add i32 %735, %618
   %737 = getelementptr inbounds nuw i8, ptr %5, i32 24
   store i32 %736, ptr %737, align 4, !tbaa !31
   %738 = getelementptr inbounds nuw i8, ptr %620, i32 56
-  %739 = load i32, ptr %738, align 4, !tbaa !74
+  %739 = load i32, ptr %738, align 4, !tbaa !75
   %740 = add i32 %739, %618
   %741 = getelementptr inbounds nuw i8, ptr %5, i32 28
-  store i32 %740, ptr %741, align 4, !tbaa !95
+  store i32 %740, ptr %741, align 4, !tbaa !96
   %742 = getelementptr inbounds nuw i8, ptr %620, i32 60
-  %743 = load i32, ptr %742, align 4, !tbaa !75
+  %743 = load i32, ptr %742, align 4, !tbaa !76
   %744 = add i32 %743, %618
   %745 = getelementptr inbounds nuw i8, ptr %5, i32 32
   store i32 %744, ptr %745, align 4, !tbaa !37
   %746 = getelementptr inbounds nuw i8, ptr %620, i32 48
-  %747 = load i32, ptr %746, align 4, !tbaa !72
+  %747 = load i32, ptr %746, align 4, !tbaa !73
   %748 = add i32 %747, %619
   %749 = getelementptr inbounds nuw i8, ptr %5, i32 36
-  store i32 %748, ptr %749, align 4, !tbaa !42
+  store i32 %748, ptr %749, align 4, !tbaa !43
   %750 = getelementptr inbounds nuw i8, ptr %620, i32 64
-  %751 = load i32, ptr %750, align 4, !tbaa !76
+  %751 = load i32, ptr %750, align 4, !tbaa !77
   %752 = add i32 %751, %618
   store i32 %752, ptr %11, align 4, !tbaa !27
   %753 = load i32, ptr @k_sysentry, align 4, !tbaa !6
   %754 = getelementptr inbounds nuw i8, ptr %620, i32 68
-  %755 = load i32, ptr %754, align 4, !tbaa !77
+  %755 = load i32, ptr %754, align 4, !tbaa !78
   %756 = add i32 %755, %618
   %757 = inttoptr i32 %756 to ptr
   store volatile i32 %753, ptr %757, align 4, !tbaa !6
-  %758 = load i32, ptr %749, align 4, !tbaa !42
+  %758 = load i32, ptr %749, align 4, !tbaa !43
   %759 = load i32, ptr %737, align 4, !tbaa !31
   %760 = inttoptr i32 %759 to ptr
   store volatile i32 %758, ptr %760, align 4, !tbaa !6
-  %761 = load i32, ptr %734, align 4, !tbaa !73
+  %761 = load i32, ptr %734, align 4, !tbaa !74
   %762 = add i32 %761, %618
   %763 = add i32 %762, -84
   %764 = inttoptr i32 %763 to ptr
@@ -2440,7 +2472,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   store i32 4, ptr %5, align 4, !tbaa !14
   %767 = load i32, ptr @curr, align 4, !tbaa !6
   %768 = getelementptr inbounds nuw i8, ptr %620, i32 44
-  %769 = load i32, ptr %768, align 4, !tbaa !71
+  %769 = load i32, ptr %768, align 4, !tbaa !72
   %770 = add i32 %769, %619
   call fastcc void @kexit(i32 noundef %767, i32 noundef %770) #12
   call void @llvm.lifetime.end.p0(i64 84, ptr nonnull %1) #11
@@ -2461,7 +2493,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %778 = getelementptr inbounds nuw i8, ptr %13, i32 4
   %779 = load volatile i32, ptr %778, align 4, !tbaa !34
   %780 = getelementptr inbounds nuw i8, ptr %13, i32 8
-  %781 = load volatile i32, ptr %780, align 4, !tbaa !48
+  %781 = load volatile i32, ptr %780, align 4, !tbaa !49
   %782 = tail call i32 @kfs_mount(i32 noundef %779, i32 noundef %781) #13
   br label %1004
 
@@ -2480,14 +2512,14 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %791 = getelementptr inbounds nuw i8, ptr %13, i32 4
   %792 = load volatile i32, ptr %791, align 4, !tbaa !34
   %793 = getelementptr inbounds nuw i8, ptr %5, i32 56
-  %794 = load i32, ptr %793, align 4, !tbaa !59
+  %794 = load i32, ptr %793, align 4, !tbaa !60
   %795 = icmp ult i32 %792, %794
   br i1 %795, label %796, label %803
 
 796:                                              ; preds = %790
   %797 = add i32 %792, 32
   %798 = getelementptr inbounds nuw i8, ptr %5, i32 60
-  %799 = load i32, ptr %798, align 4, !tbaa !51
+  %799 = load i32, ptr %798, align 4, !tbaa !52
   %800 = icmp ugt i32 %797, %799
   br i1 %800, label %801, label %803
 
@@ -2518,15 +2550,15 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %814 = phi i32 [ %826, %825 ], [ 0, %803 ]
   %815 = phi i32 [ %821, %825 ], [ 0, %803 ]
   %816 = phi ptr [ %827, %825 ], [ @kfreelist, %803 ]
-  %817 = load ptr, ptr %816, align 4, !tbaa !52
+  %817 = load ptr, ptr %816, align 4, !tbaa !53
   %818 = icmp eq ptr %817, null
   br i1 %818, label %828, label %819
 
 819:                                              ; preds = %813
-  %820 = load i32, ptr %817, align 4, !tbaa !54
+  %820 = load i32, ptr %817, align 4, !tbaa !55
   %821 = add i32 %815, %820
   store i32 %821, ptr %809, align 4, !tbaa !6
-  %822 = load i32, ptr %817, align 4, !tbaa !54
+  %822 = load i32, ptr %817, align 4, !tbaa !55
   %823 = icmp ugt i32 %822, %814
   br i1 %823, label %824, label %825
 
@@ -2537,7 +2569,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 825:                                              ; preds = %819, %824
   %826 = phi i32 [ %814, %819 ], [ %822, %824 ]
   %827 = getelementptr inbounds nuw i8, ptr %817, i32 4
-  br label %813, !llvm.loop !96
+  br label %813, !llvm.loop !97
 
 828:                                              ; preds = %813, %812
   %829 = getelementptr inbounds nuw i8, ptr %805, i32 20
@@ -2611,7 +2643,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 870:                                              ; preds = %861, %865
   %871 = phi i32 [ %854, %861 ], [ %869, %865 ]
   %872 = add nuw nsw i32 %855, 1
-  br label %853, !llvm.loop !97
+  br label %853, !llvm.loop !98
 
 873:                                              ; preds = %857
   %874 = add i32 %834, 1
@@ -2621,7 +2653,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 875:                                              ; preds = %857, %873
   %876 = phi i32 [ %834, %857 ], [ %874, %873 ]
   %877 = add nuw nsw i32 %836, 1
-  br label %832, !llvm.loop !98
+  br label %832, !llvm.loop !99
 
 878:                                              ; preds = %10
   %879 = getelementptr inbounds nuw i8, ptr %13, i32 4
@@ -2647,9 +2679,9 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %888 = getelementptr inbounds nuw i8, ptr %13, i32 4
   %889 = load volatile i32, ptr %888, align 4, !tbaa !34
   %890 = getelementptr inbounds nuw i8, ptr %13, i32 8
-  %891 = load volatile i32, ptr %890, align 4, !tbaa !48
+  %891 = load volatile i32, ptr %890, align 4, !tbaa !49
   %892 = getelementptr inbounds nuw i8, ptr %13, i32 12
-  %893 = load volatile i32, ptr %892, align 4, !tbaa !49
+  %893 = load volatile i32, ptr %892, align 4, !tbaa !50
   %894 = tail call i32 @kgpio(i32 noundef %889, i32 noundef %891, i32 noundef %893) #13
   br label %1004
 
@@ -2657,7 +2689,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %896 = getelementptr inbounds nuw i8, ptr %13, i32 4
   %897 = load volatile i32, ptr %896, align 4, !tbaa !34
   %898 = getelementptr inbounds nuw i8, ptr %13, i32 8
-  %899 = load volatile i32, ptr %898, align 4, !tbaa !48
+  %899 = load volatile i32, ptr %898, align 4, !tbaa !49
   %900 = tail call i32 @kpinmux(i32 noundef %897, i32 noundef %899) #13
   br label %1004
 
@@ -2674,16 +2706,16 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 
 908:                                              ; preds = %905, %901
   %909 = getelementptr inbounds nuw i8, ptr %13, i32 8
-  %910 = load volatile i32, ptr %909, align 4, !tbaa !48
+  %910 = load volatile i32, ptr %909, align 4, !tbaa !49
   %911 = getelementptr inbounds nuw i8, ptr %5, i32 56
-  %912 = load i32, ptr %911, align 4, !tbaa !59
+  %912 = load i32, ptr %911, align 4, !tbaa !60
   %913 = icmp ult i32 %910, %912
   br i1 %913, label %914, label %921
 
 914:                                              ; preds = %908
   %915 = add i32 %910, 28
   %916 = getelementptr inbounds nuw i8, ptr %5, i32 60
-  %917 = load i32, ptr %916, align 4, !tbaa !51
+  %917 = load i32, ptr %916, align 4, !tbaa !52
   %918 = icmp ugt i32 %915, %917
   br i1 %918, label %919, label %921
 
@@ -2694,9 +2726,9 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 921:                                              ; preds = %908, %914, %919, %905
   %922 = load volatile i32, ptr %902, align 4, !tbaa !34
   %923 = getelementptr inbounds nuw i8, ptr %13, i32 8
-  %924 = load volatile i32, ptr %923, align 4, !tbaa !48
+  %924 = load volatile i32, ptr %923, align 4, !tbaa !49
   %925 = getelementptr inbounds nuw i8, ptr %13, i32 12
-  %926 = load volatile i32, ptr %925, align 4, !tbaa !49
+  %926 = load volatile i32, ptr %925, align 4, !tbaa !50
   %927 = tail call i32 @kpio(i32 noundef %922, i32 noundef %924, i32 noundef %926) #13
   br label %1004
 
@@ -2704,7 +2736,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   %929 = getelementptr inbounds nuw i8, ptr %13, i32 4
   %930 = load volatile i32, ptr %929, align 4, !tbaa !34
   %931 = getelementptr inbounds nuw i8, ptr %13, i32 8
-  %932 = load volatile i32, ptr %931, align 4, !tbaa !48
+  %932 = load volatile i32, ptr %931, align 4, !tbaa !49
   %933 = getelementptr inbounds nuw i8, ptr %5, i32 4
   %934 = load i32, ptr %933, align 4, !tbaa !16
   %935 = load volatile i32, ptr %929, align 4, !tbaa !34
@@ -2712,16 +2744,16 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
   br i1 %936, label %937, label %950
 
 937:                                              ; preds = %928
-  %938 = load volatile i32, ptr %931, align 4, !tbaa !48
+  %938 = load volatile i32, ptr %931, align 4, !tbaa !49
   %939 = getelementptr inbounds nuw i8, ptr %5, i32 56
-  %940 = load i32, ptr %939, align 4, !tbaa !59
+  %940 = load i32, ptr %939, align 4, !tbaa !60
   %941 = icmp ult i32 %938, %940
   br i1 %941, label %942, label %950
 
 942:                                              ; preds = %937
   %943 = add i32 %938, 20
   %944 = getelementptr inbounds nuw i8, ptr %5, i32 60
-  %945 = load i32, ptr %944, align 4, !tbaa !51
+  %945 = load i32, ptr %944, align 4, !tbaa !52
   %946 = icmp ugt i32 %943, %945
   br i1 %946, label %947, label %950
 
@@ -2737,7 +2769,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 
 953:                                              ; preds = %10
   %954 = getelementptr inbounds nuw i8, ptr %13, i32 12
-  %955 = load volatile i32, ptr %954, align 4, !tbaa !49
+  %955 = load volatile i32, ptr %954, align 4, !tbaa !50
   %956 = getelementptr inbounds nuw i8, ptr %5, i32 64
   store i32 %955, ptr %956, align 4, !tbaa !25
   %957 = getelementptr inbounds nuw i8, ptr %5, i32 68
@@ -2795,7 +2827,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 
 992:                                              ; preds = %983, %987
   %993 = add nuw nsw i32 %981, 1
-  br label %980, !llvm.loop !99
+  br label %980, !llvm.loop !100
 
 994:                                              ; preds = %987
   %995 = icmp eq i32 %985, 5
@@ -2876,7 +2908,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(argmem: read)
 define internal fastcc range(i32 0, 2) i32 @badbuf(ptr noundef readonly captures(none) %0, i32 noundef %1, i32 noundef %2) unnamed_addr #6 {
   %4 = getelementptr inbounds nuw i8, ptr %0, i32 56
-  %5 = load i32, ptr %4, align 4, !tbaa !59
+  %5 = load i32, ptr %4, align 4, !tbaa !60
   %6 = icmp ne i32 %2, 0
   %7 = icmp ult i32 %1, %5
   %8 = and i1 %6, %7
@@ -2885,7 +2917,7 @@ define internal fastcc range(i32 0, 2) i32 @badbuf(ptr noundef readonly captures
 9:                                                ; preds = %3
   %10 = add i32 %2, %1
   %11 = getelementptr inbounds nuw i8, ptr %0, i32 60
-  %12 = load i32, ptr %11, align 4, !tbaa !51
+  %12 = load i32, ptr %11, align 4, !tbaa !52
   %13 = icmp ugt i32 %10, %12
   br i1 %13, label %14, label %17
 
@@ -2971,12 +3003,12 @@ define internal fastcc i32 @kalloc(i32 noundef %0) unnamed_addr #9 {
   store i1 true, ptr @kheap_init, align 4
   %4 = load i32, ptr @arena, align 4, !tbaa !6
   %5 = inttoptr i32 %4 to ptr
-  store ptr %5, ptr @kfreelist, align 4, !tbaa !52
+  store ptr %5, ptr @kfreelist, align 4, !tbaa !53
   %6 = load i32, ptr @arena_end, align 4, !tbaa !6
   %7 = sub i32 %6, %4
-  store i32 %7, ptr %5, align 4, !tbaa !54
+  store i32 %7, ptr %5, align 4, !tbaa !55
   %8 = getelementptr inbounds nuw i8, ptr %5, i32 4
-  store ptr null, ptr %8, align 4, !tbaa !56
+  store ptr null, ptr %8, align 4, !tbaa !57
   br label %9
 
 9:                                                ; preds = %3, %1
@@ -2987,12 +3019,12 @@ define internal fastcc i32 @kalloc(i32 noundef %0) unnamed_addr #9 {
 
 13:                                               ; preds = %38, %9
   %14 = phi ptr [ @kfreelist, %9 ], [ %39, %38 ]
-  %15 = load ptr, ptr %14, align 4, !tbaa !52
+  %15 = load ptr, ptr %14, align 4, !tbaa !53
   %16 = icmp eq ptr %15, null
   br i1 %16, label %40, label %17
 
 17:                                               ; preds = %13
-  %18 = load i32, ptr %15, align 4, !tbaa !54
+  %18 = load i32, ptr %15, align 4, !tbaa !55
   %19 = icmp ult i32 %18, %12
   br i1 %19, label %38, label %20
 
@@ -3005,30 +3037,30 @@ define internal fastcc i32 @kalloc(i32 noundef %0) unnamed_addr #9 {
   %24 = ptrtoint ptr %15 to i32
   %25 = add i32 %12, %24
   %26 = inttoptr i32 %25 to ptr
-  store i32 %21, ptr %26, align 4, !tbaa !54
+  store i32 %21, ptr %26, align 4, !tbaa !55
   %27 = getelementptr inbounds nuw i8, ptr %15, i32 4
-  %28 = load ptr, ptr %27, align 4, !tbaa !56
+  %28 = load ptr, ptr %27, align 4, !tbaa !57
   %29 = getelementptr inbounds nuw i8, ptr %26, i32 4
-  store ptr %28, ptr %29, align 4, !tbaa !56
-  store i32 %12, ptr %15, align 4, !tbaa !54
+  store ptr %28, ptr %29, align 4, !tbaa !57
+  store i32 %12, ptr %15, align 4, !tbaa !55
   br label %34
 
 30:                                               ; preds = %20
   %31 = getelementptr inbounds nuw i8, ptr %15, i32 4
-  %32 = load ptr, ptr %31, align 4, !tbaa !56
+  %32 = load ptr, ptr %31, align 4, !tbaa !57
   %33 = ptrtoint ptr %15 to i32
   br label %34
 
 34:                                               ; preds = %30, %23
   %35 = phi i32 [ %33, %30 ], [ %24, %23 ]
   %36 = phi ptr [ %32, %30 ], [ %26, %23 ]
-  store ptr %36, ptr %14, align 4, !tbaa !52
+  store ptr %36, ptr %14, align 4, !tbaa !53
   %37 = add i32 %35, 256
   br label %40
 
 38:                                               ; preds = %17
   %39 = getelementptr inbounds nuw i8, ptr %15, i32 4
-  br label %13, !llvm.loop !100
+  br label %13, !llvm.loop !101
 
 40:                                               ; preds = %13, %34
   %41 = phi i32 [ %37, %34 ], [ 0, %13 ]
@@ -3047,45 +3079,45 @@ define internal fastcc void @kfree(i32 noundef %0) unnamed_addr #9 {
 5:                                                ; preds = %5, %3
   %6 = phi ptr [ null, %3 ], [ %8, %5 ]
   %7 = phi ptr [ @kfreelist, %3 ], [ %13, %5 ]
-  %8 = load ptr, ptr %7, align 4, !tbaa !52
+  %8 = load ptr, ptr %7, align 4, !tbaa !53
   %9 = icmp ne ptr %8, null
   %10 = ptrtoint ptr %8 to i32
   %11 = icmp ugt i32 %4, %10
   %12 = and i1 %9, %11
   %13 = getelementptr inbounds nuw i8, ptr %8, i32 4
-  br i1 %12, label %5, label %14, !llvm.loop !101
+  br i1 %12, label %5, label %14, !llvm.loop !102
 
 14:                                               ; preds = %5
   %15 = inttoptr i32 %4 to ptr
   %16 = getelementptr inbounds nuw i8, ptr %15, i32 4
-  store ptr %8, ptr %16, align 4, !tbaa !56
+  store ptr %8, ptr %16, align 4, !tbaa !57
   %17 = icmp eq ptr %6, null
   br i1 %17, label %20, label %18
 
 18:                                               ; preds = %14
   %19 = getelementptr inbounds nuw i8, ptr %6, i32 4
-  store ptr %15, ptr %19, align 4, !tbaa !56
+  store ptr %15, ptr %19, align 4, !tbaa !57
   br label %21
 
 20:                                               ; preds = %14
-  store ptr %15, ptr @kfreelist, align 4, !tbaa !52
+  store ptr %15, ptr @kfreelist, align 4, !tbaa !53
   br label %21
 
 21:                                               ; preds = %20, %18
   br i1 %9, label %22, label %30
 
 22:                                               ; preds = %21
-  %23 = load i32, ptr %15, align 4, !tbaa !54
+  %23 = load i32, ptr %15, align 4, !tbaa !55
   %24 = add i32 %23, %4
   %25 = icmp eq i32 %24, %10
   br i1 %25, label %26, label %30
 
 26:                                               ; preds = %22
-  %27 = load i32, ptr %8, align 4, !tbaa !54
+  %27 = load i32, ptr %8, align 4, !tbaa !55
   %28 = add i32 %27, %23
-  store i32 %28, ptr %15, align 4, !tbaa !54
-  %29 = load ptr, ptr %13, align 4, !tbaa !56
-  store ptr %29, ptr %16, align 4, !tbaa !56
+  store i32 %28, ptr %15, align 4, !tbaa !55
+  %29 = load ptr, ptr %13, align 4, !tbaa !57
+  store ptr %29, ptr %16, align 4, !tbaa !57
   br label %30
 
 30:                                               ; preds = %26, %22, %21
@@ -3093,18 +3125,18 @@ define internal fastcc void @kfree(i32 noundef %0) unnamed_addr #9 {
 
 31:                                               ; preds = %30
   %32 = ptrtoint ptr %6 to i32
-  %33 = load i32, ptr %6, align 4, !tbaa !54
+  %33 = load i32, ptr %6, align 4, !tbaa !55
   %34 = add i32 %33, %32
   %35 = icmp eq i32 %34, %4
   br i1 %35, label %36, label %41
 
 36:                                               ; preds = %31
-  %37 = load i32, ptr %15, align 4, !tbaa !54
+  %37 = load i32, ptr %15, align 4, !tbaa !55
   %38 = add i32 %37, %33
-  store i32 %38, ptr %6, align 4, !tbaa !54
-  %39 = load ptr, ptr %16, align 4, !tbaa !56
+  store i32 %38, ptr %6, align 4, !tbaa !55
+  %39 = load ptr, ptr %16, align 4, !tbaa !57
   %40 = getelementptr inbounds nuw i8, ptr %6, i32 4
-  store ptr %39, ptr %40, align 4, !tbaa !56
+  store ptr %39, ptr %40, align 4, !tbaa !57
   br label %41
 
 41:                                               ; preds = %30, %31, %36, %1
@@ -3130,11 +3162,11 @@ define internal fastcc void @kfree_exec(i32 noundef %0) unnamed_addr #9 {
   store i32 0, ptr %6, align 4, !tbaa !6
   %8 = getelementptr inbounds [8 x %struct.proc], ptr @proc, i32 0, i32 %0
   %9 = getelementptr inbounds nuw i8, ptr %8, i32 60
-  store i32 0, ptr %9, align 4, !tbaa !51
+  store i32 0, ptr %9, align 4, !tbaa !52
   %10 = getelementptr inbounds nuw i8, ptr %8, i32 56
-  store i32 0, ptr %10, align 4, !tbaa !59
+  store i32 0, ptr %10, align 4, !tbaa !60
   %11 = getelementptr inbounds nuw i8, ptr %8, i32 52
-  store i32 0, ptr %11, align 4, !tbaa !50
+  store i32 0, ptr %11, align 4, !tbaa !51
   %12 = getelementptr inbounds nuw i8, ptr %8, i32 68
   store i32 0, ptr %12, align 4, !tbaa !26
   %13 = getelementptr inbounds nuw i8, ptr %8, i32 64
@@ -3147,7 +3179,7 @@ define internal fastcc void @kfree_exec(i32 noundef %0) unnamed_addr #9 {
   tail call fastcc void @kfree(i32 noundef %16) #12
   store i32 0, ptr %15, align 4, !tbaa !6
   %17 = add nuw nsw i32 %3, 1
-  br label %2, !llvm.loop !102
+  br label %2, !llvm.loop !103
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
@@ -3196,7 +3228,7 @@ define internal fastcc void @vfork_release(ptr noundef %0) unnamed_addr #5 {
 
 27:                                               ; preds = %16, %12, %8
   %28 = add nuw nsw i32 %5, 1
-  br label %4, !llvm.loop !103
+  br label %4, !llvm.loop !104
 }
 
 ; Function Attrs: minsize nounwind optsize
@@ -3264,11 +3296,11 @@ define internal fastcc void @kexit(i32 noundef %0, i32 noundef %1) unnamed_addr 
   %44 = load volatile ptr, ptr @kw_pcurdisp, align 4, !tbaa !39
   store i32 %43, ptr %44, align 4, !tbaa !6
   %45 = getelementptr inbounds nuw i8, ptr %12, i32 36
-  %46 = load i32, ptr %45, align 4, !tbaa !42
+  %46 = load i32, ptr %45, align 4, !tbaa !43
   %47 = load volatile ptr, ptr @kw_curthunk, align 4, !tbaa !39
   store i32 %46, ptr %47, align 4, !tbaa !6
   %48 = getelementptr inbounds nuw i8, ptr %12, i32 28
-  %49 = load i32, ptr %48, align 4, !tbaa !95
+  %49 = load i32, ptr %48, align 4, !tbaa !96
   %50 = load volatile ptr, ptr @kw_pcurresume, align 4, !tbaa !39
   store i32 %49, ptr %50, align 4, !tbaa !6
   %51 = load volatile ptr, ptr @kw_nextresume, align 4, !tbaa !39
@@ -3355,7 +3387,7 @@ define internal fastcc void @cputc_wire(i32 noundef range(i32 0, 256) %0) unname
   %5 = load volatile i32, ptr @__dma_uart_fr, align 4, !tbaa !6
   %6 = and i32 %5, 32
   %7 = icmp eq i32 %6, 0
-  br i1 %7, label %8, label %4, !llvm.loop !104
+  br i1 %7, label %8, label %4, !llvm.loop !105
 
 8:                                                ; preds = %4
   store volatile i32 %0, ptr @__dma_uart_dr, align 4, !tbaa !6
@@ -3428,7 +3460,7 @@ define internal fastcc void @tick_income() unnamed_addr #1 {
 
 19:                                               ; preds = %17, %13
   %20 = getelementptr inbounds nuw i8, ptr %10, i32 16
-  %21 = load i32, ptr %20, align 4, !tbaa !63
+  %21 = load i32, ptr %20, align 4, !tbaa !64
   %22 = sub i32 %2, %21
   %23 = icmp sgt i32 %22, -1
   br i1 %23, label %24, label %25
@@ -3440,7 +3472,7 @@ define internal fastcc void @tick_income() unnamed_addr #1 {
 
 25:                                               ; preds = %24, %19, %17, %9
   %26 = add nuw nsw i32 %4, 1
-  br label %3, !llvm.loop !105
+  br label %3, !llvm.loop !106
 
 27:                                               ; preds = %6
   tail call fastcc void @cons_poll() #12
@@ -3528,61 +3560,61 @@ attributes #13 = { minsize nobuiltin nounwind optsize "no-builtins" }
 !39 = !{!40, !40, i64 0}
 !40 = !{!"p1 int", !41, i64 0}
 !41 = !{!"any pointer", !4, i64 0}
-!42 = !{!15, !7, i64 36}
-!43 = !{!15, !7, i64 20}
-!44 = distinct !{!44, !9, !10}
+!42 = distinct !{!42, !9, !10}
+!43 = !{!15, !7, i64 36}
+!44 = !{!15, !7, i64 20}
 !45 = distinct !{!45, !9, !10}
 !46 = distinct !{!46, !9, !10}
-!47 = !{!29, !7, i64 0}
-!48 = !{!29, !7, i64 8}
-!49 = !{!29, !7, i64 12}
-!50 = !{!15, !7, i64 52}
-!51 = !{!15, !7, i64 60}
-!52 = !{!53, !53, i64 0}
-!53 = !{!"p1 _ZTS4khdr", !41, i64 0}
-!54 = !{!55, !7, i64 0}
-!55 = !{!"khdr", !7, i64 0, !53, i64 4}
-!56 = !{!55, !53, i64 4}
-!57 = distinct !{!57, !9, !10}
+!47 = distinct !{!47, !9, !10}
+!48 = !{!29, !7, i64 0}
+!49 = !{!29, !7, i64 8}
+!50 = !{!29, !7, i64 12}
+!51 = !{!15, !7, i64 52}
+!52 = !{!15, !7, i64 60}
+!53 = !{!54, !54, i64 0}
+!54 = !{!"p1 _ZTS4khdr", !41, i64 0}
+!55 = !{!56, !7, i64 0}
+!56 = !{!"khdr", !7, i64 0, !54, i64 4}
+!57 = !{!56, !54, i64 4}
 !58 = distinct !{!58, !9, !10}
-!59 = !{!15, !7, i64 56}
-!60 = distinct !{!60, !9, !10}
+!59 = distinct !{!59, !9, !10}
+!60 = !{!15, !7, i64 56}
 !61 = distinct !{!61, !9, !10}
-!62 = distinct !{!62, !10}
-!63 = !{!15, !7, i64 16}
-!64 = distinct !{!64, !9, !10}
+!62 = distinct !{!62, !9, !10}
+!63 = distinct !{!63, !10}
+!64 = !{!15, !7, i64 16}
 !65 = distinct !{!65, !9, !10}
 !66 = distinct !{!66, !9, !10}
-!67 = !{i64 0, i64 4, !6, i64 4, i64 4, !6, i64 8, i64 4, !6, i64 12, i64 4, !6, i64 16, i64 4, !6, i64 20, i64 4, !6, i64 24, i64 4, !6, i64 28, i64 4, !6, i64 32, i64 4, !6, i64 36, i64 4, !6, i64 40, i64 4, !6, i64 44, i64 4, !6, i64 48, i64 4, !6, i64 52, i64 4, !6, i64 56, i64 4, !6, i64 60, i64 4, !6, i64 64, i64 4, !6, i64 68, i64 4, !6}
-!68 = !{!69, !7, i64 28}
-!69 = !{!"kimg", !4, i64 0, !7, i64 12, !7, i64 16, !7, i64 20, !7, i64 24, !7, i64 28, !7, i64 32, !7, i64 36, !7, i64 40, !7, i64 44, !7, i64 48, !7, i64 52, !7, i64 56, !7, i64 60, !7, i64 64, !7, i64 68, !7, i64 72, !7, i64 76, !7, i64 80}
-!70 = !{!69, !7, i64 32}
-!71 = !{!69, !7, i64 44}
-!72 = !{!69, !7, i64 48}
-!73 = !{!69, !7, i64 52}
-!74 = !{!69, !7, i64 56}
-!75 = !{!69, !7, i64 60}
-!76 = !{!69, !7, i64 64}
-!77 = !{!69, !7, i64 68}
-!78 = distinct !{!78, !9, !10}
-!79 = !{!69, !7, i64 40}
-!80 = !{!69, !7, i64 36}
-!81 = !{!69, !7, i64 72}
-!82 = distinct !{!82, !9, !10}
+!67 = distinct !{!67, !9, !10}
+!68 = !{i64 0, i64 4, !6, i64 4, i64 4, !6, i64 8, i64 4, !6, i64 12, i64 4, !6, i64 16, i64 4, !6, i64 20, i64 4, !6, i64 24, i64 4, !6, i64 28, i64 4, !6, i64 32, i64 4, !6, i64 36, i64 4, !6, i64 40, i64 4, !6, i64 44, i64 4, !6, i64 48, i64 4, !6, i64 52, i64 4, !6, i64 56, i64 4, !6, i64 60, i64 4, !6, i64 64, i64 4, !6, i64 68, i64 4, !6}
+!69 = !{!70, !7, i64 28}
+!70 = !{!"kimg", !4, i64 0, !7, i64 12, !7, i64 16, !7, i64 20, !7, i64 24, !7, i64 28, !7, i64 32, !7, i64 36, !7, i64 40, !7, i64 44, !7, i64 48, !7, i64 52, !7, i64 56, !7, i64 60, !7, i64 64, !7, i64 68, !7, i64 72, !7, i64 76, !7, i64 80}
+!71 = !{!70, !7, i64 32}
+!72 = !{!70, !7, i64 44}
+!73 = !{!70, !7, i64 48}
+!74 = !{!70, !7, i64 52}
+!75 = !{!70, !7, i64 56}
+!76 = !{!70, !7, i64 60}
+!77 = !{!70, !7, i64 64}
+!78 = !{!70, !7, i64 68}
+!79 = distinct !{!79, !9, !10}
+!80 = !{!70, !7, i64 40}
+!81 = !{!70, !7, i64 36}
+!82 = !{!70, !7, i64 72}
 !83 = distinct !{!83, !9, !10}
-!84 = !{!69, !7, i64 80}
-!85 = !{!69, !7, i64 24}
-!86 = !{!69, !7, i64 76}
-!87 = !{!69, !7, i64 20}
-!88 = !{!69, !7, i64 12}
-!89 = !{!69, !7, i64 16}
-!90 = distinct !{!90, !9, !10}
-!91 = distinct !{!91, !10}
-!92 = distinct !{!92, !9, !10}
+!84 = distinct !{!84, !9, !10}
+!85 = !{!70, !7, i64 80}
+!86 = !{!70, !7, i64 24}
+!87 = !{!70, !7, i64 76}
+!88 = !{!70, !7, i64 20}
+!89 = !{!70, !7, i64 12}
+!90 = !{!70, !7, i64 16}
+!91 = distinct !{!91, !9, !10}
+!92 = distinct !{!92, !10}
 !93 = distinct !{!93, !9, !10}
 !94 = distinct !{!94, !9, !10}
-!95 = !{!15, !7, i64 28}
-!96 = distinct !{!96, !9, !10}
+!95 = distinct !{!95, !9, !10}
+!96 = !{!15, !7, i64 28}
 !97 = distinct !{!97, !9, !10}
 !98 = distinct !{!98, !9, !10}
 !99 = distinct !{!99, !9, !10}
@@ -3592,3 +3624,4 @@ attributes #13 = { minsize nobuiltin nounwind optsize "no-builtins" }
 !103 = distinct !{!103, !9, !10}
 !104 = distinct !{!104, !9, !10}
 !105 = distinct !{!105, !9, !10}
+!106 = distinct !{!106, !9, !10}

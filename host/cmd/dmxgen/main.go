@@ -18,8 +18,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/puhitaku/dma-cpu/host/boards"
@@ -1129,6 +1131,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		{"g_sd_txch", sdTxCh(v, bd)},
 		{"g_sd_txctrl", sdTxCtrl(v, bd)},
 		{"g_goldsum", checksum32(disk)},
+		{"g_xv6_commit", gitCommit7()},
 		{"g_iobank0", v.IOBank0Base}, {"g_padsbank0", v.PadsBank0Base},
 		{"g_pio0base", v.PIO0Base}, {"g_gpiopins", uint32(v.GPIOPins)},
 		{"g_gpio_hi", v.GPIOOutCtrl(true)}, {"g_gpio_lo", v.GPIOOutCtrl(false)},
@@ -1610,6 +1613,25 @@ func sdTxCtrl(v *emu.Variant, bd *boards.Board) uint32 {
 		return 0
 	}
 	return v.SDTxCtrl()
+}
+
+// gitCommit7 returns the repo's HEAD as 7 hex digits in the low 28
+// bits — the kernel boot banner's version stamp. 0 when git is
+// unavailable (the banner then reads 0000000).
+func gitCommit7() uint32 {
+	out, err := exec.Command("git", "rev-parse", "--short=7", "HEAD").Output()
+	if err != nil {
+		return 0
+	}
+	h := strings.TrimSpace(string(out))
+	if len(h) < 7 {
+		return 0
+	}
+	v, err := strconv.ParseUint(h[:7], 16, 32)
+	if err != nil {
+		return 0
+	}
+	return uint32(v)
 }
 
 func pad8(b []byte) []byte {

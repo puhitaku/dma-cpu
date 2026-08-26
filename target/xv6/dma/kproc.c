@@ -210,6 +210,8 @@ uint fgpid;             /* loader-patched: the console shell's pid;
                          * Ctrl-C interrupts its foreground job. 0
                          * disables the interrupt key. */
 uint arena, arena_end;  /* loader-patched: exec placement region */
+uint xv6_commit;        /* loader-patched: the port's git commit, low
+                         * 28 bits as 7 hex digits (0 = unwired) */
 
 /* First-fit allocator with coalescing over [arena, arena_end): each
  * block carries a one-word size header. exec() frees its relocation
@@ -885,6 +887,18 @@ kenter(void)
   tick_taken = 0;
   kcons_aim(0); /* in-kernel wake fires land on kcons's scrap word */
   if (!fsready && dma_disk) {
+    /* The one-time boot banner: the port's commit (loader-patched;
+     * 0000000 in unwired test builds) over the upstream lineage. */
+    klogts();
+    kconswrite("xv6-dma version ", 16);
+    {
+      const char *hx = "0123456789abcdef";
+      char h[8];
+      for (int i = 0; i < 7; i++)
+        h[i] = hx[(xv6_commit >> (24 - 4 * i)) & 0xFu];
+      kconswrite(h, 7);
+    }
+    kconswrite(" based on xv6-riscv & xv6-ns (rp2dma-xv6-dmacc)\n", 48);
     int fbkb = kfb_init();
     if (fbkb > 0) {
       kfbcon_reset();
