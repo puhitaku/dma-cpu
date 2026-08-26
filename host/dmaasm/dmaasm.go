@@ -886,7 +886,13 @@ func (a *asm) scanShapes(s *stmt, scan func(...string) error, needRegs func(stri
 		}
 		return scan(s.args[0], s.args[2])
 	case "jump":
-		a.internLit(operand{kind: opLit, sym: s.args[0]})
+		// A numeric target (shared-runtime vector slots) interns as a
+		// plain value literal; anything else is a label reference.
+		if v, err := parseNum(s.args[0]); err == nil {
+			a.internLit(operand{kind: opLit, num: v, isNum: true})
+		} else {
+			a.internLit(operand{kind: opLit, sym: s.args[0]})
+		}
 		*shapes = append(*shapes, jmp)
 		return nil
 	case "jumpr":

@@ -385,7 +385,11 @@ func (a *asm) emit() (*Result, error) {
 			mv(ops[0], nullP, k, execCtrl|a.v.CtrlSniffEn)
 			mv(sniffP, ops[1], 1, execCtrl)
 		case "jump":
-			p, err := resolve(operand{kind: opLit, sym: s.args[0]}, s.line)
+			tgt := operand{kind: opLit, sym: s.args[0]}
+			if v, err := parseNum(s.args[0]); err == nil {
+				tgt = operand{kind: opLit, num: v, isNum: true}
+			}
+			p, err := resolve(tgt, s.line)
 			if err != nil {
 				return nil, err
 			}
