@@ -81,7 +81,9 @@ func compileKernelFull(t *testing.T, fs, xip, size, fb bool) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := dmacc.Options{Entry: "kmain", NoSafepoints: true, XIPText: xip, OptSize: size}
+	opts := dmacc.Options{Entry: "kmain", NoSafepoints: true, XIPText: xip, OptSize: size,
+		/* every XIP kernel hosts the shared runtime for its guests */
+		RuntimeHost: xip}
 	if xip && fs {
 		// The whole sync path must execute from SRAM: its QMI session
 		// tears down the XIP window the kernel text now lives behind.

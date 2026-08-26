@@ -940,7 +940,9 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		"target/xv6/ll/kfat.ll", "target/xv6/ll/kdev.ll", "target/xv6/ll/kdma.ll", "target/xv6/ll/string.ll"),
 		dmacc.Options{Entry: "kmain", NoSafepoints: true, XIPText: true,
 			/* the QMI sync session tears down XIP: it must run from SRAM */
-			RAMTextFuncs: []string{"kflash_sync"}})
+			RAMTextFuncs: []string{"kflash_sync"},
+			/* host the shared runtime for every guest image below */
+			RuntimeHost: true})
 	if err != nil {
 		return nil, err
 	}
@@ -950,7 +952,8 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	}
 	shDasm, err := compileLL([]string{"target/xv6/ll/sh.ll", "target/xv6/ll/ulib.ll",
 		"target/xv6/ll/umalloc.ll", "target/xv6/ll/usys.ll"},
-		dmacc.Options{RecursionDepth: 8, XIPText: true})
+		dmacc.Options{RecursionDepth: 8, XIPText: true,
+			RuntimeExtern: &dmacc.ExternRT{Vec: cRText, Regs: cData}})
 	if err != nil {
 		return nil, err
 	}
@@ -994,7 +997,8 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	appRes := map[string]*dmaasm.Result{}
 	for _, name := range bd.DiskApps {
 		udasm, err := compileLL([]string{"target/xv6/ll/" + name + ".ll", "target/xv6/ll/ulib.ll", "target/xv6/ll/usys.ll"},
-			dmacc.Options{OptSize: boards.SizeApps[name]})
+			dmacc.Options{OptSize: boards.SizeApps[name],
+				RuntimeExtern: &dmacc.ExternRT{Vec: cRText, Regs: cData}})
 		if err != nil {
 			return nil, err
 		}
@@ -1030,7 +1034,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	if viHome != 0 {
 		viDasm, err := compileLL([]string{"target/xv6/ll/vi.ll", "target/xv6/ll/ulib.ll",
 			"target/xv6/ll/umalloc.ll", "target/xv6/ll/usys.ll"},
-			dmacc.Options{}) /* balanced: editor latency over bytes */
+			dmacc.Options{RuntimeExtern: &dmacc.ExternRT{Vec: cRText, Regs: cData}}) /* balanced: editor latency over bytes */
 		if err != nil {
 			return nil, fmt.Errorf("vi: %w", err)
 		}

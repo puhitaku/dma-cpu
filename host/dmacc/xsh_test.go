@@ -19,7 +19,7 @@ import (
 
 // buildUserScratch compiles an xv6 user program (name.ll + the userland
 // modules) and assembles it reloc-intact at canonical link bases.
-func buildUserScratch(t *testing.T, v *emu.Variant, scratch uint32, name string, extra ...string) *dmaasm.Result {
+func buildUserScratch(t *testing.T, v *emu.Variant, bd *boards.Board, name string, extra ...string) *dmaasm.Result {
 	t.Helper()
 	paths := append([]string{name, "ulib", "usys"}, extra...)
 	var mods []*llir.Module
@@ -30,7 +30,8 @@ func buildUserScratch(t *testing.T, v *emu.Variant, scratch uint32, name string,
 	if err != nil {
 		t.Fatal(err)
 	}
-	dasm, err := dmacc.Compile(mod, dmacc.Options{OptSize: boards.SizeApps[name]})
+	dasm, err := dmacc.Compile(mod, dmacc.Options{OptSize: boards.SizeApps[name],
+		RuntimeExtern: &dmacc.ExternRT{Vec: bd.KernCRText, Regs: bd.KernCData}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +52,7 @@ func buildDiskBoard(t *testing.T, v *emu.Variant, bd *boards.Board) []byte {
 	b.AddFile("README", []byte("the DMA machine runs upstream xv6.\n"))
 	if bd.AppsHome == 0 {
 		for _, name := range bd.DiskApps {
-			res := buildUserScratch(t, v, bd.Scratch, name)
+			res := buildUserScratch(t, v, bd, name)
 			blob, err := fsimg.DMXExec(res.Image, res.Symbol)
 			if err != nil {
 				t.Fatal(err)
@@ -229,7 +230,8 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 8, XIPText: true})
+	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 8, XIPText: true,
+		RuntimeExtern: &dmacc.ExternRT{Vec: bd.KernCRText, Regs: bd.KernCData}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -484,7 +486,7 @@ func registerFlashApps(t *testing.T, m *emu.Machine, v *emu.Variant,
 	cursor := bd.AppsHome
 	idx := 0 /* vi tests claim the first free row afterwards */
 	for _, name := range bd.DiskApps {
-		res := buildUserScratch(t, v, bd.Scratch, name)
+		res := buildUserScratch(t, v, bd, name)
 		text, data := res.Image.Segments[0].Data, res.Image.Segments[1].Data
 		dHome, rHome, end := stageFlashImage(m, res, cursor)
 		names := append([]string{name}, bd.LinksFor(name)...)
@@ -511,7 +513,8 @@ func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dasm, err := dmacc.Compile(mod, dmacc.Options{})
+	dasm, err := dmacc.Compile(mod, dmacc.Options{
+		RuntimeExtern: &dmacc.ExternRT{Vec: bd.KernCRText, Regs: bd.KernCData}})
 	if err != nil {
 		t.Fatal(err)
 	}

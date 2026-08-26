@@ -140,6 +140,7 @@ var stdApps = []string{"echo", "cat", "ls", "toolbox", "hwtools"}
 // sh and the kernels stay fast: their text is XIP flash, so OptSize
 // would buy no SRAM there at all.
 var SizeApps = map[string]bool{"show": true, "toolbox": true, "hwtools": true}
+
 var fbApps = append(append([]string{}, stdApps...), "fbtest", "show")
 // spin/trap (signal demos), wc, and help left the toolbox: help is an
 // sh builtin now (it streams /dev/apps) and the rest earned no keep.
@@ -237,8 +238,11 @@ var Feather = &Board{
 	// tables; sh runs RecursionDepth 8. Every byte reclaimed here is
 	// arena — the window that decides whether `show` fits beside the
 	// scanout table.
+	// KernCData moved up 1 KiB for the shared-runtime host: the vector
+	// page + force-included bodies grew ramtext to ~31.6K, and the
+	// slot-colored data side had the slack to give.
 	KernText: 0x20002000, KernData: 0x20002400,
-	KernCRText: 0x20002600, KernCData: 0x2000A200,
+	KernCRText: 0x20002600, KernCData: 0x2000A600,
 	ShRText: 0x20017000, ShData: 0x20019000,
 	// 480p squeeze (prompts/039): the disk shrinks to an echo-redirect
 	// showcase and the arena to one exec'd app (show, the largest at

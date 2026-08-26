@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/puhitaku/dma-cpu/host/boards"
 	"github.com/puhitaku/dma-cpu/host/dmaasm"
 	"github.com/puhitaku/dma-cpu/host/dmacc"
 	"github.com/puhitaku/dma-cpu/host/emu"
@@ -57,7 +58,9 @@ func examUtDasm(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dasm, err := dmacc.Compile(utMod, dmacc.Options{})
+	bd := boards.Pico2 // bootExam's kernel bases are pico2's
+	dasm, err := dmacc.Compile(utMod, dmacc.Options{
+		RuntimeExtern: &dmacc.ExternRT{Vec: bd.KernCRText, Regs: bd.KernCData}})
 	if err != nil {
 		t.Fatal(err)
 	}
