@@ -19,7 +19,7 @@ func TestArenaNeeds(t *testing.T) {
 	v, _ := emu.VariantByName(bd.SKU)
 	r := func(n int) int { return (n+0xFF)&^0xFF + 0x100 }
 	for _, name := range bd.DiskApps {
-		mods := []*llir.Module{parseLL(t, "../../target/xv6/ll/" + name + ".ll"),
+		mods := []*llir.Module{parseLL(t, "../../target/xv6/ll/"+name+".ll"),
 			parseLL(t, "../../target/xv6/ll/ulib.ll"), parseLL(t, "../../target/xv6/ll/usys.ll")}
 		mod, err := llir.Merge(mods...)
 		if err != nil {
