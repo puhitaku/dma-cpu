@@ -39,7 +39,7 @@ func TestCompactSched(t *testing.T) {
 			}
 			kern := asm(ksrc, 0x20000000, 0x20002000)
 			kernC := asm(kcDasm, 0x20004000, 0x2001A000)
-			procA := asm(dasm, 0x20020000, 0x20023000)
+			procA := asm(dasm, 0x20021000, 0x20023000)
 			procB := asm(dasm, 0x20024000, 0x20027000)
 
 			m := emu.NewMachine(v)

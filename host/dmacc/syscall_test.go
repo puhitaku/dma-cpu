@@ -45,7 +45,7 @@ func TestXv6Syscalls(t *testing.T) {
 			}
 			kernC := buildKernelC(t, v, 0x20004000, 0x20038000)
 			procA, err := dmaasm.Assemble(procDasm, dmaasm.Options{
-				Variant: v, TextBase: 0x20020000, DataBase: 0x20024000})
+				Variant: v, TextBase: 0x20021000, DataBase: 0x20024000})
 			if err != nil {
 				t.Fatal(err)
 			}

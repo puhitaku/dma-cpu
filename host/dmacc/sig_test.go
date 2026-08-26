@@ -48,7 +48,7 @@ func TestXv6Signal(t *testing.T) {
 				}
 				return res
 			}
-			driver := asm(0x20020000, 0x20024000)
+			driver := asm(0x20021000, 0x20024000)
 			idle := asm(0x20026000, 0x2002A000)
 
 			m := emu.NewMachine(v)

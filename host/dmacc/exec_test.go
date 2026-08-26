@@ -114,7 +114,7 @@ func TestXv6Exec(t *testing.T) {
 				}
 				return res
 			}
-			idle := asm(0x20020000, 0x20024000)
+			idle := asm(0x20021000, 0x20024000)
 			parent := asm(0x20026000, 0x2002A000)
 			// hello is linked at arbitrary bases: the kernel places it.
 			hello, err := dmaasm.Assemble(helloDasm, dmaasm.Options{

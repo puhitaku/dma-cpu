@@ -46,7 +46,7 @@ func TestXv6Kill(t *testing.T) {
 				}
 				return res
 			}
-			killer := asm(0x20020000, 0x20024000)
+			killer := asm(0x20021000, 0x20024000)
 			idle := asm(0x20026000, 0x2002A000)
 			victim := asm(0x2002C000, 0x20030000)
 			orphan := asm(0x20032000, 0x20036000)
