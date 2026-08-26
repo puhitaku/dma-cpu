@@ -45,12 +45,16 @@
 #define NPW (N * N)    /* 100 per wall */
 #define NWALL (5 * NPW)
 #define NBF 10         /* box faces: 2 boxes x (4 sides + top) */
-#define NPBF 16        /* 4x4 patches per box face */
-#define NBOX (NBF * NPBF)
+/* Per-face patch resolution, budgeted by what the camera sees
+ * (f = box*5 + side; sides 0 right, 1 left, 2 back, 3 front, 4 top):
+ * the fronts get 6x6, the tall box's left and the short box's top
+ * 4x4, every face the camera cannot see 2x2 — finer where the eye
+ * lives, and 32 patches CHEAPER than uniform 4x4. */
+#define NBOX 128 /* sum of NFQ[f]^2 */
 #define NFRONT (NWALL + NBOX) /* first invisible front-wall patch */
 #define NF 5                  /* front wall: 5x5, an energy mirror */
 #define PSIZEF 48
-#define NP (NFRONT + NF * NF) /* 685 patches */
+#define NP (NFRONT + NF * NF) /* 653 patches */
 #define HALF 120       /* box half-width in scene units */
 #define ZNEAR 200      /* opening (camera at z=0, focal ZNEAR) */
 #define PSIZE 24       /* wall patch edge: 240/10 */
@@ -78,32 +82,42 @@
 #define B1_COS 243
 #define B1_SIN (-79)
 
+/* per-face patch grid edge, patch-index base, corner-grid base (in
+ * uchar pairs) — all compile-time prefix sums over NFQ */
+static const uchar NFQ[NBF] = {2, 4, 2, 6, 2, 2, 2, 2, 6, 4};
+static const uchar PBASE[NBF] = {0, 4, 20, 24, 60, 64, 68, 72, 76, 112};
+static const ushort CGOFF[NBF] = {0, 9, 34, 43, 92, 101, 110, 119, 128, 177};
+
 /* --- state in free SRAM (see bench.c for the region's story) ---
- * ten NP-sized arrays at a 1370-byte stride, then the projected wall
- * corner grid (5 walls x 11x11 uchar pairs), then the box face
- * corners (10 faces x 5x5 uchar pairs; the front wall projects to
- * nothing and has none); ~15.1 KiB of the 15.9 KiB window. */
+ * ten NP-sized arrays at a 1306-byte stride, then the projected wall
+ * corner grid (5 walls x 11x11 uchar pairs), the box face corner
+ * grids ((NFQ+1)^2 pairs each; the front wall projects to nothing
+ * and has none), and two per-patch lookups the variable resolution
+ * needs in the hot loop (face id, packed cell coords); ~14.7 KiB of
+ * the 15.9 KiB window. */
 #define RAD_RAM 0x2003C000u
 #define pcx ((short *)RAD_RAM)
-#define pcy ((short *)(RAD_RAM + 1370))
-#define pcz ((short *)(RAD_RAM + 2740))
-#define bR ((ushort *)(RAD_RAM + 4110))
-#define bG ((ushort *)(RAD_RAM + 5480))
-#define bB ((ushort *)(RAD_RAM + 6850))
-#define uR ((ushort *)(RAD_RAM + 8220))
-#define uG ((ushort *)(RAD_RAM + 9590))
-#define uB ((ushort *)(RAD_RAM + 10960))
-#define shown ((ushort *)(RAD_RAM + 12330))
-#define corn ((uchar *)(RAD_RAM + 13700))  /* walls: 1210 B */
-#define bcorn ((uchar *)(RAD_RAM + 14912)) /* boxes: 500 B */
+#define pcy ((short *)(RAD_RAM + 1306))
+#define pcz ((short *)(RAD_RAM + 2612))
+#define bR ((ushort *)(RAD_RAM + 3918))
+#define bG ((ushort *)(RAD_RAM + 5224))
+#define bB ((ushort *)(RAD_RAM + 6530))
+#define uR ((ushort *)(RAD_RAM + 7836))
+#define uG ((ushort *)(RAD_RAM + 9142))
+#define uB ((ushort *)(RAD_RAM + 10448))
+#define shown ((ushort *)(RAD_RAM + 11754))
+#define corn ((uchar *)(RAD_RAM + 13060))   /* walls: 1210 B */
+#define bcorn ((uchar *)(RAD_RAM + 14270))  /* boxes: 404 B */
+#define pface ((uchar *)(RAD_RAM + 14674))  /* box patch -> face */
+#define pcell ((uchar *)(RAD_RAM + 14802))  /* box patch cell: i | k<<4 */
 #define CI(w, i, k) ((w) * 242 + ((k) * 11 + (i)) * 2)
-#define BCI(f, i, k) ((f) * 50 + ((k) * 5 + (i)) * 2)
+#define BCI(f, i, k) ((CGOFF[f] + (k) * (NFQ[f] + 1) + (i)) * 2)
 
 /* per-face normals (Q8) and shooter area ratios (Q8 vs a wall patch),
  * filled by setup(); +10 visibility flags */
-#define nrm ((short *)(RAD_RAM + 15412))   /* 10 x 3 */
-#define areaq ((short *)(RAD_RAM + 15472)) /* 10 */
-#define fvis ((short *)(RAD_RAM + 15492))  /* 10; ends 0x2003FCA4 */
+#define nrm ((short *)(RAD_RAM + 14930))   /* 10 x 3 */
+#define areaq ((short *)(RAD_RAM + 14990)) /* 10 */
+#define fvis ((short *)(RAD_RAM + 15010))  /* 10; ends 0x2003FAB6 */
 
 /* reflectance per wall group, Q8; box faces are warm white */
 static const ushort rho[6][3] = {
@@ -165,17 +179,17 @@ box_world(int b, int lx, int lz, int *wx, int *wz)
 }
 
 /* face f (0..9): box b = f/5, side s = f%5 (0 +lx, 1 -lx, 2 +lz,
- * 3 -lz, 4 top). Grid point (i,k) 0..4 in local face coords (the
- * 4x4 patch grid's 5x5 corners; B1's 72-unit faces divide exactly,
- * B0's 150-unit sides truncate half a scene unit — sub-pixel). */
+ * 3 -lz, 4 top). Grid point (i,k) 0..NFQ[f] in local face coords
+ * (2h = 72 divides exactly by every NFQ; B0's 150-unit sides
+ * truncate fractions of a scene unit — sub-pixel). */
 static void
 face_point(int f, int i, int k, int *wx, int *wy, int *wz)
 {
-  int b = f / 5, s = f % 5;
+  int b = f / 5, s = f % 5, n = NFQ[f];
   int h = b == 0 ? B0_H : B1_H;
   int top = b == 0 ? B0_TOP : B1_TOP;
-  int u = -h + h * i / 2;             /* -h .. +h in quarters */
-  int v = top + (HALF - top) * k / 4; /* top..floor for sides */
+  int u = -h + 2 * h * i / n;         /* -h .. +h in n steps */
+  int v = top + (HALF - top) * k / n; /* top..floor for sides */
   int lx, lz;
   switch (s) {
   case 0: lx = h; lz = u; break;
@@ -184,7 +198,7 @@ face_point(int f, int i, int k, int *wx, int *wy, int *wz)
   case 3: lx = u; lz = -h; break;
   default: /* top: u across x, second axis across z */
     lx = u;
-    lz = -h + h * k / 2;
+    lz = -h + 2 * h * k / n;
     break;
   }
   box_world(b, lx, lz, wx, wz);
@@ -241,8 +255,9 @@ project(void)
   }
   /* box face corners: one true perspective divide per corner */
   for (int f = 0; f < NBF; f++) {
-    for (int k = 0; k < 5; k++) {
-      for (int i = 0; i < 5; i++) {
+    int n1 = NFQ[f] + 1;
+    for (int k = 0; k < n1; k++) {
+      for (int i = 0; i < n1; i++) {
         int wx, wy, wz;
         face_point(f, i, k, &wx, &wy, &wz);
         int rz = (int)((uint)(ZNEAR << 12) / (uint)wz);
@@ -289,11 +304,14 @@ setup(void)
     nrm[f * 3 + 1] = (short)ny;
     nrm[f * 3 + 2] = (short)nz;
     int h = b == 0 ? B0_H : B1_H, top = b == 0 ? B0_TOP : B1_TOP;
-    int aq = s == 4 ? h * h / 4 : h * (HALF - top) / 8; /* 4x4 patch area */
+    int n = NFQ[f];
+    int aq = (s == 4 ? 4 * h * h : 2 * h * (HALF - top)) / (n * n);
     areaq[f] = (short)(aq * 256 / AREA);
-    for (int pb = 0; pb < NPBF; pb++) {
-      int p = NWALL + f * NPBF + pb;
-      int i = pb & 3, k = pb >> 2; /* cell (i,k) of the 4x4 */
+    for (int pb = 0; pb < n * n; pb++) {
+      int p = NWALL + PBASE[f] + pb;
+      int i = pb % n, k = pb / n;
+      pface[PBASE[f] + pb] = (uchar)f;
+      pcell[PBASE[f] + pb] = (uchar)(i | (k << 4));
       int x0, y0, z0, x1, y1, z1;
       face_point(f, i, k, &x0, &y0, &z0);
       face_point(f, i + 1, k + 1, &x1, &y1, &z1);
@@ -303,7 +321,7 @@ setup(void)
     }
     /* visible from the camera at the origin? n . center < 0 */
     int cx, cy, cz2;
-    face_point(f, 1, 1, &cx, &cy, &cz2);
+    face_point(f, n / 2, n / 2, &cx, &cy, &cz2);
     fvis[f] = (short)((nx * cx + ny * cy + nz * cz2) < 0);
   }
   for (int j = 0; j < NF * NF; j++) { /* the invisible front wall */
@@ -443,10 +461,10 @@ draw_wall_patch(int p, ushort c)
 static void
 draw_box_patch(int p, ushort c)
 {
-  int rel = p - NWALL, f = rel / NPBF, pb = rel % NPBF;
+  int rel = p - NWALL, f = pface[rel];
   if (!fvis[f])
     return;
-  int i = pb & 3, k = pb >> 2;
+  int i = pcell[rel] & 15, k = pcell[rel] >> 4;
   int qx[4], qy[4];
   const uchar *a = bcorn + BCI(f, i, k);
   const uchar *b = bcorn + BCI(f, i + 1, k);
@@ -551,7 +569,7 @@ normal_of(int p, int *nx, int *ny, int *nz)
     return;
   }
   if (p >= NWALL) {
-    int f = (p - NWALL) / NPBF;
+    int f = pface[p - NWALL];
     *nx = nrm[f * 3];
     *ny = nrm[f * 3 + 1];
     *nz = nrm[f * 3 + 2];
@@ -573,7 +591,7 @@ shooter_scale(int p) /* Q8 area ratio vs a wall patch */
     return 256;
   if (p >= NFRONT)
     return (PSIZEF * PSIZEF * 256) / AREA; /* 48x48 vs 24x24: 1024 */
-  return areaq[(p - NWALL) / NPBF];
+  return areaq[pface[p - NWALL]];
 }
 
 static __attribute__((noinline)) uint
