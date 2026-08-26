@@ -230,9 +230,13 @@ func (a *asm) internPlanLits(shapes []cshape) {
 	for _, p := range prims {
 		switch p.kind {
 		case pSwitch:
-			a.internLit(operand{kind: opLit, num: a.switchLitVal(p.from, p.to), isNum: true})
+			swop := operand{kind: opLit, num: a.switchLitVal(p.from, p.to), isNum: true}
+			a.internLit(swop)
+			a.sysLits[litKey(swop)] = true /* read per bank switch: resident */
 		case pCount:
-			a.internLit(operand{kind: opLit, num: p.k, isNum: true})
+			kop := operand{kind: opLit, num: p.k, isNum: true}
+			a.internLit(kop)
+			a.sysLits[litKey(kop)] = true /* count reload: resident */
 		}
 	}
 }

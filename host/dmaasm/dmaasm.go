@@ -46,6 +46,16 @@ type Options struct {
 	// The sign-dispatch trampoline arena follows the last instruction and
 	// so lands in ramtext when the directive is used.
 	RAMTextBase uint32
+	// PoolText appends cold pool literals to the text segment's tail
+	// (flash rodata on XIP images) instead of spending resident data.
+	// Kept resident regardless: HotLits (profiled hot keys — see
+	// Result.LitAddrs), machinery literals the compact engine reads
+	// every record, and anything referenced from .ramtext (that code
+	// runs while the XIP window may be down). Only for images whose
+	// text executes at its link address — the pool words do not move
+	// with a relocated data segment.
+	PoolText bool
+	HotLits  map[string]bool
 }
 
 // Result is the assembled program.
@@ -53,6 +63,11 @@ type Result struct {
 	Image *img.Image
 	// Symbols maps every label to its link-time address (data and text).
 	Symbols map[string]uint32
+	// LitAddrs maps every pool-literal key to its link-time address —
+	// the handle the profile-guided pool split works with (see
+	// Options.PoolText): profile reads over these addresses, feed the
+	// hot keys back as Options.HotLits.
+	LitAddrs map[string]uint32
 }
 
 func (r *Result) Symbol(name string) (uint32, error) {
@@ -126,7 +141,11 @@ type asm struct {
 	syms     map[string]symbol
 	litOrder []string           // pool emission order (first use)
 	lits     map[string]operand // pool key -> value operand
-	litOffs  map[string]uint32  // pool key -> data offset
+	litOffs  map[string]uint32  // pool key -> data offset (resident lits)
+	litText  map[string]uint32  // pool key -> text offset (flash lits)
+	ramLits  map[string]bool    // referenced from .ramtext: must stay resident
+	sysLits  map[string]bool    // machinery lits (window/switch): resident
+	pass1    bool               // layout() runs; internLit tracks sections
 	hasRegs  bool
 	entry    string
 	noSniff  bool
@@ -144,12 +163,18 @@ type asm struct {
 	payloadDelta map[uint32]uint32
 
 	dataSeg *img.Seg // emit pass: the data segment (compact literal refs)
+	textSeg *img.Seg // emit pass: the main text segment (flash pool half)
 }
 
-// litNumPtr resolves a numeric pool literal to its data-segment pointer
-// (emit pass only).
+// litNumPtr resolves a numeric pool literal to its pool pointer (emit
+// pass only) — data segment for resident literals, text for the flash
+// half of a split pool.
 func (a *asm) litNumPtr(v uint32) img.Ptr {
-	return img.In(a.dataSeg, a.litOffs[litKey(operand{kind: opLit, num: v, isNum: true})])
+	k := litKey(operand{kind: opLit, num: v, isNum: true})
+	if off, ok := a.litText[k]; ok {
+		return img.In(a.textSeg, off)
+	}
+	return img.In(a.dataSeg, a.litOffs[k])
 }
 
 // jpair is one trampoline pair: slot 0 (+0) taken when the tested word's
@@ -201,6 +226,9 @@ func Assemble(src string, opts Options) (*Result, error) {
 		syms:    map[string]symbol{},
 		lits:    map[string]operand{},
 		litOffs: map[string]uint32{},
+		litText: map[string]uint32{},
+		ramLits: map[string]bool{},
+		sysLits: map[string]bool{},
 	}
 	if err := a.parse(src); err != nil {
 		return nil, err
@@ -432,6 +460,11 @@ func litKey(op operand) string {
 
 func (a *asm) internLit(op operand) {
 	k := litKey(op)
+	if a.pass1 && a.split {
+		// A .ramtext record reads this literal: it must stay resident —
+		// that code runs while the XIP window may be down.
+		a.ramLits[k] = true
+	}
 	if _, ok := a.lits[k]; !ok {
 		a.lits[k] = op
 		a.litOrder = append(a.litOrder, k)
@@ -546,6 +579,8 @@ var terminators = map[string]bool{
 }
 
 func (a *asm) layout() error {
+	a.pass1 = true
+	defer func() { a.pass1 = false }()
 	seg := "text" // current segment
 	lastMnem := ""
 	defineLabel := func(name string, line int) error {
@@ -717,11 +752,25 @@ func (a *asm) layout() error {
 			return fmt.Errorf("compact mode requires the .regs directive")
 		}
 		// The plain window literal always exists: the cleanup channel
-		// reads it to restore fetch's write pointer.
-		a.internLit(operand{kind: opLit, num: emu.CompactWindow(emu.CompactPlain), isNum: true})
+		// reads it to restore fetch's write pointer — every record,
+		// so it is machinery (resident under the pool split).
+		wop := operand{kind: opLit, num: emu.CompactWindow(emu.CompactPlain), isNum: true}
+		a.internLit(wop)
+		a.sysLits[litKey(wop)] = true
 	}
-	// Literal pool goes after all explicit data.
+	// Literal pool: resident words go after all explicit data; under
+	// Options.PoolText the cold ones (not hot-profiled, not machinery,
+	// not ramtext-referenced) append to the flash text tail instead.
+	coldOff := a.textOff
+	if a.split {
+		coldOff = a.splitOff
+	}
 	for _, k := range a.litOrder {
+		if a.opts.PoolText && a.split && !a.opts.HotLits[k] && !a.ramLits[k] && !a.sysLits[k] {
+			a.litText[k] = coldOff
+			coldOff += 4
+			continue
+		}
 		a.litOffs[k] = a.dataOff
 		a.dataOff += 4
 	}

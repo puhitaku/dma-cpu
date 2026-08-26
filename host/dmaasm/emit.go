@@ -41,6 +41,9 @@ func (a *asm) emit() (*Result, error) {
 		case opMMIO, opAbs:
 			return img.Abs(op.num), nil
 		case opLit:
+			if off, ok := a.litText[litKey(op)]; ok {
+				return img.In(text, off), nil
+			}
 			return img.In(data, a.litOffs[litKey(op)]), nil
 		default:
 			sym, ok := a.syms[op.sym]
@@ -93,8 +96,12 @@ func (a *asm) emit() (*Result, error) {
 			}
 		}
 	}
-	// Literal pool.
+	// Literal pool (resident half; the flash half lands after the text
+	// pass so its words follow the last instruction).
 	for _, k := range a.litOrder {
+		if _, cold := a.litText[k]; cold {
+			continue
+		}
 		op := a.lits[k]
 		if op.isNum {
 			data.Word(op.num)
@@ -160,9 +167,14 @@ func (a *asm) emit() (*Result, error) {
 		return resolve(operand{kind: opSym, sym: name}, line)
 	}
 	litNumP := func(v uint32) img.Ptr {
-		return img.In(data, a.litOffs[litKey(operand{kind: opLit, num: v, isNum: true})])
+		k := litKey(operand{kind: opLit, num: v, isNum: true})
+		if off, ok := a.litText[k]; ok {
+			return img.In(text, off)
+		}
+		return img.In(data, a.litOffs[k])
 	}
 	a.dataSeg = data
+	a.textSeg = text
 	// out is the segment instruction records land in: text until the
 	// .ramtext directive, rtext after it.
 	out := text
@@ -709,6 +721,25 @@ func (a *asm) emit() (*Result, error) {
 		}
 	}
 
+	// Flash half of the literal pool: appended to the main text
+	// segment, past the last instruction (and past the ramtext split
+	// point — these offsets never route through symLoc).
+	for _, k := range a.litOrder {
+		if _, cold := a.litText[k]; !cold {
+			continue
+		}
+		op := a.lits[k]
+		if op.isNum {
+			text.Word(op.num)
+			continue
+		}
+		sym, ok := a.syms[op.sym]
+		if !ok {
+			return nil, fmt.Errorf("undefined symbol %q (used as $%s)", op.sym, op.sym)
+		}
+		text.WordRef(symLoc(sym, op.field))
+	}
+
 	bld.Entry(symLoc(a.syms[a.entry], 0))
 
 	im, err := bld.Image()
@@ -723,5 +754,13 @@ func (a *asm) emit() (*Result, error) {
 		seg, off := symLoc(sym, 0)
 		symbols[name] = seg.LinkAddrOf(off)
 	}
-	return &Result{Image: im, Symbols: symbols}, nil
+	litAddrs := make(map[string]uint32, len(a.litOrder))
+	for _, k := range a.litOrder {
+		if off, cold := a.litText[k]; cold {
+			litAddrs[k] = a.opts.TextBase + off
+		} else {
+			litAddrs[k] = a.opts.DataBase + a.litOffs[k]
+		}
+	}
+	return &Result{Image: im, Symbols: symbols, LitAddrs: litAddrs}, nil
 }
