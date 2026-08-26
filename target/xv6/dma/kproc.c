@@ -553,6 +553,37 @@ cputc(int c)
 /* Exported console I/O (also the devsw[CONSOLE] backend once the fs
  * is up): kconswrite paces cputc; kconsread hands out cooked lines,
  * -2 (EAGAIN) when none is ready — the usys read() wrapper retries. */
+void kconswrite(const char *b, int n);
+
+/* klogts: "[seconds.millis] " from the scheduler-tick epoch, for
+ * kernel log lines (fb bring-up, the SD driver, panics). User
+ * console output never comes through here. */
+void
+klogts(void)
+{
+  uint t = ticks;
+  uint sec = t / 10000u;
+  uint ms = (t % 10000u) / 10u;
+  char b[20];
+  int n = 0;
+  b[n++] = '[';
+  char d[10];
+  int k = 0;
+  do {
+    d[k++] = (char)('0' + sec % 10u);
+    sec /= 10u;
+  } while (sec && k < 10);
+  while (k)
+    b[n++] = d[--k];
+  b[n++] = '.';
+  b[n++] = (char)('0' + ms / 100u);
+  b[n++] = (char)('0' + (ms / 10u) % 10u);
+  b[n++] = (char)('0' + ms % 10u);
+  b[n++] = ']';
+  b[n++] = ' ';
+  kconswrite(b, n);
+}
+
 void
 kconswrite(const char *b, int n)
 {
@@ -857,8 +888,10 @@ kenter(void)
     int fbkb = kfb_init();
     if (fbkb > 0) {
       kfbcon_reset();
-      kconswrite("fb: 640x480x8 on\n", 17);
+      klogts();
+      kconswrite("fb: 640x480x8 on hstx-dvi\n", 26);
     } else if (fbkb < 0) {
+      klogts();
       kconswrite("fb: psram fail\n", 15);
     }
     kfs_start();

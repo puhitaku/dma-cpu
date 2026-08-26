@@ -86,6 +86,8 @@ le32(const uchar *p)
  * slide count; 0 when fd is not a deck; -1 when the series is
  * missing. On success deckfd/deckoff/decksz are set and fd stays
  * open for seek()-based paging. */
+static void emit_ts(void);
+
 static int
 deck_open(int fd, const char *want)
 {
@@ -110,6 +112,7 @@ deck_open(int fd, const char *want)
       deckoff = le32(e + 16);
       deckfd = fd;
       olen = 0;
+      emit_ts();
       emitn(le32(e + 12));
       emit(" slides found (series ");
       emit(nm);
@@ -121,11 +124,42 @@ deck_open(int fd, const char *want)
   return -1;
 }
 
+/* Timestamps: elapsed since show started, in scheduler ticks
+ * (100 us). "[S.hh] " prefixes every log line; draw completions
+ * append their own duration. */
+static uint show_t0;
+
+static void
+emit_ts(void)
+{
+  uint e = (uint)uptime() - show_t0;
+  uint h = (e % 10000u) / 100u;
+  emit("[");
+  emitn(e / 10000u);
+  emit(".");
+  emitn(h / 10u);
+  emitn(h % 10u);
+  emit("] ");
+}
+
+static void
+emit_dur(uint dt)
+{
+  uint h = (dt % 10000u) / 100u;
+  emit(" (");
+  emitn(dt / 10000u);
+  emit(".");
+  emitn(h / 10u);
+  emitn(h % 10u);
+  emit("s)");
+}
+
 /* One log line to the console; the fbcon tee is muted while the fb
  * is acquired, so these reach the UART without touching the slide. */
 static void
 show_log(const char *a, const char *b, const char *c)
 {
+  emit_ts();
   emit(a);
   if (b)
     emit(b);
@@ -176,6 +210,7 @@ show_load(const char *dir, const char *name, uint fb, uint fbsz)
   }
   show_log("Opened ", path, 0);
   show_log("Start drawing ", path, " on FB");
+  uint t0 = (uint)uptime();
   uint got = 0;
   while (got < fbsz) {
     int r = read(fd, (void *)(fb + got), (int)(fbsz - got));
@@ -185,7 +220,14 @@ show_load(const char *dir, const char *name, uint fb, uint fbsz)
   }
   close(fd);
   show_expand2x(fb, fbsz, got);
-  show_log("Done drawing ", path, 0);
+  uint dt = (uint)uptime() - t0;
+  olen = 0;
+  emit_ts();
+  emit("Done drawing ");
+  emit(path);
+  emit_dur(dt);
+  emit("\n");
+  flush();
 }
 
 /* show_slide: one slide onto the fb — deck index or named file. */
@@ -197,10 +239,12 @@ show_slide(int deck, const char *dir, int cur, uint fb, uint fbsz)
     return;
   }
   olen = 0;
+  emit_ts();
   emit("Start drawing slide ");
   emitn((uint)cur + 1);
   emit(" on FB\n");
   flush();
+  uint t0 = (uint)uptime();
   seek(deckfd, deckoff + (uint)cur * decksz);
   uint want = decksz < fbsz ? decksz : fbsz;
   uint got = 0;
@@ -211,9 +255,12 @@ show_slide(int deck, const char *dir, int cur, uint fb, uint fbsz)
     got += (uint)r;
   }
   show_expand2x(fb, fbsz, got);
+  uint dt = (uint)uptime() - t0;
   olen = 0;
+  emit_ts();
   emit("Done drawing slide ");
   emitn((uint)cur + 1);
+  emit_dur(dt);
   emit("\n");
   flush();
 }
@@ -222,6 +269,7 @@ static int
 t_show(int argc, char **argv)
 {
   struct fbinfo fi;
+  show_t0 = (uint)uptime();
   if (fbctl(FB_INFO, &fi) < 0) {
     write(2, "show: no fb\n", 12);
     return 1;
@@ -334,6 +382,7 @@ t_show(int argc, char **argv)
     return 1;
   }
   if (!deck) { /* deck_open already announced its series */
+    emit_ts();
     emitn((uint)nshow);
     emit(" slides found\n");
     flush();

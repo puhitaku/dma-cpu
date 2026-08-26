@@ -84,12 +84,16 @@ define dso_local void @printk(ptr noundef %0, ...) local_unnamed_addr #1 {
   br i1 %6, label %8, label %2, !llvm.loop !6
 
 8:                                                ; preds = %2
+  tail call void @klogts() #9
   tail call void @kconswrite(ptr noundef nonnull %0, i32 noundef %3) #9
   ret void
 }
 
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
 declare void @llvm.lifetime.start.p0(i64 immarg, ptr captures(none)) #2
+
+; Function Attrs: minsize optsize
+declare dso_local void @klogts() local_unnamed_addr #3
 
 ; Function Attrs: minsize optsize
 declare dso_local void @kconswrite(ptr noundef, i32 noundef) local_unnamed_addr #3
@@ -99,6 +103,7 @@ declare void @llvm.lifetime.end.p0(i64 immarg, ptr captures(none)) #2
 
 ; Function Attrs: minsize noreturn nounwind optsize
 define dso_local void @panic(ptr noundef %0) local_unnamed_addr #4 {
+  tail call void @klogts() #9
   tail call void @kconswrite(ptr noundef nonnull @.str, i32 noundef 7) #9
   br label %2
 

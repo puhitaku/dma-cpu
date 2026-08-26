@@ -20,6 +20,7 @@
 extern uint curr;
 void vfs_iput(struct inode *ip); /* defined with the vfat block below */
 extern void kconswrite(const char *s, int n);
+extern void klogts(void); /* kproc.c: "[sec.ms] " kernel-log stamp */
 extern int kconsread(uint dst, int n); /* -2 when no cooked line yet */
 
 /* --- locks: intact API, no-op bodies --- */
@@ -71,12 +72,14 @@ printk(char *fmt, ...)
   int n = 0;
   while (fmt[n])
     n++;
+  klogts();
   kconswrite(fmt, n);
 }
 
 void
 panic(const char *s)
 {
+  klogts();
   kconswrite("panic: ", 7);
   int n = 0;
   while (s[n])
