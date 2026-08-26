@@ -198,8 +198,10 @@ var Pico = &Board{
 	Name: "pico",
 	SKU:  "rp2040",
 
+	// KernCData +1 KiB: the shared-runtime host plus the resident-exec
+	// path grew ramtext past the old window (the data side has slack).
 	KernText: 0x20002000, KernData: 0x20003000,
-	KernCRText: 0x20004000, KernCData: 0x2000B800,
+	KernCRText: 0x20004000, KernCData: 0x2000BC00,
 	ShRText: 0x20018800, ShData: 0x2001B000,
 	IdleText: 0x2001F800, IdleData: 0x20020800,
 	DiskHome: 0x20021800, DiskMax: 0x6000, // 24 KiB: data files only

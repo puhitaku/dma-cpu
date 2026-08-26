@@ -433,20 +433,21 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 // registerRow patches one kimages registry row (the emulator twin of
 // dmxgen's patchRow) for a flash-resident image.
 func registerRow(t *testing.T, m *emu.Machine, kernC *dmaasm.Result, idx int,
-	name string, res *dmaasm.Result, tHome, tLen, dHome, dLen, rHome, nrel uint32) {
+	name string, res *dmaasm.Result, tHome, tLen, dHome, dLen, rHome, nrel,
+	linkT, linkD, sramhome, rtHome, rtLen uint32) {
 	t.Helper()
-	const iT, iD = 0x10000000, 0x10040000
-	row := mustSym(t, kernC, "g_kimages") + uint32(idx)*72
+	row := mustSym(t, kernC, "g_kimages") + uint32(idx)*84
 	var nb [12]byte
 	copy(nb[:], name)
 	vals := []uint32{
 		binary.LittleEndian.Uint32(nb[0:]), binary.LittleEndian.Uint32(nb[4:]),
 		binary.LittleEndian.Uint32(nb[8:]),
-		tHome, tLen, dHome, dLen, iT, iD, rHome, nrel,
-		mustSym(t, res, "warmstart") - iT, mustSym(t, res, "crtthunk") - iT,
-		mustSym(t, res, "dispatch") - iD, mustSym(t, res, "irqresume") - iD,
-		mustSym(t, res, "lr") - iD,
-		mustSym(t, res, "g___dma_sysmail") - iD, mustSym(t, res, "g___dma_syscall_entry") - iD,
+		tHome, tLen, dHome, dLen, linkT, linkD, rHome, nrel,
+		mustSym(t, res, "warmstart") - linkT, mustSym(t, res, "crtthunk") - linkT,
+		mustSym(t, res, "dispatch") - linkD, mustSym(t, res, "irqresume") - linkD,
+		mustSym(t, res, "lr") - linkD,
+		mustSym(t, res, "g___dma_sysmail") - linkD, mustSym(t, res, "g___dma_syscall_entry") - linkD,
+		sramhome, rtHome, rtLen,
 	}
 	for i, v := range vals {
 		m.Poke32(row+uint32(i)*4, v)
@@ -492,7 +493,8 @@ func registerFlashApps(t *testing.T, m *emu.Machine, v *emu.Variant,
 		names := append([]string{name}, bd.LinksFor(name)...)
 		for _, n := range names {
 			registerRow(t, m, kernC, idx, n, res, cursor, uint32(len(text)),
-				dHome, uint32(len(data)), rHome, uint32(len(res.Image.Relocs)))
+				dHome, uint32(len(data)), rHome, uint32(len(res.Image.Relocs)),
+				0x10000000, 0x10040000, 0, 0, 0)
 			idx++
 		}
 		cursor = end
@@ -513,29 +515,48 @@ func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dasm, err := dmacc.Compile(mod, dmacc.Options{
+	dasm, err := dmacc.Compile(mod, dmacc.Options{XIPText: true,
 		RuntimeExtern: &dmacc.ExternRT{Vec: bd.KernCRText, Regs: bd.KernCData}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Pre-relocated: pass 1 at scratch bases measures the ramtext,
+	// pass 2 assembles at the final homes — text in place at ViHome,
+	// [ramtext][data] at the arena's first allocation.
+	probe, err := dmaasm.Assemble(dasm, dmaasm.Options{
+		Variant: m.Variant(), Compact: true,
+		TextBase: 0x10000000, DataBase: 0x10040000, RAMTextBase: 0x10080000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := (uint32(len(probe.Image.Segments[2].Data)) + 7) &^ 7
+	sram := bd.Arena + 0x100
 	res, err := dmaasm.Assemble(dasm, dmaasm.Options{
 		Variant: m.Variant(), Compact: true,
-		TextBase: 0x10000000, DataBase: 0x10040000})
+		TextBase: bd.ViHome, DataBase: sram + rt, RAMTextBase: sram})
 	if err != nil {
 		t.Fatal(err)
 	}
 	text, data := res.Image.Segments[0].Data, res.Image.Segments[1].Data
-	dHome, rHome, _ := stageFlashImage(m, res, bd.ViHome)
+	// Flash layout: [text pad4][ramtext pad8][data], no relocs.
+	tLen := (uint32(len(text)) + 3) &^ 3
+	rtHome := bd.ViHome + tLen
+	dHome := rtHome + rt
+	off := bd.ViHome - 0x10000000
+	copy(m.Flash[off:], text)
+	copy(m.Flash[off+tLen:], res.Image.Segments[2].Data)
+	copy(m.Flash[off+tLen+rt:], data)
 	// Claim the first free registry row (flash apps filled the front).
 	base := mustSym(t, kernC, "g_kimages")
 	idx := 0
 	for ; idx < 20; idx++ {
-		if m.Peek32(base+uint32(idx)*72)&0xFF == 0 {
+		if m.Peek32(base+uint32(idx)*84)&0xFF == 0 {
 			break
 		}
 	}
-	registerRow(t, m, kernC, idx, "vi", res, bd.ViHome, uint32(len(text)),
-		dHome, uint32(len(data)), rHome, uint32(len(res.Image.Relocs)))
+	registerRow(t, m, kernC, idx, "vi", res, bd.ViHome, tLen,
+		dHome, uint32(len(data)), 0, 0,
+		bd.ViHome, sram+rt, sram, rtHome, rt)
 }
 
 // TestXv6Vi: the BusyBox vi port end to end — open a new file, insert

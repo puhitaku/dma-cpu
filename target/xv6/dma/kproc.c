@@ -190,6 +190,14 @@ struct kimg {
   uint entryoff;  /* text-rel: crt0's warmstart (dispatch preset here) */
   uint thunkoff;  /* text-rel */
   uint dispoff, irqoff, lroff, mailoff, sysoff; /* data-rel */
+  /* Pre-relocated rows (sramhome != 0): the image was assembled at
+   * its final addresses — text executes in place from XIP flash, and
+   * exec only places [ramtext][data] at sramhome, the arena's first
+   * allocation (first-fit hands out the bottom, so the address is
+   * deterministic — or busy, and the exec fails cleanly). No relocs;
+   * ramtext carries the self-modifying records XIPText split out. */
+  uint sramhome;
+  uint rtext, rtextlen; /* ramtext blob source + byte length */
 };
 
 struct kimg kimages[NIMG];
@@ -240,6 +248,39 @@ kalloc(uint n)
     }
   }
   return 0;
+}
+
+/* kalloc_top: like kalloc, but carves from the TOP of the LAST free
+ * block. Heap chunks (ksbrk) allocate here so the arena's bottom
+ * stays deterministic for exec images — a pre-relocated image's
+ * fixed sramhome is the bottom-most allocation, and the shell's own
+ * malloc heap must never race it there. */
+static uint
+kalloc_top(uint n)
+{
+  if (!kheap_init) {
+    kheap_init = 1;
+    kfreelist = (struct khdr *)arena;
+    kfreelist->size = arena_end - arena;
+    kfreelist->next = 0;
+  }
+  n = ((n + 0xFFu) & ~0xFFu) + 0x100u;
+  struct khdr **pp = &kfreelist, **cand = 0;
+  for (struct khdr *h = kfreelist; h; pp = &h->next, h = h->next) {
+    if (h->size >= n)
+      cand = pp;
+  }
+  if (!cand)
+    return 0;
+  struct khdr *h = *cand;
+  if (h->size - n >= 0x200u) { /* shrink in place, take the top */
+    h->size -= n;
+    struct khdr *piece = (struct khdr *)((uint)h + h->size);
+    piece->size = n;
+    return (uint)piece + 0x100u;
+  }
+  *cand = h->next;
+  return (uint)h + 0x100u;
 }
 
 static void
@@ -312,10 +353,10 @@ ksbrk(struct proc *p, int n)
       return (uint)-1;
     uint want = ((uint)n + 0xFFu) & ~0xFFu;
     uint size = want < HEAPCHUNK ? HEAPCHUNK : want;
-    uint chunk = kalloc(size);
+    uint chunk = kalloc_top(size);
     if (chunk == 0 && size > want) {
       size = want;
-      chunk = kalloc(size);
+      chunk = kalloc_top(size);
     }
     if (chunk == 0)
       return (uint)-1;
@@ -1345,6 +1386,7 @@ dma_ksyscall(void)
       kfs_iclose(ipu);
       fsim.nreloc = 0; /* already applied */
       fsim.relocs = 0;
+      fsim.sramhome = 0; /* fs images are always relocatable */
       im = &fsim;
     } else {
       im = lookup((const char *)m->a0);
@@ -1352,21 +1394,37 @@ dma_ksyscall(void)
         ret = (uint)-1;
         break;
       }
-      tb = kalloc(im->textlen);
-      db = kalloc(im->datalen);
-      if (!tb || !db) {
-        kfree(tb); /* a half-failed exec must not leak: one leaked
-                    * text region poisoned every later exec (the fs
-                    * path above always freed both) */
-        kfree(db);
-        ret = (uint)-1;
-        break;
+      if (im->sramhome) {
+        /* Pre-relocated: text runs in place, one arena claim holds
+         * [ramtext][data] and must land exactly at the link home. */
+        uint rt = (im->rtextlen + 7u) & ~7u; /* records are 8-aligned */
+        db = kalloc(rt + im->datalen);
+        if (db != im->sramhome) {
+          kfree(db);
+          ret = (uint)-1;
+          break;
+        }
+        kdmacpy(db, im->rtext, rt);
+        kdmacpy(db + rt, im->data, (im->datalen + 3u) & ~3u);
+        tb = im->text;
+        db += rt; /* every data-relative offset below */
+      } else {
+        tb = kalloc(im->textlen);
+        db = kalloc(im->datalen);
+        if (!tb || !db) {
+          kfree(tb); /* a half-failed exec must not leak: one leaked
+                      * text region poisoned every later exec (the fs
+                      * path above always freed both) */
+          kfree(db);
+          ret = (uint)-1;
+          break;
+        }
+        /* Bulk DMA copy (kdma.c): a 57 KB toolbox text used to be an
+         * interpreted word loop; channel 11 moves it a word per bus
+         * slot. Lengths round up to the word the old loop copied. */
+        kdmacpy(tb, im->text, (im->textlen + 3u) & ~3u);
+        kdmacpy(db, im->data, (im->datalen + 3u) & ~3u);
       }
-      /* Bulk DMA copy (kdma.c): a 57 KB toolbox text used to be an
-       * interpreted word loop; channel 11 moves it a word per bus
-       * slot. Lengths round up to the word the old loop copied. */
-      kdmacpy(tb, im->text, (im->textlen + 3u) & ~3u);
-      kdmacpy(db, im->data, (im->datalen + 3u) & ~3u);
     }
     uint tD = tb - im->textlink, dD = db - im->datalink;
     uint *rl = (uint *)im->relocs;
@@ -1377,8 +1435,13 @@ dma_ksyscall(void)
     }
     vfork_sync_brk(p); /* before kfree_exec clears this proc's view */
     kfree_exec((int)curr); /* a re-exec'd image releases its old one */
-    execmem[curr][0] = tb;
-    execmem[curr][1] = db;
+    if (im->sramhome) {
+      execmem[curr][0] = 0; /* text is flash: nothing to free */
+      execmem[curr][1] = im->sramhome;
+    } else {
+      execmem[curr][0] = tb;
+      execmem[curr][1] = db;
+    }
     /* argv: copy the caller's vector + strings into a fresh area and
      * pass argc/argv through the image's r0/r1 register words (crt0's
      * `call main` leaves them untouched; .regs zero-init means plain

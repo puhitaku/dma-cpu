@@ -50,7 +50,7 @@ func registerImage(t *testing.T, m *emu.Machine, kernC *dmaasm.Result,
 	}
 
 	off := func(n string, base uint32) uint32 { return mustSym(t, res, n) - base }
-	row := mustSym(t, kernC, "g_kimages") + uint32(slot)*72
+	row := mustSym(t, kernC, "g_kimages") + uint32(slot)*84
 	nb := make([]byte, 12)
 	copy(nb, name)
 	pokeBytes(m, row, nb)

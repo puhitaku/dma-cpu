@@ -165,12 +165,13 @@ func TestXv6ShSigint(t *testing.T) {
 		base := mustSym(t, kernC, "g_kimages")
 		idx := 0
 		for ; idx < 20; idx++ {
-			if m.Peek32(base+uint32(idx)*72)&0xFF == 0 {
+			if m.Peek32(base+uint32(idx)*84)&0xFF == 0 {
 				break
 			}
 		}
 		registerRow(t, m, kernC, idx, "trap", res, bd.ViHome, uint32(len(text)),
-			dHome, uint32(len(data)), rHome, uint32(len(res.Image.Relocs)))
+			dHome, uint32(len(data)), rHome, uint32(len(res.Image.Relocs)),
+			0x10000000, 0x10040000, 0, 0, 0)
 	}
 	// cat with no args reads the console: a sleeping foreground job.
 	m.FeedConsole("cat\r")

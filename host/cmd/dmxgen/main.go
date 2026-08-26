@@ -1038,21 +1038,34 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		if err != nil {
 			return nil, fmt.Errorf("vi: %w", err)
 		}
-		viRes, err = casm(viDasm, 0x10000000, 0x10040000, 0)
+		// Pre-relocated (prompts/041 follow-up): assemble at the FINAL
+		// addresses — text at its flash home (it executes in place from
+		// XIP), [ramtext][data] at the arena's first allocation — so
+		// the image needs no relocs and exec claims only its SRAM
+		// half. Pass 1 at scratch bases just measures the ramtext.
+		probe, err := casm(viDasm, 0x10000000, 0x10040000, 0x10080000)
 		if err != nil {
 			return nil, fmt.Errorf("vi: %w", err)
 		}
-		viText = pad4(viRes.Image.Segments[0].Data)
-		viData = pad4(viRes.Image.Segments[1].Data)
-		var viRel []byte
-		for _, r := range viRes.Image.Relocs {
-			var w [4]byte
-			binary.LittleEndian.PutUint32(w[:], packReloc(r))
-			viRel = append(viRel, w[:]...)
+		viRT := pad8(probe.Image.Segments[2].Data)
+		viSRAM := bd.Arena + 0x100 /* first-fit kalloc's first block */
+		viRes, err = casm(viDasm, viHome, viSRAM+uint32(len(viRT)), viSRAM)
+		if err != nil {
+			return nil, fmt.Errorf("vi: %w", err)
 		}
-		viBlob = append(append(append([]byte(nil), viText...), viData...), viRel...)
+		if len(pad8(viRes.Image.Segments[2].Data)) != len(viRT) {
+			return nil, fmt.Errorf("vi: ramtext length moved between passes")
+		}
+		viText = pad4(viRes.Image.Segments[0].Data)
+		viRT = pad8(viRes.Image.Segments[2].Data)
+		viData = pad4(viRes.Image.Segments[1].Data)
+		viBlob = append(append(append([]byte(nil), viText...), viRT...), viData...)
 		if viHome+uint32(len(viBlob)) > viEnd {
 			return nil, fmt.Errorf("vi blob %d bytes overflows its flash budget", len(viBlob))
+		}
+		need := (uint32(len(viRT))+uint32(len(viData))+255)&^255 + 0x100
+		if bd.Arena+need > bd.ArenaEnd {
+			return nil, fmt.Errorf("vi SRAM half (%d bytes) overflows the arena", need)
 		}
 	}
 
@@ -1156,8 +1169,12 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	// images (kproc.c lookup()) — vi when installed, and the whole
 	// app set on flash-apps boards (aliases share one blob).
 	rowIdx := 0
-	patchRow := func(name string, res *dmaasm.Result, tHome, tLen, dHome, dLen, rHome, nrel uint32) error {
-		const viT, viD = uint32(0x10000000), uint32(0x10040000)
+	// linkT/linkD are the image's link bases (the canonical scratch
+	// bases for relocatable rows, the real homes for pre-relocated
+	// ones); sramhome/rtHome/rtLen describe a pre-relocated row's
+	// [ramtext][data] placement (sramhome 0 = classic relocatable).
+	patchRow := func(name string, res *dmaasm.Result, tHome, tLen, dHome, dLen,
+		rHome, nrel, linkT, linkD, sramhome, rtHome, rtLen uint32) error {
 		vy := func(n string) uint32 {
 			a, e := res.Symbol(n)
 			if e != nil && errs == nil {
@@ -1172,13 +1189,14 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			binary.LittleEndian.Uint32(nb[8:]),
 			tHome, tLen,
 			dHome, dLen,
-			viT, viD,
+			linkT, linkD,
 			rHome, nrel,
-			vy("warmstart") - viT, vy("crtthunk") - viT,
-			vy("dispatch") - viD, vy("irqresume") - viD, vy("lr") - viD,
-			vy("g___dma_sysmail") - viD, vy("g___dma_syscall_entry") - viD,
+			vy("warmstart") - linkT, vy("crtthunk") - linkT,
+			vy("dispatch") - linkD, vy("irqresume") - linkD, vy("lr") - linkD,
+			vy("g___dma_sysmail") - linkD, vy("g___dma_syscall_entry") - linkD,
+			sramhome, rtHome, rtLen,
 		}
-		row := sy(kernC, "g_kimages") + uint32(rowIdx)*72
+		row := sy(kernC, "g_kimages") + uint32(rowIdx)*84
 		rowIdx++
 		for i, val := range rowVals {
 			if errs == nil {
@@ -1190,10 +1208,13 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		return nil
 	}
 	if viHome != 0 {
-		dHome := viHome + uint32(len(viText))
-		rHome := dHome + uint32(len(viData))
+		rtHome := viHome + uint32(len(viText))
+		dHome := rtHome + uint32(len(viBlob)) - uint32(len(viText)) - uint32(len(viData))
+		viSRAM := bd.Arena + 0x100
+		rtLen := dHome - rtHome
 		if err := patchRow("vi", viRes, viHome, uint32(len(viText)),
-			dHome, uint32(len(viData)), rHome, uint32(len(viRes.Image.Relocs))); err != nil {
+			dHome, uint32(len(viData)), 0, 0,
+			viHome, viSRAM+rtLen, viSRAM, rtHome, rtLen); err != nil {
 			return nil, err
 		}
 	}
@@ -1217,7 +1238,8 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			names := append([]string{name}, bd.LinksFor(name)...)
 			for _, n := range names {
 				if err := patchRow(n, res, tHome, uint32(len(text)),
-					dHome, uint32(len(data)), rHome, uint32(len(res.Image.Relocs))); err != nil {
+					dHome, uint32(len(data)), rHome, uint32(len(res.Image.Relocs)),
+					0x10000000, 0x10040000, 0, 0, 0); err != nil {
 					return nil, err
 				}
 			}
@@ -1490,6 +1512,14 @@ func packReloc(r img.Reloc) uint32 {
 	return w
 }
 
+func pad8(b []byte) []byte {
+	out := append([]byte(nil), b...)
+	for len(out)%8 != 0 {
+		out = append(out, 0)
+	}
+	return out
+}
+
 func pad4(b []byte) []byte {
 	for len(b)%4 != 0 {
 		b = append(b, 0)
@@ -1565,7 +1595,7 @@ func stageRegistry(kernC *dmaasm.Result, cData uint32, home, arena, arenaEnd,
 		if errs != nil {
 			return nil, nil, nil, errs
 		}
-		row := rowBase + uint32(slot)*72
+		row := rowBase + uint32(slot)*84
 		for i, val := range rowVals {
 			if err := patchData(kernC.Image, cData, row+uint32(i)*4, val); err != nil {
 				return nil, nil, nil, err
