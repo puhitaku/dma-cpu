@@ -487,6 +487,24 @@ func registerFlashApps(t *testing.T, m *emu.Machine, v *emu.Variant,
 	cursor := bd.AppsHome
 	idx := 0 /* vi tests claim the first free row afterwards */
 	for _, name := range bd.DiskApps {
+		if boards.XIPApps[name] {
+			res, text, rt, data, sram := buildUserResident(t, v, bd, cursor, name)
+			rtHome := cursor + uint32(len(text))
+			dHome := rtHome + uint32(len(rt))
+			off := cursor - 0x10000000
+			copy(m.Flash[off:], text)
+			copy(m.Flash[off+uint32(len(text)):], rt)
+			copy(m.Flash[off+uint32(len(text))+uint32(len(rt)):], data)
+			names := append([]string{name}, bd.LinksFor(name)...)
+			for _, n := range names {
+				registerRow(t, m, kernC, idx, n, res, cursor, uint32(len(text)),
+					dHome, uint32(len(data)), 0, 0,
+					cursor, sram+uint32(len(rt)), sram, rtHome, uint32(len(rt)))
+				idx++
+			}
+			cursor = dHome + uint32(len(data))
+			continue
+		}
 		res := buildUserScratch(t, v, bd, name)
 		text, data := res.Image.Segments[0].Data, res.Image.Segments[1].Data
 		dHome, rHome, end := stageFlashImage(m, res, cursor)
@@ -504,27 +522,29 @@ func registerFlashApps(t *testing.T, m *emu.Machine, v *emu.Variant,
 	}
 }
 
-// registerVi compiles the BusyBox vi port, stages its blobs into the
-// machine's flash model at the same home dmxgen uses, and patches the
-// kernel's registry row 0 — the emulator twin of the firmware staging.
-func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result) {
+// buildUserResident compiles a user program XIPText and assembles it
+// pre-relocated: text at tHome (executes in place from XIP flash),
+// [ramtext][data] at the board arena's first allocation. Returns the
+// result and the padded text/ramtext/data blobs.
+func buildUserResident(t *testing.T, v *emu.Variant, bd *boards.Board, tHome uint32,
+	name string, extra ...string) (*dmaasm.Result, []byte, []byte, []byte, uint32) {
 	t.Helper()
-	bd := boards.Pico2
-	mod, err := llir.Merge(parseLL(t, "../../target/xv6/ll/vi.ll"), parseLL(t, "../../target/xv6/ll/ulib.ll"),
-		parseLL(t, "../../target/xv6/ll/umalloc.ll"), parseLL(t, "../../target/xv6/ll/usys.ll"))
+	paths := append([]string{name, "ulib", "usys"}, extra...)
+	var mods []*llir.Module
+	for _, p := range paths {
+		mods = append(mods, parseLL(t, "../../target/xv6/ll/"+p+".ll"))
+	}
+	mod, err := llir.Merge(mods...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dasm, err := dmacc.Compile(mod, dmacc.Options{XIPText: true,
+	dasm, err := dmacc.Compile(mod, dmacc.Options{OptSize: boards.SizeApps[name], XIPText: true,
 		RuntimeExtern: &dmacc.ExternRT{Vec: bd.KernCRText, Regs: bd.KernCData}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Pre-relocated: pass 1 at scratch bases measures the ramtext,
-	// pass 2 assembles at the final homes — text in place at ViHome,
-	// [ramtext][data] at the arena's first allocation.
 	probe, err := dmaasm.Assemble(dasm, dmaasm.Options{
-		Variant: m.Variant(), Compact: true,
+		Variant: v, Compact: true,
 		TextBase: 0x10000000, DataBase: 0x10040000, RAMTextBase: 0x10080000})
 	if err != nil {
 		t.Fatal(err)
@@ -532,20 +552,36 @@ func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result) {
 	rt := (uint32(len(probe.Image.Segments[2].Data)) + 7) &^ 7
 	sram := bd.Arena + 0x100
 	res, err := dmaasm.Assemble(dasm, dmaasm.Options{
-		Variant: m.Variant(), Compact: true,
-		TextBase: bd.ViHome, DataBase: sram + rt, RAMTextBase: sram})
+		Variant: v, Compact: true,
+		TextBase: tHome, DataBase: sram + rt, RAMTextBase: sram})
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, data := res.Image.Segments[0].Data, res.Image.Segments[1].Data
+	pad := func(b []byte, a uint32) []byte {
+		out := append([]byte(nil), b...)
+		for uint32(len(out))%a != 0 {
+			out = append(out, 0)
+		}
+		return out
+	}
+	return res, pad(res.Image.Segments[0].Data, 4), pad(res.Image.Segments[2].Data, 8),
+		pad(res.Image.Segments[1].Data, 4), sram
+}
+
+// registerVi compiles the BusyBox vi port, stages its blobs into the
+// machine's flash model at the same home dmxgen uses, and patches the
+// kernel's registry row 0 — the emulator twin of the firmware staging.
+func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result, bd *boards.Board) {
+	t.Helper()
+	res, text, rt, data, sram := buildUserResident(t, m.Variant(), bd, bd.ViHome,
+		"vi", "umalloc")
 	// Flash layout: [text pad4][ramtext pad8][data], no relocs.
-	tLen := (uint32(len(text)) + 3) &^ 3
-	rtHome := bd.ViHome + tLen
-	dHome := rtHome + rt
+	rtHome := bd.ViHome + uint32(len(text))
+	dHome := rtHome + uint32(len(rt))
 	off := bd.ViHome - 0x10000000
 	copy(m.Flash[off:], text)
-	copy(m.Flash[off+tLen:], res.Image.Segments[2].Data)
-	copy(m.Flash[off+tLen+rt:], data)
+	copy(m.Flash[off+uint32(len(text)):], rt)
+	copy(m.Flash[off+uint32(len(text))+uint32(len(rt)):], data)
 	// Claim the first free registry row (flash apps filled the front).
 	base := mustSym(t, kernC, "g_kimages")
 	idx := 0
@@ -554,9 +590,9 @@ func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result) {
 			break
 		}
 	}
-	registerRow(t, m, kernC, idx, "vi", res, bd.ViHome, tLen,
+	registerRow(t, m, kernC, idx, "vi", res, bd.ViHome, uint32(len(text)),
 		dHome, uint32(len(data)), 0, 0,
-		bd.ViHome, sram+rt, sram, rtHome, rt)
+		bd.ViHome, sram+uint32(len(rt)), sram, rtHome, uint32(len(rt)))
 }
 
 // TestXv6Vi: the BusyBox vi port end to end — open a new file, insert
@@ -564,7 +600,7 @@ func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result) {
 func TestXv6Vi(t *testing.T) {
 	t.Parallel()
 	m, kernC := bootXsh(t)
-	registerVi(t, m, kernC)
+	registerVi(t, m, kernC, boards.Pico2)
 	m.TXPace = 0 // vi repaints whole screens; pacing just slows the test
 	// Run each input burst until the console goes quiet: vi settles
 	// into its key-wait loop between bursts, so "no output for a
@@ -791,6 +827,41 @@ func TestXv6Fbcon(t *testing.T) {
 // viewer: `show /sd` loads .sld files straight into the framebuffer,
 // navigates on a console key, and quits on 'q' — fb content is
 // asserted against the card's bytes.
+// TestXv6ViFeather: the pre-relocated vi inside the feather's 66K
+// arena — text from flash, [ramtext][data] at the arena bottom, the
+// shell's heap up top. Launch, insert a line, quit without saving
+// (the feather ships read-only).
+func TestXv6ViFeather(t *testing.T) {
+	t.Parallel()
+	m, kernC := bootXshBoard(t, nil, boards.Feather)
+	registerVi(t, m, kernC, boards.Feather)
+	m.TXPace = 0
+	run := func(want string, budget uint64) bool {
+		for spent := uint64(0); spent < budget; {
+			if want != "" && strings.Contains(string(m.ConsoleOut), want) {
+				return true
+			}
+			if want == "" && strings.HasSuffix(string(m.ConsoleOut), "$ ") {
+				return true
+			}
+			rr, err := m.Run(emu.RunConfig{MaxCycles: 4_000_000})
+			if err != nil {
+				t.Fatalf("%v\nconsole tail: %q", err, tailB(m.ConsoleOut, 300))
+			}
+			spent += rr.Cycles
+		}
+		return false
+	}
+	m.FeedConsole("vi note.txt\r")
+	if !run("\x1b[?1049h", 1_500_000_000) {
+		t.Fatalf("vi never reached the alternate screen; tail: %q", tailB(m.ConsoleOut, 300))
+	}
+	m.FeedConsole("ihello feather\x1b:q!\r")
+	if !run("", 1_000_000_000) {
+		t.Fatalf("no prompt after :q!; tail: %q", tailB(m.ConsoleOut, 400))
+	}
+}
+
 func TestXv6SD(t *testing.T) {
 	t.Parallel()
 	slideA := make([]byte, 4096)
@@ -1169,7 +1240,7 @@ func TestXv6EchoCtl(t *testing.T) {
 func TestXv6ViNoArg(t *testing.T) {
 	t.Parallel()
 	m, kernC := bootXsh(t)
-	registerVi(t, m, kernC)
+	registerVi(t, m, kernC, boards.Pico2)
 	m.TXPace = 0
 	settle := func(feed string, budget uint64) {
 		m.FeedConsole(feed)

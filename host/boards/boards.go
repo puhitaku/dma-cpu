@@ -141,6 +141,18 @@ var stdApps = []string{"echo", "cat", "ls", "toolbox", "hwtools"}
 // would buy no SRAM there at all.
 var SizeApps = map[string]bool{"show": true, "toolbox": true, "hwtools": true}
 
+// XIPApps run pre-relocated on registry (flash-apps) boards: compiled
+// XIPText and assembled at their final addresses, text executes in
+// place from its flash home and exec claims only [ramtext][data] at
+// the arena's first allocation. The simple ON/OFF switch for the
+// mechanism vi pioneered — flip a name to true and it stops paying
+// text into the arena. All pre-relocated images share the one SRAM
+// home, so at most one runs at a time (a second exec fails cleanly);
+// disk-file boards and DMX files on the fs ignore the flag — those
+// stay load-anywhere by design. vi is always pre-relocated where
+// installed (Board.ViHome).
+var XIPApps = map[string]bool{}
+
 var fbApps = append(append([]string{}, stdApps...), "fbtest", "show")
 // spin/trap (signal demos), wc, and help left the toolbox: help is an
 // sh builtin now (it streams /dev/apps) and the rest earned no keep.
@@ -268,10 +280,13 @@ var Feather = &Board{
 	KernTextXIP: 0x10460000,
 	ShTextXIP:   0x104A0000,
 	AppsHome:    0x104C0000, AppsEnd: 0x10540000,
-	// No vi: the SRAM framebuffer shrank the arena below what the
-	// editor needs. (A presentation device edits nothing.) Apps are
-	// flash-resident registry rows (the pico pattern): the toolbox
-	// with the slide viewer outgrew any reasonable RAM disk.
+	// vi returns via pre-relocation: text executes in place from
+	// flash, so its arena claim is only [ramtext][data] (~41K) plus
+	// a small heap — inside the 66K arena the fb once priced it out
+	// of. Section sits above the scanout staging blob (DTab + ~17K).
+	ViHome: 0x10560000, ViEnd: 0x105E0000,
+	// Apps are flash-resident registry rows (the pico pattern): the
+	// toolbox with the slide viewer outgrew any reasonable RAM disk.
 
 	// 300 MHz overclock (the machine IS the bus: clk_sys is machine
 	// speed; clk_hstx stays on the repurposed USB PLL, so video

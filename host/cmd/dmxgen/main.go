@@ -506,7 +506,7 @@ func libcPaths(first ...string) ([]string, error) {
 // buildSched: the scheduler-only bundle (two counter processes, no
 // syscalls). Fits the narrow rp2040 layout.
 func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
-	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x1C000)
+	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x1D000)
 	if err != nil {
 		return nil, err
 	}
@@ -514,20 +514,20 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x1F000, DataBase: lay.text + 0x20000})
+	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x20000, DataBase: lay.text + 0x21000})
 	if err != nil {
 		return nil, err
 	}
-	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x21000, DataBase: lay.text + 0x22000})
+	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x22000, DataBase: lay.text + 0x23000})
 	if err != nil {
 		return nil, err
 	}
 	b := &kernBundle{names: []string{"kernel", "kernc", "proca", "procb"}, sym: map[string]uint32{}}
-	b.entry0 = lay.text + 0x1F000 + procA.Image.EntryOff
-	entryB := lay.text + 0x21000 + procB.Image.EntryOff
-	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x1C000, []kprocSpec{
-		{procA, lay.text + 0x20000, b.entry0, 1, 0, false},
-		{procB, lay.text + 0x22000, entryB, 2, 0, false},
+	b.entry0 = lay.text + 0x20000 + procA.Image.EntryOff
+	entryB := lay.text + 0x22000 + procB.Image.EntryOff
+	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x1D000, []kprocSpec{
+		{procA, lay.text + 0x21000, b.entry0, 1, 0, false},
+		{procB, lay.text + 0x23000, entryB, 2, 0, false},
 	}); err != nil {
 		return nil, err
 	}
@@ -1029,43 +1029,54 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	// carry it as a kernel-registry image whose blobs stay in flash —
 	// exec copies text+data to the arena and applies the relocs from
 	// XIP directly.
+	// casmResident assembles a pre-relocated image at its final homes:
+	// text at tHome (executes in place from XIP), [ramtext][data] at
+	// the arena's first allocation. Pass 1 at scratch bases measures
+	// the ramtext. Returns padded segment blobs and the SRAM home.
+	casmResident := func(dasm string, tHome uint32) (*dmaasm.Result, []byte, []byte, []byte, uint32, error) {
+		probe, err := casm(dasm, 0x10000000, 0x10040000, 0x10080000)
+		if err != nil {
+			return nil, nil, nil, nil, 0, err
+		}
+		rt := pad8(probe.Image.Segments[2].Data)
+		sram := bd.Arena + 0x100 /* first-fit kalloc's first block */
+		res, err := casm(dasm, tHome, sram+uint32(len(rt)), sram)
+		if err != nil {
+			return nil, nil, nil, nil, 0, err
+		}
+		if len(pad8(res.Image.Segments[2].Data)) != len(rt) {
+			return nil, nil, nil, nil, 0, fmt.Errorf("ramtext length moved between passes")
+		}
+		text := pad4(res.Image.Segments[0].Data)
+		rt = pad8(res.Image.Segments[2].Data)
+		data := pad4(res.Image.Segments[1].Data)
+		need := (uint32(len(rt))+uint32(len(data))+255)&^255 + 0x100
+		if bd.Arena+need > bd.ArenaEnd {
+			return nil, nil, nil, nil, 0, fmt.Errorf("SRAM half (%d bytes) overflows the arena", need)
+		}
+		return res, text, rt, data, sram, nil
+	}
 	var viRes *dmaasm.Result
 	var viText, viData, viBlob []byte
 	if viHome != 0 {
 		viDasm, err := compileLL([]string{"target/xv6/ll/vi.ll", "target/xv6/ll/ulib.ll",
 			"target/xv6/ll/umalloc.ll", "target/xv6/ll/usys.ll"},
-			dmacc.Options{RuntimeExtern: &dmacc.ExternRT{Vec: cRText, Regs: cData}}) /* balanced: editor latency over bytes */
+			dmacc.Options{XIPText: true, /* pre-relocated: text runs from flash */
+				RuntimeExtern: &dmacc.ExternRT{Vec: cRText, Regs: cData}}) /* balanced: editor latency over bytes */
 		if err != nil {
 			return nil, fmt.Errorf("vi: %w", err)
 		}
-		// Pre-relocated (prompts/041 follow-up): assemble at the FINAL
-		// addresses — text at its flash home (it executes in place from
-		// XIP), [ramtext][data] at the arena's first allocation — so
-		// the image needs no relocs and exec claims only its SRAM
-		// half. Pass 1 at scratch bases just measures the ramtext.
-		probe, err := casm(viDasm, 0x10000000, 0x10040000, 0x10080000)
-		if err != nil {
-			return nil, fmt.Errorf("vi: %w", err)
+		// Pre-relocated (prompts/041 follow-up): no relocs — exec
+		// claims only the SRAM half and text executes where it lies.
+		var viRT []byte
+		var err2 error
+		viRes, viText, viRT, viData, _, err2 = casmResident(viDasm, viHome)
+		if err2 != nil {
+			return nil, fmt.Errorf("vi: %w", err2)
 		}
-		viRT := pad8(probe.Image.Segments[2].Data)
-		viSRAM := bd.Arena + 0x100 /* first-fit kalloc's first block */
-		viRes, err = casm(viDasm, viHome, viSRAM+uint32(len(viRT)), viSRAM)
-		if err != nil {
-			return nil, fmt.Errorf("vi: %w", err)
-		}
-		if len(pad8(viRes.Image.Segments[2].Data)) != len(viRT) {
-			return nil, fmt.Errorf("vi: ramtext length moved between passes")
-		}
-		viText = pad4(viRes.Image.Segments[0].Data)
-		viRT = pad8(viRes.Image.Segments[2].Data)
-		viData = pad4(viRes.Image.Segments[1].Data)
 		viBlob = append(append(append([]byte(nil), viText...), viRT...), viData...)
 		if viHome+uint32(len(viBlob)) > viEnd {
 			return nil, fmt.Errorf("vi blob %d bytes overflows its flash budget", len(viBlob))
-		}
-		need := (uint32(len(viRT))+uint32(len(viData))+255)&^255 + 0x100
-		if bd.Arena+need > bd.ArenaEnd {
-			return nil, fmt.Errorf("vi SRAM half (%d bytes) overflows the arena", need)
 		}
 	}
 
@@ -1222,6 +1233,34 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	if bd.AppsHome != 0 {
 		cursor := bd.AppsHome
 		for _, name := range bd.DiskApps {
+			if boards.XIPApps[name] {
+				// Pre-relocated registry app: same scheme as vi.
+				udasm, err := compileLL([]string{"target/xv6/ll/" + name + ".ll",
+					"target/xv6/ll/ulib.ll", "target/xv6/ll/usys.ll"},
+					dmacc.Options{OptSize: boards.SizeApps[name], XIPText: true,
+						RuntimeExtern: &dmacc.ExternRT{Vec: cRText, Regs: cData}})
+				if err != nil {
+					return nil, err
+				}
+				res, text, rt, data, sram, err := casmResident(udasm, cursor)
+				if err != nil {
+					return nil, fmt.Errorf("%s: %w", name, err)
+				}
+				tHome := cursor
+				rtHome := tHome + uint32(len(text))
+				dHome := rtHome + uint32(len(rt))
+				cursor = dHome + uint32(len(data))
+				appsBlob = append(append(append(appsBlob, text...), rt...), data...)
+				names := append([]string{name}, bd.LinksFor(name)...)
+				for _, n := range names {
+					if err := patchRow(n, res, tHome, uint32(len(text)),
+						dHome, uint32(len(data)), 0, 0,
+						tHome, sram+uint32(len(rt)), sram, rtHome, uint32(len(rt))); err != nil {
+						return nil, err
+					}
+				}
+				continue
+			}
 			res := appRes[name]
 			text := pad4(res.Image.Segments[0].Data)
 			data := pad4(res.Image.Segments[1].Data)
