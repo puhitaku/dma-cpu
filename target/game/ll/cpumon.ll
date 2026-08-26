@@ -37,13 +37,13 @@ define dso_local void @cpumon_run() local_unnamed_addr #0 {
   tail call void @gfx_text(i32 noundef 8, i32 noundef 198, ptr noundef nonnull @.str.9, i16 noundef zeroext 27537, i16 noundef zeroext 2147) #3
   tail call void @gfx_text(i32 noundef 8, i32 noundef 220, ptr noundef nonnull @.str.10, i16 noundef zeroext 27537, i16 noundef zeroext 2147) #3
   %1 = tail call i32 @now_us() #3
-  %2 = load volatile i32, ptr inttoptr (i32 537120768 to ptr), align 4096, !tbaa !3
+  %2 = load volatile i32, ptr inttoptr (i32 537132800 to ptr), align 256, !tbaa !3
   %3 = icmp eq i32 %2, 1374590208
   br i1 %3, label %4, label %9
 
 4:                                                ; preds = %0
   %5 = tail call i32 @now_us() #3
-  %6 = load volatile i32, ptr inttoptr (i32 537120772 to ptr), align 4, !tbaa !3
+  %6 = load volatile i32, ptr inttoptr (i32 537132804 to ptr), align 4, !tbaa !3
   %7 = sub i32 %5, %6
   %8 = udiv i32 %7, 1000000
   br label %9

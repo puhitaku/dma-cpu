@@ -51,9 +51,11 @@
  * segment ends just under the reserved audio region (0x2002E000), and
  * ~10 KiB of bench statics pushed it straight into the ring — a menu
  * blip then overwrote live data words (the emulator crashed on a PC
- * of replicated audio samples). 0x2003D100..0x2003FE00 is unclaimed:
- * past the ARM's park stamp (0x2003D000, 8 bytes), below the compact
- * machine's scratch word (0x2003FE00). Bench uses 9.7 KiB of it. */
+ * of replicated audio samples). 0x2003C000..0x2003FE00 is unclaimed
+ * (the ARM's park stamp moved to 0x2003FF00, past the compact
+ * machine's scratch word at 0x2003FE00, to make room contiguous for
+ * the radiosity patch state). Bench keeps its old base and uses
+ * 9.7 KiB; the two apps never run together. */
 #define BENCH_RAM 0x2003D100u
 #define flags ((uchar *)BENCH_RAM)                    /* 4 KiB; mem dst */
 #define scratch ((uint *)(BENCH_RAM + 0x1000))        /* 4 KiB */

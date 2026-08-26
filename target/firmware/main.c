@@ -210,10 +210,11 @@ static void game_start(void)
      * monitor: the ARM's only remaining work after this is dmx_start
      * plus the park prologue (a few us, invisible at second
      * resolution), then wfi forever. The monitor reads this block
-     * (0x2003D000, free SRAM between the audio ring and the compact
-     * scratch) and shows now - stamp climbing — a clock that only
-     * advances because nothing on the CPU side ever runs again. */
-    volatile uint32_t *cpustat = (volatile uint32_t *)0x2003D000u;
+     * (0x2003FF00, past the compact machine's scratch word and clear
+     * of the radiosity demo's patch window at 0x2003C000) and shows
+     * now - stamp climbing — a clock that only advances because
+     * nothing on the CPU side ever runs again. */
+    volatile uint32_t *cpustat = (volatile uint32_t *)0x2003FF00u;
     cpustat[1] = time_us_32();
     cpustat[0] = 0x51EE9500u; /* "SLEEP" marker: block valid */
     dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 1};

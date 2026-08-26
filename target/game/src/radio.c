@@ -1,8 +1,8 @@
 /* radio.c: progressive radiosity in the classic red/green light box,
  * rendered live — now with the two interior boxes (a tall cuboid and
  * a cube, both rotated about the vertical axis) that give the scene
- * its soft shadows. Five walls are split into 8x8 patches, each box
- * face into 2x2; a 2x2 ceiling light carries the initial energy.
+ * its soft shadows. Five walls are split into 10x10 patches, each box
+ * face into 4x4; a 2x2 ceiling light carries the initial energy.
  * Each step "shoots" the brightest patch's unshot energy at every
  * other patch and repaints what changed, so the room brightens and
  * color-bleeds in front of you — the whole point is WATCHING the
@@ -27,21 +27,24 @@
  *  - every hot right shift is < 16 to stay on the runtime's OUT_REV
  *    fast path.
  *
- * Patch state lives in the free SRAM window at 0x2003D100 (shared
- * with the benchmark's buffers — the two apps never run together). */
+ * Patch state lives in the free SRAM window at 0x2003C000 (the ARM's
+ * park stamp moved to 0x2003FF00 to make it contiguous; bench.c's
+ * buffers overlap it — the two apps never run together). Projected
+ * corners are uchar pairs: the camera is fixed and the opening maps
+ * exactly to the 240x240 screen, so every corner is 0..240. */
 #include "g.h"
 
 #define C_BG RGB(8, 8, 16)
 
-#define N 8            /* patches per wall edge */
-#define NPW (N * N)    /* 64 per wall */
+#define N 10           /* patches per wall edge */
+#define NPW (N * N)    /* 100 per wall */
 #define NWALL (5 * NPW)
 #define NBF 10         /* box faces: 2 boxes x (4 sides + top) */
-#define NPBF 4         /* 2x2 patches per box face */
-#define NP (NWALL + NBF * NPBF) /* 360 patches */
+#define NPBF 16        /* 4x4 patches per box face */
+#define NP (NWALL + NBF * NPBF) /* 660 patches */
 #define HALF 120       /* box half-width in scene units */
 #define ZNEAR 200      /* opening (camera at z=0, focal ZNEAR) */
-#define PSIZE 30       /* wall patch edge: 240/8 */
+#define PSIZE 24       /* wall patch edge: 240/10 */
 #define AREA (PSIZE * PSIZE)
 
 #define W_BACK 0
@@ -67,30 +70,31 @@
 #define B1_SIN (-79)
 
 /* --- state in free SRAM (see bench.c for the region's story) ---
- * ten NP-sized arrays at a 720-byte stride, then the projected wall
- * corner grid (5 walls x 9x9 x (sx,sy)), then the box face corners
- * (10 faces x 3x3 x (sx,sy)); ~9.2 KiB of the 11.5 KiB window. */
-#define RAD_RAM 0x2003D100u
+ * ten NP-sized arrays at a 1320-byte stride, then the projected wall
+ * corner grid (5 walls x 11x11 uchar pairs), then the box face
+ * corners (10 faces x 5x5 uchar pairs); ~14.7 KiB of the 15.9 KiB
+ * window. */
+#define RAD_RAM 0x2003C000u
 #define pcx ((short *)RAD_RAM)
-#define pcy ((short *)(RAD_RAM + 720))
-#define pcz ((short *)(RAD_RAM + 1440))
-#define bR ((ushort *)(RAD_RAM + 2160))
-#define bG ((ushort *)(RAD_RAM + 2880))
-#define bB ((ushort *)(RAD_RAM + 3600))
-#define uR ((ushort *)(RAD_RAM + 4320))
-#define uG ((ushort *)(RAD_RAM + 5040))
-#define uB ((ushort *)(RAD_RAM + 5760))
-#define shown ((ushort *)(RAD_RAM + 6480))
-#define corn ((short *)(RAD_RAM + 7200))  /* walls: 1620 B */
-#define bcorn ((short *)(RAD_RAM + 8880)) /* boxes: 360 B */
-#define CI(w, i, k) ((w) * 162 + ((k) * 9 + (i)) * 2)
-#define BCI(f, i, k) ((f) * 18 + ((k) * 3 + (i)) * 2)
+#define pcy ((short *)(RAD_RAM + 1320))
+#define pcz ((short *)(RAD_RAM + 2640))
+#define bR ((ushort *)(RAD_RAM + 3960))
+#define bG ((ushort *)(RAD_RAM + 5280))
+#define bB ((ushort *)(RAD_RAM + 6600))
+#define uR ((ushort *)(RAD_RAM + 7920))
+#define uG ((ushort *)(RAD_RAM + 9240))
+#define uB ((ushort *)(RAD_RAM + 10560))
+#define shown ((ushort *)(RAD_RAM + 11880))
+#define corn ((uchar *)(RAD_RAM + 13200))  /* walls: 1210 B */
+#define bcorn ((uchar *)(RAD_RAM + 14412)) /* boxes: 500 B */
+#define CI(w, i, k) ((w) * 242 + ((k) * 11 + (i)) * 2)
+#define BCI(f, i, k) ((f) * 50 + ((k) * 5 + (i)) * 2)
 
 /* per-face normals (Q8) and shooter area ratios (Q8 vs a wall patch),
  * filled by setup(); +10 visibility flags */
-#define nrm ((short *)(RAD_RAM + 9240))   /* 10 x 3 */
-#define areaq ((short *)(RAD_RAM + 9300)) /* 10 */
-#define fvis ((short *)(RAD_RAM + 9320))  /* 10 */
+#define nrm ((short *)(RAD_RAM + 14912))   /* 10 x 3 */
+#define areaq ((short *)(RAD_RAM + 14972)) /* 10 */
+#define fvis ((short *)(RAD_RAM + 14992))  /* 10; ends 0x2003FAB4 */
 
 /* reflectance per wall group, Q8; box faces are warm white */
 static const ushort rho[6][3] = {
@@ -106,7 +110,7 @@ is_light(int p)
   if (p / NPW != W_CEIL || p >= NWALL)
     return 0;
   int i = p % N, k = p % NPW / N;
-  return (i == 3 || i == 4) && (k == 3 || k == 4);
+  return (i == 4 || i == 5) && (k == 4 || k == 5);
 }
 
 /* patch group: 0..4 walls, 5 boxes (for reflectance) */
@@ -149,15 +153,17 @@ box_world(int b, int lx, int lz, int *wx, int *wz)
 }
 
 /* face f (0..9): box b = f/5, side s = f%5 (0 +lx, 1 -lx, 2 +lz,
- * 3 -lz, 4 top). Grid point (i,k) 0..2 in local face coords. */
+ * 3 -lz, 4 top). Grid point (i,k) 0..4 in local face coords (the
+ * 4x4 patch grid's 5x5 corners; B1's 72-unit faces divide exactly,
+ * B0's 150-unit sides truncate half a scene unit — sub-pixel). */
 static void
 face_point(int f, int i, int k, int *wx, int *wy, int *wz)
 {
   int b = f / 5, s = f % 5;
   int h = b == 0 ? B0_H : B1_H;
   int top = b == 0 ? B0_TOP : B1_TOP;
-  int u = -h + h * i;            /* -h, 0, +h */
-  int v = top + (HALF - top) * k / 2; /* top..floor for sides */
+  int u = -h + h * i / 2;             /* -h .. +h in quarters */
+  int v = top + (HALF - top) * k / 4; /* top..floor for sides */
   int lx, lz;
   switch (s) {
   case 0: lx = h; lz = u; break;
@@ -166,7 +172,7 @@ face_point(int f, int i, int k, int *wx, int *wy, int *wz)
   case 3: lx = u; lz = -h; break;
   default: /* top: u across x, second axis across z */
     lx = u;
-    lz = -h + h * k;
+    lz = -h + h * k / 2;
     break;
   }
   box_world(b, lx, lz, wx, wz);
@@ -178,18 +184,18 @@ face_point(int f, int i, int k, int *wx, int *wy, int *wz)
 static void
 project(void)
 {
-  int recip[9];
-  for (int g = 0; g < 9; g++)
+  int recip[N + 1];
+  for (int g = 0; g <= N; g++)
     recip[g] = (int)((uint)(ZNEAR << 12) / (uint)(ZNEAR + PSIZE * g));
   for (int w = 0; w < 5; w++) {
-    for (int k = 0; k < 9; k++) {
-      for (int i = 0; i < 9; i++) {
+    for (int k = 0; k <= N; k++) {
+      for (int i = 0; i <= N; i++) {
         int gx = -HALF + PSIZE * i, gy, r;
         int sx, sy;
         switch (w) {
         case W_BACK:
           gy = -HALF + PSIZE * k;
-          r = recip[8];
+          r = recip[N];
           sx = 120 + ((gx * r) >> 12);
           sy = 120 + ((gy * r) >> 12);
           break;
@@ -216,20 +222,20 @@ project(void)
           sy = 120 + ((gy * r) >> 12);
           break;
         }
-        corn[CI(w, i, k)] = (short)sx;
-        corn[CI(w, i, k) + 1] = (short)sy;
+        corn[CI(w, i, k)] = (uchar)sx;
+        corn[CI(w, i, k) + 1] = (uchar)sy;
       }
     }
   }
   /* box face corners: one true perspective divide per corner */
   for (int f = 0; f < NBF; f++) {
-    for (int k = 0; k < 3; k++) {
-      for (int i = 0; i < 3; i++) {
+    for (int k = 0; k < 5; k++) {
+      for (int i = 0; i < 5; i++) {
         int wx, wy, wz;
         face_point(f, i, k, &wx, &wy, &wz);
         int rz = (int)((uint)(ZNEAR << 12) / (uint)wz);
-        bcorn[BCI(f, i, k)] = (short)(120 + ((wx * rz) >> 12));
-        bcorn[BCI(f, i, k) + 1] = (short)(120 + ((wy * rz) >> 12));
+        bcorn[BCI(f, i, k)] = (uchar)(120 + ((wx * rz) >> 12));
+        bcorn[BCI(f, i, k) + 1] = (uchar)(120 + ((wy * rz) >> 12));
       }
     }
   }
@@ -246,7 +252,7 @@ setup(void)
     case W_BACK:
       pcx[p] = (short)a;
       pcy[p] = (short)(-HALF + PSIZE / 2 + PSIZE * k);
-      pcz[p] = ZNEAR + 8 * PSIZE;
+      pcz[p] = ZNEAR + N * PSIZE;
       break;
     case W_FLOOR: pcx[p] = (short)a; pcy[p] = HALF; pcz[p] = (short)d; break;
     case W_CEIL: pcx[p] = (short)a; pcy[p] = -HALF; pcz[p] = (short)d; break;
@@ -271,11 +277,11 @@ setup(void)
     nrm[f * 3 + 1] = (short)ny;
     nrm[f * 3 + 2] = (short)nz;
     int h = b == 0 ? B0_H : B1_H, top = b == 0 ? B0_TOP : B1_TOP;
-    int aq = s == 4 ? h * h : h * (HALF - top) / 2; /* patch area */
+    int aq = s == 4 ? h * h / 4 : h * (HALF - top) / 8; /* 4x4 patch area */
     areaq[f] = (short)(aq * 256 / AREA);
     for (int pb = 0; pb < NPBF; pb++) {
       int p = NWALL + f * NPBF + pb;
-      int i = pb & 1, k = pb >> 1; /* cell (i,k) of the 2x2 */
+      int i = pb & 3, k = pb >> 2; /* cell (i,k) of the 4x4 */
       int x0, y0, z0, x1, y1, z1;
       face_point(f, i, k, &x0, &y0, &z0);
       face_point(f, i + 1, k + 1, &x1, &y1, &z1);
@@ -293,9 +299,11 @@ setup(void)
     uR[p] = uG[p] = uB[p] = 0;
     shown[p] = 0xFFFF;
     if (is_light(p)) {
-      uR[p] = 60000;
-      uG[p] = 60000;
-      uB[p] = 54000;
+      /* the 10-grid's middle 2x2 lamp is 48x48 units (was 60x60):
+       * initial energy rides the ushort ceiling to buy back flux */
+      uR[p] = 65500;
+      uG[p] = 65500;
+      uB[p] = 58950;
     }
   }
 }
@@ -391,10 +399,10 @@ static void
 draw_wall_patch(int p, ushort c)
 {
   int w = p / NPW, i = p % N, k = p % NPW / N;
-  const short *c00 = corn + CI(w, i, k);
-  const short *c10 = corn + CI(w, i + 1, k);
-  const short *c01 = corn + CI(w, i, k + 1);
-  const short *c11 = corn + CI(w, i + 1, k + 1);
+  const uchar *c00 = corn + CI(w, i, k);
+  const uchar *c10 = corn + CI(w, i + 1, k);
+  const uchar *c01 = corn + CI(w, i, k + 1);
+  const uchar *c11 = corn + CI(w, i + 1, k + 1);
   switch (w) {
   case W_BACK:
     gfx_fill(c00[0], c00[1], c11[0] - c00[0], c11[1] - c00[1], c);
@@ -420,12 +428,12 @@ draw_box_patch(int p, ushort c)
   int rel = p - NWALL, f = rel / NPBF, pb = rel % NPBF;
   if (!fvis[f])
     return;
-  int i = pb & 1, k = pb >> 1;
+  int i = pb & 3, k = pb >> 2;
   int qx[4], qy[4];
-  const short *a = bcorn + BCI(f, i, k);
-  const short *b = bcorn + BCI(f, i + 1, k);
-  const short *d = bcorn + BCI(f, i + 1, k + 1);
-  const short *e = bcorn + BCI(f, i, k + 1);
+  const uchar *a = bcorn + BCI(f, i, k);
+  const uchar *b = bcorn + BCI(f, i + 1, k);
+  const uchar *d = bcorn + BCI(f, i + 1, k + 1);
+  const uchar *e = bcorn + BCI(f, i, k + 1);
   qx[0] = a[0]; qy[0] = a[1];
   qx[1] = b[0]; qy[1] = b[1];
   qx[2] = d[0]; qy[2] = d[1];

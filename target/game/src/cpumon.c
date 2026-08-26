@@ -6,13 +6,13 @@
  *    b .-1 — three instructions, forever), CORE1 was never released
  *    from reset on this board.
  *  - An idle clock counting up from the timestamp the ARM stamped
- *    just before it parked (firmware, 0x2003D000). It only advances,
+ *    just before it parked (firmware, 0x2003FF00). It only advances,
  *    which is the proof: if the CPU ever executed again it could
  *    move that stamp, and it never does.
  */
 #include "g.h"
 
-#define CPU_STAT 0x2003D000u
+#define CPU_STAT 0x2003FF00u
 #define CPU_STAT_MAGIC 0x51EE9500u
 
 #define C_BG RGB(10, 12, 28)
