@@ -4,6 +4,7 @@ target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
 @fb = external dso_local global [57600 x i16], align 2
+@spi16 = internal unnamed_addr global i32 0, align 4
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @lcd_init() local_unnamed_addr #0 {
@@ -47,6 +48,16 @@ declare dso_local void @delay_us(i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize nounwind optsize
 define internal fastcc void @lcd_cmd(i32 noundef range(i32 17, 59) %0) unnamed_addr #0 {
+  tail call void @gd_wait() #3
+  %2 = load i32, ptr @spi16, align 4, !tbaa !3
+  %3 = icmp eq i32 %2, 0
+  br i1 %3, label %5, label %4
+
+4:                                                ; preds = %1
+  tail call fastcc void @spi_bits(i32 noundef 8) #4
+  br label %5
+
+5:                                                ; preds = %4, %1
   tail call fastcc void @spi_wait_idle() #4
   tail call void @gpio_out(i32 noundef 16, i32 noundef 0) #3
   tail call fastcc void @spi_put8(i32 noundef %0) #4
@@ -57,11 +68,15 @@ define internal fastcc void @lcd_cmd(i32 noundef range(i32 17, 59) %0) unnamed_a
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @lcd_flush(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3) local_unnamed_addr #0 {
+  %5 = sub nsw i32 %2, %0
+  %6 = icmp sgt i32 %5, 118
+  %7 = select i1 %6, i32 239, i32 %2
+  %8 = select i1 %6, i32 0, i32 %0
   tail call fastcc void @lcd_cmd(i32 noundef 42) #4
   tail call fastcc void @spi_put8(i32 noundef 0) #4
-  tail call fastcc void @spi_put8(i32 noundef %0) #4
+  tail call fastcc void @spi_put8(i32 noundef %8) #4
   tail call fastcc void @spi_put8(i32 noundef 0) #4
-  tail call fastcc void @spi_put8(i32 noundef %2) #4
+  tail call fastcc void @spi_put8(i32 noundef %7) #4
   tail call fastcc void @lcd_cmd(i32 noundef 43) #4
   tail call fastcc void @spi_put8(i32 noundef 0) #4
   tail call fastcc void @spi_put8(i32 noundef %1) #4
@@ -69,32 +84,37 @@ define dso_local void @lcd_flush(i32 noundef %0, i32 noundef %1, i32 noundef %2,
   tail call fastcc void @spi_put8(i32 noundef %3) #4
   tail call fastcc void @lcd_cmd(i32 noundef 44) #4
   tail call fastcc void @spi_bits(i32 noundef 16) #4
-  %5 = mul nsw i32 %1, 240
-  %6 = add nsw i32 %5, %0
-  %7 = getelementptr inbounds [57600 x i16], ptr @fb, i32 0, i32 %6
-  %8 = ptrtoint ptr %7 to i32
-  %9 = sub i32 %2, %0
-  %10 = add i32 %9, 1
-  %11 = sub i32 %3, %1
-  %12 = add i32 %11, 1
-  tail call void @gdma_spi_rows(i32 noundef %8, i32 noundef %10, i32 noundef %12, i32 noundef 480) #3
-  tail call fastcc void @spi_bits(i32 noundef 8) #4
+  %9 = mul nsw i32 %1, 240
+  %10 = add nsw i32 %8, %9
+  %11 = getelementptr inbounds [57600 x i16], ptr @fb, i32 0, i32 %10
+  %12 = ptrtoint ptr %11 to i32
+  %13 = sub i32 %7, %8
+  %14 = add i32 %13, 1
+  %15 = sub i32 %3, %1
+  %16 = add i32 %15, 1
+  tail call void @gdma_spi_rows(i32 noundef %12, i32 noundef %14, i32 noundef %16, i32 noundef 480) #3
   ret void
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
 define internal fastcc void @spi_bits(i32 noundef range(i32 8, 17) %0) unnamed_addr #2 {
+  %2 = icmp eq i32 %0, 16
+  %3 = zext i1 %2 to i32
+  store i32 %3, ptr @spi16, align 4, !tbaa !3
   tail call fastcc void @spi_wait_idle() #4
   store volatile i32 0, ptr inttoptr (i32 1073987588 to ptr), align 4, !tbaa !3
-  %2 = add nsw i32 %0, -1
-  %3 = or i32 %2, 192
-  store volatile i32 %3, ptr inttoptr (i32 1073987584 to ptr), align 16384, !tbaa !3
+  %4 = add nsw i32 %0, -1
+  %5 = or i32 %4, 192
+  store volatile i32 %5, ptr inttoptr (i32 1073987584 to ptr), align 16384, !tbaa !3
   store volatile i32 2, ptr inttoptr (i32 1073987588 to ptr), align 4, !tbaa !3
   ret void
 }
 
 ; Function Attrs: minsize optsize
 declare dso_local void @gdma_spi_rows(i32 noundef, i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @gd_wait() local_unnamed_addr #1
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
 define internal fastcc void @spi_wait_idle() unnamed_addr #2 {

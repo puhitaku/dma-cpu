@@ -49,6 +49,7 @@ void gpio_fn(int pin, uint funcsel);
 void gpio_out(int pin, int hi);
 void gpio_in_init(int pin); /* enable the pull-up, once */
 uint gpio_in(int pin);      /* raw masked level: nonzero = high */
+void gd_wait(void); /* ch11 idle (async lcd flush may be draining) */
 void gdma_copy(uint dst, uint src, uint bytes);
 void gdma_fill(uint dst, uint word, uint bytes);
 void gdma_spi16(uint src, uint halfwords); /* paced pixel stream */

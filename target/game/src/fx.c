@@ -171,6 +171,7 @@ static uint pcm_active;
 void
 pcm_play(uint addr, uint samples)
 {
+  gd_wait();        /* an async lcd flush may still hold ch11 */
   snd_off();        /* cancel any tone; uses ch11 BEFORE we take it */
   snd_rate(22675); /* clips are 44.1 kHz (1e9/22675) */
   W32(DMACH(9) + 0x10) = sndctrl & ~1u; /* pause the ring stream */

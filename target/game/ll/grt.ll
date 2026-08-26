@@ -259,6 +259,19 @@ define dso_local range(i32 0, 131073) i32 @gpio_in(i32 noundef %0) local_unnamed
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
+define dso_local void @gd_wait() local_unnamed_addr #0 {
+  br label %1
+
+1:                                                ; preds = %1, %0
+  %2 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !9
+  %3 = icmp eq i32 %2, 0
+  br i1 %3, label %4, label %1, !llvm.loop !19
+
+4:                                                ; preds = %1
+  ret void
+}
+
+; Function Attrs: minsize nofree norecurse nounwind optsize
 define dso_local void @gdma_copy(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #0 {
   %4 = icmp eq i32 %2, 0
   br i1 %4, label %26, label %5
@@ -294,7 +307,7 @@ define dso_local void @gdma_copy(i32 noundef %0, i32 noundef %1, i32 noundef %2)
   %24 = getelementptr inbounds nuw i8, ptr %17, i32 %19
   store i8 %23, ptr %24, align 1, !tbaa !3
   %25 = add i32 %19, 1
-  br label %18, !llvm.loop !19
+  br label %18, !llvm.loop !20
 
 26:                                               ; preds = %18, %3, %13
   ret void
@@ -302,6 +315,7 @@ define dso_local void @gdma_copy(i32 noundef %0, i32 noundef %1, i32 noundef %2)
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
 define internal fastcc void @gd_run(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3) unnamed_addr #0 {
+  tail call void @gd_wait() #5
   store volatile i32 %0, ptr inttoptr (i32 1342177984 to ptr), align 64, !tbaa !9
   store volatile i32 %1, ptr inttoptr (i32 1342177988 to ptr), align 4, !tbaa !9
   store volatile i32 %2, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !9
@@ -311,7 +325,7 @@ define internal fastcc void @gd_run(i32 noundef %0, i32 noundef %1, i32 noundef 
 5:                                                ; preds = %5, %4
   %6 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !9
   %7 = icmp eq i32 %6, 0
-  br i1 %7, label %8, label %5, !llvm.loop !20
+  br i1 %7, label %8, label %5, !llvm.loop !21
 
 8:                                                ; preds = %5
   ret void
@@ -351,7 +365,7 @@ define dso_local void @gdma_fill(i32 noundef %0, i32 noundef %1, i32 noundef %2)
   %21 = inttoptr i32 %18 to ptr
   store volatile i32 %1, ptr %21, align 4, !tbaa !9
   %22 = add i32 %18, 4
-  br label %17, !llvm.loop !21
+  br label %17, !llvm.loop !22
 
 23:                                               ; preds = %17, %3, %14
   ret void
@@ -359,6 +373,7 @@ define dso_local void @gdma_fill(i32 noundef %0, i32 noundef %1, i32 noundef %2)
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
 define dso_local void @gdma_rows(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3, i32 noundef %4, i32 noundef %5) local_unnamed_addr #0 {
+  tail call void @gd_wait() #5
   %7 = icmp eq i32 %5, 0
   %8 = load i32, ptr @memctrl, align 4
   %9 = and i32 %8, -17
@@ -385,45 +400,59 @@ define dso_local void @gdma_rows(i32 noundef %0, i32 noundef %1, i32 noundef %2,
 18:                                               ; preds = %18, %17
   %19 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !9
   %20 = icmp eq i32 %19, 0
-  br i1 %20, label %21, label %18, !llvm.loop !22
+  br i1 %20, label %21, label %18, !llvm.loop !23
 
 21:                                               ; preds = %18
   %22 = add i32 %13, %4
   %23 = add i32 %12, %5
   %24 = add nuw nsw i32 %14, 1
-  br label %11, !llvm.loop !23
+  br label %11, !llvm.loop !24
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
 define dso_local void @gdma_spi_rows(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3) local_unnamed_addr #0 {
+  tail call void @gd_wait() #5
   %5 = load i32, ptr @spictrl, align 4, !tbaa !9
   store volatile i32 %5, ptr inttoptr (i32 1342178000 to ptr), align 16, !tbaa !9
   store volatile i32 1073987592, ptr inttoptr (i32 1342178036 to ptr), align 4, !tbaa !9
+  %6 = shl i32 %1, 1
+  %7 = icmp eq i32 %3, %6
+  br i1 %7, label %8, label %10
+
+8:                                                ; preds = %4
+  %9 = mul i32 %2, %1
+  store volatile i32 %9, ptr inttoptr (i32 1342178040 to ptr), align 8, !tbaa !9
+  store volatile i32 %0, ptr inttoptr (i32 1342178044 to ptr), align 4, !tbaa !9
+  br label %24
+
+10:                                               ; preds = %4
   store volatile i32 %1, ptr inttoptr (i32 1342178040 to ptr), align 8, !tbaa !9
-  br label %6
-
-6:                                                ; preds = %15, %4
-  %7 = phi i32 [ %0, %4 ], [ %16, %15 ]
-  %8 = phi i32 [ 0, %4 ], [ %17, %15 ]
-  %9 = icmp slt i32 %8, %2
-  br i1 %9, label %11, label %10
-
-10:                                               ; preds = %6
-  ret void
-
-11:                                               ; preds = %6
-  store volatile i32 %7, ptr inttoptr (i32 1342178044 to ptr), align 4, !tbaa !9
+  %11 = add nsw i32 %2, -1
   br label %12
 
-12:                                               ; preds = %12, %11
-  %13 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !9
-  %14 = icmp eq i32 %13, 0
-  br i1 %14, label %15, label %12, !llvm.loop !24
+12:                                               ; preds = %22, %10
+  %13 = phi i32 [ %0, %10 ], [ %17, %22 ]
+  %14 = phi i32 [ 0, %10 ], [ %23, %22 ]
+  %15 = icmp slt i32 %14, %2
+  br i1 %15, label %16, label %24
 
-15:                                               ; preds = %12
-  %16 = add i32 %7, %3
-  %17 = add nuw nsw i32 %8, 1
-  br label %6, !llvm.loop !25
+16:                                               ; preds = %12
+  store volatile i32 %13, ptr inttoptr (i32 1342178044 to ptr), align 4, !tbaa !9
+  %17 = add i32 %13, %3
+  %18 = icmp eq i32 %14, %11
+  br i1 %18, label %22, label %19
+
+19:                                               ; preds = %16, %19
+  %20 = load volatile i32, ptr inttoptr (i32 1342177992 to ptr), align 8, !tbaa !9
+  %21 = icmp eq i32 %20, 0
+  br i1 %21, label %22, label %19, !llvm.loop !25
+
+22:                                               ; preds = %19, %16
+  %23 = add nuw nsw i32 %14, 1
+  br label %12, !llvm.loop !26
+
+24:                                               ; preds = %12, %8
+  ret void
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
@@ -470,3 +499,4 @@ attributes #6 = { nounwind }
 !23 = distinct !{!23, !7, !8}
 !24 = distinct !{!24, !7, !8}
 !25 = distinct !{!25, !7, !8}
+!26 = distinct !{!26, !7, !8}

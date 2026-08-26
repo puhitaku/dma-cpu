@@ -178,6 +178,7 @@ declare dso_local void @gdma_copy(i32 noundef, i32 noundef, i32 noundef) local_u
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @pcm_play(i32 noundef %0, i32 noundef %1) local_unnamed_addr #1 {
+  tail call void @gd_wait() #7
   tail call void @snd_off() #8
   store volatile i32 5804800, ptr inttoptr (i32 1344274632 to ptr), align 8, !tbaa !3
   %3 = load i32, ptr @sndctrl, align 4, !tbaa !3
@@ -192,6 +193,9 @@ define dso_local void @pcm_play(i32 noundef %0, i32 noundef %1) local_unnamed_ad
   store i1 true, ptr @pcm_active, align 4
   ret void
 }
+
+; Function Attrs: minsize optsize
+declare dso_local void @gd_wait() local_unnamed_addr #3
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @snd_off() local_unnamed_addr #1 {

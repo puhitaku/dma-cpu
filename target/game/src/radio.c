@@ -127,13 +127,14 @@ static const ushort rho[6][3] = {
     {200, 195, 185}, /* the boxes */
 };
 
+/* the middle 2x2 of the ceiling: four compile-time patch indices —
+ * this runs per patch per repaint scan, and p/NPW + p%N cost two
+ * millicode divisions each (rt_udm was 13% of the whole profile) */
+#define LP(i, k) (W_CEIL * NPW + (k) * N + (i))
 static int
 is_light(int p)
 {
-  if (p / NPW != W_CEIL || p >= NWALL)
-    return 0;
-  int i = p % N, k = p % NPW / N;
-  return (i == 4 || i == 5) && (k == 4 || k == 5);
+  return p == LP(4, 4) || p == LP(5, 4) || p == LP(4, 5) || p == LP(5, 5);
 }
 
 /* patch group: 0..4 walls, 5 boxes (for reflectance); the invisible
@@ -432,9 +433,8 @@ fill_quad(const int *qx, const int *qy, ushort c)
 }
 
 static void
-draw_wall_patch(int p, ushort c)
+draw_wall_patch(int w, int i, int k, ushort c)
 {
-  int w = p / NPW, i = p % N, k = p % NPW / N;
   const uchar *c00 = corn + CI(w, i, k);
   const uchar *c10 = corn + CI(w, i + 1, k);
   const uchar *c01 = corn + CI(w, i, k + 1);
@@ -484,13 +484,23 @@ static void
 repaint(int all)
 {
   int wallchanged = 0;
+  /* (w,i,k) ride along incrementally: p = w*NPW + k*N + i, and the
+   * divisions that recovered them per patch were pure rt_udm tax */
+  int w = 0, i = 0, k = 0;
   for (int p = 0; p < NWALL; p++) {
     ushort c = patch_color(p);
-    if (!all && c == shown[p])
-      continue;
-    shown[p] = c;
-    draw_wall_patch(p, c);
-    wallchanged = 1;
+    if (all || c != shown[p]) {
+      shown[p] = c;
+      draw_wall_patch(w, i, k, c);
+      wallchanged = 1;
+    }
+    if (++i == N) {
+      i = 0;
+      if (++k == N) {
+        k = 0;
+        w++;
+      }
+    }
   }
   for (int p = NWALL; p < NFRONT; p++) {
     ushort c = patch_color(p);

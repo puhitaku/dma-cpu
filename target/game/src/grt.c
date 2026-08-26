@@ -136,9 +136,21 @@ gpio_in(int pin)
 
 /* --- bulk DMA on channel 11 (the kdma pattern, bare-metal) --- */
 
+/* gd_wait: ch11 may still be draining an ASYNC lcd flush (the wire
+ * is slow; the machine shoots radiosity meanwhile). Every entry that
+ * programs the channel — and fx.c's pcm_play, which borrows it —
+ * waits here first. */
+void
+gd_wait(void)
+{
+  while (W32(DMACH(GD) + 0x8) != 0)
+    ;
+}
+
 static void
 gd_run(uint rd, uint wr, uint count, uint ctrl)
 {
+  gd_wait();
   W32(DMACH(GD) + 0x0) = rd;
   W32(DMACH(GD) + 0x4) = wr;
   W32(DMACH(GD) + 0x8) = count;
@@ -190,6 +202,7 @@ gdma_rows(uint dst, uint src, uint words, int rows, uint dstride,
    * writes — write addr, then READ_ADDR_TRIG fires it. The row loop
    * is the hottest thing the profiler sees; every store here is
    * dmacc-compiled and far from free. */
+  gd_wait();
   W32(DMACH(GD) + 0x10) = sstride ? memctrl : (memctrl & ~GD_INCR_READ);
   W32(DMACH(GD) + 0x38) = words; /* AL3_TRANS_COUNT: the reload */
   for (int r = 0; r < rows; r++) {
@@ -204,18 +217,32 @@ gdma_rows(uint dst, uint src, uint words, int rows, uint dstride,
 
 /* gdma_spi_rows: the flush inner loop — dst (SPI DR), count, and
  * CTRL are constant, so each row is ONE trigger write plus the
- * completion poll. */
+ * completion poll. A full-width rectangle is contiguous in the fb:
+ * one burst, one poll — the per-row spin waited out the WIRE row by
+ * row (61 us per full row at 62.5 Mbit) and profiled as the hottest
+ * paint-path function. */
 void
 gdma_spi_rows(uint src, uint halfwords, int rows, uint sstride)
 {
+  gd_wait();
   W32(DMACH(GD) + 0x10) = spictrl;
   W32(DMACH(GD) + 0x34) = SPI0 + 0x8;
+  if (sstride == halfwords * 2) { /* contiguous rect: fire and RETURN
+                                   * — the caller's next gdma/lcd op
+                                   * absorbs the wire wait via
+                                   * gd_wait, and the machine computes
+                                   * through the drain */
+    W32(DMACH(GD) + 0x38) = halfwords * (uint)rows;
+    W32(DMACH(GD) + 0x3C) = src;
+    return;
+  }
   W32(DMACH(GD) + 0x38) = halfwords;
   for (int r = 0; r < rows; r++) {
     W32(DMACH(GD) + 0x3C) = src; /* AL3_READ_ADDR_TRIG */
-    while (W32(DMACH(GD) + 0x8) != 0)
-      ;
     src += sstride;
+    if (r != rows - 1) /* the last row drains under the next gd_wait */
+      while (W32(DMACH(GD) + 0x8) != 0)
+        ;
   }
 }
 
