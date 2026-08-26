@@ -19,6 +19,8 @@ pico_sdk_init()
 
 add_executable(dma_hil
     main.c
+    executor.c
+    devtests.c
     ${CMAKE_CURRENT_LIST_DIR}/../loader/dmx.c
 )
 
