@@ -12,6 +12,8 @@
 #include "hardware/flash.h"
 #if PICO_RP2350
 #include "hardware/structs/accessctrl.h"
+#else
+#include "hardware/structs/ssi.h"
 #endif
 #include "hardware/gpio.h"
 #include "hardware/sync.h"
@@ -634,6 +636,27 @@ static void __no_inline_not_in_flash_func(overclock_psram_retiming)(void)
  * repurposed USB PLL, so the video signal never notices. */
 #endif /* HIL_CLK_SYS_KHZ && PICO_RP2350 */
 
+#if HIL_CLK_SYS_KHZ && !PICO_RP2350
+/* RP2040 flash XIP retiming for 250 MHz: boot2's even-only SSI
+ * divider stays at 2, which now clocks the W25Q16JV at 125 MHz —
+ * inside its 133 MHz rating (100 MHz is unreachable from 250; the
+ * old 200 MHz map's div 2 WAS 100). What must move is the sampling
+ * point: the ~10 ns worst-case round trip (pad out + tCLQV 6 ns +
+ * pad in) overruns the 8 ns bit cell, so RX_SAMPLE_DLY=1 (one
+ * clk_sys cycle, 4 ns) pushes capture into the next cell — the same
+ * pattern the feather's validated 100 MHz map uses. SSI registers
+ * take writes only while the block is disabled, and NOTHING may
+ * fetch from flash inside the bracket: SRAM code, IRQs off. */
+static void __no_inline_not_in_flash_func(overclock_flash_retiming_2040)(void)
+{
+    uint32_t irqs = save_and_disable_interrupts();
+    ssi_hw->ssienr = 0;
+    ssi_hw->rx_sample_dly = 1;
+    ssi_hw->ssienr = 1;
+    restore_interrupts(irqs);
+}
+#endif
+
 #if HIL_CLK_SYS_KHZ
 static void overclock_init(void)
 {
@@ -660,21 +683,24 @@ static void overclock_init(void)
     overclock_psram_retiming();
 #endif
     overclock_flash_retiming();
-#else /* RP2040 (gamepico: 200 MHz) */
-    vreg_set_voltage(VREG_VOLTAGE_1_20); /* headroom over 1.10 V */
+#else /* RP2040 (gamepico: 250 MHz) */
+    vreg_set_voltage(VREG_VOLTAGE_1_25); /* 250 MHz headroom (1.10 V
+                                          * default; 200 ran at 1.20) */
     sleep_ms(10);
     set_sys_clock_khz(HIL_CLK_SYS_KHZ, true);
     /* The RP2040 has NO clk_peri divider and its peripherals are not
-     * rated for 200 MHz (the RP2350's UART at 2x taught that lesson).
-     * USB is unused: repurpose pll_usb at 125 MHz for clk_peri — the
-     * UART stays in spec and SPI0 lands exactly on the ST7789V's
-     * 62.5 MHz serial-write ceiling (the Feather pulls the same trick
-     * for clk_hstx). Boot2's XIP divider of 2 gives 100 MHz flash
-     * reads at 200 MHz — inside the W25Q's 104/133 MHz quad spec. */
+     * rated for clk_sys speeds (the RP2350's UART at 2x taught that
+     * lesson). USB is unused: repurpose pll_usb at 125 MHz for
+     * clk_peri — the UART stays in spec and SPI0 lands exactly on the
+     * ST7789V's 62.5 MHz serial-write ceiling (the Feather pulls the
+     * same trick for clk_hstx). The game's PIO dividers (I2S pitch,
+     * WS2811 bit clock) are anchored to clk_sys in fx.c — scaled
+     * together with this number. */
     pll_init(pll_usb, 1, 1500 * MHZ, 6, 2); /* 125 MHz */
     clock_configure(clk_peri, 0,
                     CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLKSRC_PLL_USB,
                     125 * MHZ, 125 * MHZ);
+    overclock_flash_retiming_2040(); /* 125 MHz reads, resampled */
 #endif
 }
 #endif

@@ -72,18 +72,21 @@ fx_init(void)
     gpio_fn(pin, 6u | (3u << 12));
   for (int i = 0; i < 12; i++)
     W32(PIO_INSTR_MEM + 4u * (uint)i) = pioprog[i];
-  /* SM0: I2S at fs = 44.1 kHz (div 70.86). The MAX98357 accepts
+  /* SM0: I2S at fs = 44.1 kHz (div 88.57 at clk_sys 250 MHz — every
+   * divider in this file is anchored to the firmware's overclock;
+   * scale them together). The MAX98357 accepts
    * LRCLK only in discrete ranges — 22.05 kHz is by name NOT
    * supported (datasheet p.16) — and the widest range, 30.4-50.4
    * kHz, is continuous; everything here stays inside it. */
-  W32(SM0_CLKDIV) = (70u << 16) | (220u << 8);
+  W32(SM0_CLKDIV) = (88u << 16) | (147u << 8);
   W32(SM0_EXECCTRL) = 7u << 12; /* wrap 0..7 */
   W32(SM0_SHIFTCTRL) = 1u << 17; /* autopull, threshold 32, shift left */
   W32(SM0_PINCTRL) = (2u << 29) | (1u << 20) | ((uint)PIN_I2S_BCLK << 10) |
                      (uint)PIN_I2S_DIN;
   W32(SM0_INSTR) = 0x0007; /* jmp entry_point */
-  /* SM1: WS2811. 10 PIO cycles per bit at 8 MHz -> 800 kHz. */
-  W32(SM1_CLKDIV) = 25u << 16;
+  /* SM1: WS2811. 10 PIO cycles per bit at 8 MHz -> 800 kHz
+   * (250/31.25). */
+  W32(SM1_CLKDIV) = (31u << 16) | (64u << 8);
   W32(SM1_EXECCTRL) = (11u << 12) | (8u << 7); /* wrap 8..11 */
   W32(SM1_SHIFTCTRL) = (1u << 17) | (24u << 25); /* autopull 24, left */
   W32(SM1_PINCTRL) = (1u << 29) | ((uint)PIN_WS << 10);
@@ -100,7 +103,7 @@ fx_init(void)
 
 /* snd_play: a square wave, pitched inside the amp's clock window.
  * The MAX98357 tracks LRCLK only within its specified ranges, so the
- * sample rate fs = 800e6 / div_fp8 is clamped to the continuous
+ * sample rate fs = 1e9 / div_fp8 is clamped to the continuous
  * 30.4-50.4 kHz band, and coarser pitch comes from the ring period P
  * (a power of two, so the 1024-frame ring wraps seamlessly):
  * f = fs / P. Bands touch at geometric midpoints; a requested pitch
@@ -130,11 +133,11 @@ snd_play(uint hz, uint vol, uint frames)
     half = 4; /* P=8: 3800-6300 Hz */
     shift = 3;
   }
-  uint div_fp8 = (800000000u >> shift) / hz;
-  if (div_fp8 > 26300) /* fs floor: 30.4 kHz */
-    div_fp8 = 26300;
-  if (div_fp8 < 15900) /* fs ceiling: 50.4 kHz */
-    div_fp8 = 15900;
+  uint div_fp8 = (1000000000u >> shift) / hz;
+  if (div_fp8 > 32875) /* fs floor: 30.4 kHz */
+    div_fp8 = 32875;
+  if (div_fp8 < 19875) /* fs ceiling: 50.3 kHz */
+    div_fp8 = 19875;
   W32(SM0_CLKDIV) = div_fp8 << 8;
   int s = (int)(vol << 6);
   uint hi = ((uint)(ushort)s << 16) | (ushort)s; /* L|R, same both */

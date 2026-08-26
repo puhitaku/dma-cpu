@@ -370,7 +370,7 @@ var GamePico = &Board{
 	FlashSize:   0x200000,
 	GameTextXIP: 0x10100000, // upper half: clear of the firmware image
 
-	ClkSysKHz: 200000,
+	ClkSysKHz: 250000,
 	Bundles:   []string{"game"},
 }
 

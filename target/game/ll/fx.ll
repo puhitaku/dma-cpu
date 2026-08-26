@@ -44,12 +44,12 @@ define dso_local void @fx_init() local_unnamed_addr #1 {
   br i1 %8, label %9, label %11
 
 9:                                                ; preds = %6
-  store volatile i32 4643840, ptr inttoptr (i32 1344274632 to ptr), align 8, !tbaa !3
+  store volatile i32 5804800, ptr inttoptr (i32 1344274632 to ptr), align 8, !tbaa !3
   store volatile i32 28672, ptr inttoptr (i32 1344274636 to ptr), align 4, !tbaa !3
   store volatile i32 131072, ptr inttoptr (i32 1344274640 to ptr), align 16, !tbaa !3
   store volatile i32 1074803727, ptr inttoptr (i32 1344274652 to ptr), align 4, !tbaa !3
   store volatile i32 7, ptr inttoptr (i32 1344274648 to ptr), align 8, !tbaa !3
-  store volatile i32 1638400, ptr inttoptr (i32 1344274656 to ptr), align 32, !tbaa !3
+  store volatile i32 2048000, ptr inttoptr (i32 1344274656 to ptr), align 32, !tbaa !3
   store volatile i32 46080, ptr inttoptr (i32 1344274660 to ptr), align 4, !tbaa !3
   store volatile i32 805437440, ptr inttoptr (i32 1344274664 to ptr), align 8, !tbaa !3
   store volatile i32 536883200, ptr inttoptr (i32 1344274676 to ptr), align 4, !tbaa !3
@@ -113,10 +113,10 @@ define dso_local void @snd_play(i32 noundef %0, i32 noundef %1, i32 noundef %2) 
 15:                                               ; preds = %11, %9, %7, %5, %3
   %16 = phi i32 [ 8, %3 ], [ 7, %5 ], [ 6, %7 ], [ 5, %9 ], [ %13, %11 ]
   %17 = phi i32 [ 128, %3 ], [ 64, %5 ], [ 32, %7 ], [ 16, %9 ], [ %14, %11 ]
-  %18 = lshr i32 800000000, %16
+  %18 = lshr i32 1000000000, %16
   %19 = udiv i32 %18, %0
-  %20 = tail call i32 @llvm.umax.i32(i32 %19, i32 15900)
-  %21 = tail call i32 @llvm.umin.i32(i32 %20, i32 26300)
+  %20 = tail call i32 @llvm.umax.i32(i32 %19, i32 19875)
+  %21 = tail call i32 @llvm.umin.i32(i32 %20, i32 32875)
   %22 = shl nuw nsw i32 %21, 8
   store volatile i32 %22, ptr inttoptr (i32 1344274632 to ptr), align 8, !tbaa !3
   %23 = shl i32 %1, 6
