@@ -215,9 +215,11 @@ seq_run(void)
   gfx_text(6, 212, "hold: exit  up/down: tempo", C_DIM, C_BG);
 
   /* tempo notch -> sample clock; both ends stay inside the amp's
-   * LRCLK band. Level 4 ~= 44.1 kHz, a 93 ms step. */
-  static const uint tdiv[8] = {26300, 24800, 23000, 21200, 18140,
-                               17000, 16400, 15900};
+   * LRCLK band. Level 4 ~= 44.1 kHz, a 93 ms step. Dividers are
+   * anchored to clk_sys (fs = 1e9/div at 250 MHz) — scale with the
+   * overclock, or the whole song plays faster. */
+  static const uint tdiv[8] = {32875, 31000, 28750, 26500, 22675,
+                               21250, 20500, 19875};
   int tempo = 4;
   snd_rate(tdiv[tempo]);
   draw_tempo(tempo);
@@ -264,7 +266,7 @@ seq_run(void)
       hold = 0;
     if (hold > 300) { /* ~1.2 s at the 4 ms frame */
       gdma_fill(AURING, 0, AURING_BYTES);
-      snd_rate(18140); /* back to 44.1 kHz for the tone engine */
+      snd_rate(22675); /* back to 44.1 kHz for the tone engine */
       led(0, 0);
       uputs("seq: exit\n");
       return;

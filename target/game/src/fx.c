@@ -172,7 +172,7 @@ void
 pcm_play(uint addr, uint samples)
 {
   snd_off();        /* cancel any tone; uses ch11 BEFORE we take it */
-  snd_rate(18140);  /* clips are 44.1 kHz */
+  snd_rate(22675); /* clips are 44.1 kHz (1e9/22675) */
   W32(DMACH(9) + 0x10) = sndctrl & ~1u; /* pause the ring stream */
   /* ch11: like the SPI pixel ctrl but paced by DREQ 0 (PIO0 TX0).
    * TREQ_SEL is bits 20:15 on RP2040 (this board is SKU-locked). */

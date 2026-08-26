@@ -12,7 +12,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @.str.5 = private unnamed_addr constant [18 x i8] c"H hat    C cymbal\00", align 1
 @.str.6 = private unnamed_addr constant [25 x i8] c"l/r: step  press: change\00", align 1
 @.str.7 = private unnamed_addr constant [27 x i8] c"hold: exit  up/down: tempo\00", align 1
-@seq_run.tdiv = internal unnamed_addr constant [8 x i32] [i32 26300, i32 24800, i32 23000, i32 21200, i32 18140, i32 17000, i32 16400, i32 15900], align 4
+@seq_run.tdiv = internal unnamed_addr constant [8 x i32] [i32 32875, i32 31000, i32 28750, i32 26500, i32 22675, i32 21250, i32 20500, i32 19875], align 4
 @in_edge = external dso_local local_unnamed_addr global i32, align 4
 @pattern = internal unnamed_addr global [16 x i8] c"\01\00\04\00\02\00\04\04\01\00\04\01\02\00\05\00", align 1
 @.str.8 = private unnamed_addr constant [15 x i8] c"seq: step set\0A\00", align 1
@@ -208,7 +208,7 @@ define dso_local void @seq_run() local_unnamed_addr #0 {
   tail call void @gfx_text(i32 noundef 6, i32 noundef 162, ptr noundef nonnull @.str.5, i16 noundef zeroext -16966, i16 noundef zeroext 4163) #4
   tail call void @gfx_text(i32 noundef 6, i32 noundef 200, ptr noundef nonnull @.str.6, i16 noundef zeroext 25327, i16 noundef zeroext 4163) #4
   tail call void @gfx_text(i32 noundef 6, i32 noundef 212, ptr noundef nonnull @.str.7, i16 noundef zeroext 25327, i16 noundef zeroext 4163) #4
-  tail call void @snd_rate(i32 noundef 18140) #4
+  tail call void @snd_rate(i32 noundef 22675) #4
   tail call fastcc void @draw_tempo(i32 noundef 4) #5
   tail call void @gdma_fill(i32 noundef 537100288, i32 noundef 0, i32 noundef 16384) #4
   br label %114
@@ -337,7 +337,7 @@ define dso_local void @seq_run() local_unnamed_addr #0 {
 
 186:                                              ; preds = %178
   tail call void @gdma_fill(i32 noundef 537100288, i32 noundef 0, i32 noundef 16384) #4
-  tail call void @snd_rate(i32 noundef 18140) #4
+  tail call void @snd_rate(i32 noundef 22675) #4
   tail call void @led(i32 noundef 0, i32 noundef 0) #4
   tail call void @uputs(ptr noundef nonnull @.str.9) #4
   ret void
