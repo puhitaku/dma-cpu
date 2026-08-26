@@ -41,6 +41,16 @@ type Options struct {
 	// direct-mode session would otherwise fetch its own records through
 	// the window it just tore down.
 	RAMTextFuncs []string
+	// RuntimeHost emits the shared-runtime vector page at the start of
+	// .ramtext (XIPText only) and force-includes every rt_ routine and
+	// __cw_ helper, so guest images built with RuntimeExtern can call
+	// them. See vecpage.go for the frozen page layout and the two
+	// system properties (event-driven host, safepoint-free bodies)
+	// the sharing depends on.
+	RuntimeHost bool
+	// RuntimeExtern builds a guest image: no local rt_/__cw_ bodies or
+	// cells; call sites target the host's page and register file.
+	RuntimeExtern *ExternRT
 	// OptSize trades execution speed for text size, like -Os: outlined
 	// comparison sites shrink to two records via constant descriptors
 	// (~9% smaller text) at ~2x the per-branch cost — the unpack is a
@@ -226,6 +236,15 @@ func (g *gen) run() error {
 			}
 			mark(name)
 		}
+	}
+	if g.opts.RuntimeHost {
+		if !g.opts.XIPText {
+			return fmt.Errorf("dmacc: RuntimeHost requires XIPText (the vector page anchors to RAMTextBase)")
+		}
+		if g.opts.RuntimeExtern != nil {
+			return fmt.Errorf("dmacc: RuntimeHost and RuntimeExtern are mutually exclusive")
+		}
+		g.emitVecPage()
 	}
 	// Variadic frames are static too: size each callee's vararg area to
 	// the largest call in the whole program.

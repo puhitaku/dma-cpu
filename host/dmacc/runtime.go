@@ -306,6 +306,9 @@ rt_mst_blk:
 // emitRuntime appends the needed routines (dependency-closed) to the
 // program in a fixed order.
 func (g *gen) emitRuntime() error {
+	if g.opts.RuntimeExtern != nil {
+		return nil // guest image: the host carries the bodies
+	}
 	need := map[string]bool{}
 	var mark func(n string)
 	byName := map[string]rtRoutine{}

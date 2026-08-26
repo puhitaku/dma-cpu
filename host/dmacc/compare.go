@@ -183,18 +183,18 @@ func (fc *funcCtx) emitCmpSite(helper, a, b, t, f string) {
 				fc.g.descWords += 4
 			}
 			fc.g.cmpUsedD[helper] = true
-			fc.ins("move $%s, cw_d", desc)
-			fc.ins("jump __cw_%s_d", helper)
+			fc.ins("move $%s, %s", desc, fc.cw("cw_d"))
+			fc.cwJump(helper + "_d")
 			return
 		}
 	}
-	fc.ins("move $%s, cw_t", t)
-	fc.ins("move $%s, cw_f", f)
-	fc.ins("move %s, cw_a", a)
+	fc.ins("move $%s, %s", t, fc.cw("cw_t"))
+	fc.ins("move $%s, %s", f, fc.cw("cw_f"))
+	fc.ins("move %s, %s", a, fc.cw("cw_a"))
 	if b != "" {
-		fc.ins("move %s, cw_b", b)
+		fc.ins("move %s, %s", b, fc.cw("cw_b"))
 	}
-	fc.ins("jump __cw_%s", helper)
+	fc.cwJump(helper)
 }
 
 // emitCompareBranch lowers an icmp into a two-way branch to t / f.
@@ -305,14 +305,20 @@ func (fc *funcCtx) emitInlineCompare(pred, a, b, t, f string) error {
 
 // emitCmpHelpers appends the used helper bodies and their shared words.
 func (g *gen) emitCmpHelpers() {
+	if g.opts.RuntimeExtern != nil {
+		return // guest image: the host carries the cells and bodies
+	}
 	if len(g.cmpUsed) == 0 {
 		return
 	}
-	fmt.Fprintf(&g.out, "\n; --- comparison millicode ---\n.data\n")
-	// cw_pb..cw_pa are one contiguous run: descriptor unpack copies
-	// [pb][t][f][pa] (or [t][f][pa]) onto them with a single move.
-	fmt.Fprintf(&g.out, "cw_a: .word 0\ncw_b: .word 0\ncw_d: .word 0\n")
-	fmt.Fprintf(&g.out, "cw_pb: .word 0\ncw_t: .word 0\ncw_f: .word 0\ncw_pa: .word 0\n")
+	if !g.opts.RuntimeHost {
+		fmt.Fprintf(&g.out, "\n; --- comparison millicode ---\n.data\n")
+		// cw_pb..cw_pa are one contiguous run: descriptor unpack copies
+		// [pb][t][f][pa] (or [t][f][pa]) onto them with a single move.
+		// (A RuntimeHost build declares these at the vector page head.)
+		fmt.Fprintf(&g.out, "cw_a: .word 0\ncw_b: .word 0\ncw_d: .word 0\n")
+		fmt.Fprintf(&g.out, "cw_pb: .word 0\ncw_t: .word 0\ncw_f: .word 0\ncw_pa: .word 0\n")
+	}
 	// XIPText: the millicode is shared by RAM-resident flash-session
 	// code (RAMTextFuncs), so it lives in .ramtext with everything the
 	// session may fetch.

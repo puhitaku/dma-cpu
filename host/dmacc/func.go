@@ -242,8 +242,8 @@ func (fc *funcCtx) prepass() error {
 		"inttoptr": true, "freeze": true, "sext": true, "trunc": true,
 		"insertvalue": true, "extractvalue": true, "getelementptr": true}
 	escape := map[string]bool{}
-	useBlks := map[string]map[int]bool{}  // value -> blocks where its word is read
-	fwdSrcs := map[string][]string{}      // fwd-op result -> sources it may alias
+	useBlks := map[string]map[int]bool{} // value -> blocks where its word is read
+	fwdSrcs := map[string][]string{}     // fwd-op result -> sources it may alias
 	noteUse := func(v *llir.Value, useBlk int, byFwd bool) {
 		if v == nil || v.Kind != llir.VLocal {
 			return
@@ -1075,12 +1075,11 @@ func (fc *funcCtx) emitMul(ins *llir.Instr) error {
 	if err != nil {
 		return err
 	}
-	fc.g.rt["mul"] = true
 	fc.hasCalls = true
-	fc.ins("move %s, r0", av)
-	fc.ins("move %s, r1", bv)
-	fc.ins("call __rt_mul")
-	fc.ins("move r0, %s", res)
+	fc.ins("move %s, %s", av, fc.rtReg("r0"))
+	fc.ins("move %s, %s", bv, fc.rtReg("r1"))
+	fc.rtCall("mul")
+	fc.ins("move %s, %s", fc.rtReg("r0"), res)
 	fc.maskTo(res, w)
 	return nil
 }
@@ -1115,12 +1114,11 @@ func (fc *funcCtx) emitShl(ins *llir.Instr) error {
 	if err != nil {
 		return err
 	}
-	fc.g.rt["shl"] = true
 	fc.hasCalls = true
-	fc.ins("move %s, r0", av)
-	fc.ins("move %s, r1", sv)
-	fc.ins("call __rt_shl")
-	fc.ins("move r0, %s", res)
+	fc.ins("move %s, %s", av, fc.rtReg("r0"))
+	fc.ins("move %s, %s", sv, fc.rtReg("r1"))
+	fc.rtCall("shl")
+	fc.ins("move %s, %s", fc.rtReg("r0"), res)
 	fc.maskTo(res, w)
 	return nil
 }
@@ -1153,12 +1151,11 @@ func (fc *funcCtx) emitRuntimeOp(ins *llir.Instr) error {
 		"lshr": "lshr", "ashr": "ashr", "udiv": "udiv",
 		"sdiv": "sdiv", "urem": "urem", "srem": "srem",
 	}[ins.Op]
-	fc.g.rt[rt] = true
 	fc.hasCalls = true
-	fc.ins("move %s, r0", av)
-	fc.ins("move %s, r1", bv)
-	fc.ins("call __rt_%s", rt)
-	fc.ins("move r0, %s", res)
+	fc.ins("move %s, %s", av, fc.rtReg("r0"))
+	fc.ins("move %s, %s", bv, fc.rtReg("r1"))
+	fc.rtCall(rt)
+	fc.ins("move %s, %s", fc.rtReg("r0"), res)
 	if signed || ins.Op == "lshr" && w < 32 {
 		fc.maskTo(res, w)
 	}
@@ -1590,12 +1587,11 @@ func (fc *funcCtx) emitMemRT(rt string, dst, src, n *llir.Value) error {
 	if err != nil {
 		return err
 	}
-	fc.g.rt[rt] = true
 	fc.hasCalls = true
-	fc.ins("move %s, r0", dv)
-	fc.ins("move %s, r1", sv)
-	fc.ins("move %s, r2", nv)
-	fc.ins("call __rt_%s", rt)
+	fc.ins("move %s, %s", dv, fc.rtReg("r0"))
+	fc.ins("move %s, %s", sv, fc.rtReg("r1"))
+	fc.ins("move %s, %s", nv, fc.rtReg("r2"))
+	fc.rtCall(rt)
 	return nil
 }
 
@@ -1624,19 +1620,18 @@ func (fc *funcCtx) emitFramePush() {
 	// Overflow: new sp past the stack end diverts to the sink.
 	ok := fc.stub("Fok")
 	fc.ins("add g___dmacc_fsp, %s, sc2", rec)
-	fc.ins("move $__fovf, cw_t")
-	fc.ins("move $%s, cw_f", ok)
-	fc.ins("move $g___dmacc_fstack+%d, cw_a", fc.g.frameStackSize())
-	fc.ins("move sc2, cw_b")
-	fc.ins("jump __cw_ltu")
+	fc.ins("move $__fovf, %s", fc.cw("cw_t"))
+	fc.ins("move $%s, %s", ok, fc.cw("cw_f"))
+	fc.ins("move $g___dmacc_fstack+%d, %s", fc.g.frameStackSize(), fc.cw("cw_a"))
+	fc.ins("move sc2, %s", fc.cw("cw_b"))
+	fc.cwJump("ltu")
 	fc.label(ok)
 	fc.g.cmpUsed["ltu"] = true
 	// Save the live frame.
-	fc.g.rt["memcpy"] = true
-	fc.ins("move g___dmacc_fsp, r0")
-	fc.ins("move %s, r1", frame)
-	fc.ins("move %s, r2", sz)
-	fc.ins("call __rt_memcpy")
+	fc.ins("move g___dmacc_fsp, %s", fc.rtReg("r0"))
+	fc.ins("move %s, %s", frame, fc.rtReg("r1"))
+	fc.ins("move %s, %s", sz, fc.rtReg("r2"))
+	fc.rtCall("memcpy")
 	// Trailing header for the unwinder, then commit the new sp.
 	hs := fc.stub("Fha")
 	fc.ins("add g___dmacc_fsp, %s, sc2", sz)
@@ -1674,11 +1669,10 @@ func (fc *funcCtx) emitFramePop(ins *llir.Instr) error {
 	fc.ins("move %s, fs_lr", fc.lrsWord())
 	fc.ins("sub g___dmacc_fsp, %s, sc2", rec)
 	fc.ins("move sc2, g___dmacc_fsp")
-	fc.g.rt["memcpy"] = true
-	fc.ins("move %s, r0", frame)
-	fc.ins("move sc2, r1")
-	fc.ins("move %s, r2", sz)
-	fc.ins("call __rt_memcpy")
+	fc.ins("move %s, %s", frame, fc.rtReg("r0"))
+	fc.ins("move sc2, %s", fc.rtReg("r1"))
+	fc.ins("move %s, %s", sz, fc.rtReg("r2"))
+	fc.rtCall("memcpy")
 	if len(ins.Args) > 0 {
 		fc.ins("move fs_r0, r0")
 	}
