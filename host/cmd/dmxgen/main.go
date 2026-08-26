@@ -946,7 +946,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	kcDasm, err := compileLL(append(append([]string{"target/xv6/ll/kproc.ll", "target/xv6/ll/kcons.ll", "target/xv6/ll/kgpio.ll"},
 		fbMods...), "target/xv6/ll/kfs.ll", "target/xv6/ll/kfile.ll",
 		"target/xv6/ll/kbio.ll", "target/xv6/ll/kfsglue.ll", "target/xv6/ll/kpipe.ll", "target/xv6/ll/kflash.ll",
-		"target/xv6/ll/kfat.ll", "target/xv6/ll/kdev.ll", "target/xv6/ll/kdma.ll", "target/xv6/ll/string.ll"),
+		"target/xv6/ll/kfat.ll", "target/xv6/ll/kdev.ll", "target/xv6/ll/kdma.ll", "target/xv6/ll/ksd.ll", "target/xv6/ll/string.ll"),
 		dmacc.Options{Entry: "kmain", NoSafepoints: true, XIPText: true,
 			/* the QMI sync session tears down XIP: it must run from SRAM */
 			RAMTextFuncs: []string{"kflash_sync"},
@@ -1120,6 +1120,12 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		{"g_initpid", 2},        /* idle adopts orphans (prompts/024) */
 		{"g_fgpid", 1},          /* Ctrl-C interrupts sh's foreground job */
 		{"g_fatvol", fatVolXIP}, /* the vfat volume (prompts/029) */
+		/* Machine-driven SD (ksd.c): zero-off unless the board arms it. */
+		{"g_sd_spi", sdSpi(v, bd)},
+		{"g_sd_csreg", sdCsReg(v, bd)},
+		{"g_sd_cs_hi", sdCsVal(v, bd, true)},
+		{"g_sd_cs_lo", sdCsVal(v, bd, false)},
+		{"g_sd_rxctrl", sdRxCtrl(v, bd)},
 		{"g_goldsum", checksum32(disk)},
 		{"g_iobank0", v.IOBank0Base}, {"g_padsbank0", v.PadsBank0Base},
 		{"g_pio0base", v.PIO0Base}, {"g_gpiopins", uint32(v.GPIOPins)},
@@ -1558,6 +1564,36 @@ func packReloc(r img.Reloc) uint32 {
 		w |= 1 << 30
 	}
 	return w
+}
+
+// Machine-SD loader values: all zero when the board keeps the ARM
+// executor (ksd.c's zero-config-off seam).
+func sdSpi(v *emu.Variant, bd *boards.Board) uint32 {
+	if !bd.MachineSDExec {
+		return 0
+	}
+	return v.SPI0Base
+}
+
+func sdCsReg(v *emu.Variant, bd *boards.Board) uint32 {
+	if !bd.MachineSDExec {
+		return 0
+	}
+	return v.IOBank0Base + uint32(bd.SDCSPin)*8 + 4
+}
+
+func sdCsVal(v *emu.Variant, bd *boards.Board, high bool) uint32 {
+	if !bd.MachineSDExec {
+		return 0
+	}
+	return v.GPIOOutCtrl(high)
+}
+
+func sdRxCtrl(v *emu.Variant, bd *boards.Board) uint32 {
+	if !bd.MachineSDExec {
+		return 0
+	}
+	return v.SDRxCtrl()
 }
 
 func pad8(b []byte) []byte {

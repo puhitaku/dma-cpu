@@ -344,6 +344,13 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 		}
 		m.Poke32(mustSym(t, kernC, "g_fsslot"), slotXIP)
 		m.Poke32(mustSym(t, kernC, "g_fatvol"), bd.FatVol)
+		if bd.MachineSDExec { /* ksd.c: the machine drives the card itself */
+			m.Poke32(mustSym(t, kernC, "g_sd_spi"), v.SPI0Base)
+			m.Poke32(mustSym(t, kernC, "g_sd_csreg"), v.IOBank0Base+uint32(bd.SDCSPin)*8+4)
+			m.Poke32(mustSym(t, kernC, "g_sd_cs_hi"), v.GPIOOutCtrl(true))
+			m.Poke32(mustSym(t, kernC, "g_sd_cs_lo"), v.GPIOOutCtrl(false))
+			m.Poke32(mustSym(t, kernC, "g_sd_rxctrl"), v.SDRxCtrl())
+		}
 		// The kernel posts erase/program requests to the ARM-executor
 		// mailbox; emulator tests service it via serviceFlashMailbox,
 		// playing the parked ARM (kflash.c explains why).
@@ -944,6 +951,7 @@ func TestXv6SD(t *testing.T) {
 			// The two variants exercise the two mount spellings: the
 			// bare device with an absolute target, and the /dev path
 			// with a relative target (cwd is /).
+			m.SDImage = sd /* the machine reads the card itself (ksd.c) */
 			mnt := "mount sd0 /sd\r"
 			if name == "superfloppy" {
 				mnt = "mount /dev/sd0 sd\r"

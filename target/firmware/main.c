@@ -1989,6 +1989,17 @@ int main(void)
 
 #if defined(ADAFRUIT_FEATHER_RP2350)
     feather_video_init();
+    /* Machine-driven SD (ksd.c): the ARM's whole role is this one-time
+     * plumbing — mux the SPI pins, un-reset the block, park CS high.
+     * The machine reprograms clocks and runs the protocol itself; the
+     * mailbox SD ops (4/5) remain compiled as the fallback path. */
+    spi_init(SD_SPI, 400 * 1000);
+    gpio_set_function(SD_SCK, GPIO_FUNC_SPI);
+    gpio_set_function(SD_MOSI, GPIO_FUNC_SPI);
+    gpio_set_function(SD_MISO, GPIO_FUNC_SPI);
+    gpio_init(SD_CS);
+    gpio_set_dir(SD_CS, true);
+    gpio_put(SD_CS, 1);
     /* Blank the framebuffer: the display carries a clean 640x480@60
      * signal from here on, machine or not. */
     for (uint32_t a = HIL_XSH_FBBUF; a < HIL_XSH_FBBUF + VF_ROWS * VF_W; a += 4)

@@ -89,6 +89,11 @@ type Board struct {
 	// itself for sync (the RP2350 QMI direct-mode driver). Boards
 	// without it use the parked ARM's mailbox executor.
 	MachineFlashExec bool
+	// MachineSDExec: the machine drives the SD card itself (ksd.c,
+	// SPI mode over SPI0 with the ch11 drain borrow) instead of the
+	// ARM-mailbox executor. SDCSPin is the chip-select GPIO.
+	MachineSDExec bool
+	SDCSPin       int
 	// ReadOnlyFS ships the board without persistence: the fs slot is
 	// never staged or written (sync returns -1) even though the flash
 	// section stays reserved. Demo posture: a sync can then never
@@ -264,8 +269,9 @@ var Feather = &Board{
 	// vi's full 40K heap ask with ~15K to spare.
 	ShRText: 0x20012800, ShData: 0x20013A00,
 	IdleText: 0x20015E00, IdleData: 0x20016000,
-	DiskHome: 0x20016200, DiskMax: 0x2000, // 8 KiB: the fs floor (6 was under it)
-	Arena: 0x20018200, ArenaEnd: 0x20030300, // 96.3 KiB up to the table
+	DiskHome: 0x20016200, DiskMax: 0x2800, // 10 KiB: room for a demo's
+	// simultaneous files (a text file + a mount point + slack)
+	Arena: 0x20018A00, ArenaEnd: 0x20030300, // 94.2 KiB up to the table
 	ConsRings: 0x20034400, // UART rings; FbBuf follows at 0x20034C00
 	Scratch:   0x2007FE00,
 
@@ -320,13 +326,16 @@ var Feather = &Board{
 	// a millisecond of resuming the display (prompts/036). The SDK
 	// path restores full quad XIP and re-runs the CS1 setup hook.
 	MachineFlashExec: false,
+	MachineSDExec:    true, /* ksd.c owns the card; ARM keeps only
+	                         * boot staging, USB and flash-sync */
+	SDCSPin:          10,   /* D10: the Adalogger FeatherWing CS */
 	// RO by default: the HDMI console is the product; persistence is
 	// a nice-to-have and stays off until wanted (slides arrive over
 	// USB, not the fs). The sync machinery itself remains validated
 	// (silicon + TestXv6ShFeather re-arms it in the emulator).
 	ReadOnlyFS:   true,
-	DiskBlocks:   8,
-	DiskInodes:   8, /* one inode block; frees a data block for the
+	DiskBlocks:   10,
+	DiskInodes:   8, /* one inode block; frees data blocks for the
 	                  * write showcase + the SD mount point */
 	DiskApps:     fbApps,
 	ToolboxLinks: stdLinks,

@@ -241,9 +241,14 @@ arm_request(uint op, uint off, uint src)
  * executor (machine-flash boards have no ARM in the loop). The
  * mailbox is strictly serial — the machine is single-threaded and
  * sync never interleaves with fs reads. */
+extern int ksd_on(void);                       /* ksd.c */
+extern int ksd_op(uint op, uint off, uint src); /* ksd.c */
+
 int
 kflash_sd(uint op, uint off, uint src)
 {
+  if (ksd_on()) /* machine-driven SD (ksd.c): no ARM in the loop */
+    return ksd_op(op, off, src);
   if (kflash_arm == 0)
     return -1;
   arm_request(op, off, src);

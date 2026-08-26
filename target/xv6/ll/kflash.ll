@@ -13,23 +13,38 @@ target triple = "thumbv6m-unknown-none-eabi"
 @dma_disk = external dso_local local_unnamed_addr global i32, align 4
 @kflash_phase = dso_local local_unnamed_addr global i32 0, align 4
 
-; Function Attrs: minsize nofree norecurse nounwind optsize
-define dso_local range(i32 -1, 1) i32 @kflash_sd(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #0 {
-  %4 = load i32, ptr @kflash_arm, align 4, !tbaa !3
+; Function Attrs: minsize nounwind optsize
+define dso_local i32 @kflash_sd(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = tail call i32 @ksd_on() #6
   %5 = icmp eq i32 %4, 0
-  br i1 %5, label %7, label %6
+  br i1 %5, label %8, label %6
 
 6:                                                ; preds = %3
-  tail call fastcc void @arm_request(i32 noundef %0, i32 noundef %1, i32 noundef %2) #4
-  br label %7
+  %7 = tail call i32 @ksd_op(i32 noundef %0, i32 noundef %1, i32 noundef %2) #6
+  br label %12
 
-7:                                                ; preds = %3, %6
-  %8 = phi i32 [ 0, %6 ], [ -1, %3 ]
-  ret i32 %8
+8:                                                ; preds = %3
+  %9 = load i32, ptr @kflash_arm, align 4, !tbaa !3
+  %10 = icmp eq i32 %9, 0
+  br i1 %10, label %12, label %11
+
+11:                                               ; preds = %8
+  tail call fastcc void @arm_request(i32 noundef %0, i32 noundef %1, i32 noundef %2) #7
+  br label %12
+
+12:                                               ; preds = %8, %11, %6
+  %13 = phi i32 [ %7, %6 ], [ 0, %11 ], [ -1, %8 ]
+  ret i32 %13
 }
 
+; Function Attrs: minsize optsize
+declare dso_local i32 @ksd_on() local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local i32 @ksd_op(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
+
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @arm_request(i32 noundef %0, i32 noundef %1, i32 noundef %2) unnamed_addr #0 {
+define internal fastcc void @arm_request(i32 noundef %0, i32 noundef %1, i32 noundef %2) unnamed_addr #2 {
   %4 = load i32, ptr @kflash_arm, align 4, !tbaa !3
   %5 = inttoptr i32 %4 to ptr
   store volatile i32 %0, ptr %5, align 4, !tbaa !7
@@ -55,7 +70,7 @@ define internal fastcc void @arm_request(i32 noundef %0, i32 noundef %1, i32 nou
 }
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, inaccessiblemem: none)
-define dso_local i32 @kflash_slot_gen() local_unnamed_addr #1 {
+define dso_local i32 @kflash_slot_gen() local_unnamed_addr #3 {
   %1 = load i32, ptr @fsslot, align 4, !tbaa !3
   %2 = icmp eq i32 %1, 0
   br i1 %2, label %21, label %3
@@ -92,20 +107,20 @@ define dso_local i32 @kflash_slot_gen() local_unnamed_addr #1 {
 }
 
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
-declare void @llvm.lifetime.start.p0(i64 immarg, ptr captures(none)) #2
+declare void @llvm.lifetime.start.p0(i64 immarg, ptr captures(none)) #4
 
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
-declare void @llvm.lifetime.end.p0(i64 immarg, ptr captures(none)) #2
+declare void @llvm.lifetime.end.p0(i64 immarg, ptr captures(none)) #4
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(readwrite, argmem: read, inaccessiblemem: none)
-define dso_local void @kflash_init() local_unnamed_addr #3 {
-  %1 = tail call i32 @kflash_slot_gen() #4
+define dso_local void @kflash_init() local_unnamed_addr #5 {
+  %1 = tail call i32 @kflash_slot_gen() #7
   store i32 %1, ptr @fs_gen, align 4, !tbaa !3
   ret void
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define dso_local void @kflash_cal(ptr noundef %0) local_unnamed_addr #0 {
+define dso_local void @kflash_cal(ptr noundef %0) local_unnamed_addr #2 {
   %2 = alloca [256 x i8], align 1
   %3 = getelementptr inbounds nuw i8, ptr %0, i32 48
   br label %4
@@ -132,46 +147,46 @@ define dso_local void @kflash_cal(ptr noundef %0) local_unnamed_addr #0 {
   %15 = getelementptr inbounds nuw i8, ptr %0, i32 44
   store volatile i32 %14, ptr %15, align 4, !tbaa !3
   store volatile i32 2, ptr %0, align 4, !tbaa !3
-  tail call fastcc void @flash_exit_xip() #4
+  tail call fastcc void @flash_exit_xip() #7
   store volatile i32 3, ptr %0, align 4, !tbaa !3
   %16 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
   %17 = or i32 %16, 16777221
   store volatile i32 %17, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
-  %18 = tail call fastcc i32 @qmi_xfer(i32 noundef 159) #4
-  %19 = tail call fastcc i32 @qmi_xfer(i32 noundef 0) #4
+  %18 = tail call fastcc i32 @qmi_xfer(i32 noundef 159) #7
+  %19 = tail call fastcc i32 @qmi_xfer(i32 noundef 0) #7
   %20 = shl nuw nsw i32 %19, 16
-  %21 = tail call fastcc i32 @qmi_xfer(i32 noundef 0) #4
+  %21 = tail call fastcc i32 @qmi_xfer(i32 noundef 0) #7
   %22 = shl nuw nsw i32 %21, 8
   %23 = or disjoint i32 %22, %20
-  %24 = tail call fastcc i32 @qmi_xfer(i32 noundef 0) #4
+  %24 = tail call fastcc i32 @qmi_xfer(i32 noundef 0) #7
   %25 = or disjoint i32 %23, %24
   %26 = getelementptr inbounds nuw i8, ptr %0, i32 8
   store volatile i32 %25, ptr %26, align 4, !tbaa !3
-  tail call fastcc void @qmi_end() #4
+  tail call fastcc void @qmi_end() #7
   %27 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
   %28 = or i32 %27, 16777221
   store volatile i32 %28, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
-  %29 = tail call fastcc i32 @qmi_xfer(i32 noundef 5) #4
-  %30 = tail call fastcc i32 @qmi_xfer(i32 noundef 0) #4
+  %29 = tail call fastcc i32 @qmi_xfer(i32 noundef 5) #7
+  %30 = tail call fastcc i32 @qmi_xfer(i32 noundef 0) #7
   %31 = getelementptr inbounds nuw i8, ptr %0, i32 12
   store volatile i32 %30, ptr %31, align 4, !tbaa !3
-  tail call fastcc void @qmi_end() #4
-  tail call fastcc void @flash_wren() #4
+  tail call fastcc void @qmi_end() #7
+  tail call fastcc void @flash_wren() #7
   %32 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
   %33 = or i32 %32, 16777221
   store volatile i32 %33, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
-  %34 = tail call fastcc i32 @qmi_xfer(i32 noundef 5) #4
-  %35 = tail call fastcc i32 @qmi_xfer(i32 noundef 0) #4
+  %34 = tail call fastcc i32 @qmi_xfer(i32 noundef 5) #7
+  %35 = tail call fastcc i32 @qmi_xfer(i32 noundef 0) #7
   %36 = getelementptr inbounds nuw i8, ptr %0, i32 16
   store volatile i32 %35, ptr %36, align 4, !tbaa !3
-  tail call fastcc void @qmi_end() #4
+  tail call fastcc void @qmi_end() #7
   store volatile i32 4, ptr %0, align 4, !tbaa !3
-  tail call fastcc void @flash_erase4k(i32 noundef 4128768) #4
-  %37 = tail call fastcc i32 @qmi_read32() #4
+  tail call fastcc void @flash_erase4k(i32 noundef 4128768) #7
+  %37 = tail call fastcc i32 @qmi_read32() #7
   %38 = getelementptr inbounds nuw i8, ptr %0, i32 20
   store volatile i32 %37, ptr %38, align 4, !tbaa !3
   store volatile i32 5, ptr %0, align 4, !tbaa !3
-  call void @llvm.lifetime.start.p0(i64 256, ptr nonnull %2) #5
+  call void @llvm.lifetime.start.p0(i64 256, ptr nonnull %2) #8
   br label %39
 
 39:                                               ; preds = %48, %7
@@ -180,8 +195,8 @@ define dso_local void @kflash_cal(ptr noundef %0) local_unnamed_addr #0 {
   br i1 %41, label %42, label %48
 
 42:                                               ; preds = %39
-  call fastcc void @flash_prog_page(i32 noundef 4128768, ptr noundef nonnull %2) #4
-  %43 = call fastcc i32 @qmi_read32() #4
+  call fastcc void @flash_prog_page(i32 noundef 4128768, ptr noundef nonnull %2) #7
+  %43 = call fastcc i32 @qmi_read32() #7
   %44 = getelementptr inbounds nuw i8, ptr %0, i32 24
   store volatile i32 %43, ptr %44, align 4, !tbaa !3
   store volatile i32 6, ptr %0, align 4, !tbaa !3
@@ -193,7 +208,7 @@ define dso_local void @kflash_cal(ptr noundef %0) local_unnamed_addr #0 {
   store volatile i32 7, ptr %0, align 4, !tbaa !3
   %47 = getelementptr inbounds nuw i8, ptr %0, i32 32
   store volatile i32 1, ptr %47, align 4, !tbaa !3
-  call void @llvm.lifetime.end.p0(i64 256, ptr nonnull %2) #5
+  call void @llvm.lifetime.end.p0(i64 256, ptr nonnull %2) #8
   ret void
 
 48:                                               ; preds = %39
@@ -207,7 +222,7 @@ define dso_local void @kflash_cal(ptr noundef %0) local_unnamed_addr #0 {
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @flash_exit_xip() unnamed_addr #0 {
+define internal fastcc void @flash_exit_xip() unnamed_addr #2 {
   store i32 10, ptr @kflash_phase, align 4, !tbaa !3
   %1 = load volatile i32, ptr inttoptr (i32 1074003976 to ptr), align 8, !tbaa !3
   %2 = load volatile i32, ptr inttoptr (i32 1074003980 to ptr), align 4, !tbaa !3
@@ -223,18 +238,18 @@ define internal fastcc void @flash_exit_xip() unnamed_addr #0 {
   store volatile i32 68, ptr inttoptr (i32 1074003984 to ptr), align 16, !tbaa !3
   store volatile i32 68, ptr inttoptr (i32 1074003988 to ptr), align 4, !tbaa !3
   store i32 13, ptr @kflash_phase, align 4, !tbaa !3
-  tail call fastcc void @qspi_clocks(i32 noundef 32) #4
+  tail call fastcc void @qspi_clocks(i32 noundef 32) #7
   store volatile i32 57344, ptr inttoptr (i32 1073938460 to ptr), align 4, !tbaa !3
   store volatile i32 72, ptr inttoptr (i32 1074003976 to ptr), align 8, !tbaa !3
   store volatile i32 72, ptr inttoptr (i32 1074003980 to ptr), align 4, !tbaa !3
   store volatile i32 72, ptr inttoptr (i32 1074003984 to ptr), align 16, !tbaa !3
   store volatile i32 72, ptr inttoptr (i32 1074003988 to ptr), align 4, !tbaa !3
-  tail call fastcc void @qspi_clocks(i32 noundef 32) #4
+  tail call fastcc void @qspi_clocks(i32 noundef 32) #7
   store i32 15, ptr @kflash_phase, align 4, !tbaa !3
   store volatile i32 61440, ptr inttoptr (i32 1073938460 to ptr), align 4, !tbaa !3
   store volatile i32 57344, ptr inttoptr (i32 1073938460 to ptr), align 4, !tbaa !3
   store volatile i32 61440, ptr inttoptr (i32 1073938468 to ptr), align 4, !tbaa !3
-  tail call fastcc void @qspi_clocks(i32 noundef 16) #4
+  tail call fastcc void @qspi_clocks(i32 noundef 16) #7
   store volatile i32 0, ptr inttoptr (i32 1073938460 to ptr), align 4, !tbaa !3
   store volatile i32 0, ptr inttoptr (i32 1073938452 to ptr), align 4, !tbaa !3
   store volatile i32 0, ptr inttoptr (i32 1073938468 to ptr), align 4, !tbaa !3
@@ -250,7 +265,7 @@ define internal fastcc void @flash_exit_xip() unnamed_addr #0 {
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc range(i32 0, 256) i32 @qmi_xfer(i32 noundef %0) unnamed_addr #0 {
+define internal fastcc range(i32 0, 256) i32 @qmi_xfer(i32 noundef %0) unnamed_addr #2 {
   %2 = and i32 %0, 255
   store volatile i32 %2, ptr inttoptr (i32 1074593796 to ptr), align 4, !tbaa !3
   br label %3
@@ -268,7 +283,7 @@ define internal fastcc range(i32 0, 256) i32 @qmi_xfer(i32 noundef %0) unnamed_a
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @qmi_end() unnamed_addr #0 {
+define internal fastcc void @qmi_end() unnamed_addr #2 {
   %1 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
   %2 = and i32 %1, -5
   store volatile i32 %2, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
@@ -288,38 +303,38 @@ define internal fastcc void @qmi_end() unnamed_addr #0 {
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @flash_wren() unnamed_addr #0 {
+define internal fastcc void @flash_wren() unnamed_addr #2 {
   %1 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
   %2 = or i32 %1, 16777221
   store volatile i32 %2, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
-  %3 = tail call fastcc i32 @qmi_xfer(i32 noundef 6) #4
-  tail call fastcc void @qmi_end() #4
+  %3 = tail call fastcc i32 @qmi_xfer(i32 noundef 6) #7
+  tail call fastcc void @qmi_end() #7
   ret void
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @flash_erase4k(i32 noundef %0) unnamed_addr #0 {
+define internal fastcc void @flash_erase4k(i32 noundef %0) unnamed_addr #2 {
   %2 = load i32, ptr @kflash_arm, align 4, !tbaa !3
   %3 = icmp eq i32 %2, 0
   br i1 %3, label %5, label %4
 
 4:                                                ; preds = %1
-  tail call fastcc void @arm_request(i32 noundef 1, i32 noundef %0, i32 noundef 0) #4
+  tail call fastcc void @arm_request(i32 noundef 1, i32 noundef %0, i32 noundef 0) #7
   br label %14
 
 5:                                                ; preds = %1
-  tail call fastcc void @flash_wren() #4
+  tail call fastcc void @flash_wren() #7
   %6 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
   %7 = or i32 %6, 16777221
   store volatile i32 %7, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
-  %8 = tail call fastcc i32 @qmi_xfer(i32 noundef 32) #4
+  %8 = tail call fastcc i32 @qmi_xfer(i32 noundef 32) #7
   %9 = lshr i32 %0, 16
-  %10 = tail call fastcc i32 @qmi_xfer(i32 noundef %9) #4
+  %10 = tail call fastcc i32 @qmi_xfer(i32 noundef %9) #7
   %11 = lshr i32 %0, 8
-  %12 = tail call fastcc i32 @qmi_xfer(i32 noundef %11) #4
-  %13 = tail call fastcc i32 @qmi_xfer(i32 noundef %0) #4
-  tail call fastcc void @qmi_end() #4
-  tail call fastcc void @flash_wait_wip() #4
+  %12 = tail call fastcc i32 @qmi_xfer(i32 noundef %11) #7
+  %13 = tail call fastcc i32 @qmi_xfer(i32 noundef %0) #7
+  tail call fastcc void @qmi_end() #7
+  tail call fastcc void @flash_wait_wip() #7
   br label %14
 
 14:                                               ; preds = %5, %4
@@ -327,14 +342,14 @@ define internal fastcc void @flash_erase4k(i32 noundef %0) unnamed_addr #0 {
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc i32 @qmi_read32() unnamed_addr #0 {
+define internal fastcc i32 @qmi_read32() unnamed_addr #2 {
   %1 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
   %2 = or i32 %1, 16777221
   store volatile i32 %2, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
-  %3 = tail call fastcc i32 @qmi_xfer(i32 noundef 3) #4
-  %4 = tail call fastcc i32 @qmi_xfer(i32 noundef 63) #4
-  %5 = tail call fastcc i32 @qmi_xfer(i32 noundef 16128) #4
-  %6 = tail call fastcc i32 @qmi_xfer(i32 noundef 4128768) #4
+  %3 = tail call fastcc i32 @qmi_xfer(i32 noundef 3) #7
+  %4 = tail call fastcc i32 @qmi_xfer(i32 noundef 63) #7
+  %5 = tail call fastcc i32 @qmi_xfer(i32 noundef 16128) #7
+  %6 = tail call fastcc i32 @qmi_xfer(i32 noundef 4128768) #7
   br label %7
 
 7:                                                ; preds = %12, %0
@@ -344,11 +359,11 @@ define internal fastcc i32 @qmi_read32() unnamed_addr #0 {
   br i1 %10, label %11, label %12
 
 11:                                               ; preds = %7
-  tail call fastcc void @qmi_end() #4
+  tail call fastcc void @qmi_end() #7
   ret i32 %8
 
 12:                                               ; preds = %7
-  %13 = tail call fastcc i32 @qmi_xfer(i32 noundef 0) #4
+  %13 = tail call fastcc i32 @qmi_xfer(i32 noundef 0) #7
   %14 = shl nuw nsw i32 %9, 3
   %15 = shl nuw i32 %13, %14
   %16 = or i32 %15, %8
@@ -357,27 +372,27 @@ define internal fastcc i32 @qmi_read32() unnamed_addr #0 {
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @flash_prog_page(i32 noundef %0, ptr noundef %1) unnamed_addr #0 {
+define internal fastcc void @flash_prog_page(i32 noundef %0, ptr noundef %1) unnamed_addr #2 {
   %3 = load i32, ptr @kflash_arm, align 4, !tbaa !3
   %4 = icmp eq i32 %3, 0
   br i1 %4, label %7, label %5
 
 5:                                                ; preds = %2
   %6 = ptrtoint ptr %1 to i32
-  tail call fastcc void @arm_request(i32 noundef 2, i32 noundef %0, i32 noundef %6) #4
+  tail call fastcc void @arm_request(i32 noundef 2, i32 noundef %0, i32 noundef %6) #7
   br label %26
 
 7:                                                ; preds = %2
-  tail call fastcc void @flash_wren() #4
+  tail call fastcc void @flash_wren() #7
   %8 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
   %9 = or i32 %8, 16777221
   store volatile i32 %9, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
-  %10 = tail call fastcc i32 @qmi_xfer(i32 noundef 2) #4
+  %10 = tail call fastcc i32 @qmi_xfer(i32 noundef 2) #7
   %11 = lshr i32 %0, 16
-  %12 = tail call fastcc i32 @qmi_xfer(i32 noundef %11) #4
+  %12 = tail call fastcc i32 @qmi_xfer(i32 noundef %11) #7
   %13 = lshr i32 %0, 8
-  %14 = tail call fastcc i32 @qmi_xfer(i32 noundef %13) #4
-  %15 = tail call fastcc i32 @qmi_xfer(i32 noundef %0) #4
+  %14 = tail call fastcc i32 @qmi_xfer(i32 noundef %13) #7
+  %15 = tail call fastcc i32 @qmi_xfer(i32 noundef %0) #7
   br label %16
 
 16:                                               ; preds = %20, %7
@@ -386,15 +401,15 @@ define internal fastcc void @flash_prog_page(i32 noundef %0, ptr noundef %1) unn
   br i1 %18, label %19, label %20
 
 19:                                               ; preds = %16
-  tail call fastcc void @qmi_end() #4
-  tail call fastcc void @flash_wait_wip() #4
+  tail call fastcc void @qmi_end() #7
+  tail call fastcc void @flash_wait_wip() #7
   br label %26
 
 20:                                               ; preds = %16
   %21 = getelementptr inbounds nuw i8, ptr %1, i32 %17
   %22 = load i8, ptr %21, align 1, !tbaa !17
   %23 = zext i8 %22 to i32
-  %24 = tail call fastcc i32 @qmi_xfer(i32 noundef %23) #4
+  %24 = tail call fastcc i32 @qmi_xfer(i32 noundef %23) #7
   %25 = add nuw nsw i32 %17, 1
   br label %16, !llvm.loop !22
 
@@ -403,7 +418,7 @@ define internal fastcc void @flash_prog_page(i32 noundef %0, ptr noundef %1) unn
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #0 {
+define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #2 {
   %1 = alloca [64 x i32], align 4
   %2 = load i32, ptr @fsslot, align 4, !tbaa !3
   %3 = icmp eq i32 %2, 0
@@ -413,7 +428,7 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #0 {
   %5 = add i32 %2, -268435456
   %6 = load i32, ptr @dma_disksize, align 4, !tbaa !3
   %7 = lshr i32 %6, 12
-  %8 = tail call i32 @kflash_slot_gen() #4
+  %8 = tail call i32 @kflash_slot_gen() #7
   %9 = load i32, ptr @fs_gen, align 4, !tbaa !3
   %10 = icmp eq i32 %8, %9
   %11 = icmp ne i32 %9, 0
@@ -429,11 +444,11 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #0 {
   br i1 %18, label %19, label %20
 
 19:                                               ; preds = %16
-  tail call fastcc void @flash_exit_xip() #4
+  tail call fastcc void @flash_exit_xip() #7
   br label %20
 
 20:                                               ; preds = %19, %16
-  tail call fastcc void @flash_erase4k(i32 noundef %5) #4
+  tail call fastcc void @flash_erase4k(i32 noundef %5) #7
   %21 = add i32 %2, -268431360
   br label %22
 
@@ -443,7 +458,7 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #0 {
   br i1 %24, label %25, label %26
 
 25:                                               ; preds = %22
-  call void @llvm.lifetime.start.p0(i64 256, ptr nonnull %1) #5
+  call void @llvm.lifetime.start.p0(i64 256, ptr nonnull %1) #8
   br label %47
 
 26:                                               ; preds = %22
@@ -462,7 +477,7 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #0 {
   %35 = load i32, ptr @dma_disk, align 4, !tbaa !3
   %36 = add i32 %35, %33
   %37 = inttoptr i32 %36 to ptr
-  tail call fastcc void @flash_erase4k(i32 noundef %34) #4
+  tail call fastcc void @flash_erase4k(i32 noundef %34) #7
   br label %38
 
 38:                                               ; preds = %41, %32
@@ -473,7 +488,7 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #0 {
 41:                                               ; preds = %38
   %42 = add i32 %39, %34
   %43 = getelementptr inbounds nuw i8, ptr %37, i32 %39
-  tail call fastcc void @flash_prog_page(i32 noundef %42, ptr noundef %43) #4
+  tail call fastcc void @flash_prog_page(i32 noundef %42, ptr noundef %43) #7
   %44 = add nuw nsw i32 %39, 256
   br label %38, !llvm.loop !23
 
@@ -519,7 +534,7 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #0 {
   %70 = load i32, ptr @goldsum, align 4, !tbaa !3
   %71 = getelementptr inbounds nuw i8, ptr %1, i32 16
   store i32 %70, ptr %71, align 4, !tbaa !3
-  call fastcc void @flash_prog_page(i32 noundef %5, ptr noundef nonnull %1) #4
+  call fastcc void @flash_prog_page(i32 noundef %5, ptr noundef nonnull %1) #7
   %72 = load i32, ptr @kflash_arm, align 4, !tbaa !3
   %73 = icmp eq i32 %72, 0
   br i1 %73, label %77, label %80
@@ -538,14 +553,14 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #0 {
   br label %81
 
 80:                                               ; preds = %68
-  call fastcc void @arm_request(i32 noundef 3, i32 noundef 0, i32 noundef 0) #4
+  call fastcc void @arm_request(i32 noundef 3, i32 noundef 0, i32 noundef 0) #7
   br label %81
 
 81:                                               ; preds = %80, %77
   %82 = phi i32 [ %52, %80 ], [ %79, %77 ]
   store i32 %82, ptr @fs_gen, align 4, !tbaa !3
   store i32 0, ptr @fs_dirty, align 4, !tbaa !3
-  call void @llvm.lifetime.end.p0(i64 256, ptr nonnull %1) #5
+  call void @llvm.lifetime.end.p0(i64 256, ptr nonnull %1) #8
   br label %83
 
 83:                                               ; preds = %81, %4, %0
@@ -554,7 +569,7 @@ define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #0 {
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @qspi_clocks(i32 noundef range(i32 16, 33) %0) unnamed_addr #0 {
+define internal fastcc void @qspi_clocks(i32 noundef range(i32 16, 33) %0) unnamed_addr #2 {
   br label %2
 
 2:                                                ; preds = %6, %1
@@ -573,16 +588,16 @@ define internal fastcc void @qspi_clocks(i32 noundef range(i32 16, 33) %0) unnam
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @flash_wait_wip() unnamed_addr #0 {
+define internal fastcc void @flash_wait_wip() unnamed_addr #2 {
   br label %1
 
 1:                                                ; preds = %1, %0
   %2 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
   %3 = or i32 %2, 16777221
   store volatile i32 %3, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
-  %4 = tail call fastcc i32 @qmi_xfer(i32 noundef 5) #4
-  %5 = tail call fastcc i32 @qmi_xfer(i32 noundef 0) #4
-  tail call fastcc void @qmi_end() #4
+  %4 = tail call fastcc i32 @qmi_xfer(i32 noundef 5) #7
+  %5 = tail call fastcc i32 @qmi_xfer(i32 noundef 0) #7
+  tail call fastcc void @qmi_end() #7
   %6 = and i32 %5, 1
   %7 = icmp eq i32 %6, 0
   br i1 %7, label %8, label %1
@@ -591,12 +606,15 @@ define internal fastcc void @flash_wait_wip() unnamed_addr #0 {
   ret void
 }
 
-attributes #0 = { minsize nofree norecurse nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #1 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #2 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
-attributes #3 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(readwrite, argmem: read, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #4 = { minsize nobuiltin optsize "no-builtins" }
-attributes #5 = { nounwind }
+attributes #0 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #1 = { minsize optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #2 = { minsize nofree norecurse nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #3 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #4 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
+attributes #5 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(readwrite, argmem: read, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #6 = { minsize nobuiltin nounwind optsize "no-builtins" }
+attributes #7 = { minsize nobuiltin optsize "no-builtins" }
+attributes #8 = { nounwind }
 
 !llvm.module.flags = !{!0, !1}
 !llvm.ident = !{!2}
