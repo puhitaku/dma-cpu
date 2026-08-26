@@ -538,7 +538,23 @@ static void __no_inline_not_in_flash_func(overclock_flash_retiming)(void)
 {
     uint32_t t = qmi_hw->m[0].timing;
     t &= ~(QMI_M0_TIMING_CLKDIV_BITS | QMI_M0_TIMING_RXDELAY_BITS);
+#if defined(ADAFRUIT_FEATHER_RP2350)
+    /* 100 MHz quad reads (silicon-validated on the feather: the vi
+     * flash-execution torture holds sync). The W25Q64JV is rated
+     * 133 MHz; the edge is the ROUND TRIP: 2.5 ns SCK-out pad + 6 ns
+     * flash tCLQV + 1.5 ns data-in pad = 10 ns worst-case against the
+     * 10 ns bit cell (RP2350 DS 12.14.3 + W25Q64JV AC tables).
+     * RXDELAY counts HALF sys-clock cycles (1.67 ns at 300 MHz):
+     * capture lands at T/2 + 4 halves = 5 + 6.67 = 11.67 ns, centered
+     * in the [10, 13] ns valid window (+1.7/-1.3 ns worst-PVT margin
+     * — thin but real; every machine XIP stall shortens ~25%, the
+     * display-starvation knob). */
+    t |= (3u << QMI_M0_TIMING_CLKDIV_LSB) | (4u << QMI_M0_TIMING_RXDELAY_LSB);
+#else
+    /* pico2: the proven 75 MHz map (13.3 ns cell, capture mid-window
+     * with ~3 ns margins) — 100 MHz is feather-validated only. */
     t |= (4u << QMI_M0_TIMING_CLKDIV_LSB) | (4u << QMI_M0_TIMING_RXDELAY_LSB);
+#endif
     qmi_hw->m[0].timing = t;
 }
 
