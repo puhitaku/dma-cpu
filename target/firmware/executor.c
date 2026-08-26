@@ -184,7 +184,7 @@ static int sd_read_sector(uint32_t lba, uint8_t *dst)
  * framebuffer is 640x480 bytes at HIL_XSH_FBBUF; one row per
  * scanline (prompts/039: the 480p squeeze). */
 #if HIL_VIDEO_CPU_FEEDER
-static void __attribute__((noinline, section(".time_critical.vfeed"))) video_feeder(void)
+void __attribute__((noinline, section(".time_critical.vfeed"))) video_feeder(void)
 {
     volatile uint32_t *fifo = &hstx_fifo_hw->fifo;
     volatile uint32_t *stat = &hstx_fifo_hw->stat;

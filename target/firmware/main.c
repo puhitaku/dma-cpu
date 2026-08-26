@@ -695,9 +695,17 @@ int main(void)
     gpio_put(SD_CS, 1);
     gpio_pull_up(SD_MISO); /* DAT0 wants a pull during high-Z gaps */
     gpio_pull_up(SD_MOSI);
-    gpio_set_drive_strength(SD_SCK, GPIO_DRIVE_STRENGTH_8MA);
-    gpio_set_drive_strength(SD_MOSI, GPIO_DRIVE_STRENGTH_8MA);
-    gpio_set_drive_strength(SD_CS, GPIO_DRIVE_STRENGTH_8MA);
+    /* Quietest pads that still clock the card: the SD lines run on
+     * GPIO20/22/23, right beside the HSTX TMDS lanes (GPIO12-19), and
+     * the borrow's gapless 25 MHz bursts at hot pads cost the display
+     * its sync (bisected on silicon: machine-fed TX clean, wire-speed
+     * borrow noisy at identical firmware). */
+    gpio_set_drive_strength(SD_SCK, GPIO_DRIVE_STRENGTH_2MA);
+    gpio_set_drive_strength(SD_MOSI, GPIO_DRIVE_STRENGTH_2MA);
+    gpio_set_drive_strength(SD_CS, GPIO_DRIVE_STRENGTH_2MA);
+    gpio_set_slew_rate(SD_SCK, GPIO_SLEW_RATE_SLOW);
+    gpio_set_slew_rate(SD_MOSI, GPIO_SLEW_RATE_SLOW);
+    gpio_set_slew_rate(SD_CS, GPIO_SLEW_RATE_SLOW);
     /* Blank the framebuffer: the display carries a clean 640x480@60
      * signal from here on, machine or not. */
     for (uint32_t a = HIL_XSH_FBBUF; a < HIL_XSH_FBBUF + VF_ROWS * VF_W; a += 4)
