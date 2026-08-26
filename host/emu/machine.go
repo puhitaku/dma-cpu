@@ -89,6 +89,12 @@ type Machine struct {
 	// [profLo, profHi) — literal-pool hotness for the flash-pool split.
 	profLo, profHi uint32
 	profCounts     []uint32
+
+	// SPI-mode SD card (sdcard.go): set SDImage to attach a card
+	// behind SPI0. spiRx is the RX FIFO the drain channel empties.
+	SDImage []byte
+	spiRx   []byte
+	sdc     sdCard
 	streamCtr      uint32
 
 	// SPI0 SSPDMACR as last written: the PL022 raises its TX DREQ only
@@ -283,7 +289,19 @@ func (m *Machine) Read(addr uint32, size int) (uint32, error) {
 			return lv<<17 | lv<<9, nil
 		}
 		if m.v.SPI0Base != 0 && norm == m.v.SPI0Base+0xC { /* SSPSR */
-			return 0x3, nil /* TFE|TNF: FIFO empty, not busy */
+			sr := uint32(0x3) /* TFE|TNF: TX always drains */
+			if len(m.spiRx) > 0 {
+				sr |= 0x4 /* RNE */
+			}
+			return sr, nil
+		}
+		if m.v.SPI0Base != 0 && norm == m.v.SPI0Base+0x8 { /* SSPDR read */
+			if len(m.spiRx) == 0 {
+				return 0xFF, nil
+			}
+			b := m.spiRx[0]
+			m.spiRx = m.spiRx[1:]
+			return uint32(b), nil
 		}
 		switch norm {
 		case m.v.UARTDRAddr():
@@ -379,11 +397,18 @@ func (m *Machine) Write(addr uint32, val uint32, size int) error {
 		}
 		if m.v.SPI0Base != 0 && addr == m.v.SPI0Base+0x8 { /* SSPDR */
 			m.SPIOut = append(m.SPIOut, SPIWrite{m.Cycle, val, uint8(size)})
+			if m.SDImage != nil {
+				m.spiRx = append(m.spiRx, m.sdStep(byte(val)))
+			}
 			return nil
 		}
 		if m.v.SPI0Base != 0 && addr == m.v.SPI0Base+0x24 { /* SSPDMACR */
 			m.spiDmacr = val
 			return nil
+		}
+		if m.v.SPI0Base != 0 && (addr == m.v.SPI0Base+0x0 ||
+			addr == m.v.SPI0Base+0x4 || addr == m.v.SPI0Base+0x10) {
+			return nil /* CR0/CR1/CPSR: clocking modeled as instant */
 		}
 		if m.v.PIO0Base != 0 && addr >= m.v.PIO0Base+0x10 &&
 			addr < m.v.PIO0Base+0x20 { /* TXF0..TXF3 */
@@ -560,6 +585,9 @@ func (m *Machine) step() (bool, error) {
 	}
 	if m.dma.uartRxListen != 0 && len(m.ConsoleIn) > 0 {
 		m.dma.levelDreqMask(m.dma.uartRxListen)
+	}
+	if m.dma.spiRxListen != 0 && len(m.spiRx) > 0 {
+		m.dma.levelDreqMask(m.dma.spiRxListen)
 	}
 	// HSTX drain pacing: one FIFO word per HSTXPace cycles (the wire
 	// consumes 4 px/word at 25.2 MHz ≈ one word per 48 bus cycles at
@@ -1011,6 +1039,12 @@ func (m *Machine) Clone() *Machine {
 	n.HSTXOut = append([]uint32(nil), m.HSTXOut...)
 	n.fl.rx = append([]byte(nil), m.fl.rx...)
 	n.fl.page = append([]byte(nil), m.fl.page...)
+	if m.SDImage != nil {
+		n.SDImage = append([]byte(nil), m.SDImage...)
+	}
+	n.spiRx = append([]byte(nil), m.spiRx...)
+	n.sdc.cmd = append([]byte(nil), m.sdc.cmd...)
+	n.sdc.resp = append([]byte(nil), m.sdc.resp...)
 	n.TraceW = nil
 	n.watch = nil
 	n.watchHit = nil

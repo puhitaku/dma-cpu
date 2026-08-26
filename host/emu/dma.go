@@ -79,6 +79,7 @@ type dma struct {
 	spiListen   uint32    // channels whose TREQ_SEL is the SPI0 TX DREQ
 	uartTxListen uint32   // channels on the UART0 TX DREQ (console drain)
 	uartRxListen uint32   // channels on the UART0 RX DREQ (console fill)
+	spiRxListen  uint32   // channels on the SPI0 RX DREQ (the SD drain)
 	hstxListen   uint32   // channels on the HSTX DREQ (the scanout)
 	pioTx       [4]uint32 // channels on PIO0 TX0..3 (DREQ 0..3)
 	pioListen   uint32    // union of pioTx, the fast gate
@@ -216,6 +217,11 @@ func (d *dma) ctrlChanged(chIdx int) {
 		d.spiListen |= bit
 	} else {
 		d.spiListen &^= bit
+	}
+	if v.DreqSPI0RX != 0 && c.treq == v.DreqSPI0RX {
+		d.spiRxListen |= bit
+	} else {
+		d.spiRxListen &^= bit
 	}
 	if v.DreqUART0TX != 0 && c.treq == v.DreqUART0TX {
 		d.uartTxListen |= bit

@@ -22,6 +22,7 @@ type Variant struct {
 	TimerRawL     uint32 // TIMERAWL: the free-running us counter
 	SPI0Base      uint32 // PL022; DR captured into Machine.SPIOut
 	DreqSPI0TX    uint32 // level-modeled: the TX FIFO always drains
+	DreqSPI0RX    uint32 // level-modeled while the SD model holds RX bytes
 	DreqUART0TX   uint32 // level-modeled: paced by Machine.TXPace
 	DreqUART0RX   uint32 // level-modeled: asserted while ConsoleIn holds bytes
 	GPIOPins      int
@@ -94,6 +95,7 @@ var RP2040 = &Variant{
 	TimerRawL:      0x40054028,
 	SPI0Base:       0x4003C000,
 	DreqSPI0TX:     16,
+	DreqSPI0RX:     17,
 	DreqUART0TX:    20,
 	DreqUART0RX:    21,
 	GPIOPins:       30,
@@ -141,6 +143,7 @@ var RP2350 = &Variant{
 	// SPI0_TX = 24 (26 is SPI1_TX; the old value was a dormant slip —
 	// only the RP2040 game console paces on SPI0).
 	DreqSPI0TX:    24,
+	DreqSPI0RX:    25,
 	DreqUART0TX:   28,
 	DreqUART0RX:   29,
 	GPIOPins:      48,
@@ -243,6 +246,15 @@ func (v *Variant) KDMACopyCtrl() uint32 {
 	return CtrlEN | CtrlHighPriority | CtrlSize32 | CtrlIncrRead |
 		v.CtrlIncrWrite | v.CtrlChainTo(11) |
 		v.CtrlTreq(TreqPermanent) | v.CtrlIRQQuiet
+}
+
+// SDRxCtrl is the SD sector-drain CTRL for the borrowed kdma channel
+// (ch11): byte-size reads of SSPDR paced by the SPI0 RX DREQ, writes
+// incrementing through the sector buffer. Chained to itself = no
+// chain; the kernel driver (ksd.c) waits on TRANS_COUNT.
+func (v *Variant) SDRxCtrl() uint32 {
+	return CtrlEN | CtrlSize8 | v.CtrlIncrWrite |
+		v.CtrlTreq(v.DreqSPI0RX) | v.CtrlChainTo(11) | v.CtrlIRQQuiet
 }
 
 // Console-DMA channel convention for xsh systems on 16-channel SKUs
