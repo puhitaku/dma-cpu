@@ -144,7 +144,10 @@ var stdApps = []string{"echo", "cat", "ls", "toolbox", "hwtools"}
 // helper cost in the tiny apps (echo/cat/ls measured net-negative).
 // sh and the kernels stay fast: their text is XIP flash, so OptSize
 // would buy no SRAM there at all.
-var SizeApps = map[string]bool{"show": true, "toolbox": true, "hwtools": true}
+// (show left the set: profiling its slide renders found the 2x
+// descriptor-compare cost running ~1.8M times per slide through the
+// shared millicode — the speed tax outgrew the 3K arena win.)
+var SizeApps = map[string]bool{"toolbox": true, "hwtools": true}
 
 // XIPApps run pre-relocated on registry (flash-apps) boards: compiled
 // XIPText and assembled at their final addresses, text executes in
@@ -185,7 +188,7 @@ var Pico2 = &Board{
 	SKU:  "rp2350",
 
 	KernText: 0x20002000, KernData: 0x20003000,
-	KernCRText: 0x20004000, KernCData: 0x2000C000,
+	KernCRText: 0x20004000, KernCData: 0x2000BC00,
 	ShRText: 0x20019800, ShData: 0x2001C000,
 	IdleText: 0x20024000, IdleData: 0x20025000,
 	DiskHome: 0x20026000, DiskMax: 0x6000, // 24 KiB: data only — apps in flash
