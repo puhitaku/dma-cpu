@@ -37,6 +37,23 @@ typedef unsigned char uchar;
 #define LCD_W 240
 #define LCD_H 240
 
+/* --- the shared game arena (grt.c) ---
+ * Per-game bulk state lives in ONE buffer the ACTIVE game claims for
+ * as long as it runs — games are mutually exclusive (menu -> one
+ * game -> menu), so N games cost max(need), not sum, and a new game
+ * adds ZERO static data as long as it fits. House rules:
+ *   - a game lays its arrays out as offset macros over g_arena
+ *     (radio.c's RAD_RAM pattern) and initializes EVERYTHING it
+ *     reads at *_run() entry: no initializers, no cross-run state;
+ *   - state that must survive between runs (the sequencer's edited
+ *     pattern) stays static, and had better be small;
+ *   - radiosity keeps its own window (RAD_RAM: the 15.9 KiB above
+ *     the audio region) — its ~15.4 KiB doesn't fit here.
+ * Word-backed so every offset may be cast to any element type. */
+#define GARENA_SZ 9216
+extern uint arena_w[GARENA_SZ / 4]; /* symbol g_arena_w */
+#define g_arena ((uchar *)arena_w)
+
 /* grt.c: runtime */
 void uputs(const char *s);
 void uputn(uint v);

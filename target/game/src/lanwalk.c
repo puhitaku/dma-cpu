@@ -20,11 +20,12 @@
 #define C_CURSOR RGB(255, 255, 255)
 #define C_TEXT RGB(170, 180, 205)
 
-/* connection mask bits: 0=N 1=E 2=S 3=W. Non-static: the emulator
- * tests peek the board through the symbol table. */
-uchar mask[CELLS];
-static uchar lit[CELLS];
-static uchar stack[CELLS];
+/* connection mask bits: 0=N 1=E 2=S 3=W. Board state lives in the
+ * shared arena; the emulator tests peek the board via the g_arena_w
+ * symbol (mask sits at arena offset 0 by contract). */
+#define mask (g_arena + 0)     /* CELLS = 49 B */
+#define lit (g_arena + 64)     /* 49 B */
+#define stack (g_arena + 128)  /* 49 B */
 
 static const signed char dr[4] = {-1, 0, 1, 0};
 static const signed char dc[4] = {0, 1, 0, -1};

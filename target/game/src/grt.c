@@ -11,6 +11,9 @@ extern volatile unsigned int __dma_uart_fr;
  * CHAIN_TO=self no-chain lesson included (prompts/037). */
 uint memctrl;   /* mem->mem: SIZE32, INCR both, permanent, quiet */
 uint spictrl;   /* fb->SPI0 DR: SIZE16, INCR read, TREQ SPI0_TX */
+
+/* The shared game arena (see g.h): the active game's bulk state. */
+uint arena_w[GARENA_SZ / 4];
 #define GD 11
 #define GD_INCR_READ 0x10u /* bit 4 on both SKUs */
 

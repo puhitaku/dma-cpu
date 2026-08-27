@@ -6,6 +6,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @memctrl = dso_local local_unnamed_addr global i32 0, align 4
 @gdma_fill.fill = internal global i32 0, align 4
 @spictrl = dso_local local_unnamed_addr global i32 0, align 4
+@arena_w = dso_local local_unnamed_addr global [2304 x i32] zeroinitializer, align 4
 @__dma_uart_fr = external dso_local global i32, align 4
 @__dma_uart_dr = external dso_local global i32, align 4
 

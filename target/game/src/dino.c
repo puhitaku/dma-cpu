@@ -175,12 +175,15 @@ static const uint art_cloud[5] = {
 #define OM 12          /* obstacle right margin, px */
 #define DM 6           /* dino vertical margin, rows */
 #define DCH (DH + 2 * DM)
-static ushort cell_run_a[DW * DCH];
-static ushort cell_run_b[DW * DCH];
-static ushort cell_dead[DW * DCH];
-static ushort cell_cact_s[(CSW + OM) * CSH];
-static ushort cell_cact_l[(CLW + OM) * CLH];
-static ushort cell_cloud[(20 + 4) * 5];
+/* Sprite cells live in the shared arena (g.h): rendered from the
+ * 1bpp art at every dino_run() entry, nothing static. Offsets are
+ * byte positions, each array's end is the next one's start. */
+#define cell_run_a ((ushort *)(g_arena + 0))      /* 1360 B */
+#define cell_run_b ((ushort *)(g_arena + 1360))   /* 1360 B */
+#define cell_dead ((ushort *)(g_arena + 2720))    /* 1360 B */
+#define cell_cact_s ((ushort *)(g_arena + 4080))  /* 1152 B */
+#define cell_cact_l ((ushort *)(g_arena + 5232))  /* 1800 B */
+#define cell_cloud ((ushort *)(g_arena + 7032))   /* 240 B */
 
 /* render 1bpp art into a cell with margins around it */
 static void
@@ -238,7 +241,7 @@ fillf(int x, int y, int w, int h, ushort c)
  * ONE dma transfer (goff stays even, so the copy stays aligned).
  * The scalar version wrote 240 halfwords a frame — the profiler's
  * biggest labeled cost after the score text. */
-static ushort dashpat[LCD_W + 24];
+#define dashpat ((ushort *)(g_arena + 7272)) /* 528 B, arena */
 
 static void
 dash_init(void)
@@ -266,7 +269,8 @@ draw_dashes(int goff)
  * pre-rendered digit cells so drawing is five aligned blits instead
  * of per-pixel text (the profiler's #1 frame cost) */
 static char sbuf[6];
-static ushort cell_digit[10][64];
+#define cell_digit ((ushort(*)[64])(g_arena + 7800)) /* 1280 B, arena
+                                                      * (ends 9080) */
 
 #define SCORE_X (LCD_W - 5 * 8 - 8)
 

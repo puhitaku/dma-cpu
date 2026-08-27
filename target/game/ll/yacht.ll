@@ -4,12 +4,8 @@ target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
 @.str = private unnamed_addr constant [14 x i8] c"yacht: start\0A\00", align 1
-@scores = internal unnamed_addr global [12 x i32] zeroinitializer, align 4
-@turn = internal unnamed_addr global i32 0, align 4
+@arena_w = external dso_local local_unnamed_addr global [2304 x i32], align 4
 @.str.1 = private unnamed_addr constant [6 x i8] c"YACHT\00", align 1
-@rolls_left = internal unnamed_addr global i32 0, align 4
-@held = internal unnamed_addr global [5 x i32] zeroinitializer, align 4
-@dice = internal unnamed_addr global [5 x i32] zeroinitializer, align 4
 @in_down = external dso_local local_unnamed_addr global i32, align 4
 @.str.2 = private unnamed_addr constant [13 x i8] c"yacht: quit\0A\00", align 1
 @in_edge = external dso_local local_unnamed_addr global i32, align 4
@@ -55,27 +51,27 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   br i1 %6, label %7, label %13
 
 7:                                                ; preds = %4
-  store i32 0, ptr @turn, align 4, !tbaa !3
+  store i32 0, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 92), align 4, !tbaa !3
   tail call void @gfx_clear(i16 noundef zeroext 2371) #6
   tail call void @gfx_text(i32 noundef 6, i32 noundef 4, ptr noundef nonnull @.str.1, i16 noundef zeroext -377, i16 noundef zeroext 2371) #6
   %8 = getelementptr inbounds nuw i8, ptr %2, i32 2
   %9 = getelementptr inbounds nuw i8, ptr %2, i32 3
   %10 = getelementptr inbounds nuw i8, ptr %2, i32 4
   %11 = getelementptr inbounds nuw i8, ptr %2, i32 5
-  %12 = load i32, ptr @turn, align 4, !tbaa !3
+  %12 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 92), align 4, !tbaa !3
   br label %16
 
 13:                                               ; preds = %4
-  %14 = getelementptr inbounds nuw [12 x i32], ptr @scores, i32 0, i32 %5
-  store i32 -1, ptr %14, align 4, !tbaa !3
+  %14 = getelementptr inbounds nuw [12 x i32], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 40), i32 0, i32 %5
+  store i32 -1, ptr %14, align 4, !tbaa !8
   %15 = add nuw nsw i32 %5, 1
-  br label %4, !llvm.loop !7
+  br label %4, !llvm.loop !9
 
 16:                                               ; preds = %276, %7
   %17 = phi i32 [ %277, %276 ], [ %12, %7 ]
   %18 = add nsw i32 %17, 1
-  store i32 %18, ptr @turn, align 4, !tbaa !3
-  store i32 3, ptr @rolls_left, align 4, !tbaa !3
+  store i32 %18, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 92), align 4, !tbaa !3
+  store i32 3, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 88), align 4, !tbaa !12
   br label %19
 
 19:                                               ; preds = %22, %16
@@ -84,10 +80,10 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   br i1 %21, label %25, label %22
 
 22:                                               ; preds = %19
-  %23 = getelementptr inbounds nuw [5 x i32], ptr @held, i32 0, i32 %20
-  store i32 0, ptr %23, align 4, !tbaa !3
+  %23 = getelementptr inbounds nuw [5 x i32], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 20), i32 0, i32 %20
+  store i32 0, ptr %23, align 4, !tbaa !8
   %24 = add nuw nsw i32 %20, 1
-  br label %19, !llvm.loop !10
+  br label %19, !llvm.loop !13
 
 25:                                               ; preds = %19, %28
   %26 = phi i32 [ %30, %28 ], [ 0, %19 ]
@@ -95,18 +91,18 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   br i1 %27, label %31, label %28
 
 28:                                               ; preds = %25
-  %29 = getelementptr inbounds nuw [5 x i32], ptr @dice, i32 0, i32 %26
-  store i32 0, ptr %29, align 4, !tbaa !3
+  %29 = getelementptr inbounds nuw [5 x i32], ptr @arena_w, i32 0, i32 %26
+  store i32 0, ptr %29, align 4, !tbaa !8
   %30 = add nuw nsw i32 %26, 1
-  br label %25, !llvm.loop !11
+  br label %25, !llvm.loop !14
 
 31:                                               ; preds = %25, %31
   %32 = phi i32 [ %36, %31 ], [ 0, %25 ]
-  %33 = getelementptr inbounds nuw [12 x i32], ptr @scores, i32 0, i32 %32
-  %34 = load i32, ptr %33, align 4, !tbaa !3
+  %33 = getelementptr inbounds nuw [12 x i32], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 40), i32 0, i32 %32
+  %34 = load i32, ptr %33, align 4, !tbaa !8
   %35 = icmp sgt i32 %34, -1
   %36 = add nuw nsw i32 %32, 1
-  br i1 %35, label %31, label %37, !llvm.loop !12
+  br i1 %35, label %31, label %37, !llvm.loop !15
 
 37:                                               ; preds = %31, %42
   %38 = phi i32 [ %43, %42 ], [ 0, %31 ]
@@ -116,12 +112,12 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 40:                                               ; preds = %37
   call fastcc void @draw_roll_btn(i32 noundef 1) #7
   call void @llvm.lifetime.start.p0(i64 6, ptr nonnull %2) #8
-  %41 = load i32, ptr @turn, align 4, !tbaa !3
+  %41 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 92), align 4, !tbaa !3
   call void @numstr(ptr noundef nonnull %2, i32 noundef 2, i32 noundef %41) #6
-  store i8 47, ptr %8, align 1, !tbaa !13
-  store i8 49, ptr %9, align 1, !tbaa !13
-  store i8 50, ptr %10, align 1, !tbaa !13
-  store i8 0, ptr %11, align 1, !tbaa !13
+  store i8 47, ptr %8, align 1, !tbaa !16
+  store i8 49, ptr %9, align 1, !tbaa !16
+  store i8 50, ptr %10, align 1, !tbaa !16
+  store i8 0, ptr %11, align 1, !tbaa !16
   call void @gfx_text(i32 noundef 196, i32 noundef 4, ptr noundef nonnull %2, i16 noundef zeroext -12615, i16 noundef zeroext 2371) #6
   call void @llvm.lifetime.end.p0(i64 6, ptr nonnull %2) #8
   br label %44
@@ -129,7 +125,7 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 42:                                               ; preds = %37
   call fastcc void @draw_die(i32 noundef %38, i32 noundef 0) #7
   %43 = add nuw nsw i32 %38, 1
-  br label %37, !llvm.loop !14
+  br label %37, !llvm.loop !17
 
 44:                                               ; preds = %48, %40
   %45 = phi i32 [ 0, %40 ], [ %49, %48 ]
@@ -144,7 +140,7 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 48:                                               ; preds = %44
   call fastcc void @draw_cat(i32 noundef %45, i32 noundef 0) #7
   %49 = add nuw nsw i32 %45, 1
-  br label %44, !llvm.loop !15
+  br label %44, !llvm.loop !18
 
 50:                                               ; preds = %209, %260
   %51 = phi i32 [ %261, %260 ], [ %210, %209 ]
@@ -155,7 +151,7 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 54:                                               ; preds = %50
   call void @frame_sync(i32 noundef 33000) #6
   call void @in_poll() #6
-  %55 = load i32, ptr @in_down, align 4, !tbaa !3
+  %55 = load i32, ptr @in_down, align 4, !tbaa !8
   %56 = and i32 %55, 16
   %57 = icmp eq i32 %56, 0
   %58 = add i32 %52, 1
@@ -169,7 +165,7 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 
 62:                                               ; preds = %54
   %63 = icmp eq i32 %51, 0
-  %64 = load i32, ptr @in_edge, align 4, !tbaa !3
+  %64 = load i32, ptr @in_edge, align 4, !tbaa !8
   br i1 %63, label %65, label %216
 
 65:                                               ; preds = %62
@@ -206,7 +202,7 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 
 79:                                               ; preds = %78, %77
   call void @gfx_present() #6
-  %80 = load i32, ptr @in_edge, align 4, !tbaa !3
+  %80 = load i32, ptr @in_edge, align 4, !tbaa !8
   br label %81
 
 81:                                               ; preds = %79, %65
@@ -244,7 +240,7 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 
 96:                                               ; preds = %95, %94
   call void @gfx_present() #6
-  %97 = load i32, ptr @in_edge, align 4, !tbaa !3
+  %97 = load i32, ptr @in_edge, align 4, !tbaa !8
   br label %98
 
 98:                                               ; preds = %96, %81
@@ -259,17 +255,17 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   br i1 %104, label %105, label %110
 
 105:                                              ; preds = %103
-  %106 = getelementptr inbounds [5 x i32], ptr @held, i32 0, i32 %100
-  %107 = load i32, ptr %106, align 4, !tbaa !3
+  %106 = getelementptr inbounds [5 x i32], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 20), i32 0, i32 %100
+  %107 = load i32, ptr %106, align 4, !tbaa !8
   %108 = icmp eq i32 %107, 0
   %109 = zext i1 %108 to i32
-  store i32 %109, ptr %106, align 4, !tbaa !3
+  store i32 %109, ptr %106, align 4, !tbaa !8
   call fastcc void @draw_die(i32 noundef %100, i32 noundef 1) #7
   call void @gfx_present() #6
   br label %202
 
 110:                                              ; preds = %103
-  %111 = load i32, ptr @rolls_left, align 4, !tbaa !3
+  %111 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 88), align 4, !tbaa !12
   %112 = icmp sgt i32 %111, 0
   br i1 %112, label %113, label %202
 
@@ -279,26 +275,26 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   br i1 %115, label %126, label %116
 
 116:                                              ; preds = %113
-  %117 = getelementptr inbounds nuw [5 x i32], ptr @held, i32 0, i32 %114
-  %118 = load i32, ptr %117, align 4, !tbaa !3
+  %117 = getelementptr inbounds nuw [5 x i32], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 20), i32 0, i32 %114
+  %118 = load i32, ptr %117, align 4, !tbaa !8
   %119 = icmp eq i32 %118, 0
   br i1 %119, label %120, label %124
 
 120:                                              ; preds = %116
   %121 = call i32 @rng_below(i32 noundef 6) #6
   %122 = add nsw i32 %121, 1
-  %123 = getelementptr inbounds nuw [5 x i32], ptr @dice, i32 0, i32 %114
-  store i32 %122, ptr %123, align 4, !tbaa !3
+  %123 = getelementptr inbounds nuw [5 x i32], ptr @arena_w, i32 0, i32 %114
+  store i32 %122, ptr %123, align 4, !tbaa !8
   br label %124
 
 124:                                              ; preds = %120, %116
   %125 = add nuw nsw i32 %114, 1
-  br label %113, !llvm.loop !16
+  br label %113, !llvm.loop !19
 
 126:                                              ; preds = %113
-  %127 = load i32, ptr @rolls_left, align 4, !tbaa !3
+  %127 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 88), align 4, !tbaa !12
   %128 = add nsw i32 %127, -1
-  store i32 %128, ptr @rolls_left, align 4, !tbaa !3
+  store i32 %128, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 88), align 4, !tbaa !12
   call void @llvm.lifetime.start.p0(i64 20, ptr nonnull %1) #8
   br label %129
 
@@ -308,12 +304,12 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   br i1 %131, label %137, label %132
 
 132:                                              ; preds = %129
-  %133 = getelementptr inbounds nuw [5 x i32], ptr @dice, i32 0, i32 %130
-  %134 = load i32, ptr %133, align 4, !tbaa !3
+  %133 = getelementptr inbounds nuw [5 x i32], ptr @arena_w, i32 0, i32 %130
+  %134 = load i32, ptr %133, align 4, !tbaa !8
   %135 = getelementptr inbounds nuw [5 x i32], ptr %1, i32 0, i32 %130
-  store i32 %134, ptr %135, align 4, !tbaa !3
+  store i32 %134, ptr %135, align 4, !tbaa !8
   %136 = add nuw nsw i32 %130, 1
-  br label %129, !llvm.loop !17
+  br label %129, !llvm.loop !20
 
 137:                                              ; preds = %129, %177
   %138 = phi i32 [ %179, %177 ], [ 0, %129 ]
@@ -322,7 +318,7 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 
 140:                                              ; preds = %137
   %141 = getelementptr inbounds nuw [7 x i8], ptr @roll_anim.pause, i32 0, i32 %138
-  %142 = load i8, ptr %141, align 1, !tbaa !13
+  %142 = load i8, ptr %141, align 1, !tbaa !16
   %143 = zext i8 %142 to i32
   br label %145
 
@@ -351,7 +347,7 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 
 153:                                              ; preds = %152, %150
   %154 = add nuw nsw i32 %146, 1
-  br label %145, !llvm.loop !18
+  br label %145, !llvm.loop !21
 
 155:                                              ; preds = %172, %148
   %156 = phi i32 [ %173, %172 ], [ 0, %148 ]
@@ -359,8 +355,8 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   br i1 %157, label %174, label %158
 
 158:                                              ; preds = %155
-  %159 = getelementptr inbounds nuw [5 x i32], ptr @held, i32 0, i32 %156
-  %160 = load i32, ptr %159, align 4, !tbaa !3
+  %159 = getelementptr inbounds nuw [5 x i32], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 20), i32 0, i32 %156
+  %160 = load i32, ptr %159, align 4, !tbaa !8
   %161 = icmp eq i32 %160, 0
   br i1 %161, label %162, label %172
 
@@ -369,7 +365,7 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 
 163:                                              ; preds = %162
   %164 = getelementptr inbounds nuw [5 x i32], ptr %1, i32 0, i32 %156
-  %165 = load i32, ptr %164, align 4, !tbaa !3
+  %165 = load i32, ptr %164, align 4, !tbaa !8
   br label %169
 
 166:                                              ; preds = %162
@@ -379,13 +375,13 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 
 169:                                              ; preds = %166, %163
   %170 = phi i32 [ %165, %163 ], [ %168, %166 ]
-  %171 = getelementptr inbounds nuw [5 x i32], ptr @dice, i32 0, i32 %156
-  store i32 %170, ptr %171, align 4, !tbaa !3
+  %171 = getelementptr inbounds nuw [5 x i32], ptr @arena_w, i32 0, i32 %156
+  store i32 %170, ptr %171, align 4, !tbaa !8
   br label %172
 
 172:                                              ; preds = %169, %158
   %173 = add nuw nsw i32 %156, 1
-  br label %155, !llvm.loop !19
+  br label %155, !llvm.loop !22
 
 174:                                              ; preds = %155, %185
   %175 = phi i32 [ %186, %185 ], [ 0, %155 ]
@@ -398,11 +394,11 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   call void @led(i32 noundef 986895, i32 noundef 986895) #6
   call void @gfx_present() #6
   %179 = add nuw nsw i32 %138, 1
-  br label %137, !llvm.loop !20
+  br label %137, !llvm.loop !23
 
 180:                                              ; preds = %174
-  %181 = getelementptr inbounds nuw [5 x i32], ptr @held, i32 0, i32 %175
-  %182 = load i32, ptr %181, align 4, !tbaa !3
+  %181 = getelementptr inbounds nuw [5 x i32], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 20), i32 0, i32 %175
+  %182 = load i32, ptr %181, align 4, !tbaa !8
   %183 = icmp eq i32 %182, 0
   br i1 %183, label %184, label %185
 
@@ -412,7 +408,7 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 
 185:                                              ; preds = %184, %180
   %186 = add nuw nsw i32 %175, 1
-  br label %174, !llvm.loop !21
+  br label %174, !llvm.loop !24
 
 187:                                              ; preds = %190, %144
   %188 = phi i32 [ 0, %144 ], [ %194, %190 ]
@@ -421,11 +417,11 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 
 190:                                              ; preds = %187
   %191 = getelementptr inbounds nuw [5 x i32], ptr %1, i32 0, i32 %188
-  %192 = load i32, ptr %191, align 4, !tbaa !3
-  %193 = getelementptr inbounds nuw [5 x i32], ptr @dice, i32 0, i32 %188
-  store i32 %192, ptr %193, align 4, !tbaa !3
+  %192 = load i32, ptr %191, align 4, !tbaa !8
+  %193 = getelementptr inbounds nuw [5 x i32], ptr @arena_w, i32 0, i32 %188
+  store i32 %192, ptr %193, align 4, !tbaa !8
   %194 = add nuw nsw i32 %188, 1
-  br label %187, !llvm.loop !22
+  br label %187, !llvm.loop !25
 
 195:                                              ; preds = %187
   call void @llvm.lifetime.end.p0(i64 20, ptr nonnull %1) #8
@@ -445,20 +441,20 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 200:                                              ; preds = %196
   call fastcc void @draw_cat(i32 noundef %197, i32 noundef 0) #7
   %201 = add nuw nsw i32 %197, 1
-  br label %196, !llvm.loop !23
+  br label %196, !llvm.loop !26
 
 202:                                              ; preds = %105, %199, %110, %98
-  %203 = load i32, ptr @in_edge, align 4, !tbaa !3
+  %203 = load i32, ptr @in_edge, align 4, !tbaa !8
   %204 = and i32 %203, 3
   %205 = icmp ne i32 %204, 0
-  %206 = load i32, ptr @rolls_left, align 4
+  %206 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 88), align 4
   %207 = icmp slt i32 %206, 3
   %208 = select i1 %205, i1 %207, i1 false
   br i1 %208, label %211, label %209
 
 209:                                              ; preds = %202, %215
   %210 = phi i32 [ 1, %215 ], [ 0, %202 ]
-  br label %50, !llvm.loop !24
+  br label %50, !llvm.loop !27
 
 211:                                              ; preds = %202
   %212 = icmp eq i32 %100, 5
@@ -497,7 +493,7 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 
 223:                                              ; preds = %222, %221
   call void @gfx_present() #6
-  %224 = load i32, ptr @in_edge, align 4, !tbaa !3
+  %224 = load i32, ptr @in_edge, align 4, !tbaa !8
   br label %225
 
 225:                                              ; preds = %223, %216
@@ -512,16 +508,16 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   %232 = icmp eq i32 %231, 0
   %233 = add nsw i32 %231, -1
   %234 = select i1 %232, i32 11, i32 %233
-  %235 = getelementptr inbounds [12 x i32], ptr @scores, i32 0, i32 %234
-  %236 = load i32, ptr %235, align 4, !tbaa !3
+  %235 = getelementptr inbounds [12 x i32], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 40), i32 0, i32 %234
+  %236 = load i32, ptr %235, align 4, !tbaa !8
   %237 = icmp sgt i32 %236, -1
-  br i1 %237, label %230, label %238, !llvm.loop !25
+  br i1 %237, label %230, label %238, !llvm.loop !28
 
 238:                                              ; preds = %230
   call fastcc void @draw_cat(i32 noundef %262, i32 noundef 0) #7
   call fastcc void @draw_cat(i32 noundef %234, i32 noundef 1) #7
   call void @gfx_present() #6
-  %239 = load i32, ptr @in_edge, align 4, !tbaa !3
+  %239 = load i32, ptr @in_edge, align 4, !tbaa !8
   br label %240
 
 240:                                              ; preds = %238, %225
@@ -536,16 +532,16 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   %247 = icmp eq i32 %246, 11
   %248 = add nsw i32 %246, 1
   %249 = select i1 %247, i32 0, i32 %248
-  %250 = getelementptr inbounds [12 x i32], ptr @scores, i32 0, i32 %249
-  %251 = load i32, ptr %250, align 4, !tbaa !3
+  %250 = getelementptr inbounds [12 x i32], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 40), i32 0, i32 %249
+  %251 = load i32, ptr %250, align 4, !tbaa !8
   %252 = icmp sgt i32 %251, -1
-  br i1 %252, label %245, label %253, !llvm.loop !26
+  br i1 %252, label %245, label %253, !llvm.loop !29
 
 253:                                              ; preds = %245
   call fastcc void @draw_cat(i32 noundef %242, i32 noundef 0) #7
   call fastcc void @draw_cat(i32 noundef %249, i32 noundef 1) #7
   call void @gfx_present() #6
-  %254 = load i32, ptr @in_edge, align 4, !tbaa !3
+  %254 = load i32, ptr @in_edge, align 4, !tbaa !8
   br label %255
 
 255:                                              ; preds = %253, %240
@@ -553,7 +549,7 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   %257 = phi i32 [ %249, %253 ], [ %242, %240 ]
   %258 = and i32 %256, 16
   %259 = icmp eq i32 %258, 0
-  br i1 %259, label %260, label %265, !llvm.loop !24
+  br i1 %259, label %260, label %265, !llvm.loop !27
 
 260:                                              ; preds = %269, %255
   %261 = phi i32 [ %227, %255 ], [ %270, %269 ]
@@ -565,15 +561,15 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 265:                                              ; preds = %255
   call void @snd_play(i32 noundef 800, i32 noundef 45, i32 noundef 4) #6
   %266 = call fastcc i32 @cat_score(i32 noundef %257) #7
-  %267 = getelementptr inbounds [12 x i32], ptr @scores, i32 0, i32 %257
-  store i32 %266, ptr %267, align 4, !tbaa !3
+  %267 = getelementptr inbounds [12 x i32], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 40), i32 0, i32 %257
+  store i32 %266, ptr %267, align 4, !tbaa !8
   call void @uputs(ptr noundef nonnull @.str.4) #6
   call void @uputn(i32 noundef %257) #6
   call void @uputs(ptr noundef nonnull @.str.5) #6
-  %268 = load i32, ptr %267, align 4, !tbaa !3
+  %268 = load i32, ptr %267, align 4, !tbaa !8
   call void @uputn(i32 noundef %268) #6
   call void @uputs(ptr noundef nonnull @.str.6) #6
-  br label %269, !llvm.loop !24
+  br label %269, !llvm.loop !27
 
 269:                                              ; preds = %47, %265
   %270 = phi i32 [ 0, %47 ], [ %227, %265 ]
@@ -588,7 +584,7 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
   call fastcc void @draw_cat(i32 noundef %272, i32 noundef 0) #7
   call fastcc void @draw_total() #7
   call void @gfx_present() #6
-  %277 = load i32, ptr @turn, align 4, !tbaa !3
+  %277 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 92), align 4, !tbaa !3
   %278 = icmp eq i32 %277, 12
   br i1 %278, label %279, label %16
 
@@ -614,10 +610,10 @@ define dso_local void @yacht_run() local_unnamed_addr #0 {
 282:                                              ; preds = %282, %279
   call void @frame_sync(i32 noundef 33000) #6
   call void @in_poll() #6
-  %283 = load i32, ptr @in_edge, align 4, !tbaa !3
+  %283 = load i32, ptr @in_edge, align 4, !tbaa !8
   %284 = and i32 %283, 16
   %285 = icmp eq i32 %284, 0
-  br i1 %285, label %282, label %286, !llvm.loop !27
+  br i1 %285, label %282, label %286, !llvm.loop !30
 
 286:                                              ; preds = %282
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %3) #8
@@ -653,10 +649,10 @@ define internal fastcc void @draw_die(i32 noundef %0, i32 noundef range(i32 0, 2
   tail call void @gfx_fill(i32 noundef %5, i32 noundef 16, i32 noundef 32, i32 noundef 40, i16 noundef zeroext 2371) #6
   tail call void @gfx_fill(i32 noundef %4, i32 noundef 18, i32 noundef 28, i32 noundef 28, i16 noundef zeroext -2115) #6
   tail call void @gfx_rect(i32 noundef %4, i32 noundef 18, i32 noundef 28, i32 noundef 28, i32 noundef 1, i16 noundef zeroext 4259) #6
-  %6 = getelementptr inbounds [5 x i32], ptr @dice, i32 0, i32 %0
-  %7 = load i32, ptr %6, align 4, !tbaa !3
+  %6 = getelementptr inbounds [5 x i32], ptr @arena_w, i32 0, i32 %0
+  %7 = load i32, ptr %6, align 4, !tbaa !8
   %8 = getelementptr inbounds [7 x i16], ptr @pips, i32 0, i32 %7
-  %9 = load i16, ptr %8, align 2, !tbaa !28
+  %9 = load i16, ptr %8, align 2, !tbaa !31
   %10 = zext i16 %9 to i32
   %11 = add nsw i32 %3, 10
   br label %12
@@ -668,8 +664,8 @@ define internal fastcc void @draw_die(i32 noundef %0, i32 noundef range(i32 0, 2
   br i1 %15, label %16, label %20
 
 16:                                               ; preds = %12
-  %17 = getelementptr inbounds [5 x i32], ptr @held, i32 0, i32 %0
-  %18 = load i32, ptr %17, align 4, !tbaa !3
+  %17 = getelementptr inbounds [5 x i32], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 20), i32 0, i32 %0
+  %18 = load i32, ptr %17, align 4, !tbaa !8
   %19 = icmp eq i32 %18, 0
   br i1 %19, label %40, label %38
 
@@ -696,7 +692,7 @@ define internal fastcc void @draw_die(i32 noundef %0, i32 noundef range(i32 0, 2
 35:                                               ; preds = %20, %23
   %36 = add nuw nsw i32 %13, 1
   %37 = shl i32 %14, 1
-  br label %12, !llvm.loop !30
+  br label %12, !llvm.loop !33
 
 38:                                               ; preds = %16
   %39 = add nsw i32 %3, 8
@@ -719,26 +715,26 @@ define internal fastcc void @draw_die(i32 noundef %0, i32 noundef range(i32 0, 2
 define internal fastcc void @draw_roll_btn(i32 noundef range(i32 0, 2) %0) unnamed_addr #0 {
   %2 = alloca [2 x i8], align 1
   tail call void @gfx_fill(i32 noundef 176, i32 noundef 16, i32 noundef 58, i32 noundef 40, i16 noundef zeroext 2371) #6
-  %3 = load i32, ptr @rolls_left, align 4, !tbaa !3
+  %3 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 88), align 4, !tbaa !12
   %4 = icmp eq i32 %3, 0
   %5 = select i1 %4, i16 2371, i16 2532
   tail call void @gfx_fill(i32 noundef 178, i32 noundef 18, i32 noundef 54, i32 noundef 22, i16 noundef zeroext %5) #6
-  %6 = load i32, ptr @rolls_left, align 4, !tbaa !3
+  %6 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 88), align 4, !tbaa !12
   %7 = icmp eq i32 %6, 0
   %8 = select i1 %7, i16 27662, i16 -12615
   tail call void @gfx_rect(i32 noundef 178, i32 noundef 18, i32 noundef 54, i32 noundef 22, i32 noundef 1, i16 noundef zeroext %8) #6
-  %9 = load i32, ptr @rolls_left, align 4, !tbaa !3
+  %9 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 88), align 4, !tbaa !12
   %10 = icmp eq i32 %9, 0
   %11 = select i1 %10, i16 27662, i16 -1
   %12 = select i1 %10, i16 2371, i16 2532
   tail call void @gfx_text(i32 noundef 189, i32 noundef 25, ptr noundef nonnull @.str.11, i16 noundef zeroext %11, i16 noundef zeroext %12) #6
   call void @llvm.lifetime.start.p0(i64 2, ptr nonnull %2) #8
-  %13 = load i32, ptr @rolls_left, align 4, !tbaa !3
+  %13 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 88), align 4, !tbaa !12
   %14 = trunc i32 %13 to i8
   %15 = add i8 %14, 48
-  store i8 %15, ptr %2, align 1, !tbaa !13
+  store i8 %15, ptr %2, align 1, !tbaa !16
   %16 = getelementptr inbounds nuw i8, ptr %2, i32 1
-  store i8 0, ptr %16, align 1, !tbaa !13
+  store i8 0, ptr %16, align 1, !tbaa !16
   call void @gfx_text(i32 noundef 202, i32 noundef 44, ptr noundef nonnull %2, i16 noundef zeroext 27662, i16 noundef zeroext 2371) #6
   %17 = icmp eq i32 %0, 0
   br i1 %17, label %19, label %18
@@ -762,19 +758,19 @@ define internal fastcc void @draw_cat(i32 noundef %0, i32 noundef range(i32 0, 2
   %8 = select i1 %7, i16 2371, i16 2532
   tail call void @gfx_fill(i32 noundef 4, i32 noundef %6, i32 noundef 232, i32 noundef 11, i16 noundef zeroext %8) #6
   %9 = getelementptr inbounds [12 x ptr], ptr @catname, i32 0, i32 %0
-  %10 = load ptr, ptr %9, align 4, !tbaa !31
-  %11 = getelementptr inbounds [12 x i32], ptr @scores, i32 0, i32 %0
-  %12 = load i32, ptr %11, align 4, !tbaa !3
+  %10 = load ptr, ptr %9, align 4, !tbaa !34
+  %11 = getelementptr inbounds [12 x i32], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 40), i32 0, i32 %0
+  %12 = load i32, ptr %11, align 4, !tbaa !8
   %13 = icmp sgt i32 %12, -1
   %14 = select i1 %13, i16 27662, i16 -12615
   tail call void @gfx_text(i32 noundef 10, i32 noundef %5, ptr noundef %10, i16 noundef zeroext %14, i16 noundef zeroext %8) #6
   call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %3) #8
-  %15 = load i32, ptr %11, align 4, !tbaa !3
+  %15 = load i32, ptr %11, align 4, !tbaa !8
   %16 = icmp sgt i32 %15, -1
   br i1 %16, label %22, label %17
 
 17:                                               ; preds = %2
-  %18 = load i32, ptr @rolls_left, align 4, !tbaa !3
+  %18 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 88), align 4, !tbaa !12
   %19 = icmp slt i32 %18, 3
   br i1 %19, label %20, label %25
 
@@ -840,21 +836,21 @@ define internal fastcc i32 @cat_score(i32 noundef %0) unnamed_addr #3 {
 9:                                                ; preds = %7
   %10 = add nsw i32 %0, 1
   %11 = getelementptr inbounds [7 x i32], ptr %2, i32 0, i32 %10
-  %12 = load i32, ptr %11, align 4, !tbaa !3
+  %12 = load i32, ptr %11, align 4, !tbaa !8
   %13 = tail call i32 @llvm.smax.i32(i32 %12, i32 0)
   %14 = mul i32 %13, %10
   br label %98
 
 15:                                               ; preds = %3
-  %16 = getelementptr inbounds nuw [5 x i32], ptr @dice, i32 0, i32 %5
-  %17 = load i32, ptr %16, align 4, !tbaa !3
+  %16 = getelementptr inbounds nuw [5 x i32], ptr @arena_w, i32 0, i32 %5
+  %17 = load i32, ptr %16, align 4, !tbaa !8
   %18 = getelementptr inbounds [7 x i32], ptr %2, i32 0, i32 %17
-  %19 = load i32, ptr %18, align 4, !tbaa !3
+  %19 = load i32, ptr %18, align 4, !tbaa !8
   %20 = add nsw i32 %19, 1
-  store i32 %20, ptr %18, align 4, !tbaa !3
+  store i32 %20, ptr %18, align 4, !tbaa !8
   %21 = add nsw i32 %17, %4
   %22 = add nuw nsw i32 %5, 1
-  br label %3, !llvm.loop !34
+  br label %3, !llvm.loop !37
 
 23:                                               ; preds = %7
   switch i32 %0, label %90 [
@@ -872,7 +868,7 @@ define internal fastcc i32 @cat_score(i32 noundef %0) unnamed_addr #3 {
 
 27:                                               ; preds = %24
   %28 = getelementptr inbounds nuw [7 x i32], ptr %2, i32 0, i32 %25
-  %29 = load i32, ptr %28, align 4, !tbaa !3
+  %29 = load i32, ptr %28, align 4, !tbaa !8
   %30 = icmp sgt i32 %29, 3
   br i1 %30, label %31, label %33
 
@@ -882,7 +878,7 @@ define internal fastcc i32 @cat_score(i32 noundef %0) unnamed_addr #3 {
 
 33:                                               ; preds = %27
   %34 = add nuw nsw i32 %25, 1
-  br label %24, !llvm.loop !35
+  br label %24, !llvm.loop !38
 
 35:                                               ; preds = %23, %50
   %36 = phi i32 [ %51, %50 ], [ 0, %23 ]
@@ -900,7 +896,7 @@ define internal fastcc i32 @cat_score(i32 noundef %0) unnamed_addr #3 {
 
 45:                                               ; preds = %35
   %46 = getelementptr inbounds nuw [7 x i32], ptr %2, i32 0, i32 %38
-  %47 = load i32, ptr %46, align 4, !tbaa !3
+  %47 = load i32, ptr %46, align 4, !tbaa !8
   switch i32 %47, label %49 [
     i32 3, label %50
     i32 2, label %48
@@ -916,7 +912,7 @@ define internal fastcc i32 @cat_score(i32 noundef %0) unnamed_addr #3 {
   %51 = phi i32 [ %36, %48 ], [ 1, %45 ], [ %36, %49 ]
   %52 = phi i32 [ 1, %48 ], [ %37, %45 ], [ %37, %49 ]
   %53 = add nuw nsw i32 %38, 1
-  br label %35, !llvm.loop !36
+  br label %35, !llvm.loop !39
 
 54:                                               ; preds = %23, %62
   %55 = phi i32 [ %65, %62 ], [ 5, %23 ]
@@ -934,15 +930,15 @@ define internal fastcc i32 @cat_score(i32 noundef %0) unnamed_addr #3 {
   %63 = icmp eq i32 %59, 0
   %64 = add nuw nsw i32 %56, 1
   %65 = add nuw nsw i32 %55, 1
-  br i1 %63, label %54, label %98, !llvm.loop !37
+  br i1 %63, label %54, label %98, !llvm.loop !40
 
 66:                                               ; preds = %58
   %67 = getelementptr inbounds nuw [7 x i32], ptr %2, i32 0, i32 %60
-  %68 = load i32, ptr %67, align 4, !tbaa !3
+  %68 = load i32, ptr %67, align 4, !tbaa !8
   %69 = icmp eq i32 %68, 0
   %70 = select i1 %69, i32 0, i32 %59
   %71 = add nuw nsw i32 %60, 1
-  br label %58, !llvm.loop !38
+  br label %58, !llvm.loop !41
 
 72:                                               ; preds = %23, %80
   %73 = phi i32 [ %83, %80 ], [ 6, %23 ]
@@ -960,15 +956,15 @@ define internal fastcc i32 @cat_score(i32 noundef %0) unnamed_addr #3 {
   %81 = icmp eq i32 %77, 0
   %82 = add nuw nsw i32 %74, 1
   %83 = add nuw nsw i32 %73, 1
-  br i1 %81, label %72, label %98, !llvm.loop !39
+  br i1 %81, label %72, label %98, !llvm.loop !42
 
 84:                                               ; preds = %76
   %85 = getelementptr inbounds nuw [7 x i32], ptr %2, i32 0, i32 %78
-  %86 = load i32, ptr %85, align 4, !tbaa !3
+  %86 = load i32, ptr %85, align 4, !tbaa !8
   %87 = icmp eq i32 %86, 0
   %88 = select i1 %87, i32 0, i32 %77
   %89 = add nuw nsw i32 %78, 1
-  br label %76, !llvm.loop !40
+  br label %76, !llvm.loop !43
 
 90:                                               ; preds = %23, %93
   %91 = phi i32 [ %97, %93 ], [ 1, %23 ]
@@ -977,10 +973,10 @@ define internal fastcc i32 @cat_score(i32 noundef %0) unnamed_addr #3 {
 
 93:                                               ; preds = %90
   %94 = getelementptr inbounds nuw [7 x i32], ptr %2, i32 0, i32 %91
-  %95 = load i32, ptr %94, align 4, !tbaa !3
+  %95 = load i32, ptr %94, align 4, !tbaa !8
   %96 = icmp eq i32 %95, 5
   %97 = add nuw nsw i32 %91, 1
-  br i1 %96, label %98, label %90, !llvm.loop !41
+  br i1 %96, label %98, label %90, !llvm.loop !44
 
 98:                                               ; preds = %80, %72, %62, %54, %24, %90, %93, %9, %31, %23, %40
   %99 = phi i32 [ %44, %40 ], [ %4, %23 ], [ %32, %31 ], [ %14, %9 ], [ 0, %90 ], [ 50, %93 ], [ 0, %24 ], [ 30, %62 ], [ 0, %54 ], [ 30, %80 ], [ 0, %72 ]
@@ -1017,12 +1013,12 @@ define internal fastcc range(i32 0, -2147483648) i32 @total() unnamed_addr #3 {
   ret i32 %2
 
 6:                                                ; preds = %1
-  %7 = getelementptr inbounds nuw [12 x i32], ptr @scores, i32 0, i32 %3
-  %8 = load i32, ptr %7, align 4, !tbaa !3
+  %7 = getelementptr inbounds nuw [12 x i32], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 40), i32 0, i32 %3
+  %8 = load i32, ptr %7, align 4, !tbaa !8
   %9 = tail call i32 @llvm.smax.i32(i32 %8, i32 0)
   %10 = add nuw nsw i32 %9, %2
   %11 = add nuw nsw i32 %3, 1
-  br label %1, !llvm.loop !42
+  br label %1, !llvm.loop !45
 }
 
 ; Function Attrs: minsize optsize
@@ -1053,43 +1049,46 @@ attributes #8 = { nounwind }
 !0 = !{i32 1, !"wchar_size", i32 4}
 !1 = !{i32 1, !"min_enum_size", i32 4}
 !2 = !{!"Apple clang version 21.0.0 (clang-2100.1.1.101)"}
-!3 = !{!4, !4, i64 0}
-!4 = !{!"int", !5, i64 0}
+!3 = !{!4, !7, i64 92}
+!4 = !{!"ystate", !5, i64 0, !5, i64 20, !5, i64 40, !7, i64 88, !7, i64 92}
 !5 = !{!"omnipotent char", !6, i64 0}
 !6 = !{!"Simple C/C++ TBAA"}
-!7 = distinct !{!7, !8, !9}
-!8 = !{!"llvm.loop.mustprogress"}
-!9 = !{!"llvm.loop.unroll.disable"}
-!10 = distinct !{!10, !8, !9}
-!11 = distinct !{!11, !8, !9}
-!12 = distinct !{!12, !8, !9}
-!13 = !{!5, !5, i64 0}
-!14 = distinct !{!14, !8, !9}
-!15 = distinct !{!15, !8, !9}
-!16 = distinct !{!16, !8, !9}
-!17 = distinct !{!17, !8, !9}
-!18 = distinct !{!18, !8, !9}
-!19 = distinct !{!19, !8, !9}
-!20 = distinct !{!20, !8, !9}
-!21 = distinct !{!21, !8, !9}
-!22 = distinct !{!22, !8, !9}
-!23 = distinct !{!23, !8, !9}
-!24 = distinct !{!24, !8, !9}
-!25 = distinct !{!25, !8, !9}
-!26 = distinct !{!26, !8, !9}
-!27 = distinct !{!27, !9}
-!28 = !{!29, !29, i64 0}
-!29 = !{!"short", !5, i64 0}
-!30 = distinct !{!30, !8, !9}
+!7 = !{!"int", !5, i64 0}
+!8 = !{!7, !7, i64 0}
+!9 = distinct !{!9, !10, !11}
+!10 = !{!"llvm.loop.mustprogress"}
+!11 = !{!"llvm.loop.unroll.disable"}
+!12 = !{!4, !7, i64 88}
+!13 = distinct !{!13, !10, !11}
+!14 = distinct !{!14, !10, !11}
+!15 = distinct !{!15, !10, !11}
+!16 = !{!5, !5, i64 0}
+!17 = distinct !{!17, !10, !11}
+!18 = distinct !{!18, !10, !11}
+!19 = distinct !{!19, !10, !11}
+!20 = distinct !{!20, !10, !11}
+!21 = distinct !{!21, !10, !11}
+!22 = distinct !{!22, !10, !11}
+!23 = distinct !{!23, !10, !11}
+!24 = distinct !{!24, !10, !11}
+!25 = distinct !{!25, !10, !11}
+!26 = distinct !{!26, !10, !11}
+!27 = distinct !{!27, !10, !11}
+!28 = distinct !{!28, !10, !11}
+!29 = distinct !{!29, !10, !11}
+!30 = distinct !{!30, !11}
 !31 = !{!32, !32, i64 0}
-!32 = !{!"p1 omnipotent char", !33, i64 0}
-!33 = !{!"any pointer", !5, i64 0}
-!34 = distinct !{!34, !8, !9}
-!35 = distinct !{!35, !8, !9}
-!36 = distinct !{!36, !8, !9}
-!37 = distinct !{!37, !8, !9}
-!38 = distinct !{!38, !8, !9}
-!39 = distinct !{!39, !8, !9}
-!40 = distinct !{!40, !8, !9}
-!41 = distinct !{!41, !8, !9}
-!42 = distinct !{!42, !8, !9}
+!32 = !{!"short", !5, i64 0}
+!33 = distinct !{!33, !10, !11}
+!34 = !{!35, !35, i64 0}
+!35 = !{!"p1 omnipotent char", !36, i64 0}
+!36 = !{!"any pointer", !5, i64 0}
+!37 = distinct !{!37, !10, !11}
+!38 = distinct !{!38, !10, !11}
+!39 = distinct !{!39, !10, !11}
+!40 = distinct !{!40, !10, !11}
+!41 = distinct !{!41, !10, !11}
+!42 = distinct !{!42, !10, !11}
+!43 = distinct !{!43, !10, !11}
+!44 = distinct !{!44, !10, !11}
+!45 = distinct !{!45, !10, !11}

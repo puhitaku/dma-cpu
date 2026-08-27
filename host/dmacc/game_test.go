@@ -459,7 +459,8 @@ func TestGameLANWalk(t *testing.T) {
 	// The board is a spanning tree: every cell reachable in the
 	// solved orientation. Verify the generated masks are sane and
 	// that four rotations of the cursor tile return it to its start.
-	maskAddr := mustSym(t, prog, "g_mask")
+	// mask sits at arena offset 0 by lanwalk.c's contract
+	maskAddr := mustSym(t, prog, "g_arena_w")
 	readMask := func() []byte {
 		mk := make([]byte, 49)
 		for i := 0; i < 49; i++ {

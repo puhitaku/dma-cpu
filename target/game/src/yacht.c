@@ -22,7 +22,17 @@ static const char *catname[NCAT] = {
     "Fives",      "Sixes",          "Choice",       "Four Kind",
     "Full House", "Small Straight", "Big Straight", "Yacht"};
 
-static int dice[5], held[5], scores[NCAT], rolls_left, turn;
+/* Game state in the shared arena; the aliases keep every use site
+ * reading as before. All fields are filled at yacht_run() entry. */
+struct ystate {
+  int dice[5], held[5], scores[NCAT], rolls_left, turn;
+};
+#define YST ((struct ystate *)g_arena)
+#define dice (YST->dice)
+#define held (YST->held)
+#define scores (YST->scores)
+#define rolls_left (YST->rolls_left)
+#define turn (YST->turn)
 
 /* pip layout per face: bit i set = pip at cell i of a 3x3 grid
  * (0=TL, 2=TR, 4=center, 6=BL, 8=BR; 3/5 = middle left/right) */
