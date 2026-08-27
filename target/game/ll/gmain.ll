@@ -25,9 +25,9 @@ define dso_local noundef i32 @gmain() local_unnamed_addr #0 {
     i32 3, label %7
     i32 4, label %8
     i32 5, label %9
-    i32 7, label %10
-    i32 8, label %11
-    i32 9, label %12
+    i32 6, label %10
+    i32 7, label %11
+    i32 8, label %12
   ]
 
 3:                                                ; preds = %1
@@ -46,27 +46,27 @@ define dso_local noundef i32 @gmain() local_unnamed_addr #0 {
   br label %5
 
 7:                                                ; preds = %1
-  tail call void @seq_run() #2
-  br label %5
-
-8:                                                ; preds = %1
-  tail call void @bench_run() #2
-  br label %5
-
-9:                                                ; preds = %1
-  tail call void @radio_run() #2
-  br label %5
-
-10:                                               ; preds = %1
-  tail call void @boing_run() #2
-  br label %5
-
-11:                                               ; preds = %1
   tail call void @chute_run() #2
   br label %5
 
-12:                                               ; preds = %1
+8:                                                ; preds = %1
   tail call void @puni_run() #2
+  br label %5
+
+9:                                                ; preds = %1
+  tail call void @boing_run() #2
+  br label %5
+
+10:                                               ; preds = %1
+  tail call void @radio_run() #2
+  br label %5
+
+11:                                               ; preds = %1
+  tail call void @seq_run() #2
+  br label %5
+
+12:                                               ; preds = %1
+  tail call void @bench_run() #2
   br label %5
 
 13:                                               ; preds = %1
@@ -96,22 +96,22 @@ declare dso_local void @lanwalk_run() local_unnamed_addr #1
 declare dso_local void @yacht_run() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
-declare dso_local void @seq_run() local_unnamed_addr #1
+declare dso_local void @chute_run() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
-declare dso_local void @bench_run() local_unnamed_addr #1
-
-; Function Attrs: minsize optsize
-declare dso_local void @radio_run() local_unnamed_addr #1
+declare dso_local void @puni_run() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @boing_run() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
-declare dso_local void @chute_run() local_unnamed_addr #1
+declare dso_local void @radio_run() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
-declare dso_local void @puni_run() local_unnamed_addr #1
+declare dso_local void @seq_run() local_unnamed_addr #1
+
+; Function Attrs: minsize optsize
+declare dso_local void @bench_run() local_unnamed_addr #1
 
 ; Function Attrs: minsize optsize
 declare dso_local void @cpumon_run() local_unnamed_addr #1

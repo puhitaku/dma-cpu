@@ -20,17 +20,17 @@ gmain(void)
     else if (g == 2)
       yacht_run();
     else if (g == 3)
-      seq_run();
+      chute_run();
     else if (g == 4)
-      bench_run();
+      puni_run();
     else if (g == 5)
+      boing_run();
+    else if (g == 6)
       radio_run();
     else if (g == 7)
-      boing_run();
+      seq_run();
     else if (g == 8)
-      chute_run();
-    else if (g == 9)
-      puni_run();
+      bench_run();
     else
       cpumon_run();
   }

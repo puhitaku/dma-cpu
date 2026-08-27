@@ -5,7 +5,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 
 @.str = private unnamed_addr constant [14 x i8] c"boing: start\0A\00", align 1
 @arena_w = external dso_local local_unnamed_addr global [2304 x i32], align 4
-@in_down = external dso_local local_unnamed_addr global i32, align 4
+@in_edge = external dso_local local_unnamed_addr global i32, align 4
 @.str.1 = private unnamed_addr constant [13 x i8] c"boing: quit\0A\00", align 1
 @ball_home = dso_local local_unnamed_addr global i32 0, align 4
 @fb = external dso_local global [57600 x i16], align 2
@@ -25,143 +25,152 @@ define dso_local void @boing_run() local_unnamed_addr #0 {
   store i32 0, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 24), align 4, !tbaa !13
   br label %1
 
-1:                                                ; preds = %88, %0
+1:                                                ; preds = %90, %0
   tail call void @frame_sync(i32 noundef 33000) #3
   tail call void @in_poll() #3
-  %2 = load i32, ptr @in_down, align 4, !tbaa !14
-  %3 = and i32 %2, 16
+  %2 = load i32, ptr @in_edge, align 4, !tbaa !14
+  %3 = and i32 %2, 31
   %4 = icmp eq i32 %3, 0
-  %5 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 24), align 4
-  %6 = add nsw i32 %5, 1
-  %7 = select i1 %4, i32 0, i32 %6
-  store i32 %7, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 24), align 4, !tbaa !13
-  %8 = icmp sgt i32 %7, 45
-  br i1 %8, label %9, label %10
+  br i1 %4, label %6, label %5
 
-9:                                                ; preds = %1
+5:                                                ; preds = %1
   tail call void @uputs(ptr noundef nonnull @.str.1) #3
   tail call void @snd_off() #3
   ret void
 
-10:                                               ; preds = %1
-  %11 = load i32, ptr @arena_w, align 4, !tbaa !3
-  %12 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 4), align 4, !tbaa !8
-  %13 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 12), align 4, !tbaa !10
-  %14 = add nsw i32 %13, 1
-  store i32 %14, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 12), align 4, !tbaa !10
-  %15 = add nsw i32 %14, %12
-  store i32 %15, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 4), align 4, !tbaa !8
-  %16 = icmp sgt i32 %15, 137
-  br i1 %16, label %17, label %18
+6:                                                ; preds = %1
+  %7 = load i32, ptr @arena_w, align 4, !tbaa !3
+  %8 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 4), align 4, !tbaa !8
+  %9 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 12), align 4, !tbaa !10
+  %10 = add nsw i32 %9, 1
+  store i32 %10, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 12), align 4, !tbaa !10
+  %11 = add nsw i32 %10, %8
+  store i32 %11, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 4), align 4, !tbaa !8
+  %12 = icmp sgt i32 %11, 145
+  br i1 %12, label %13, label %14
 
-17:                                               ; preds = %10
-  store i32 138, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 4), align 4, !tbaa !8
+13:                                               ; preds = %6
+  store i32 146, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 4), align 4, !tbaa !8
   store i32 -17, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 12), align 4, !tbaa !10
   store i32 6, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 20), align 4, !tbaa !12
-  br label %18
+  br label %14
 
-18:                                               ; preds = %17, %10
-  %19 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 8), align 4, !tbaa !9
-  %20 = add nsw i32 %19, %11
-  store i32 %20, ptr @arena_w, align 4, !tbaa !3
-  %21 = icmp slt i32 %20, 1
-  br i1 %21, label %24, label %22
+14:                                               ; preds = %13, %6
+  %15 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 8), align 4, !tbaa !9
+  %16 = add nsw i32 %15, %7
+  store i32 %16, ptr @arena_w, align 4, !tbaa !3
+  %17 = icmp slt i32 %16, 1
+  br i1 %17, label %20, label %18
 
-22:                                               ; preds = %18
-  %23 = icmp samesign ugt i32 %20, 143
-  br i1 %23, label %24, label %28
+18:                                               ; preds = %14
+  %19 = icmp samesign ugt i32 %16, 151
+  br i1 %19, label %20, label %24
 
-24:                                               ; preds = %22, %18
-  %25 = icmp sgt i32 %20, 0
-  %26 = select i1 %25, i32 144, i32 0
-  store i32 %26, ptr @arena_w, align 4, !tbaa !3
-  %27 = sub nsw i32 0, %19
-  store i32 %27, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 8), align 4, !tbaa !9
+20:                                               ; preds = %18, %14
+  %21 = icmp sgt i32 %16, 0
+  %22 = select i1 %21, i32 152, i32 0
+  store i32 %22, ptr @arena_w, align 4, !tbaa !3
+  %23 = sub nsw i32 0, %15
+  store i32 %23, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 8), align 4, !tbaa !9
   store i32 4, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 20), align 4, !tbaa !12
-  br label %28
+  br label %24
 
-28:                                               ; preds = %24, %22
-  %29 = phi i32 [ %27, %24 ], [ %19, %22 ]
-  %30 = icmp slt i32 %29, 1
-  %31 = select i1 %30, i32 5, i32 1
-  %32 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 16), align 4, !tbaa !11
-  %33 = add nsw i32 %31, %32
-  %34 = icmp sgt i32 %33, 5
-  %35 = add nsw i32 %33, -6
-  %36 = select i1 %34, i32 %35, i32 %33
-  store i32 %36, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 16), align 4, !tbaa !11
-  tail call fastcc void @bg_rect(i32 noundef %11, i32 noundef %12, i32 noundef 96, i32 noundef 96) #4
-  %37 = load i32, ptr @arena_w, align 4, !tbaa !3
-  %38 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 4), align 4, !tbaa !8
-  %39 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 16), align 4, !tbaa !11
-  %40 = load i32, ptr @ball_home, align 4, !tbaa !14
-  %41 = inttoptr i32 %40 to ptr
-  %42 = mul i32 %39, 18432
-  %43 = or disjoint i32 %42, 192
-  %44 = add i32 %43, %40
-  %45 = mul nsw i32 %38, 240
-  %46 = add nsw i32 %45, %37
-  %47 = getelementptr inbounds [57600 x i16], ptr @fb, i32 0, i32 %46
-  %48 = ptrtoint ptr %47 to i32
-  br label %49
+24:                                               ; preds = %20, %18
+  %25 = phi i32 [ %23, %20 ], [ %15, %18 ]
+  %26 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 24), align 4, !tbaa !13
+  %27 = add nsw i32 %26, 1
+  store i32 %27, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 24), align 4, !tbaa !13
+  %28 = and i32 %26, 1
+  %29 = icmp eq i32 %28, 0
+  br i1 %29, label %30, label %38
 
-49:                                               ; preds = %68, %28
-  %50 = phi i32 [ 0, %28 ], [ %71, %68 ]
-  %51 = phi i32 [ %48, %28 ], [ %69, %68 ]
-  %52 = phi i32 [ %44, %28 ], [ %70, %68 ]
-  %53 = icmp eq i32 %50, 96
-  br i1 %53, label %72, label %54
+30:                                               ; preds = %24
+  %31 = icmp slt i32 %25, 1
+  %32 = select i1 %31, i32 7, i32 1
+  %33 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 16), align 4, !tbaa !11
+  %34 = add nsw i32 %32, %33
+  store i32 %34, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 16), align 4, !tbaa !11
+  %35 = icmp sgt i32 %34, 7
+  br i1 %35, label %36, label %38
 
-54:                                               ; preds = %49
-  %55 = shl nuw nsw i32 %50, 1
-  %56 = getelementptr inbounds nuw i8, ptr %41, i32 %55
-  %57 = getelementptr inbounds nuw i8, ptr %56, i32 1
-  %58 = load i8, ptr %57, align 1, !tbaa !15
-  %59 = icmp eq i8 %58, 0
-  br i1 %59, label %68, label %60
+36:                                               ; preds = %30
+  %37 = add nsw i32 %34, -8
+  store i32 %37, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 16), align 4, !tbaa !11
+  br label %38
 
-60:                                               ; preds = %54
-  %61 = zext i8 %58 to i32
-  %62 = load i8, ptr %56, align 1, !tbaa !15
-  %63 = zext i8 %62 to i32
-  %64 = shl nuw nsw i32 %63, 1
-  %65 = add i32 %64, %51
-  %66 = add i32 %64, %52
-  %67 = shl nuw nsw i32 %61, 1
-  tail call void @gdma_copy(i32 noundef %65, i32 noundef %66, i32 noundef %67) #3
-  br label %68
+38:                                               ; preds = %30, %36, %24
+  tail call fastcc void @bg_rect(i32 noundef %7, i32 noundef %8, i32 noundef 88, i32 noundef 88) #4
+  %39 = load i32, ptr @arena_w, align 4, !tbaa !3
+  %40 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 4), align 4, !tbaa !8
+  %41 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 16), align 4, !tbaa !11
+  %42 = load i32, ptr @ball_home, align 4, !tbaa !14
+  %43 = inttoptr i32 %42 to ptr
+  %44 = mul i32 %41, 15488
+  %45 = add i32 %44, 176
+  %46 = add i32 %45, %42
+  %47 = mul nsw i32 %40, 240
+  %48 = add nsw i32 %47, %39
+  %49 = getelementptr inbounds [57600 x i16], ptr @fb, i32 0, i32 %48
+  %50 = ptrtoint ptr %49 to i32
+  br label %51
 
-68:                                               ; preds = %60, %54
-  %69 = add i32 %51, 480
-  %70 = add i32 %52, 192
-  %71 = add nuw nsw i32 %50, 1
-  br label %49, !llvm.loop !16
+51:                                               ; preds = %70, %38
+  %52 = phi i32 [ 0, %38 ], [ %73, %70 ]
+  %53 = phi i32 [ %50, %38 ], [ %71, %70 ]
+  %54 = phi i32 [ %46, %38 ], [ %72, %70 ]
+  %55 = icmp eq i32 %52, 88
+  br i1 %55, label %74, label %56
 
-72:                                               ; preds = %49
-  %73 = load i32, ptr @arena_w, align 4, !tbaa !3
-  %74 = tail call i32 @llvm.smin.i32(i32 %11, i32 %73)
-  %75 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 4), align 4, !tbaa !8
-  %76 = tail call i32 @llvm.smin.i32(i32 %12, i32 %75)
-  %77 = tail call i32 @llvm.smax.i32(i32 %11, i32 %73)
-  %78 = add nsw i32 %77, 95
-  %79 = tail call i32 @llvm.smax.i32(i32 %12, i32 %75)
-  %80 = add nsw i32 %79, 95
-  tail call void @gfx_damage(i32 noundef %74, i32 noundef %76, i32 noundef %78, i32 noundef %80) #3
+56:                                               ; preds = %51
+  %57 = shl nuw nsw i32 %52, 1
+  %58 = getelementptr inbounds nuw i8, ptr %43, i32 %57
+  %59 = getelementptr inbounds nuw i8, ptr %58, i32 1
+  %60 = load i8, ptr %59, align 1, !tbaa !15
+  %61 = icmp eq i8 %60, 0
+  br i1 %61, label %70, label %62
+
+62:                                               ; preds = %56
+  %63 = zext i8 %60 to i32
+  %64 = load i8, ptr %58, align 1, !tbaa !15
+  %65 = zext i8 %64 to i32
+  %66 = shl nuw nsw i32 %65, 1
+  %67 = add i32 %66, %53
+  %68 = add i32 %66, %54
+  %69 = shl nuw nsw i32 %63, 1
+  tail call void @gdma_copy(i32 noundef %67, i32 noundef %68, i32 noundef %69) #3
+  br label %70
+
+70:                                               ; preds = %62, %56
+  %71 = add i32 %53, 480
+  %72 = add i32 %54, 176
+  %73 = add nuw nsw i32 %52, 1
+  br label %51, !llvm.loop !16
+
+74:                                               ; preds = %51
+  %75 = load i32, ptr @arena_w, align 4, !tbaa !3
+  %76 = tail call i32 @llvm.smin.i32(i32 %7, i32 %75)
+  %77 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 4), align 4, !tbaa !8
+  %78 = tail call i32 @llvm.smin.i32(i32 %8, i32 %77)
+  %79 = tail call i32 @llvm.smax.i32(i32 %7, i32 %75)
+  %80 = add nsw i32 %79, 87
+  %81 = tail call i32 @llvm.smax.i32(i32 %8, i32 %77)
+  %82 = add nsw i32 %81, 87
+  tail call void @gfx_damage(i32 noundef %76, i32 noundef %78, i32 noundef %80, i32 noundef %82) #3
   tail call void @gfx_present() #3
-  %81 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 20), align 4, !tbaa !12
-  %82 = icmp eq i32 %81, 0
-  br i1 %82, label %88, label %83
+  %83 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 20), align 4, !tbaa !12
+  %84 = icmp eq i32 %83, 0
+  br i1 %84, label %90, label %85
 
-83:                                               ; preds = %72
-  %84 = mul i32 %81, 30
-  %85 = add i32 %84, 80
-  tail call void @snd_play(i32 noundef %85, i32 noundef 60, i32 noundef 2) #3
-  %86 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 20), align 4, !tbaa !12
-  %87 = add nsw i32 %86, -1
-  store i32 %87, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 20), align 4, !tbaa !12
-  br label %88
+85:                                               ; preds = %74
+  %86 = mul i32 %83, 30
+  %87 = add i32 %86, 80
+  tail call void @snd_play(i32 noundef %87, i32 noundef 60, i32 noundef 2) #3
+  %88 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 20), align 4, !tbaa !12
+  %89 = add nsw i32 %88, -1
+  store i32 %89, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 20), align 4, !tbaa !12
+  br label %90
 
-88:                                               ; preds = %83, %72
+90:                                               ; preds = %85, %74
   br label %1, !llvm.loop !19
 }
 
@@ -172,7 +181,7 @@ declare dso_local void @uputs(ptr noundef) local_unnamed_addr #1
 declare dso_local void @led(i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize nounwind optsize
-define internal fastcc void @bg_rect(i32 noundef %0, i32 noundef %1, i32 noundef range(i32 96, 241) %2, i32 noundef range(i32 96, 241) %3) unnamed_addr #0 {
+define internal fastcc void @bg_rect(i32 noundef %0, i32 noundef %1, i32 noundef range(i32 88, 241) %2, i32 noundef range(i32 88, 241) %3) unnamed_addr #0 {
   tail call void @gfx_fill(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3, i16 noundef zeroext -21163) #3
   %5 = add nsw i32 %2, %0
   br label %6

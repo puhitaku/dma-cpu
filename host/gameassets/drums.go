@@ -38,7 +38,10 @@ func frame(s int) uint32 {
 
 func renderKick(n int) []byte {
 	d := make([]byte, 4*n)
-	val, dir, amp, slope := 0, 1, 14000, 150
+	// slope sets the triangle's pitch (f = fs*slope/(4*amp)): start
+	// ~390 Hz gliding to a ~120 Hz floor — the original 118 -> 9 Hz
+	// sweep vanished on a tiny speaker
+	val, dir, amp, slope := 0, 1, 14000, 500
 	for i := 0; i < n; i++ {
 		if dir > 0 {
 			val += slope
@@ -54,8 +57,8 @@ func renderKick(n int) []byte {
 		}
 		if i&7 == 0 {
 			slope -= slope >> 8 // the pitch glide
-			if slope < 8 {
-				slope = 8
+			if slope < 150 {
+				slope = 150
 			}
 		}
 		amp -= amp >> 10 // the body decay

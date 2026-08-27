@@ -21,13 +21,13 @@ target triple = "thumbv6m-unknown-none-eabi"
 @.str.12 = private unnamed_addr constant [9 x i8] c"Dinosaur\00", align 1
 @.str.13 = private unnamed_addr constant [8 x i8] c"LANWalk\00", align 1
 @.str.14 = private unnamed_addr constant [6 x i8] c"Yacht\00", align 1
-@.str.15 = private unnamed_addr constant [10 x i8] c"Sequencer\00", align 1
-@.str.16 = private unnamed_addr constant [10 x i8] c"Benchmark\00", align 1
-@.str.17 = private unnamed_addr constant [10 x i8] c"Radiosity\00", align 1
-@.str.18 = private unnamed_addr constant [9 x i8] c"Arm info\00", align 1
-@.str.19 = private unnamed_addr constant [6 x i8] c"Boing\00", align 1
-@.str.20 = private unnamed_addr constant [10 x i8] c"Parachute\00", align 1
-@.str.21 = private unnamed_addr constant [10 x i8] c"Puni Puni\00", align 1
+@.str.15 = private unnamed_addr constant [10 x i8] c"Parachute\00", align 1
+@.str.16 = private unnamed_addr constant [10 x i8] c"Puni Puni\00", align 1
+@.str.17 = private unnamed_addr constant [6 x i8] c"Boing\00", align 1
+@.str.18 = private unnamed_addr constant [10 x i8] c"Radiosity\00", align 1
+@.str.19 = private unnamed_addr constant [10 x i8] c"Sequencer\00", align 1
+@.str.20 = private unnamed_addr constant [10 x i8] c"Benchmark\00", align 1
+@.str.21 = private unnamed_addr constant [9 x i8] c"Arm Info\00", align 1
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local i32 @menu_run() local_unnamed_addr #0 {

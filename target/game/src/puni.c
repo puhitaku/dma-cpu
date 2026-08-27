@@ -26,7 +26,7 @@ struct pst {
   uchar vis[PH][PW];
   uchar stk[PW * PH], pop[PW * PH];
   int px, py, rot; /* falling pair: pivot cell + satellite direction */
-  int c1, c2, n1, n2;
+  int c1, c2, n1, n2, n3, n4; /* current pair + TWO queued pairs */
   int ftimer, fspeed;
   int score, over, hold, drawn_score;
 };
@@ -61,9 +61,11 @@ field_draw(void)
 static void
 preview_draw(void)
 {
-  gfx_text(150, 24, "NEXT", C_TEXT, C_BG);
-  gfx_blit(150, 36, cellbuf(PS->n2 - 1), CSZ, CSZ);
-  gfx_blit(150, 36 + CSZ, cellbuf(PS->n1 - 1), CSZ, CSZ);
+  gfx_text(150, 62, "NEXT", C_TEXT, C_BG);
+  gfx_blit(150, 74, cellbuf(PS->n2 - 1), CSZ, CSZ);
+  gfx_blit(150, 74 + CSZ, cellbuf(PS->n1 - 1), CSZ, CSZ);
+  gfx_blit(150, 122, cellbuf(PS->n4 - 1), CSZ, CSZ);
+  gfx_blit(150, 122 + CSZ, cellbuf(PS->n3 - 1), CSZ, CSZ);
 }
 
 static void
@@ -71,7 +73,7 @@ score_draw(void)
 {
   char b[7];
   numstr(b, 6, (uint)PS->score);
-  gfx_text(150, 88, b, C_TEXT, C_BG);
+  gfx_text(150, 176, b, C_TEXT, C_BG);
   PS->drawn_score = PS->score;
 }
 
@@ -97,14 +99,16 @@ pair_spawn(void)
   PS->rot = 0;
   PS->c1 = PS->n1;
   PS->c2 = PS->n2;
-  PS->n1 = 1 + (int)rng_below(NCOL);
-  PS->n2 = 1 + (int)rng_below(NCOL);
+  PS->n1 = PS->n3;
+  PS->n2 = PS->n4;
+  PS->n3 = 1 + (int)rng_below(NCOL);
+  PS->n4 = 1 + (int)rng_below(NCOL);
   PS->ftimer = 0;
   preview_draw();
   if (PS->grid[0][2] != 0) { /* the well is full */
     PS->over = 1;
-    gfx_text2(40, 104, "GAME OVER", C_OVER, C_FBG);
-    gfx_text(56, 128, "press to try again", C_TEXT, C_FBG);
+    gfx_text2(48, 104, "GAME OVER", C_OVER, C_FBG);
+    gfx_text(48, 128, "Press to try again", C_TEXT, C_FBG);
     uputs("puni: game over\n");
     led_blink(LED_BRIGHT(0xFF2020), 6);
     snd_play(110, 70, 20);
@@ -209,9 +213,12 @@ restart:
   PS->fspeed = 16;
   PS->n1 = 1 + (int)rng_below(NCOL);
   PS->n2 = 1 + (int)rng_below(NCOL);
+  PS->n3 = 1 + (int)rng_below(NCOL);
+  PS->n4 = 1 + (int)rng_below(NCOL);
   gfx_clear(C_BG);
   gfx_rect(FX0 - 4, FY0 - 4, PW * CSZ + 8, PH * CSZ + 8, 2, C_WALL);
-  gfx_text2(148, 4, "PUNI", C_TEXT, C_BG);
+  gfx_text2(150, 12, "PUNI", C_TEXT, C_BG);
+  gfx_text2(150, 30, "PUNI", C_TEXT, C_BG);
   for (int y = 0; y < PH; y++)
     for (int x = 0; x < PW; x++)
       cell_draw(x, y, 0);
@@ -282,8 +289,8 @@ restart:
       PS->grid[sy][sx] = (uchar)PS->c2;
     else {
       PS->over = 1;
-      gfx_text2(40, 104, "GAME OVER", C_OVER, C_FBG);
-      gfx_text(56, 128, "press to try again", C_TEXT, C_FBG);
+      gfx_text2(48, 104, "GAME OVER", C_OVER, C_FBG);
+      gfx_text(48, 128, "Press to try again", C_TEXT, C_FBG);
       uputs("puni: game over\n");
       continue;
     }

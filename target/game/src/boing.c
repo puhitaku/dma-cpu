@@ -12,8 +12,9 @@
 #define C_BG RGB(170, 170, 170)
 #define C_GRID RGB(140, 60, 220)
 
-#define BW 96  /* ball cell edge */
-#define NPH 6  /* rotation phases; NPH steps = one checker period */
+#define BW 88  /* ball cell edge */
+#define NPH 8  /* phases; NPH steps span the checker's 90-degree
+                * COLOR period (45 degrees only swaps red/white) */
 #define GP 24  /* background grid pitch */
 
 uint ball_home; /* dmxgen-patched: flash home of the ball blob —
@@ -21,7 +22,7 @@ uint ball_home; /* dmxgen-patched: flash home of the ball blob —
 
 /* per-frame scratch in the shared arena */
 struct bstate {
-  int x, y, vx, vy, ph, boing, hold;
+  int x, y, vx, vy, ph, boing, fr;
 };
 #define BS ((struct bstate *)g_arena)
 
@@ -83,16 +84,12 @@ boing_run(void)
   BS->vy = 0;
   BS->ph = 0;
   BS->boing = 0;
-  BS->hold = 0;
+  BS->fr = 0;
   for (;;) {
     frame_sync(33000);
     in_poll();
-    if (in_down & BTN_A)
-      BS->hold++;
-    else
-      BS->hold = 0;
-    if (BS->hold > 45) { /* ~1.5 s hold quits to the menu */
-      uputs("boing: quit\n");
+    if (in_edge & (BTN_A | BTN_UP | BTN_DOWN | BTN_LEFT | BTN_RIGHT)) {
+      uputs("boing: quit\n"); /* a demo: ANY input exits */
       snd_off();
       return;
     }
@@ -110,9 +107,12 @@ boing_run(void)
       BS->vx = -BS->vx; /* the spin follows the travel direction */
       BS->boing = 4;
     }
-    BS->ph += BS->vx > 0 ? 1 : NPH - 1;
-    if (BS->ph >= NPH)
-      BS->ph -= NPH;
+    BS->fr++;
+    if (BS->fr & 1) { /* half-rate spin: 11.25 degrees per step */
+      BS->ph += BS->vx > 0 ? 1 : NPH - 1;
+      if (BS->ph >= NPH)
+        BS->ph -= NPH;
+    }
     bg_rect(ox, oy, BW, BW);
     ball_blit(BS->x, BS->y, BS->ph);
     {

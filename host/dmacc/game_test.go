@@ -548,11 +548,11 @@ func TestGameSeq(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
-	press(t, m, prog, pinDown) // Dino -> LANWalk
-	at = runUntil(t, m, "menu: LANWalk", at, 100_000_000)
-	press(t, m, prog, pinDown) // -> Yacht
-	at = runUntil(t, m, "menu: Yacht", at, 100_000_000)
-	press(t, m, prog, pinDown) // -> Sequencer
+	press(t, m, prog, pinUp) // wraps up: Dino -> Arm Info
+	at = runUntil(t, m, "menu: Arm Info", at, 100_000_000)
+	press(t, m, prog, pinUp) // -> Benchmark
+	at = runUntil(t, m, "menu: Benchmark", at, 100_000_000)
+	press(t, m, prog, pinUp) // -> Sequencer
 	at = runUntil(t, m, "menu: Sequencer", at, 100_000_000)
 	press(t, m, prog, pinA)
 	at = runUntil(t, m, "seq: up", at, 100_000_000)
@@ -582,14 +582,8 @@ func TestGameCPUMon(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
-	press(t, m, prog, pinUp) // wraps up: Dino -> Puni Puni (scrolls)
-	at = runUntil(t, m, "menu: Puni Puni", at, 100_000_000)
-	press(t, m, prog, pinUp) // -> Parachute
-	at = runUntil(t, m, "menu: Parachute", at, 100_000_000)
-	press(t, m, prog, pinUp) // -> Boing
-	at = runUntil(t, m, "menu: Boing", at, 100_000_000)
-	press(t, m, prog, pinUp) // -> Arm info
-	at = runUntil(t, m, "menu: Arm info", at, 100_000_000)
+	press(t, m, prog, pinUp) // wraps up: Dino -> Arm Info (scrolls)
+	at = runUntil(t, m, "menu: Arm Info", at, 100_000_000)
 	// simulate the firmware's park stamp so the live idle clock reads
 	// a nonzero MM:SS (the emulated timer is fast, so the exact value
 	// is unimportant — only that the live path renders green digits)
@@ -737,7 +731,8 @@ func TestGameRadio(t *testing.T) {
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
 	for _, marker := range []string{"menu: LANWalk", "menu: Yacht",
-		"menu: Sequencer", "menu: Benchmark", "menu: Radiosity"} {
+		"menu: Parachute", "menu: Puni Puni", "menu: Boing",
+		"menu: Radiosity"} {
 		press(t, m, prog, pinDown)
 		at = runUntil(t, m, marker, at, 100_000_000)
 	}
@@ -794,9 +789,8 @@ func TestGameBench(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
-	for _, marker := range []string{"menu: LANWalk", "menu: Yacht",
-		"menu: Sequencer", "menu: Benchmark"} {
-		press(t, m, prog, pinDown)
+	for _, marker := range []string{"menu: Arm Info", "menu: Benchmark"} {
+		press(t, m, prog, pinUp) // wraps up past the chip page
 		at = runUntil(t, m, marker, at, 100_000_000)
 	}
 	press(t, m, prog, pinA)
@@ -837,12 +831,11 @@ func TestGameBoing(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
-	press(t, m, prog, pinUp) // wraps: Dino -> Puni Puni
-	at = runUntil(t, m, "menu: Puni Puni", at, 100_000_000)
-	press(t, m, prog, pinUp) // -> Parachute
-	at = runUntil(t, m, "menu: Parachute", at, 100_000_000)
-	press(t, m, prog, pinUp) // -> Boing
-	at = runUntil(t, m, "menu: Boing", at, 100_000_000)
+	for _, marker := range []string{"menu: LANWalk", "menu: Yacht",
+		"menu: Parachute", "menu: Puni Puni", "menu: Boing"} {
+		press(t, m, prog, pinDown)
+		at = runUntil(t, m, marker, at, 100_000_000)
+	}
 	press(t, m, prog, pinA)
 	at = runUntil(t, m, "boing: start", at, 100_000_000)
 	if _, err := m.Run(emu.RunConfig{MaxCycles: 120_000_000}); err != nil {
@@ -872,10 +865,11 @@ func TestGameChute(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
-	press(t, m, prog, pinUp) // wraps: Dino -> Puni Puni
-	at = runUntil(t, m, "menu: Puni Puni", at, 100_000_000)
-	press(t, m, prog, pinUp) // -> Parachute
-	at = runUntil(t, m, "menu: Parachute", at, 100_000_000)
+	for _, marker := range []string{"menu: LANWalk", "menu: Yacht",
+		"menu: Parachute"} {
+		press(t, m, prog, pinDown)
+		at = runUntil(t, m, marker, at, 100_000_000)
+	}
 	press(t, m, prog, pinA)
 	at = runUntil(t, m, "chute: start", at, 100_000_000)
 	// a helicopter spawns on the very first frame; let it fly in and
@@ -890,15 +884,15 @@ func TestGameChute(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := decodeLCD(m, 16)
-	sky := rgb565(10, 14, 40)
-	turret := rgb565(160, 160, 170)
+	sky := rgb565(164, 184, 172)
+	ink := rgb565(24, 28, 26)
 	if n := p.countColor(0, 0, 239, 225, sky); n < 30000 {
-		t.Errorf("sky: %d navy pixels", n)
+		t.Errorf("sky: %d pale pixels", n)
 	}
-	if n := p.countColor(104, 200, 135, 227, turret); n < 100 {
-		t.Errorf("turret: %d pixels", n)
+	if n := p.countColor(104, 210, 135, 227, ink); n < 80 {
+		t.Errorf("gun dome: %d ink pixels", n)
 	}
-	if n := p.countColor(0, 226, 239, 239, rgb565(70, 60, 50)); n < 2000 {
+	if n := p.countColor(0, 226, 239, 239, rgb565(60, 64, 54)); n < 2000 {
 		t.Errorf("ground: %d pixels", n)
 	}
 	dumpPNG(t, p, "chute.png")
@@ -909,8 +903,11 @@ func TestGamePuni(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
-	press(t, m, prog, pinUp) // wraps: Dino -> Puni Puni
-	at = runUntil(t, m, "menu: Puni Puni", at, 100_000_000)
+	for _, marker := range []string{"menu: LANWalk", "menu: Yacht",
+		"menu: Parachute", "menu: Puni Puni"} {
+		press(t, m, prog, pinDown)
+		at = runUntil(t, m, marker, at, 100_000_000)
+	}
 	press(t, m, prog, pinA)
 	at = runUntil(t, m, "puni: start", at, 100_000_000)
 	// soft-drop three pairs to the floor: hold DOWN through each fall

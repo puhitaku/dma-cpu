@@ -7,13 +7,10 @@
  * other clip — the ring copier streams it by DMA either way, and the
  * arena went back to the data segment.
  *
- * Playback rides the existing ch9 ring stream: one sequencer step ==
- * one ring pass (4096 frames). At every ring wrap the machine
- * gdma-copies the next step's drum into the ring; the copier runs at
- * bus speed and laps the 44.1 kHz reader within the first frames, so
- * steps swap seamlessly. Tempo is the sample clock (snd_rate), kept
- * inside the amp's 30.4-50.4 kHz LRCLK band — faster tempo also
- * pitches the kit up, tape-style.
+ * Playback rides the existing ch9 ring stream at a fixed 44.1 kHz:
+ * a microsecond step timer (real BPM, 60..200) drops each hit RIGHT
+ * AHEAD of the read pointer and silences the rest of the ring (the
+ * drum-machine choke), so tempo is exact and pitch never bends.
  */
 #include "g.h"
 
@@ -78,12 +75,38 @@ draw_playhead(int prev, int i)
 }
 
 static void
-draw_tempo(int level)
+draw_tempo(int bpm)
 {
-  char b[2];
-  b[0] = (char)('1' + level);
-  b[1] = 0;
-  gfx_text(140, 40, b, C_CUR, C_BG);
+  char b[4];
+  numsp(b, 3, (uint)bpm);
+  gfx_text(104, 40, b, C_CUR, C_BG);
+  gfx_text(132, 40, "BPM", C_TEXT, C_BG);
+}
+
+/* ring_hit: land a drum RIGHT AHEAD of ch9's read pointer (wrapped
+ * split copy), then silence the rest of the ring so the previous
+ * hit's tail can't resurface a lap later — the classic drum-machine
+ * choke. The sample clock stays at 44.1 kHz; BPM is a microsecond
+ * step timer now, so tempo no longer bends pitch. */
+static void
+ring_hit(uint src, uint bytes)
+{
+  uint rd = W32(DMACH(9) + 0x0);
+  uint off = (rd - AURING + 256u) & (AURING_BYTES - 1u);
+  uint first = AURING_BYTES - off;
+  if (first > bytes)
+    first = bytes;
+  gdma_copy(AURING + off, src, first);
+  if (bytes - first)
+    gdma_copy(AURING, src + first, bytes - first);
+  uint zoff = (off + bytes) & (AURING_BYTES - 1u);
+  uint zbytes = AURING_BYTES - bytes;
+  first = AURING_BYTES - zoff;
+  if (first > zbytes)
+    first = zbytes;
+  gdma_fill(AURING + zoff, 0, first);
+  if (zbytes - first)
+    gdma_fill(AURING, 0, zbytes - first);
 }
 
 void
@@ -92,7 +115,7 @@ seq_run(void)
   uputs("seq: up\n");
   gfx_clear(C_BG);
   gfx_text2(48, 8, "SEQUENCER", C_PLAY, C_BG);
-  gfx_text(72, 40, "tempo", C_TEXT, C_BG);
+  gfx_text(56, 40, "tempo", C_TEXT, C_BG);
   for (int i = 0; i < NSTEP; i++)
     draw_step(i, i == 0);
   gfx_text(6, 150, "K kick   S snare  T tom", C_TEXT, C_BG);
@@ -100,20 +123,22 @@ seq_run(void)
   gfx_text(6, 200, "l/r: step  press: change", C_DIM, C_BG);
   gfx_text(6, 212, "hold: exit  up/down: tempo", C_DIM, C_BG);
 
-  /* tempo notch -> sample clock; both ends stay inside the amp's
-   * LRCLK band. Level 4 ~= 44.1 kHz, a 93 ms step. Dividers are
-   * anchored to clk_sys (fs = 1e9/div at 250 MHz) — scale with the
-   * overclock, or the whole song plays faster. */
-  static const uint tdiv[8] = {32875, 31000, 28750, 26500, 22675,
-                               21250, 20500, 19875};
-  int tempo = 4;
-  snd_rate(tdiv[tempo]);
-  draw_tempo(tempo);
+  /* tempo is real BPM (60..200 by 10): one step is a 16th note,
+   * measured in CONSUMED AUDIO — step_bytes = fs*60/(BPM*4) frames
+   * of the 44.1 kHz stream, tracked through ch9's read pointer. The
+   * step clock is locked to the DAC (exact BPM, zero drift) and
+   * never bends pitch like the old ring-pass tempo did. */
+  int bpm = 120;
+  snd_rate(22675);
+  draw_tempo(bpm);
+  uint step_bytes = 2646000u / (uint)bpm; /* 4 * 661500 / BPM */
 
   int cur = 0, step = -1, playhead = -1;
-  uint hold = 0, prev_rd = 0;
+  uint hold = 0;
   gdma_fill(AURING, 0, AURING_BYTES);
   gfx_present();
+  uint prev_rd = W32(DMACH(9) + 0x0);
+  uint acc = 0;
 
   for (;;) {
     frame_sync(4000); /* tight: wrap detection is the step clock */
@@ -136,14 +161,16 @@ seq_run(void)
       gfx_present();
       uputs("seq: step set\n");
     }
-    if (in_edge & BTN_UP && tempo < 7) {
-      snd_rate(tdiv[++tempo]);
-      draw_tempo(tempo);
+    if (in_edge & BTN_UP && bpm < 200) {
+      bpm += 10;
+      step_bytes = 2646000u / (uint)bpm;
+      draw_tempo(bpm);
       gfx_present();
     }
-    if (in_edge & BTN_DOWN && tempo > 0) {
-      snd_rate(tdiv[--tempo]);
-      draw_tempo(tempo);
+    if (in_edge & BTN_DOWN && bpm > 60) {
+      bpm -= 10;
+      step_bytes = 2646000u / (uint)bpm;
+      draw_tempo(bpm);
       gfx_present();
     }
     if (in_down & BTN_A)
@@ -158,18 +185,18 @@ seq_run(void)
       return;
     }
 
-    /* the step clock: ch9's read pointer wrapping the ring */
+    /* the step clock: audio consumed since the last step (the poll
+     * runs many times per ring lap, so the delta never wraps) */
     uint rd = W32(DMACH(9) + 0x0);
-    if (rd < prev_rd) {
+    acc += (rd - prev_rd) & (AURING_BYTES - 1u);
+    prev_rd = rd;
+    if (acc >= step_bytes) {
+      acc -= step_bytes;
       step = (step + 1) & (NSTEP - 1);
       uint inst = pattern[step];
-      if (inst) {
-        uint bytes = (uint)dlen[inst] * 4;
-        gdma_copy(AURING, daddr[inst], bytes);
-        gdma_fill(AURING + bytes, 0, AURING_BYTES - bytes);
-      } else {
-        gdma_fill(AURING, 0, AURING_BYTES);
-      }
+      if (inst)
+        ring_hit(daddr[inst], (uint)dlen[inst] * 4);
+      /* a rest lets the previous hit's tail ring out */
       draw_playhead(playhead, step);
       playhead = step;
       if (inst == 1)
@@ -182,6 +209,5 @@ seq_run(void)
         led(0, 0);
       gfx_present();
     }
-    prev_rd = rd;
   }
 }

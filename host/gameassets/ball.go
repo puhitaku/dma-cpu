@@ -11,13 +11,13 @@ import "math"
 // (the Amiga original was precomputed too; palette cycling stood in
 // for the spin). Layout, shared with boing.c: 96 x {x0, w} span
 // bytes (even, so every row blit stays on the word-DMA fast path),
-// then NPH phases of 96x96 RGB565. Phase NPH wraps to phase 0: the
-// per-phase longitude step is one checker period over NPH (six
-// phases keep the whole blob under the flash window). Colors
+// then NPH phases of 88x88 RGB565. Phase NPH wraps to phase 0: the
+// per-phase longitude step spans the checker's 90-degree color
+// period (eight 88 px phases keep the blob under the flash window). Colors
 // must match boing.c's C_BG (span slack pixels erase as background).
 func BallBlob() []byte {
-	const bw, nph = 96, 6
-	const r = 47.0
+	const bw, nph = 88, 8
+	const r = 43.0
 	rgb := func(rr, g, b int) uint16 {
 		return uint16((rr&0xF8)<<8 | (g&0xFC)<<3 | (b&0xF8)>>3)
 	}
@@ -25,16 +25,16 @@ func BallBlob() []byte {
 	tilt := 17 * math.Pi / 180
 	blob := make([]byte, 2*bw)
 	for y := 0; y < bw; y++ {
-		dy := (float64(y) + 0.5 - 48) / r
+		dy := (float64(y) + 0.5 - 44) / r
 		if dy*dy >= 1 {
 			continue
 		}
 		half := math.Sqrt(1-dy*dy) * r
-		x0 := int(48-half) &^ 1
+		x0 := int(44-half) &^ 1
 		if x0 < 0 {
 			x0 = 0
 		}
-		x1 := int(math.Ceil(48 + half))
+		x1 := int(math.Ceil(44 + half))
 		w := (x1 - x0 + 1) &^ 1
 		if x0+w > bw {
 			w = bw - x0
@@ -42,11 +42,14 @@ func BallBlob() []byte {
 		blob[2*y], blob[2*y+1] = byte(x0), byte(w)
 	}
 	for ph := 0; ph < nph; ph++ {
-		lonoff := float64(ph) * (45.0 / nph) * math.Pi / 180
+		// the checker's TRUE period is 90 degrees (two 45-degree cells:
+		// parity flips per cell), so the phases span 90 — a 45-degree
+		// wrap swapped red and white and the ball visibly restarted
+		lonoff := float64(ph) * (90.0 / nph) * math.Pi / 180
 		for y := 0; y < bw; y++ {
 			for x := 0; x < bw; x++ {
-				px := (float64(x) + 0.5 - 48) / r
-				py := -(float64(y) + 0.5 - 48) / r
+				px := (float64(x) + 0.5 - 44) / r
+				py := -(float64(y) + 0.5 - 44) / r
 				c := bg
 				if d2 := px*px + py*py; d2 < 1 {
 					z := math.Sqrt(1 - d2)

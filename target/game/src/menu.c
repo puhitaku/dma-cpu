@@ -10,10 +10,11 @@
 #define C_SELBG RGB(40, 70, 140)
 #define C_FOOT RGB(90, 100, 130)
 
+/* games first, then the demos (non-games), then the chip page */
 static const char *names[10] = {"Dinosaur",  "LANWalk",   "Yacht",
-                                "Sequencer", "Benchmark", "Radiosity",
-                                "Arm info",  "Boing",     "Parachute",
-                                "Puni Puni"};
+                                "Parachute", "Puni Puni", "Boing",
+                                "Radiosity", "Sequencer", "Benchmark",
+                                "Arm Info"};
 
 #define NGAMES 10
 #define VIS 6 /* rows on screen; the list scrolls beyond that */
