@@ -463,77 +463,92 @@ define dso_local void @gfx_blit(i32 noundef %0, i32 noundef %1, ptr noundef %2, 
 declare dso_local void @gdma_copy(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #2
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: readwrite)
-define dso_local void @gfx_cell_spans(ptr noundef readonly captures(none) %0, i32 noundef %1, i32 noundef %2, i16 noundef zeroext %3, ptr noundef writeonly captures(none) %4) local_unnamed_addr #5 {
-  %6 = getelementptr inbounds i8, ptr %4, i32 1
+define dso_local i32 @gfx_cell_runs(ptr noundef readonly captures(none) %0, i32 noundef %1, i32 noundef %2, i16 noundef zeroext %3, ptr noundef writeonly captures(none) %4, i32 noundef %5) local_unnamed_addr #5 {
   br label %7
 
-7:                                                ; preds = %45, %5
-  %8 = phi i32 [ 0, %5 ], [ %49, %45 ]
-  %9 = icmp slt i32 %8, %2
-  br i1 %9, label %11, label %10
-
-10:                                               ; preds = %7
-  ret void
+7:                                                ; preds = %50, %6
+  %8 = phi i32 [ 0, %6 ], [ %53, %50 ]
+  %9 = phi i32 [ 0, %6 ], [ %18, %50 ]
+  %10 = icmp slt i32 %8, %2
+  br i1 %10, label %11, label %54
 
 11:                                               ; preds = %7
   %12 = mul nsw i32 %8, %1
   %13 = getelementptr inbounds i16, ptr %0, i32 %12
-  br label %14
+  %14 = icmp slt i32 %9, %5
+  br i1 %14, label %15, label %54
 
-14:                                               ; preds = %21, %11
-  %15 = phi i32 [ %1, %11 ], [ %26, %21 ]
-  %16 = phi i32 [ -1, %11 ], [ %27, %21 ]
-  %17 = phi i32 [ 0, %11 ], [ %28, %21 ]
-  %18 = icmp slt i32 %17, %1
-  br i1 %18, label %21, label %19
+15:                                               ; preds = %11
+  %16 = add nsw i32 %9, 1
+  br label %17
 
-19:                                               ; preds = %14
-  %20 = icmp slt i32 %16, 0
-  br i1 %20, label %29, label %32
+17:                                               ; preds = %15, %43
+  %18 = phi i32 [ %41, %43 ], [ %16, %15 ]
+  %19 = phi i32 [ %49, %43 ], [ 0, %15 ]
+  %20 = phi i32 [ %32, %43 ], [ 0, %15 ]
+  %21 = icmp slt i32 %20, %1
+  br i1 %21, label %22, label %50
 
-21:                                               ; preds = %14
-  %22 = getelementptr inbounds nuw i16, ptr %13, i32 %17
-  %23 = load i16, ptr %22, align 2, !tbaa !10
-  %24 = icmp eq i16 %23, %3
-  %25 = tail call i32 @llvm.smin.i32(i32 %17, i32 %15)
-  %26 = select i1 %24, i32 %15, i32 %25
-  %27 = select i1 %24, i32 %16, i32 %17
-  %28 = add nuw nsw i32 %17, 1
-  br label %14, !llvm.loop !23
+22:                                               ; preds = %17, %29
+  %23 = phi i32 [ %30, %29 ], [ %20, %17 ]
+  %24 = icmp slt i32 %23, %1
+  br i1 %24, label %25, label %50
 
-29:                                               ; preds = %19
-  %30 = shl nuw nsw i32 %8, 1
-  %31 = getelementptr inbounds nuw i8, ptr %4, i32 %30
-  store i8 0, ptr %31, align 1, !tbaa !13
-  br label %45
+25:                                               ; preds = %22
+  %26 = getelementptr inbounds i16, ptr %13, i32 %23
+  %27 = load i16, ptr %26, align 2, !tbaa !10
+  %28 = icmp eq i16 %27, %3
+  br i1 %28, label %29, label %31
 
-32:                                               ; preds = %19
-  %33 = and i32 %15, -2
-  %34 = add nuw nsw i32 %16, 2
-  %35 = sub i32 %34, %33
-  %36 = and i32 %35, -2
-  %37 = add nsw i32 %36, %33
-  %38 = icmp sgt i32 %37, %1
-  %39 = sub nsw i32 %1, %33
-  %40 = select i1 %38, i32 %39, i32 %36
-  %41 = trunc i32 %33 to i8
-  %42 = shl nuw nsw i32 %8, 1
-  %43 = getelementptr inbounds nuw i8, ptr %4, i32 %42
-  store i8 %41, ptr %43, align 1, !tbaa !13
-  %44 = trunc i32 %40 to i8
-  br label %45
+29:                                               ; preds = %25
+  %30 = add nsw i32 %23, 1
+  br label %22, !llvm.loop !23
 
-45:                                               ; preds = %32, %29
-  %46 = phi i32 [ %42, %32 ], [ %30, %29 ]
-  %47 = phi i8 [ %44, %32 ], [ 0, %29 ]
-  %48 = getelementptr inbounds i8, ptr %6, i32 %46
+31:                                               ; preds = %25, %38
+  %32 = phi i32 [ %39, %38 ], [ %23, %25 ]
+  %33 = icmp slt i32 %32, %1
+  br i1 %33, label %34, label %40
+
+34:                                               ; preds = %31
+  %35 = getelementptr inbounds i16, ptr %13, i32 %32
+  %36 = load i16, ptr %35, align 2, !tbaa !10
+  %37 = icmp eq i16 %36, %3
+  br i1 %37, label %40, label %38
+
+38:                                               ; preds = %34
+  %39 = add nsw i32 %32, 1
+  br label %31, !llvm.loop !24
+
+40:                                               ; preds = %31, %34
+  %41 = add nsw i32 %18, 2
+  %42 = icmp sgt i32 %41, %5
+  br i1 %42, label %54, label %43
+
+43:                                               ; preds = %40
+  %44 = trunc i32 %23 to i8
+  %45 = getelementptr inbounds i8, ptr %4, i32 %18
+  store i8 %44, ptr %45, align 1, !tbaa !13
+  %46 = sub nsw i32 %32, %23
+  %47 = trunc i32 %46 to i8
+  %48 = getelementptr i8, ptr %45, i32 1
   store i8 %47, ptr %48, align 1, !tbaa !13
-  %49 = add nuw nsw i32 %8, 1
-  br label %7, !llvm.loop !24
+  %49 = add nuw nsw i32 %19, 1
+  br label %17
+
+50:                                               ; preds = %17, %22
+  %51 = trunc i32 %19 to i8
+  %52 = getelementptr inbounds i8, ptr %4, i32 %9
+  store i8 %51, ptr %52, align 1, !tbaa !13
+  %53 = add nuw nsw i32 %8, 1
+  br label %7, !llvm.loop !25
+
+54:                                               ; preds = %11, %7, %40
+  %55 = phi i32 [ -1, %40 ], [ -1, %11 ], [ %9, %7 ]
+  ret i32 %55
 }
 
 ; Function Attrs: minsize nounwind optsize
-define dso_local void @gfx_blit_spans(i32 noundef %0, i32 noundef %1, ptr noundef %2, i32 noundef %3, i32 noundef %4, ptr noundef readonly captures(none) %5) local_unnamed_addr #1 {
+define dso_local void @gfx_blit_runs(i32 noundef %0, i32 noundef %1, ptr noundef %2, i32 noundef %3, i32 noundef %4, ptr noundef readonly captures(none) %5) local_unnamed_addr #1 {
   %7 = mul nsw i32 %1, 240
   %8 = add nsw i32 %7, %0
   %9 = shl nsw i32 %8, 1
@@ -542,58 +557,113 @@ define dso_local void @gfx_blit_spans(i32 noundef %0, i32 noundef %1, ptr nounde
   %12 = shl i32 %3, 1
   br label %13
 
-13:                                               ; preds = %48, %6
-  %14 = phi i32 [ 0, %6 ], [ %51, %48 ]
-  %15 = phi i32 [ %11, %6 ], [ %50, %48 ]
-  %16 = phi i32 [ %10, %6 ], [ %49, %48 ]
-  %17 = icmp slt i32 %14, %4
-  br i1 %17, label %23, label %18
+13:                                               ; preds = %34, %6
+  %14 = phi i32 [ %11, %6 ], [ %36, %34 ]
+  %15 = phi i32 [ 0, %6 ], [ %37, %34 ]
+  %16 = phi i32 [ %10, %6 ], [ %35, %34 ]
+  %17 = phi ptr [ %5, %6 ], [ %31, %34 ]
+  %18 = icmp slt i32 %15, %4
+  br i1 %18, label %24, label %19
 
-18:                                               ; preds = %13
-  %19 = add i32 %0, -1
-  %20 = add i32 %19, %3
-  %21 = add i32 %1, -1
-  %22 = add i32 %21, %4
-  tail call void @gfx_damage(i32 noundef %0, i32 noundef %1, i32 noundef %20, i32 noundef %22) #9
+19:                                               ; preds = %13
+  %20 = add i32 %0, -1
+  %21 = add i32 %20, %3
+  %22 = add i32 %1, -1
+  %23 = add i32 %22, %4
+  tail call void @gfx_damage(i32 noundef %0, i32 noundef %1, i32 noundef %21, i32 noundef %23) #9
   ret void
 
-23:                                               ; preds = %13
-  %24 = add nsw i32 %14, %1
-  %25 = shl nuw nsw i32 %14, 1
-  %26 = getelementptr inbounds nuw i8, ptr %5, i32 %25
-  %27 = getelementptr inbounds nuw i8, ptr %26, i32 1
-  %28 = load i8, ptr %27, align 1, !tbaa !13
-  %29 = icmp ne i8 %28, 0
-  %30 = icmp ult i32 %24, 240
-  %31 = select i1 %29, i1 %30, i1 false
-  br i1 %31, label %32, label %48
+24:                                               ; preds = %13
+  %25 = getelementptr inbounds nuw i8, ptr %17, i32 1
+  %26 = load i8, ptr %17, align 1, !tbaa !13
+  %27 = zext i8 %26 to i32
+  %28 = add nsw i32 %15, %1
+  %29 = icmp ugt i32 %28, 239
+  br label %30
 
-32:                                               ; preds = %23
-  %33 = zext i8 %28 to i32
-  %34 = load i8, ptr %26, align 1, !tbaa !13
-  %35 = zext i8 %34 to i32
-  %36 = add nsw i32 %0, %35
-  %37 = add nsw i32 %36, %33
-  %38 = tail call i32 @llvm.smax.i32(i32 %36, i32 0)
-  %39 = tail call i32 @llvm.smin.i32(i32 %37, i32 240)
-  %40 = icmp sgt i32 %39, %38
-  br i1 %40, label %41, label %48
+30:                                               ; preds = %87, %24
+  %31 = phi ptr [ %25, %24 ], [ %39, %87 ]
+  %32 = phi i32 [ 0, %24 ], [ %88, %87 ]
+  %33 = icmp eq i32 %32, %27
+  br i1 %33, label %34, label %38
 
-41:                                               ; preds = %32
-  %42 = sub nsw i32 %38, %0
-  %43 = shl i32 %42, 1
-  %44 = add i32 %43, %16
-  %45 = add i32 %43, %15
-  %46 = sub nsw i32 %39, %38
-  %47 = shl nuw nsw i32 %46, 1
-  tail call void @gdma_copy(i32 noundef %44, i32 noundef %45, i32 noundef %47) #8
-  br label %48
+34:                                               ; preds = %30
+  %35 = add i32 %16, 480
+  %36 = add i32 %14, %12
+  %37 = add nuw nsw i32 %15, 1
+  br label %13, !llvm.loop !26
 
-48:                                               ; preds = %32, %41, %23
-  %49 = add i32 %16, 480
-  %50 = add i32 %15, %12
-  %51 = add nuw nsw i32 %14, 1
-  br label %13, !llvm.loop !25
+38:                                               ; preds = %30
+  %39 = getelementptr inbounds nuw i8, ptr %31, i32 2
+  br i1 %29, label %87, label %40
+
+40:                                               ; preds = %38
+  %41 = load i8, ptr %31, align 1, !tbaa !13
+  %42 = zext i8 %41 to i32
+  %43 = add nsw i32 %0, %42
+  %44 = getelementptr inbounds nuw i8, ptr %31, i32 1
+  %45 = load i8, ptr %44, align 1, !tbaa !13
+  %46 = zext i8 %45 to i32
+  %47 = add nsw i32 %43, %46
+  %48 = tail call i32 @llvm.smax.i32(i32 %43, i32 0)
+  %49 = tail call i32 @llvm.smin.i32(i32 %47, i32 240)
+  %50 = icmp sgt i32 %49, %48
+  br i1 %50, label %51, label %87
+
+51:                                               ; preds = %40
+  %52 = sub nsw i32 %48, %0
+  %53 = shl i32 %52, 1
+  %54 = add i32 %53, %16
+  %55 = add i32 %53, %14
+  %56 = and i32 %48, 1
+  %57 = icmp eq i32 %56, 0
+  br i1 %57, label %65, label %58
+
+58:                                               ; preds = %51
+  %59 = inttoptr i32 %55 to ptr
+  %60 = load i16, ptr %59, align 2, !tbaa !10
+  %61 = inttoptr i32 %54 to ptr
+  store i16 %60, ptr %61, align 2, !tbaa !10
+  %62 = add nuw nsw i32 %48, 1
+  %63 = add i32 %54, 2
+  %64 = add i32 %55, 2
+  br label %65
+
+65:                                               ; preds = %58, %51
+  %66 = phi i32 [ %62, %58 ], [ %48, %51 ]
+  %67 = phi i32 [ %63, %58 ], [ %54, %51 ]
+  %68 = phi i32 [ %64, %58 ], [ %55, %51 ]
+  %69 = sub nsw i32 %49, %66
+  %70 = and i32 %69, 1
+  %71 = icmp eq i32 %70, 0
+  br i1 %71, label %81, label %72
+
+72:                                               ; preds = %65
+  %73 = add nsw i32 %49, -1
+  %74 = sub nsw i32 %73, %0
+  %75 = shl i32 %74, 1
+  %76 = add i32 %75, %14
+  %77 = inttoptr i32 %76 to ptr
+  %78 = load i16, ptr %77, align 2, !tbaa !10
+  %79 = add i32 %75, %16
+  %80 = inttoptr i32 %79 to ptr
+  store i16 %78, ptr %80, align 2, !tbaa !10
+  br label %81
+
+81:                                               ; preds = %72, %65
+  %82 = phi i32 [ %73, %72 ], [ %49, %65 ]
+  %83 = icmp samesign ugt i32 %82, %66
+  br i1 %83, label %84, label %87
+
+84:                                               ; preds = %81
+  %85 = sub nuw nsw i32 %82, %66
+  %86 = shl nuw nsw i32 %85, 1
+  tail call void @gdma_copy(i32 noundef %67, i32 noundef %68, i32 noundef %86) #8
+  br label %87
+
+87:                                               ; preds = %38, %81, %84, %40
+  %88 = add nuw nsw i32 %32, 1
+  br label %30, !llvm.loop !27
 }
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: write)
@@ -626,7 +696,7 @@ define dso_local void @gfx_disc_cell(i32 noundef %0, i32 noundef %1, i16 noundef
 
 22:                                               ; preds = %19
   %23 = add nuw nsw i32 %9, 1
-  br label %8, !llvm.loop !26
+  br label %8, !llvm.loop !28
 
 24:                                               ; preds = %19
   %25 = shl nuw nsw i32 %20, 1
@@ -639,7 +709,7 @@ define dso_local void @gfx_disc_cell(i32 noundef %0, i32 noundef %1, i16 noundef
   %32 = getelementptr i16, ptr %18, i32 %20
   store i16 %31, ptr %32, align 2, !tbaa !10
   %33 = add nuw i32 %20, 1
-  br label %19, !llvm.loop !27
+  br label %19, !llvm.loop !29
 }
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: write)
@@ -674,7 +744,7 @@ define dso_local void @gfx_glyph_cell(i32 noundef %0, i16 noundef zeroext %1, i1
 22:                                               ; preds = %18
   %23 = add nuw nsw i32 %10, 8
   %24 = add nuw nsw i32 %9, 1
-  br label %8, !llvm.loop !28
+  br label %8, !llvm.loop !30
 
 25:                                               ; preds = %18
   %26 = and i32 %19, %16
@@ -684,7 +754,7 @@ define dso_local void @gfx_glyph_cell(i32 noundef %0, i16 noundef zeroext %1, i1
   store i16 %28, ptr %29, align 2, !tbaa !10
   %30 = add nsw i32 %20, -1
   %31 = shl i32 %19, 1
-  br label %18, !llvm.loop !29
+  br label %18, !llvm.loop !31
 }
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: readwrite)
@@ -717,7 +787,7 @@ define dso_local void @gfx_sprite(ptr noundef readonly captures(none) %0, i32 no
 22:                                               ; preds = %18
   %23 = add nsw i32 %11, %1
   %24 = add nuw nsw i32 %10, 1
-  br label %9, !llvm.loop !30
+  br label %9, !llvm.loop !32
 
 25:                                               ; preds = %18
   %26 = add nsw i32 %20, -1
@@ -727,7 +797,7 @@ define dso_local void @gfx_sprite(ptr noundef readonly captures(none) %0, i32 no
   %30 = getelementptr i16, ptr %17, i32 %26
   store i16 %29, ptr %30, align 2, !tbaa !10
   %31 = shl i32 %19, 1
-  br label %18, !llvm.loop !31
+  br label %18, !llvm.loop !33
 }
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
@@ -782,3 +852,5 @@ attributes #9 = { minsize nobuiltin optsize "no-builtins" }
 !29 = distinct !{!29, !8, !9}
 !30 = distinct !{!30, !8, !9}
 !31 = distinct !{!31, !8, !9}
+!32 = distinct !{!32, !8, !9}
+!33 = distinct !{!33, !8, !9}

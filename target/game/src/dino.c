@@ -183,12 +183,15 @@ static const uint art_cloud[5] = {
 #define cell_cloud ((ushort *)(g_arena + 4296))   /* 200 B (20x5) */
 #define dashpat ((ushort *)(g_arena + 4496))      /* 528 B */
 #define cell_digit ((ushort(*)[64])(g_arena + 5024)) /* 1280 B */
-#define sp_run_a (g_arena + 6304)  /* span tables: 2 B per row */
-#define sp_run_b (g_arena + 6348)
-#define sp_dead (g_arena + 6392)
-#define sp_cact_s (g_arena + 6436)
-#define sp_cact_l (g_arena + 6484)
-#define sp_cloud (g_arena + 6544)  /* ends 6554 */
+/* exact-silhouette run tables (gfx_cell_runs): sized for up to four
+ * runs per row (1 + 4x2 bytes each), which the 1bpp art never hits */
+#define RT_CAP 256
+#define rt_run_a (g_arena + 6304)
+#define rt_run_b (g_arena + 6560)
+#define rt_dead (g_arena + 6816)
+#define rt_cact_s (g_arena + 7072)
+#define rt_cact_l (g_arena + 7328)
+#define rt_cloud (g_arena + 7584) /* ends 7840 */
 
 /* render 1bpp art into a bare cell (background only inside the box) */
 static void
@@ -211,7 +214,7 @@ struct obst {
   int x;
   int w, h;
   ushort *cell;
-  const uchar *sp;
+  const uchar *rt;
 };
 static struct obst obs[2];
 
@@ -290,12 +293,12 @@ spawn(struct obst *o, uint score)
     o->w = CLW;
     o->h = CLH;
     o->cell = cell_cact_l;
-    o->sp = sp_cact_l;
+    o->rt = rt_cact_l;
   } else {
     o->w = CSW;
     o->h = CSH;
     o->cell = cell_cact_s;
-    o->sp = sp_cact_s;
+    o->rt = rt_cact_s;
   }
   o->x = LCD_W;
 }
@@ -312,12 +315,13 @@ dino_run(void)
   cell_render(art_cact_s, CSW, CSH, C_CACT, cell_cact_s);
   cell_render(art_cact_l, CLW, CLH, C_CACT, cell_cact_l);
   cell_render(art_cloud, 20, 5, C_CLOUD, cell_cloud);
-  gfx_cell_spans(cell_run_a, DW, DH, C_BG, sp_run_a);
-  gfx_cell_spans(cell_run_b, DW, DH, C_BG, sp_run_b);
-  gfx_cell_spans(cell_dead, DW, DH, C_BG, sp_dead);
-  gfx_cell_spans(cell_cact_s, CSW, CSH, C_BG, sp_cact_s);
-  gfx_cell_spans(cell_cact_l, CLW, CLH, C_BG, sp_cact_l);
-  gfx_cell_spans(cell_cloud, 20, 5, C_BG, sp_cloud);
+  if (gfx_cell_runs(cell_run_a, DW, DH, C_BG, rt_run_a, RT_CAP) < 0 ||
+      gfx_cell_runs(cell_run_b, DW, DH, C_BG, rt_run_b, RT_CAP) < 0 ||
+      gfx_cell_runs(cell_dead, DW, DH, C_BG, rt_dead, RT_CAP) < 0 ||
+      gfx_cell_runs(cell_cact_s, CSW, CSH, C_BG, rt_cact_s, RT_CAP) < 0 ||
+      gfx_cell_runs(cell_cact_l, CLW, CLH, C_BG, rt_cact_l, RT_CAP) < 0 ||
+      gfx_cell_runs(cell_cloud, 20, 5, C_BG, rt_cloud, RT_CAP) < 0)
+    uputs("dino: run table overflow\n"); /* content bug: art too busy */
 
 restart:
   uputs("dino: start\n");
@@ -346,8 +350,8 @@ restart:
   clouds[0].y = 40;
   clouds[1].x = 40;
   clouds[1].y = 64;
-  gfx_blit_spans(clouds[0].x, clouds[0].y, cell_cloud, 20, 5, sp_cloud);
-  gfx_blit_spans(clouds[1].x, clouds[1].y, cell_cloud, 20, 5, sp_cloud);
+  gfx_blit_runs(clouds[0].x, clouds[0].y, cell_cloud, 20, 5, rt_cloud);
+  gfx_blit_runs(clouds[1].x, clouds[1].y, cell_cloud, 20, 5, rt_cloud);
   obs[0].x = obs[1].x = -1000;
 
   for (;;) {
@@ -432,8 +436,8 @@ restart:
     /* phase 2: draw, back to front, then flush each union band */
     if (recloud)
       for (int i = 0; i < 2; i++) {
-        gfx_blit_spans(clouds[i].x, clouds[i].y, cell_cloud, 20, 5,
-                       sp_cloud);
+        gfx_blit_runs(clouds[i].x, clouds[i].y, cell_cloud, 20, 5,
+                      rt_cloud);
         int bx = clouds[i].x < 0 ? 0 : clouds[i].x;
         int be = clouds[i].x + 22; /* +2: the erased trailing edge */
         if (be > LCD_W)
@@ -445,7 +449,7 @@ restart:
       struct obst *o = &obs[i];
       if (o->x < -100)
         continue;
-      gfx_blit_spans(o->x, GROUND_Y - o->h, o->cell, o->w, o->h, o->sp);
+      gfx_blit_runs(o->x, GROUND_Y - o->h, o->cell, o->w, o->h, o->rt);
       int bx = o->x < 0 ? 0 : o->x;
       int be = oldx[i] + o->w; /* union with the erased old spot */
       if (be > LCD_W)
@@ -454,12 +458,12 @@ restart:
     }
     if (redino) {
       ushort *cell = (frame & 8) ? cell_run_a : cell_run_b;
-      const uchar *sp = (frame & 8) ? sp_run_a : sp_run_b;
+      const uchar *rt = (frame & 8) ? rt_run_a : rt_run_b;
       if (ypix > 0) {
         cell = cell_run_a;
-        sp = sp_run_a;
+        rt = rt_run_a;
       }
-      gfx_blit_spans(DINO_X, dy, cell, DW, DH, sp);
+      gfx_blit_runs(DINO_X, dy, cell, DW, DH, rt);
       int top = dy < prev_dy ? dy : prev_dy;
       int bot = (dy > prev_dy ? dy : prev_dy) + DH - 1;
       lcd_flush(DINO_X, top, DINO_X + DW - 1, bot);
@@ -512,7 +516,12 @@ restart:
   dead:
     led_blink(0xFF0000, 3); /* rapid tri-ramp, three times */
     gfx_fill(DINO_X, dy, DW, DH, C_BG);
-    gfx_blit_spans(DINO_X, dy, cell_dead, DW, DH, sp_dead);
+    for (int i = 0; i < 2; i++) /* the erase may have clipped the
+                                 * cactus we died on: repaint it */
+      if (obs[i].x >= -100)
+        gfx_blit_runs(obs[i].x, GROUND_Y - obs[i].h, obs[i].cell,
+                      obs[i].w, obs[i].h, obs[i].rt);
+    gfx_blit_runs(DINO_X, dy, cell_dead, DW, DH, rt_dead);
     gfx_text2(48, 56, "GAME OVER", C_OVER, C_BG);
     gfx_text(24, 80, "press: retry  down: menu", C_FG, C_BG);
     gfx_present();

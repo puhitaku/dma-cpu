@@ -52,7 +52,7 @@ struct cst {
  * its pixels outside the dome */
 #define CAPW 16
 #define capcell ((ushort *)(g_arena + 512)) /* 16x16 disc, top half used */
-#define capsp (g_arena + 1024)              /* 8-row span table */
+#define caprt (g_arena + 1024)              /* 8-row exact run table */
 
 static void
 sky(int x, int y, int w, int h)
@@ -63,10 +63,20 @@ sky(int x, int y, int w, int h)
     gfx_fill(x, y, w, h, C_SKY);
 }
 
+/* turret_erase clears the whole barrel arc — ONLY when the aim
+ * changes; the per-frame draw paints just the turret's own pixels,
+ * so a chute drifting past shows around the barrel instead of
+ * vanishing under an invisible sky rectangle. */
+static void
+turret_erase(void)
+{
+  gfx_fill(TUR_X - 16, TUR_Y - 14, 32, 14, C_SKY);
+  gfx_damage(TUR_X - 16, TUR_Y - 14, TUR_X + 15, TUR_Y - 1);
+}
+
 static void
 draw_turret(void)
 {
-  gfx_fill(TUR_X - 16, TUR_Y - 14, 32, 14, C_SKY); /* barrel arc */
   gfx_fill(TUR_X - 12, TUR_Y, 24, 8, C_TURRET);
   gfx_fill(TUR_X - 6, TUR_Y - 4, 12, 4, C_TURRET);
   int a = CS_->aim;
@@ -99,7 +109,7 @@ troop_draw(int i)
 {
   int x = CS_->tx[i], y = CS_->ty[i], st = CS_->tst[i];
   if (st == T_CHUTE) /* the cap: masked blit of the dome's spans */
-    gfx_blit_spans(x - 8, y - 10, capcell, CAPW, 8, capsp);
+    gfx_blit_runs(x - 8, y - 10, capcell, CAPW, 8, caprt);
   gfx_fill(x - 2, y, 4, 4, C_TROOP);     /* head */
   gfx_fill(x - 2, y + 4, 4, 8, st == T_SHOT ? C_OVER : C_TROOP);
   gfx_damage(x - 8, y - 10, x + 7, y + 13);
@@ -134,7 +144,8 @@ chute_run(void)
   uputs("chute: start\n");
   led(LED_DIM(0x4060FF), LED_DIM(0x4060FF));
   gfx_disc_cell(16, 8, C_CHUTE, C_SKY, capcell);
-  gfx_cell_spans(capcell, CAPW, 8, C_SKY, capsp);
+  if (gfx_cell_runs(capcell, CAPW, 8, C_SKY, caprt, 40) < 0)
+    uputs("chute: run table overflow\n");
 restart: /* no recursion on this machine: dmacc frames are static */
   gfx_clear(C_SKY);
   gfx_fill(0, GROUND_Y, LCD_W, LCD_H - GROUND_Y, C_GROUND);
@@ -194,10 +205,14 @@ restart: /* no recursion on this machine: dmacc frames are static */
         troop_erase(i);
 
     /* phase 2: update — aim and fire */
-    if ((in_edge & BTN_LEFT) && CS_->aim > 0)
+    if ((in_edge & BTN_LEFT) && CS_->aim > 0) {
       CS_->aim--;
-    if ((in_edge & BTN_RIGHT) && CS_->aim < 4)
+      turret_erase(); /* the old barrel leaves the arc */
+    }
+    if ((in_edge & BTN_RIGHT) && CS_->aim < 4) {
       CS_->aim++;
+      turret_erase();
+    }
     if (in_edge & (BTN_A | BTN_UP)) {
       for (int i = 0; i < NB; i++)
         if (CS_->bx[i] == -999) {

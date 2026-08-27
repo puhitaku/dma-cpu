@@ -199,65 +199,90 @@ gfx_blit(int x, int y, const ushort *src, int w, int h)
   gfx_damage(x, y, x + cw - 1, y + ch - 1);
 }
 
-/* gfx_cell_spans: extract one opaque run per row of a cw x ch cell
- * whose transparent color is exactly `bg`: out[2r] = start, out[2r+1]
- * = width (0 = empty row), both kept EVEN so masked blits stay on
- * the word-DMA fast path. A row's scattered pixels get the BOUNDING
- * run (interior bg pixels ride along) — right for the roundish
- * sprites that overlap. Multiply-heavy: init-time only. */
-void
-gfx_cell_spans(const ushort *cell, int cw, int ch, ushort bg, uchar *out)
+/* gfx_cell_runs: extract the EXACT opaque silhouette of a cw x ch
+ * cell whose transparent color is exactly `bg`, as a run table:
+ * per row, {uchar n, then n x {uchar x0, uchar w}} — every run is
+ * pixel-precise, no rounding, no bounding-box interior (a dino row
+ * spanning tail to head keeps the sky between them transparent).
+ * Returns the table length in bytes, or -1 when it would exceed
+ * cap (the caller sized the arena slot short). Init-time only. */
+int
+gfx_cell_runs(const ushort *cell, int cw, int ch, ushort bg, uchar *out,
+              int cap)
 {
+  int len = 0;
   for (int r = 0; r < ch; r++) {
     const ushort *row = cell + r * cw;
-    int lo = cw, hi = -1;
-    for (int i = 0; i < cw; i++)
-      if (row[i] != bg) {
-        if (i < lo)
-          lo = i;
-        hi = i;
-      }
-    if (hi < 0) {
-      out[2 * r] = 0;
-      out[2 * r + 1] = 0;
-      continue;
+    int nslot = len++;
+    if (len > cap)
+      return -1;
+    int n = 0, i = 0;
+    while (i < cw) {
+      while (i < cw && row[i] == bg)
+        i++;
+      if (i >= cw)
+        break;
+      int x0 = i;
+      while (i < cw && row[i] != bg)
+        i++;
+      if (len + 2 > cap)
+        return -1;
+      out[len] = (uchar)x0;
+      out[len + 1] = (uchar)(i - x0);
+      len += 2;
+      n++;
     }
-    lo &= ~1;
-    int w = (hi + 2 - lo) & ~1;
-    if (lo + w > cw)
-      w = cw - lo; /* cw and lo even, so w stays even */
-    out[2 * r] = (uchar)lo;
-    out[2 * r + 1] = (uchar)w;
+    out[nslot] = (uchar)n;
   }
+  return len;
 }
 
-/* gfx_blit_spans: masked blit of a cell through its span table —
- * per row, one word-aligned copy of just the opaque run, so an
- * overlapping neighbor keeps its pixels outside the silhouette.
- * Clips on every edge; callers keep x (and the table's runs) even.
- * Incremental addressing: one multiply per call, adds per row. */
+/* gfx_blit_runs: TRUE-transparency blit of a cell through its run
+ * table — only the silhouette's pixels land, so an overlapped
+ * neighbor keeps everything outside it. Each run's odd edge pixels
+ * are stored by the machine and the even interior rides one ch11
+ * copy, so arbitrary run boundaries stay off the byte-loop slow
+ * path. Clips on every edge; callers keep x even (the cells sit
+ * word-aligned in the arena). */
 void
-gfx_blit_spans(int x, int y, const ushort *src, int cw, int ch,
-               const uchar *spans)
+gfx_blit_runs(int x, int y, const ushort *src, int cw, int ch,
+              const uchar *rt)
 {
-  uint dst = (uint)fb + (uint)((y * LCD_W + x) * 2);
-  uint s = (uint)src;
+  uint dstrow = (uint)fb + (uint)((y * LCD_W + x) * 2);
+  uint srow = (uint)src;
   for (int r = 0; r < ch; r++) {
+    int n = *rt++;
     int yy = y + r;
-    int w = spans[2 * r + 1];
-    if (w && yy >= 0 && yy < LCD_H) {
-      int lo = x + spans[2 * r];
-      int hi = lo + w;
+    for (int k = 0; k < n; k++) {
+      int lo = x + rt[0];
+      int hi = lo + rt[1];
+      rt += 2;
+      if (yy < 0 || yy >= LCD_H)
+        continue;
       if (lo < 0)
         lo = 0;
       if (hi > LCD_W)
         hi = LCD_W;
+      if (hi <= lo)
+        continue;
+      uint d = dstrow + (uint)(lo - x) * 2;
+      uint s = srow + (uint)(lo - x) * 2;
+      if (lo & 1) { /* odd left edge: one machine store */
+        *(ushort *)d = *(const ushort *)s;
+        lo++;
+        d += 2;
+        s += 2;
+      }
+      if ((hi - lo) & 1) { /* odd right edge likewise */
+        hi--;
+        *(ushort *)(dstrow + (uint)(hi - x) * 2) =
+            *(const ushort *)(srow + (uint)(hi - x) * 2);
+      }
       if (hi > lo)
-        gdma_copy(dst + (uint)(lo - x) * 2, s + (uint)(lo - x) * 2,
-                  (uint)(hi - lo) * 2);
+        gdma_copy(d, s, (uint)(hi - lo) * 2);
     }
-    dst += LCD_W * 2;
-    s += (uint)cw * 2;
+    dstrow += LCD_W * 2;
+    srow += (uint)cw * 2;
   }
   gfx_damage(x, y, x + cw - 1, y + ch - 1);
 }
