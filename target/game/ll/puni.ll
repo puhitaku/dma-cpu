@@ -120,7 +120,7 @@ define dso_local void @puni_run() local_unnamed_addr #0 {
 43:                                               ; preds = %53, %35
   %44 = tail call fastcc i32 @tick() #5
   %45 = icmp eq i32 %44, 0
-  br i1 %45, label %46, label %348
+  br i1 %45, label %46, label %356
 
 46:                                               ; preds = %43
   %47 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 336), align 4, !tbaa !13
@@ -133,7 +133,7 @@ define dso_local void @puni_run() local_unnamed_addr #0 {
   %52 = icmp eq i32 %51, 0
   br i1 %52, label %53, label %54
 
-53:                                               ; preds = %130, %150, %167, %347, %49
+53:                                               ; preds = %130, %150, %167, %355, %49
   br label %43, !llvm.loop !26
 
 54:                                               ; preds = %49
@@ -321,8 +321,8 @@ define dso_local void @puni_run() local_unnamed_addr #0 {
   tail call void @uputs(ptr noundef nonnull @.str.7) #4
   br label %53, !llvm.loop !26
 
-168:                                              ; preds = %319, %163
-  %169 = phi i32 [ 0, %163 ], [ %292, %319 ]
+168:                                              ; preds = %333, %163
+  %169 = phi i32 [ 0, %163 ], [ %292, %333 ]
   br label %170
 
 170:                                              ; preds = %177, %168
@@ -525,7 +525,7 @@ define dso_local void @puni_run() local_unnamed_addr #0 {
 
 289:                                              ; preds = %205
   %290 = icmp eq i32 %207, 0
-  br i1 %290, label %332, label %291
+  br i1 %290, label %340, label %291
 
 291:                                              ; preds = %289
   %292 = add nuw nsw i32 %169, 1
@@ -568,69 +568,84 @@ define dso_local void @puni_run() local_unnamed_addr #0 {
 
 312:                                              ; preds = %315, %302
   %313 = phi i32 [ 0, %302 ], [ %318, %315 ]
-  %314 = icmp eq i32 %313, 5
+  %314 = icmp eq i32 %313, 10
   br i1 %314, label %319, label %315
 
 315:                                              ; preds = %312
   %316 = tail call fastcc i32 @tick() #5
   %317 = icmp eq i32 %316, 0
   %318 = add nuw nsw i32 %313, 1
-  br i1 %317, label %312, label %348, !llvm.loop !42
+  br i1 %317, label %312, label %356, !llvm.loop !42
 
-319:                                              ; preds = %312, %322
-  %320 = phi i32 [ %331, %322 ], [ 0, %312 ]
+319:                                              ; preds = %312, %323
+  %320 = phi i32 [ %332, %323 ], [ 0, %312 ]
   %321 = icmp eq i32 %320, %207
-  br i1 %321, label %168, label %322
+  br i1 %321, label %322, label %323
 
 322:                                              ; preds = %319
-  %323 = getelementptr inbounds nuw [72 x i8], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 216), i32 0, i32 %320
-  %324 = load i8, ptr %323, align 1, !tbaa !21
-  %325 = zext i8 %324 to i32
-  %326 = udiv i8 %324, 6
-  %327 = zext nneg i8 %326 to i32
-  %328 = mul nsw i32 %327, -6
-  %329 = add nsw i32 %328, %325
-  %330 = getelementptr inbounds [12 x [6 x i8]], ptr @arena_w, i32 0, i32 %327, i32 %329
-  store i8 0, ptr %330, align 1, !tbaa !21
-  tail call fastcc void @cell_draw(i32 noundef %329, i32 noundef %327, i32 noundef 0) #5
-  %331 = add nuw i32 %320, 1
+  tail call void @gfx_present() #4
+  br label %333
+
+323:                                              ; preds = %319
+  %324 = getelementptr inbounds nuw [72 x i8], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 216), i32 0, i32 %320
+  %325 = load i8, ptr %324, align 1, !tbaa !21
+  %326 = zext i8 %325 to i32
+  %327 = udiv i8 %325, 6
+  %328 = zext nneg i8 %327 to i32
+  %329 = mul nsw i32 %328, -6
+  %330 = add nsw i32 %329, %326
+  %331 = getelementptr inbounds [12 x [6 x i8]], ptr @arena_w, i32 0, i32 %328, i32 %330
+  store i8 0, ptr %331, align 1, !tbaa !21
+  tail call fastcc void @cell_draw(i32 noundef %330, i32 noundef %328, i32 noundef 0) #5
+  %332 = add nuw i32 %320, 1
   br label %319, !llvm.loop !43
 
-332:                                              ; preds = %289
-  %333 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 332), align 4, !tbaa !10
-  %334 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 344), align 4, !tbaa !44
-  %335 = icmp eq i32 %333, %334
-  br i1 %335, label %347, label %336
+333:                                              ; preds = %336, %322
+  %334 = phi i32 [ 0, %322 ], [ %339, %336 ]
+  %335 = icmp eq i32 %334, 6
+  br i1 %335, label %168, label %336
 
-336:                                              ; preds = %332
+336:                                              ; preds = %333
+  %337 = tail call fastcc i32 @tick() #5
+  %338 = icmp eq i32 %337, 0
+  %339 = add nuw nsw i32 %334, 1
+  br i1 %338, label %333, label %356, !llvm.loop !44
+
+340:                                              ; preds = %289
+  %341 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 332), align 4, !tbaa !10
+  %342 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 344), align 4, !tbaa !45
+  %343 = icmp eq i32 %341, %342
+  br i1 %343, label %355, label %344
+
+344:                                              ; preds = %340
   tail call fastcc void @score_draw() #5
-  %337 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 328), align 4, !tbaa !15
-  %338 = icmp sgt i32 %337, 6
-  br i1 %338, label %339, label %343
+  %345 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 328), align 4, !tbaa !15
+  %346 = icmp sgt i32 %345, 6
+  br i1 %346, label %347, label %351
 
-339:                                              ; preds = %336
-  %340 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 332), align 4, !tbaa !10
-  %341 = sdiv i32 %340, -400
-  %342 = add nsw i32 %341, 16
-  store i32 %342, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 328), align 4, !tbaa !15
-  br label %343
+347:                                              ; preds = %344
+  %348 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 332), align 4, !tbaa !10
+  %349 = sdiv i32 %348, -400
+  %350 = add nsw i32 %349, 16
+  store i32 %350, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 328), align 4, !tbaa !15
+  br label %351
 
-343:                                              ; preds = %339, %336
-  %344 = phi i32 [ %342, %339 ], [ %337, %336 ]
-  %345 = icmp slt i32 %344, 6
-  br i1 %345, label %346, label %347
+351:                                              ; preds = %347, %344
+  %352 = phi i32 [ %350, %347 ], [ %345, %344 ]
+  %353 = icmp slt i32 %352, 6
+  br i1 %353, label %354, label %355
 
-346:                                              ; preds = %343
+354:                                              ; preds = %351
   store i32 6, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 328), align 4, !tbaa !15
-  br label %347
+  br label %355
 
-347:                                              ; preds = %343, %346, %332
+355:                                              ; preds = %351, %354, %340
   tail call fastcc void @pair_spawn() #5
   tail call fastcc void @pair_draw(i32 noundef 1) #5
   tail call void @gfx_present() #4
   br label %53
 
-348:                                              ; preds = %43, %315
+356:                                              ; preds = %43, %315, %336
   tail call void @uputs(ptr noundef nonnull @.str.2) #4
   tail call void @snd_off() #4
   ret void
@@ -699,7 +714,7 @@ define internal fastcc void @score_draw() unnamed_addr #0 {
   call void @numstr(ptr noundef nonnull %1, i32 noundef 6, i32 noundef %2) #4
   call void @gfx_text(i32 noundef 150, i32 noundef 176, ptr noundef nonnull %1, i16 noundef zeroext -18950, i16 noundef zeroext 6407) #4
   %3 = load i32, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 332), align 4, !tbaa !10
-  store i32 %3, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 344), align 4, !tbaa !44
+  store i32 %3, ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 344), align 4, !tbaa !45
   call void @llvm.lifetime.end.p0(i64 7, ptr nonnull %1) #6
   ret void
 }
@@ -912,4 +927,5 @@ attributes #6 = { nounwind }
 !41 = distinct !{!41, !8, !9}
 !42 = distinct !{!42, !8, !9}
 !43 = distinct !{!43, !8, !9}
-!44 = !{!11, !12, i64 344}
+!44 = distinct !{!44, !8, !9}
+!45 = !{!11, !12, i64 344}

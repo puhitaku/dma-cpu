@@ -316,7 +316,7 @@ restart:
         cell_draw(c - cy * PW, cy, NCOL + 1);
       }
       gfx_present();
-      for (int f = 0; f < 5; f++)
+      for (int f = 0; f < 10; f++) /* let the flash breathe */
         if (tick()) {
           uputs("puni: quit\n");
           snd_off();
@@ -327,6 +327,13 @@ restart:
         PS->grid[cy][c - cy * PW] = 0;
         cell_draw(c - cy * PW, cy, 0);
       }
+      gfx_present();
+      for (int f = 0; f < 6; f++) /* a beat before the fall */
+        if (tick()) {
+          uputs("puni: quit\n");
+          snd_off();
+          return;
+        }
     }
     if (PS->score != PS->drawn_score) {
       score_draw();

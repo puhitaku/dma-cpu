@@ -1,10 +1,13 @@
 package gameassets
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"math"
+)
 
-// DrumPCM synthesizes the sequencer's five-drum kit — a 1:1 port of
-// the renderers that used to run ON the machine into a 40 KiB SRAM
-// arena (seq.c render_kick/render_square/render_noise/fade_ends).
+// DrumPCM synthesizes the sequencer's five-drum kit — ports of the
+// renderers that used to run ON the machine into a 40 KiB SRAM arena
+// (the kick gained a properly descending pitch sweep on the way).
 // Moving the synthesis to build time lets the PCM live in the flash
 // blob like every other clip (the ring copier streams it by DMA
 // either way) and returns the whole arena to the data segment.
@@ -37,32 +40,24 @@ func frame(s int) uint32 {
 }
 
 func renderKick(n int) []byte {
+	// An explicit DESCENDING pitch sweep with a separate amplitude
+	// envelope. The old slope/amp triangle was subtly backwards: the
+	// pitch is slope/(4*amp), and amp decayed FASTER than slope, so
+	// the "glide" actually rose. Synthesis runs on the host now, so
+	// the honest float form costs nothing: ~500 Hz punch diving to a
+	// ~115 Hz body over 8 ms, then a steady thump fading out.
 	d := make([]byte, 4*n)
-	// slope sets the triangle's pitch (f = fs*slope/(4*amp)): start
-	// ~390 Hz gliding to a ~120 Hz floor — the original 118 -> 9 Hz
-	// sweep vanished on a tiny speaker
-	val, dir, amp, slope := 0, 1, 14000, 500
+	const f0, f1, fs = 500.0, 115.0, 44100.0
+	phase := 0.0
 	for i := 0; i < n; i++ {
-		if dir > 0 {
-			val += slope
-		} else {
-			val -= slope
+		f := f1 + (f0-f1)*math.Exp(-float64(i)/(0.008*fs))
+		phase += f / fs
+		if phase >= 1 {
+			phase -= 1
 		}
-		if val >= amp {
-			val = amp
-			dir = -1
-		} else if val <= -amp {
-			val = -amp
-			dir = 1
-		}
-		if i&7 == 0 {
-			slope -= slope >> 8 // the pitch glide
-			if slope < 150 {
-				slope = 150
-			}
-		}
-		amp -= amp >> 10 // the body decay
-		binary.LittleEndian.PutUint32(d[4*i:], frame(val))
+		tri := 4*math.Abs(phase-0.5) - 1 // -1..1 triangle
+		env := math.Exp(-float64(i) / 1400)
+		binary.LittleEndian.PutUint32(d[4*i:], frame(int(14000*tri*env)))
 	}
 	return d
 }

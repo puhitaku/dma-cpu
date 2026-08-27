@@ -319,10 +319,10 @@ heli_kill(int i)
   int x = CS_->hx[i], y = CS_->hy[i];
   heli_draw(i, 1);
   CS_->hx[i] = -999;
-  debris_spawn(x - 8, y + 2, -3, -4);
-  debris_spawn(x - 2, y + 4, -1, -6);
-  debris_spawn(x + 2, y + 2, 1, -5);
-  debris_spawn(x + 8, y + 4, 3, -3);
+  debris_spawn(x - 8, y + 2, -2, -1); /* wreckage rains DOWN */
+  debris_spawn(x - 2, y + 4, -1, -2);
+  debris_spawn(x + 2, y + 2, 1, -1);
+  debris_spawn(x + 8, y + 4, 2, 0);
   CS_->score += 20;
   snd_play(220, 70, 5);
   led_blink(LED_BRIGHT(0xFF6000), 2);
@@ -591,17 +591,20 @@ restart: /* no recursion on this machine: dmacc frames are static */
       if (CS_->gy[i] >= GROUND_Y - 2 || CS_->gx[i] < 3 || CS_->gx[i] > 236)
         CS_->gx[i] = -999;
     }
-    /* debris tumbles, and destroys whatever it touches */
+    /* debris tumbles (half speed: it reads better slow), and
+     * destroys whatever it touches */
     for (int i = 0; i < ND; i++) {
       if (CS_->dx_[i] == -999)
         continue;
-      CS_->dx_[i] += CS_->dvx[i];
-      CS_->dy_[i] += CS_->dvy[i];
-      if (CS_->frame & 1)
-        CS_->dvy[i]++;
-      if (CS_->dy_[i] >= GROUND_Y - 2 || CS_->dx_[i] < 2 ||
-          CS_->dx_[i] > 236) {
-        CS_->dx_[i] = -999;
+      if (CS_->frame & 1) {
+        CS_->dx_[i] += CS_->dvx[i];
+        CS_->dy_[i] += CS_->dvy[i];
+        if ((CS_->frame & 3) == 1)
+          CS_->dvy[i]++;
+      }
+      if (CS_->dy_[i] >= GROUND_Y - 2 || CS_->dy_[i] < 16 ||
+          CS_->dx_[i] < 2 || CS_->dx_[i] > 236) {
+        CS_->dx_[i] = -999; /* y < 16 also keeps it out of the HUD */
         continue;
       }
       for (int h = 0; h < NH; h++)
@@ -701,8 +704,8 @@ restart: /* no recursion on this machine: dmacc frames are static */
       if (CS_->dx_[i] != -999)
         gfx_damage(CS_->dx_[i] - 1, CS_->dy_[i] - 1, CS_->dx_[i] + 5,
                    CS_->dy_[i] + 4);
-    if (CS_->score != CS_->drawn_score)
-      draw_score();
+    draw_score(); /* every frame: debris and bullets cross the HUD
+                   * strip, and their erases were eating the meter */
     gfx_present();
   }
 }

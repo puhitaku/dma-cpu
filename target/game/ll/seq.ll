@@ -46,14 +46,14 @@ define dso_local void @seq_run() local_unnamed_addr #0 {
   %5 = load volatile i32, ptr inttoptr (i32 1342177856 to ptr), align 64, !tbaa !3
   br label %6
 
-6:                                                ; preds = %146, %4
-  %7 = phi i32 [ %78, %146 ], [ 22050, %4 ]
-  %8 = phi i32 [ %45, %146 ], [ 0, %4 ]
-  %9 = phi i32 [ %96, %146 ], [ -1, %4 ]
-  %10 = phi i32 [ %84, %146 ], [ 0, %4 ]
-  %11 = phi i32 [ %88, %146 ], [ %5, %4 ]
-  %12 = phi i32 [ %94, %146 ], [ 0, %4 ]
-  %13 = phi i32 [ %79, %146 ], [ 120, %4 ]
+6:                                                ; preds = %154, %4
+  %7 = phi i32 [ %104, %154 ], [ -1, %4 ]
+  %8 = phi i32 [ %84, %154 ], [ 0, %4 ]
+  %9 = phi i32 [ %88, %154 ], [ %5, %4 ]
+  %10 = phi i32 [ %102, %154 ], [ 0, %4 ]
+  %11 = phi i32 [ %45, %154 ], [ 0, %4 ]
+  %12 = phi i32 [ %78, %154 ], [ 22050, %4 ]
+  %13 = phi i32 [ %79, %154 ], [ 120, %4 ]
   br label %18
 
 14:                                               ; preds = %1
@@ -63,13 +63,13 @@ define dso_local void @seq_run() local_unnamed_addr #0 {
   %17 = add nuw nsw i32 %2, 1
   br label %1, !llvm.loop !7
 
-18:                                               ; preds = %6, %87
-  %19 = phi i32 [ %78, %87 ], [ %7, %6 ]
-  %20 = phi i32 [ %45, %87 ], [ %8, %6 ]
-  %21 = phi i32 [ %84, %87 ], [ %10, %6 ]
-  %22 = phi i32 [ %88, %87 ], [ %11, %6 ]
-  %23 = phi i32 [ %91, %87 ], [ %12, %6 ]
-  %24 = phi i32 [ %79, %87 ], [ %13, %6 ]
+18:                                               ; preds = %6, %98
+  %19 = phi i32 [ %84, %98 ], [ %8, %6 ]
+  %20 = phi i32 [ %88, %98 ], [ %9, %6 ]
+  %21 = phi i32 [ %99, %98 ], [ %10, %6 ]
+  %22 = phi i32 [ %45, %98 ], [ %11, %6 ]
+  %23 = phi i32 [ %78, %98 ], [ %12, %6 ]
+  %24 = phi i32 [ %79, %98 ], [ %13, %6 ]
   tail call void @frame_sync(i32 noundef 4000) #4
   tail call void @in_poll() #4
   %25 = load i32, ptr @in_edge, align 4, !tbaa !3
@@ -78,9 +78,9 @@ define dso_local void @seq_run() local_unnamed_addr #0 {
   br i1 %27, label %33, label %28
 
 28:                                               ; preds = %18
-  tail call fastcc void @draw_step(i32 noundef %20, i32 noundef 0) #5
-  %29 = icmp eq i32 %20, 0
-  %30 = add nsw i32 %20, -1
+  tail call fastcc void @draw_step(i32 noundef %22, i32 noundef 0) #5
+  %29 = icmp eq i32 %22, 0
+  %30 = add nsw i32 %22, -1
   %31 = select i1 %29, i32 15, i32 %30
   tail call fastcc void @draw_step(i32 noundef %31, i32 noundef 1) #5
   tail call void @gfx_present() #4
@@ -89,7 +89,7 @@ define dso_local void @seq_run() local_unnamed_addr #0 {
 
 33:                                               ; preds = %28, %18
   %34 = phi i32 [ %32, %28 ], [ %25, %18 ]
-  %35 = phi i32 [ %31, %28 ], [ %20, %18 ]
+  %35 = phi i32 [ %31, %28 ], [ %22, %18 ]
   %36 = and i32 %34, 8
   %37 = icmp eq i32 %36, 0
   br i1 %37, label %43, label %38
@@ -143,7 +143,7 @@ define dso_local void @seq_run() local_unnamed_addr #0 {
 
 66:                                               ; preds = %62, %56
   %67 = phi i32 [ %65, %62 ], [ %57, %56 ]
-  %68 = phi i32 [ %64, %62 ], [ %19, %56 ]
+  %68 = phi i32 [ %64, %62 ], [ %23, %56 ]
   %69 = phi i32 [ %63, %62 ], [ %24, %56 ]
   %70 = and i32 %67, 2
   %71 = icmp ne i32 %70, 0
@@ -164,7 +164,7 @@ define dso_local void @seq_run() local_unnamed_addr #0 {
   %80 = load i32, ptr @in_down, align 4, !tbaa !3
   %81 = and i32 %80, 16
   %82 = icmp eq i32 %81, 0
-  %83 = add nuw nsw i32 %21, 1
+  %83 = add nuw nsw i32 %19, 1
   %84 = select i1 %82, i32 0, i32 %83
   %85 = icmp samesign ugt i32 %84, 300
   br i1 %85, label %86, label %87
@@ -178,105 +178,121 @@ define dso_local void @seq_run() local_unnamed_addr #0 {
 
 87:                                               ; preds = %77
   %88 = load volatile i32, ptr inttoptr (i32 1342177856 to ptr), align 64, !tbaa !3
-  %89 = sub i32 %88, %22
+  %89 = sub i32 %88, %20
   %90 = and i32 %89, 16383
-  %91 = add i32 %90, %23
-  %92 = icmp ult i32 %91, %78
-  br i1 %92, label %18, label %93, !llvm.loop !11
+  %91 = icmp eq i32 %90, 0
+  br i1 %91, label %98, label %92
 
-93:                                               ; preds = %87
-  %94 = sub nuw i32 %91, %78
-  %95 = add nsw i32 %9, 1
-  %96 = and i32 %95, 15
-  %97 = getelementptr inbounds nuw [16 x i8], ptr @pattern, i32 0, i32 %96
-  %98 = load i8, ptr %97, align 1, !tbaa !10
-  %99 = icmp eq i8 %98, 0
-  br i1 %99, label %127, label %100
+92:                                               ; preds = %87
+  %93 = sub i32 537116672, %20
+  %94 = tail call i32 @llvm.umin.i32(i32 %93, i32 %90)
+  tail call void @gdma_fill(i32 noundef %20, i32 noundef 0, i32 noundef %94) #4
+  %95 = icmp ugt i32 %90, %93
+  br i1 %95, label %96, label %98
 
-100:                                              ; preds = %93
-  %101 = zext i8 %98 to i32
-  %102 = getelementptr inbounds nuw [6 x i32], ptr @daddr, i32 0, i32 %101
-  %103 = load i32, ptr %102, align 4, !tbaa !3
-  %104 = getelementptr inbounds nuw [6 x i32], ptr @dlen, i32 0, i32 %101
-  %105 = load i32, ptr %104, align 4, !tbaa !3
-  %106 = shl i32 %105, 2
-  %107 = load volatile i32, ptr inttoptr (i32 1342177856 to ptr), align 64, !tbaa !3
-  %108 = add i32 %107, 256
-  %109 = and i32 %108, 16383
-  %110 = sub nuw nsw i32 16384, %109
-  %111 = tail call i32 @llvm.umin.i32(i32 %110, i32 %106)
-  %112 = or disjoint i32 %109, 537100288
-  tail call void @gdma_copy(i32 noundef %112, i32 noundef %103, i32 noundef %111) #4
-  %113 = icmp ugt i32 %106, %110
-  br i1 %113, label %114, label %117
+96:                                               ; preds = %92
+  %97 = sub nsw i32 %90, %94
+  tail call void @gdma_fill(i32 noundef 537100288, i32 noundef 0, i32 noundef %97) #4
+  br label %98
 
-114:                                              ; preds = %100
-  %115 = sub i32 %106, %111
-  %116 = add i32 %111, %103
-  tail call void @gdma_copy(i32 noundef 537100288, i32 noundef %116, i32 noundef %115) #4
-  br label %117
+98:                                               ; preds = %92, %96, %87
+  %99 = add i32 %90, %21
+  %100 = icmp ult i32 %99, %78
+  br i1 %100, label %18, label %101, !llvm.loop !11
 
-117:                                              ; preds = %114, %100
-  %118 = add i32 %108, %106
-  %119 = and i32 %118, 16383
-  %120 = sub i32 16384, %106
-  %121 = sub nuw nsw i32 16384, %119
-  %122 = tail call i32 @llvm.umin.i32(i32 %121, i32 %120)
-  %123 = or disjoint i32 %119, 537100288
-  tail call void @gdma_fill(i32 noundef %123, i32 noundef 0, i32 noundef %122) #4
-  %124 = icmp ugt i32 %120, %121
-  br i1 %124, label %125, label %127
+101:                                              ; preds = %98
+  %102 = sub nuw i32 %99, %78
+  %103 = add nsw i32 %7, 1
+  %104 = and i32 %103, 15
+  %105 = getelementptr inbounds nuw [16 x i8], ptr @pattern, i32 0, i32 %104
+  %106 = load i8, ptr %105, align 1, !tbaa !10
+  %107 = icmp eq i8 %106, 0
+  br i1 %107, label %135, label %108
 
-125:                                              ; preds = %117
-  %126 = sub i32 %120, %122
-  tail call void @gdma_fill(i32 noundef 537100288, i32 noundef 0, i32 noundef %126) #4
-  br label %127
+108:                                              ; preds = %101
+  %109 = zext i8 %106 to i32
+  %110 = getelementptr inbounds nuw [6 x i32], ptr @daddr, i32 0, i32 %109
+  %111 = load i32, ptr %110, align 4, !tbaa !3
+  %112 = getelementptr inbounds nuw [6 x i32], ptr @dlen, i32 0, i32 %109
+  %113 = load i32, ptr %112, align 4, !tbaa !3
+  %114 = shl i32 %113, 2
+  %115 = load volatile i32, ptr inttoptr (i32 1342177856 to ptr), align 64, !tbaa !3
+  %116 = add i32 %115, 256
+  %117 = and i32 %116, 16383
+  %118 = sub nuw nsw i32 16384, %117
+  %119 = tail call i32 @llvm.umin.i32(i32 %118, i32 %114)
+  %120 = or disjoint i32 %117, 537100288
+  tail call void @gdma_copy(i32 noundef %120, i32 noundef %111, i32 noundef %119) #4
+  %121 = icmp ugt i32 %114, %118
+  br i1 %121, label %122, label %125
 
-127:                                              ; preds = %125, %117, %93
-  %128 = icmp sgt i32 %9, -1
-  br i1 %128, label %129, label %135
+122:                                              ; preds = %108
+  %123 = sub i32 %114, %119
+  %124 = add i32 %119, %111
+  tail call void @gdma_copy(i32 noundef 537100288, i32 noundef %124, i32 noundef %123) #4
+  br label %125
 
-129:                                              ; preds = %127
-  %130 = and i32 %9, 7
-  %131 = mul nuw nsw i32 %130, 29
-  %132 = add nuw nsw i32 %131, 6
-  %133 = icmp samesign ult i32 %9, 8
-  %134 = select i1 %133, i32 91, i32 131
-  tail call void @gfx_fill(i32 noundef %132, i32 noundef %134, i32 noundef 26, i32 noundef 3, i16 noundef zeroext 4163) #4
+125:                                              ; preds = %122, %108
+  %126 = add i32 %116, %114
+  %127 = and i32 %126, 16383
+  %128 = sub i32 16384, %114
+  %129 = sub nuw nsw i32 16384, %127
+  %130 = tail call i32 @llvm.umin.i32(i32 %129, i32 %128)
+  %131 = or disjoint i32 %127, 537100288
+  tail call void @gdma_fill(i32 noundef %131, i32 noundef 0, i32 noundef %130) #4
+  %132 = icmp ugt i32 %128, %129
+  br i1 %132, label %133, label %135
+
+133:                                              ; preds = %125
+  %134 = sub i32 %128, %130
+  tail call void @gdma_fill(i32 noundef 537100288, i32 noundef 0, i32 noundef %134) #4
   br label %135
 
-135:                                              ; preds = %127, %129
-  %136 = and i32 %95, 7
-  %137 = mul nuw nsw i32 %136, 29
-  %138 = add nuw nsw i32 %137, 6
-  %139 = icmp samesign ult i32 %96, 8
-  %140 = select i1 %139, i32 91, i32 131
-  tail call void @gfx_fill(i32 noundef %138, i32 noundef %140, i32 noundef 26, i32 noundef 3, i16 noundef zeroext -377) #4
-  switch i8 %98, label %143 [
-    i8 1, label %141
-    i8 2, label %142
+135:                                              ; preds = %133, %125, %101
+  %136 = icmp sgt i32 %7, -1
+  br i1 %136, label %137, label %143
+
+137:                                              ; preds = %135
+  %138 = and i32 %7, 7
+  %139 = mul nuw nsw i32 %138, 29
+  %140 = add nuw nsw i32 %139, 6
+  %141 = icmp samesign ult i32 %7, 8
+  %142 = select i1 %141, i32 91, i32 131
+  tail call void @gfx_fill(i32 noundef %140, i32 noundef %142, i32 noundef 26, i32 noundef 3, i16 noundef zeroext 4163) #4
+  br label %143
+
+143:                                              ; preds = %135, %137
+  %144 = and i32 %103, 7
+  %145 = mul nuw nsw i32 %144, 29
+  %146 = add nuw nsw i32 %145, 6
+  %147 = icmp samesign ult i32 %104, 8
+  %148 = select i1 %147, i32 91, i32 131
+  tail call void @gfx_fill(i32 noundef %146, i32 noundef %148, i32 noundef 26, i32 noundef 3, i16 noundef zeroext -377) #4
+  switch i8 %106, label %151 [
+    i8 1, label %149
+    i8 2, label %150
   ]
 
-141:                                              ; preds = %135
+149:                                              ; preds = %143
   tail call void @led(i32 noundef 4132864, i32 noundef 0) #4
-  br label %146
+  br label %154
 
-142:                                              ; preds = %135
+150:                                              ; preds = %143
   tail call void @led(i32 noundef 0, i32 noundef 4144912) #4
-  br label %146
+  br label %154
 
-143:                                              ; preds = %135
-  br i1 %99, label %145, label %144
+151:                                              ; preds = %143
+  br i1 %107, label %153, label %152
 
-144:                                              ; preds = %143
+152:                                              ; preds = %151
   tail call void @led(i32 noundef 3855, i32 noundef 3855) #4
-  br label %146
+  br label %154
 
-145:                                              ; preds = %143
+153:                                              ; preds = %151
   tail call void @led(i32 noundef 0, i32 noundef 0) #4
-  br label %146
+  br label %154
 
-146:                                              ; preds = %142, %145, %144, %141
+154:                                              ; preds = %150, %153, %152, %149
   tail call void @gfx_present() #4
   br label %6, !llvm.loop !11
 }

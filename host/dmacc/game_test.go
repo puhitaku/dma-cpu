@@ -72,7 +72,7 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	}
 	m := emu.NewMachine(v)
 	m.Flash = make([]byte, bd.FlashSize)
-	sfx := stageSFX(t, m)
+	sfx, drums, ballHome := stageSFX(t, m)
 	for pin := 2; pin <= 11; pin++ {
 		m.SetPadIn(pin, true)
 	}
@@ -98,7 +98,7 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	}
 	m.Poke32(mustSym(t, prog, "g_ball_home"), ballHome)
 	da := mustSym(t, prog, "g_daddr")
-	for i, a := range drumAddrs {
+	for i, a := range drums {
 		m.Poke32(da+uint32(4+4*i), a)
 	}
 	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
@@ -116,11 +116,12 @@ type sfxClip struct {
 
 // stageSFX loads the game's WAV clips into the emulated flash at the
 // same home dmxgen uses, returning the table the loader would poke.
-func stageSFX(t *testing.T, m *emu.Machine) []sfxClip {
+func stageSFX(t *testing.T, m *emu.Machine) ([]sfxClip, []uint32, uint32) {
 	t.Helper()
 	const home = 0x10140000
 	off := uint32(0)
 	var clips []sfxClip
+	var drums []uint32
 	for _, path := range []string{"../../target/game/sfx/dino_fail.wav",
 		"../../target/game/sfx/lanwalk_success.wav"} {
 		raw, err := os.ReadFile(path)
@@ -150,23 +151,17 @@ func stageSFX(t *testing.T, m *emu.Machine) []sfxClip {
 		off += uint32(len(data)+3) &^ 3
 	}
 	// the drum kit and the Boing ball ride the same blob (mirrors
-	// dmxgen buildGame)
-	drumAddrs = drumAddrs[:0]
+	// dmxgen buildGame). Everything returns by value: tests run in
+	// parallel, and package-level staging state raced.
 	for _, clip := range gameassets.DrumPCM() {
 		copy(m.Flash[home-0x10000000+off:], clip)
-		drumAddrs = append(drumAddrs, home+off)
+		drums = append(drums, home+off)
 		off += uint32(len(clip))
 	}
 	ball := gameassets.BallBlob()
 	copy(m.Flash[home-0x10000000+off:], ball)
-	ballHome = home + off
-	return clips
+	return clips, drums, home + off
 }
-
-// ballHome is stageSFX's ball-blob address, poked into g_ball_home;
-// drumAddrs are the staged drum clips', poked into g_daddr[1..].
-var ballHome uint32
-var drumAddrs []uint32
 
 // runUntil advances the machine in slices until the console contains
 // marker (counted from offset from0) or the cycle budget runs out.

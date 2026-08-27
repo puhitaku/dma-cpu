@@ -188,7 +188,20 @@ seq_run(void)
     /* the step clock: audio consumed since the last step (the poll
      * runs many times per ring lap, so the delta never wraps) */
     uint rd = W32(DMACH(9) + 0x0);
-    acc += (rd - prev_rd) & (AURING_BYTES - 1u);
+    uint used = (rd - prev_rd) & (AURING_BYTES - 1u);
+    if (used) {
+      /* scrub what the reader just played: below ~160 BPM a step
+       * outlasts one ring lap, and without the scrub the reader
+       * came around and rang the same drum again */
+      uint off = prev_rd - AURING;
+      uint first = AURING_BYTES - off;
+      if (first > used)
+        first = used;
+      gdma_fill(AURING + off, 0, first);
+      if (used - first)
+        gdma_fill(AURING, 0, used - first);
+    }
+    acc += used;
     prev_rd = rd;
     if (acc >= step_bytes) {
       acc -= step_bytes;
