@@ -6,7 +6,12 @@
  * squeeze (prompts/039). Sources of ANY size are fitted (letterboxed,
  * aspect preserved). The viewer row-doubles old 640x240 slides.
  *
- * Usage: sldgen [-o dir] [-deck name] [-nodither] image...
+ * Usage: sldgen [-o dir] [-deck name] [-dither] image...
+ *
+ * Dithering is OFF by default: plain quantization keeps flat regions
+ * flat, which is what presentation slides mostly are. -dither turns
+ * Floyd-Steinberg back on for photo-heavy decks where banding on
+ * gradients matters more.
  *
  * Inputs keep their command-line order; per-image outputs are named
  * NN-<stem>.sld so a plain name sort (what the viewer does) replays
@@ -104,10 +109,10 @@ func main() {
 	outdir := flag.String("o", ".", "output directory")
 	deckName := flag.String("deck", "deck.sldk", "multi-series deck output (empty to skip)")
 	under := flag.Float64("under", 0.9, "underscan content fraction for the *u series")
-	nodither := flag.Bool("nodither", false, "plain quantization instead of Floyd-Steinberg")
+	dither := flag.Bool("dither", false, "Floyd-Steinberg dithering instead of plain quantization")
 	flag.Parse()
 	if flag.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "usage: sldgen [-o dir] [-deck name] [-nodither] image...")
+		fmt.Fprintln(os.Stderr, "usage: sldgen [-o dir] [-deck name] [-dither] image...")
 		os.Exit(2)
 	}
 	if flag.NArg() > maxSlides {
@@ -152,7 +157,7 @@ func main() {
 				go func(s int) {
 					defer inner.Done()
 					deck[s].slides[i] = render(src, variants[s].hsqueeze,
-						variants[s].under, !*nodither)
+						variants[s].under, *dither)
 				}(s)
 			}
 			inner.Wait()
