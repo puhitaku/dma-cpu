@@ -111,6 +111,17 @@ lcd_init(void)
 void
 lcd_flush(int x0, int y0, int x1, int y1)
 {
+  if (x1 < x0 || y1 < y0)
+    return; /* empty rect: a negative span, taken as a uint transfer
+             * count, once marched ch11 off the top of RAM */
+  if (x0 < 0)
+    x0 = 0;
+  if (y0 < 0)
+    y0 = 0;
+  if (x1 >= LCD_W)
+    x1 = LCD_W - 1;
+  if (y1 >= LCD_H)
+    y1 = LCD_H - 1;
   /* A rect at least half the panel wide is widened to FULL width:
    * fb rows are contiguous, so the whole flush becomes one burst on
    * the contiguous fast path and runs out asynchronously while the

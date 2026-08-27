@@ -167,36 +167,39 @@ static const uint art_cloud[5] = {
 #define DINO_X 30
 #define STRIP_Y 100 /* redrawn play area: STRIP_Y..GROUND_Y-1 */
 
-/* Sprite cells carry baked-in background margins so a moving blit
- * erases its own trail — no separate erase fill, no second pass:
- * cacti get 12 px of sky on the right (they move left <= 10 px a
- * frame), the dino gets 6 sky rows above and below (vertical speed
- * tops out ~6 px a frame). */
-#define OM 12          /* obstacle right margin, px */
-#define DM 6           /* dino vertical margin, rows */
-#define DCH (DH + 2 * DM)
 /* Sprite cells live in the shared arena (g.h): rendered from the
  * 1bpp art at every dino_run() entry, nothing static. Offsets are
- * byte positions, each array's end is the next one's start. */
-#define cell_run_a ((ushort *)(g_arena + 0))      /* 1360 B */
-#define cell_run_b ((ushort *)(g_arena + 1360))   /* 1360 B */
-#define cell_dead ((ushort *)(g_arena + 2720))    /* 1360 B */
-#define cell_cact_s ((ushort *)(g_arena + 4080))  /* 1152 B */
-#define cell_cact_l ((ushort *)(g_arena + 5232))  /* 1800 B */
-#define cell_cloud ((ushort *)(g_arena + 7032))   /* 240 B */
+ * byte positions, each array's end is the next one's start. The
+ * frame loop is TWO-PHASE (erase every mover at its old spot, then
+ * draw back-to-front through per-cell SPAN tables), so no draw ever
+ * precedes an erase and overlapping sprites occlude cleanly — the
+ * old baked-margin trick punched holes in whatever a margin crossed
+ * (a jump over a cactus bit its top off until the next redraw). */
+#define cell_run_a ((ushort *)(g_arena + 0))      /* 880 B (20x22) */
+#define cell_run_b ((ushort *)(g_arena + 880))    /* 880 B */
+#define cell_dead ((ushort *)(g_arena + 1760))    /* 880 B */
+#define cell_cact_s ((ushort *)(g_arena + 2640))  /* 576 B (12x24) */
+#define cell_cact_l ((ushort *)(g_arena + 3216))  /* 1080 B (18x30) */
+#define cell_cloud ((ushort *)(g_arena + 4296))   /* 200 B (20x5) */
+#define dashpat ((ushort *)(g_arena + 4496))      /* 528 B */
+#define cell_digit ((ushort(*)[64])(g_arena + 5024)) /* 1280 B */
+#define sp_run_a (g_arena + 6304)  /* span tables: 2 B per row */
+#define sp_run_b (g_arena + 6348)
+#define sp_dead (g_arena + 6392)
+#define sp_cact_s (g_arena + 6436)
+#define sp_cact_l (g_arena + 6484)
+#define sp_cloud (g_arena + 6544)  /* ends 6554 */
 
-/* render 1bpp art into a cell with margins around it */
+/* render 1bpp art into a bare cell (background only inside the box) */
 static void
-cell_render(const uint *rows, int w, int h, ushort fg, ushort *dst,
-            int right, int vert)
+cell_render(const uint *rows, int w, int h, ushort fg, ushort *dst)
 {
-  int cw = w + right;
-  for (int i = 0; i < cw * (h + 2 * vert); i++)
+  for (int i = 0; i < w * h; i++)
     dst[i] = C_BG;
   for (int r = 0; r < h; r++) {
     uint bits = rows[r];
     uint mask = 1u << (32 - w);
-    ushort *p = dst + (r + vert) * cw;
+    ushort *p = dst + r * w;
     for (int c = w - 1; c >= 0; c--, mask <<= 1)
       if (bits & mask)
         p[c] = fg;
@@ -208,6 +211,7 @@ struct obst {
   int x;
   int w, h;
   ushort *cell;
+  const uchar *sp;
 };
 static struct obst obs[2];
 
@@ -217,32 +221,11 @@ draw_ground(void)
   gfx_fill(0, GROUND_Y, LCD_W, 2, C_FG);
 }
 
-/* fillf: clamped fill + immediate flush of a dirty band — the game
- * runs at 60 fps by touching only the pixels that changed, instead
- * of re-flushing the whole play strip (a full-width flush alone is
- * ~23 ms of SPI wire at 31.25 MHz). */
-static void
-fillf(int x, int y, int w, int h, ushort c)
-{
-  if (x < 0) {
-    w += x;
-    x = 0;
-  }
-  if (x + w > LCD_W)
-    w = LCD_W - x;
-  if (w <= 0 || h <= 0)
-    return;
-  gfx_fill(x, y, w, h, c);
-  lcd_flush(x, y, x + w - 1, y + h - 1);
-}
-
 /* the dash row under the ground line slides with the world: a
  * pre-rendered 264 px pattern, copied into the fb at offset goff by
  * ONE dma transfer (goff stays even, so the copy stays aligned).
  * The scalar version wrote 240 halfwords a frame — the profiler's
  * biggest labeled cost after the score text. */
-#define dashpat ((ushort *)(g_arena + 7272)) /* 528 B, arena */
-
 static void
 dash_init(void)
 {
@@ -269,8 +252,6 @@ draw_dashes(int goff)
  * pre-rendered digit cells so drawing is five aligned blits instead
  * of per-pixel text (the profiler's #1 frame cost) */
 static char sbuf[6];
-#define cell_digit ((ushort(*)[64])(g_arena + 7800)) /* 1280 B, arena
-                                                      * (ends 9080) */
 
 #define SCORE_X (LCD_W - 5 * 8 - 8)
 
@@ -309,10 +290,12 @@ spawn(struct obst *o, uint score)
     o->w = CLW;
     o->h = CLH;
     o->cell = cell_cact_l;
+    o->sp = sp_cact_l;
   } else {
     o->w = CSW;
     o->h = CSH;
     o->cell = cell_cact_s;
+    o->sp = sp_cact_s;
   }
   o->x = LCD_W;
 }
@@ -323,12 +306,18 @@ dino_run(void)
   dash_init();
   for (int d = 0; d < 10; d++)
     gfx_glyph_cell('0' + d, C_FG, C_BG, cell_digit[d]);
-  cell_render(art_dino_a, DW, DH, C_FG, cell_run_a, 0, DM);
-  cell_render(art_dino_b, DW, DH, C_FG, cell_run_b, 0, DM);
-  cell_render(art_dino_dead, DW, DH, C_FG, cell_dead, 0, DM);
-  cell_render(art_cact_s, CSW, CSH, C_CACT, cell_cact_s, OM, 0);
-  cell_render(art_cact_l, CLW, CLH, C_CACT, cell_cact_l, OM, 0);
-  cell_render(art_cloud, 20, 5, C_CLOUD, cell_cloud, 4, 0);
+  cell_render(art_dino_a, DW, DH, C_FG, cell_run_a);
+  cell_render(art_dino_b, DW, DH, C_FG, cell_run_b);
+  cell_render(art_dino_dead, DW, DH, C_FG, cell_dead);
+  cell_render(art_cact_s, CSW, CSH, C_CACT, cell_cact_s);
+  cell_render(art_cact_l, CLW, CLH, C_CACT, cell_cact_l);
+  cell_render(art_cloud, 20, 5, C_CLOUD, cell_cloud);
+  gfx_cell_spans(cell_run_a, DW, DH, C_BG, sp_run_a);
+  gfx_cell_spans(cell_run_b, DW, DH, C_BG, sp_run_b);
+  gfx_cell_spans(cell_dead, DW, DH, C_BG, sp_dead);
+  gfx_cell_spans(cell_cact_s, CSW, CSH, C_BG, sp_cact_s);
+  gfx_cell_spans(cell_cact_l, CLW, CLH, C_BG, sp_cact_l);
+  gfx_cell_spans(cell_cloud, 20, 5, C_BG, sp_cloud);
 
 restart:
   uputs("dino: start\n");
@@ -357,8 +346,8 @@ restart:
   clouds[0].y = 40;
   clouds[1].x = 40;
   clouds[1].y = 64;
-  gfx_blit(clouds[0].x, clouds[0].y, cell_cloud, 24, 5);
-  gfx_blit(clouds[1].x, clouds[1].y, cell_cloud, 24, 5);
+  gfx_blit_spans(clouds[0].x, clouds[0].y, cell_cloud, 20, 5, sp_cloud);
+  gfx_blit_spans(clouds[1].x, clouds[1].y, cell_cloud, 20, 5, sp_cloud);
   obs[0].x = obs[1].x = -1000;
 
   for (;;) {
@@ -398,29 +387,23 @@ restart:
       dx += 2;
     }
 
-    /* the dino: a margin blit erases its own trail (the cell carries
-     * DM sky rows each side), clipped so it never paints the ground
-     * line. y_fp>>8 is a runtime call — computed once. */
+    /* --- TWO-PHASE FRAME: erase every mover at its old spot, then
+     * draw back-to-front (clouds, obstacles, dino) through the span
+     * tables — no draw ever precedes an erase, so an overlap can't
+     * punch a hole that survives the frame. */
     int dy = GROUND_Y - DH - ypix;
-    if (dy != prev_dy || (frame & 7) == 0) {
-      ushort *cell = (frame & 8) ? cell_run_a : cell_run_b;
-      if (ypix > 0)
-        cell = cell_run_a;
-      int bh = GROUND_Y - (dy - DM); /* clip the bottom margin */
-      if (bh > DCH)
-        bh = DCH;
-      gfx_blit(DINO_X, dy - DM, cell, DW, bh);
-      lcd_flush(DINO_X, dy - DM, DINO_X + DW - 1, dy - DM + bh - 1);
-      prev_dy = dy;
-    }
+    int redino = dy != prev_dy || (frame & 7) == 0;
+    int recloud = (frame & 15) == 0;
 
-    /* obstacles: erase at the old spot, march, redraw, flush only
-     * the union band the move touched */
+    /* phase 1: erase */
+    if (redino)
+      gfx_fill(DINO_X, prev_dy, DW, DH, C_BG);
     if (gap > 0)
       gap--;
+    int oldx[2];
     for (int i = 0; i < 2; i++) {
       struct obst *o = &obs[i];
-      int oy = GROUND_Y - o->h;
+      oldx[i] = o->x;
       if (o->x < -100) {
         if (gap == 0) {
           spawn(o, score);
@@ -430,41 +413,65 @@ restart:
         }
         continue;
       }
-      int oldx = o->x;
+      gfx_fill(o->x, GROUND_Y - o->h, o->w, o->h, C_BG);
       o->x -= dx;
-      if (o->x + o->w <= 0) {
-        fillf(0, oy, oldx + o->w + OM, o->h, C_BG);
+      if (o->x + o->w <= 0) { /* gone: flush the erased sliver */
+        if (oldx[i] + o->w > 0)
+          lcd_flush(0, GROUND_Y - o->h, oldx[i] + o->w - 1, GROUND_Y - 1);
         o->x = -1000;
-        continue;
       }
-      gfx_blit(o->x, oy, o->cell, o->w + OM, o->h);
-      int bx = o->x < 0 ? 0 : o->x;
-      int be = o->x + o->w + OM;
-      if (be > LCD_W)
-        be = LCD_W;
-      lcd_flush(bx, oy, be - 1, GROUND_Y - 1);
     }
-
-    /* ground dashes slide with the world; clouds drift on their own */
-    goff += dx;
-    if (goff >= 24)
-      goff -= 24;
-    draw_dashes(goff);
-    lcd_flush(0, GROUND_Y + 5, LCD_W - 1, GROUND_Y + 5);
-    if ((frame & 15) == 0) {
+    if (recloud)
       for (int i = 0; i < 2; i++) {
+        gfx_fill(clouds[i].x, clouds[i].y, 20, 5, C_BG);
         clouds[i].x -= 2;
-        if (clouds[i].x < -24)
+        if (clouds[i].x < -20)
           clouds[i].x = LCD_W;
-        gfx_blit(clouds[i].x, clouds[i].y, cell_cloud, 24, 5);
+      }
+
+    /* phase 2: draw, back to front, then flush each union band */
+    if (recloud)
+      for (int i = 0; i < 2; i++) {
+        gfx_blit_spans(clouds[i].x, clouds[i].y, cell_cloud, 20, 5,
+                       sp_cloud);
         int bx = clouds[i].x < 0 ? 0 : clouds[i].x;
-        int be = clouds[i].x + 24;
+        int be = clouds[i].x + 22; /* +2: the erased trailing edge */
         if (be > LCD_W)
           be = LCD_W;
         if (be > bx)
           lcd_flush(bx, clouds[i].y, be - 1, clouds[i].y + 4);
       }
+    for (int i = 0; i < 2; i++) {
+      struct obst *o = &obs[i];
+      if (o->x < -100)
+        continue;
+      gfx_blit_spans(o->x, GROUND_Y - o->h, o->cell, o->w, o->h, o->sp);
+      int bx = o->x < 0 ? 0 : o->x;
+      int be = oldx[i] + o->w; /* union with the erased old spot */
+      if (be > LCD_W)
+        be = LCD_W;
+      lcd_flush(bx, GROUND_Y - o->h, be - 1, GROUND_Y - 1);
     }
+    if (redino) {
+      ushort *cell = (frame & 8) ? cell_run_a : cell_run_b;
+      const uchar *sp = (frame & 8) ? sp_run_a : sp_run_b;
+      if (ypix > 0) {
+        cell = cell_run_a;
+        sp = sp_run_a;
+      }
+      gfx_blit_spans(DINO_X, dy, cell, DW, DH, sp);
+      int top = dy < prev_dy ? dy : prev_dy;
+      int bot = (dy > prev_dy ? dy : prev_dy) + DH - 1;
+      lcd_flush(DINO_X, top, DINO_X + DW - 1, bot);
+      prev_dy = dy;
+    }
+
+    /* ground dashes slide with the world */
+    goff += dx;
+    if (goff >= 24)
+      goff -= 24;
+    draw_dashes(goff);
+    lcd_flush(0, GROUND_Y + 5, LCD_W - 1, GROUND_Y + 5);
 
     /* score + difficulty: the speed creeps up a little at a time
      * (2.0 -> 5.0 px/frame at 60 fps over ~100 s) */
@@ -504,8 +511,8 @@ restart:
 
   dead:
     led_blink(0xFF0000, 3); /* rapid tri-ramp, three times */
-    gfx_blit(DINO_X, dy - DM, cell_dead, DW,
-             GROUND_Y - (dy - DM) > DCH ? DCH : GROUND_Y - (dy - DM));
+    gfx_fill(DINO_X, dy, DW, DH, C_BG);
+    gfx_blit_spans(DINO_X, dy, cell_dead, DW, DH, sp_dead);
     gfx_text2(48, 56, "GAME OVER", C_OVER, C_BG);
     gfx_text(24, 80, "press: retry  down: menu", C_FG, C_BG);
     gfx_present();

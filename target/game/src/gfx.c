@@ -81,6 +81,18 @@ halfof(int w)
 void
 gfx_fill(int x, int y, int w, int h, ushort c)
 {
+  if (x < 0) { /* clip: sprites enter and leave along every edge */
+    w += x;
+    x = 0;
+  }
+  if (y < 0) {
+    h += y;
+    y = 0;
+  }
+  if (x + w > LCD_W)
+    w = LCD_W - x;
+  if (y + h > LCD_H)
+    h = LCD_H - y;
   if (w <= 0 || h <= 0)
     return;
   ushort *p = &fb[y * LCD_W + x];
@@ -184,6 +196,69 @@ gfx_blit(int x, int y, const ushort *src, int w, int h)
       gdma_copy((uint)&fb[(y + r) * LCD_W + x], (uint)row, (uint)cw * 2);
       row += w + sx;
     }
+  gfx_damage(x, y, x + cw - 1, y + ch - 1);
+}
+
+/* gfx_cell_spans: extract one opaque run per row of a cw x ch cell
+ * whose transparent color is exactly `bg`: out[2r] = start, out[2r+1]
+ * = width (0 = empty row), both kept EVEN so masked blits stay on
+ * the word-DMA fast path. A row's scattered pixels get the BOUNDING
+ * run (interior bg pixels ride along) — right for the roundish
+ * sprites that overlap. Multiply-heavy: init-time only. */
+void
+gfx_cell_spans(const ushort *cell, int cw, int ch, ushort bg, uchar *out)
+{
+  for (int r = 0; r < ch; r++) {
+    const ushort *row = cell + r * cw;
+    int lo = cw, hi = -1;
+    for (int i = 0; i < cw; i++)
+      if (row[i] != bg) {
+        if (i < lo)
+          lo = i;
+        hi = i;
+      }
+    if (hi < 0) {
+      out[2 * r] = 0;
+      out[2 * r + 1] = 0;
+      continue;
+    }
+    lo &= ~1;
+    int w = (hi + 2 - lo) & ~1;
+    if (lo + w > cw)
+      w = cw - lo; /* cw and lo even, so w stays even */
+    out[2 * r] = (uchar)lo;
+    out[2 * r + 1] = (uchar)w;
+  }
+}
+
+/* gfx_blit_spans: masked blit of a cell through its span table —
+ * per row, one word-aligned copy of just the opaque run, so an
+ * overlapping neighbor keeps its pixels outside the silhouette.
+ * Clips on every edge; callers keep x (and the table's runs) even.
+ * Incremental addressing: one multiply per call, adds per row. */
+void
+gfx_blit_spans(int x, int y, const ushort *src, int cw, int ch,
+               const uchar *spans)
+{
+  uint dst = (uint)fb + (uint)((y * LCD_W + x) * 2);
+  uint s = (uint)src;
+  for (int r = 0; r < ch; r++) {
+    int yy = y + r;
+    int w = spans[2 * r + 1];
+    if (w && yy >= 0 && yy < LCD_H) {
+      int lo = x + spans[2 * r];
+      int hi = lo + w;
+      if (lo < 0)
+        lo = 0;
+      if (hi > LCD_W)
+        hi = LCD_W;
+      if (hi > lo)
+        gdma_copy(dst + (uint)(lo - x) * 2, s + (uint)(lo - x) * 2,
+                  (uint)(hi - lo) * 2);
+    }
+    dst += LCD_W * 2;
+    s += (uint)cw * 2;
+  }
   gfx_damage(x, y, x + cw - 1, y + ch - 1);
 }
 

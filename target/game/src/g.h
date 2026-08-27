@@ -94,6 +94,10 @@ void gfx_glyph_cell(int ch, ushort fg, ushort bg,
 void gfx_disc_cell(int cw, int r, ushort fg, ushort bg,
                    ushort *dst); /* filled disc in a cw x cw cell;
                                   * multiply-heavy, init-time only */
+void gfx_cell_spans(const ushort *cell, int cw, int ch, ushort bg,
+                    uchar *out); /* per-row opaque runs (even), for */
+void gfx_blit_spans(int x, int y, const ushort *src, int cw, int ch,
+                    const uchar *spans); /* ...masked sprite blits */
 void gfx_damage(int x0, int y0, int x1, int y1);
 void gfx_present(void); /* flush the damage rect, reset it */
 

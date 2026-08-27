@@ -365,7 +365,7 @@ var GamePico = &Board{
 
 	GameRAMText: 0x20002000, // self-modifying records + the radiosity
 	// shooter's resident hot path (dmxgen ResidentFuncs): 33 KiB window
-	GameData:    0x2000A400, // data + the 240x240 RGB565 framebuffer;
+	GameData:    0x2000A800, // data + the 240x240 RGB565 framebuffer;
 	// grows toward the audio ring at 0x20038000 (the drum PCM moved
 	// to flash, returning its 40 KiB arena to this segment)
 	Scratch:     0x2003FE00,

@@ -47,9 +47,12 @@ struct cst {
   uint spawn, frame;
 };
 #define CS_ ((struct cst *)g_arena)
-/* the chute cap: a 16x8 half-disc cell, rendered once at entry */
+/* the chute cap: a 16x8 half-disc cell, rendered once at entry,
+ * blitted through its span table so an overlapped neighbor keeps
+ * its pixels outside the dome */
 #define CAPW 16
 #define capcell ((ushort *)(g_arena + 512)) /* 16x16 disc, top half used */
+#define capsp (g_arena + 1024)              /* 8-row span table */
 
 static void
 sky(int x, int y, int w, int h)
@@ -95,8 +98,8 @@ static void
 troop_draw(int i)
 {
   int x = CS_->tx[i], y = CS_->ty[i], st = CS_->tst[i];
-  if (st == T_CHUTE) /* the cap cell: top half of the arena disc */
-    gfx_blit(x - 8, y - 10, capcell, CAPW, 8);
+  if (st == T_CHUTE) /* the cap: masked blit of the dome's spans */
+    gfx_blit_spans(x - 8, y - 10, capcell, CAPW, 8, capsp);
   gfx_fill(x - 2, y, 4, 4, C_TROOP);     /* head */
   gfx_fill(x - 2, y + 4, 4, 8, st == T_SHOT ? C_OVER : C_TROOP);
   gfx_damage(x - 8, y - 10, x + 7, y + 13);
@@ -131,6 +134,7 @@ chute_run(void)
   uputs("chute: start\n");
   led(LED_DIM(0x4060FF), LED_DIM(0x4060FF));
   gfx_disc_cell(16, 8, C_CHUTE, C_SKY, capcell);
+  gfx_cell_spans(capcell, CAPW, 8, C_SKY, capsp);
 restart: /* no recursion on this machine: dmacc frames are static */
   gfx_clear(C_SKY);
   gfx_fill(0, GROUND_Y, LCD_W, LCD_H - GROUND_Y, C_GROUND);
@@ -173,15 +177,27 @@ restart: /* no recursion on this machine: dmacc frames are static */
       }
       continue;
     }
-    /* aim and fire */
-    if ((in_edge & BTN_LEFT) && CS_->aim > 0) {
+    /* --- TWO-PHASE FRAME: erase every mover at its old spot, run
+     * the whole update (moves, spawns, hits — a victim freed here
+     * simply isn't drawn), then draw back-to-front. No draw ever
+     * precedes an erase, so overlap can't punch a lasting hole. */
+
+    /* phase 1: erase */
+    for (int i = 0; i < NB; i++)
+      if (CS_->bx[i] != -999)
+        sky(CS_->bx[i] - 1, CS_->by[i] - 1, 4, 4);
+    for (int i = 0; i < NH; i++)
+      if (CS_->hx[i] != -999)
+        heli_draw(i, 1);
+    for (int i = 0; i < NT; i++)
+      if (CS_->tst[i] != T_FREE && CS_->tst[i] != T_LAND)
+        troop_erase(i);
+
+    /* phase 2: update — aim and fire */
+    if ((in_edge & BTN_LEFT) && CS_->aim > 0)
       CS_->aim--;
-      draw_turret();
-    }
-    if ((in_edge & BTN_RIGHT) && CS_->aim < 4) {
+    if ((in_edge & BTN_RIGHT) && CS_->aim < 4)
       CS_->aim++;
-      draw_turret();
-    }
     if (in_edge & (BTN_A | BTN_UP)) {
       for (int i = 0; i < NB; i++)
         if (CS_->bx[i] == -999) {
@@ -193,19 +209,14 @@ restart: /* no recursion on this machine: dmacc frames are static */
           break;
         }
     }
-    /* bullets */
+    /* bullets march */
     for (int i = 0; i < NB; i++) {
       if (CS_->bx[i] == -999)
         continue;
-      sky(CS_->bx[i] - 1, CS_->by[i] - 1, 4, 4);
       CS_->bx[i] += CS_->bvx[i];
       CS_->by[i] += CS_->bvy[i];
-      if (CS_->by[i] < 0 || CS_->bx[i] < 2 || CS_->bx[i] > 236) {
+      if (CS_->by[i] < 0 || CS_->bx[i] < 2 || CS_->bx[i] > 236)
         CS_->bx[i] = -999;
-        continue;
-      }
-      gfx_fill(CS_->bx[i] - 1, CS_->by[i] - 1, 3, 3, C_SHOT);
-      gfx_damage(CS_->bx[i] - 4, CS_->by[i] - 4, CS_->bx[i] + 6, CS_->by[i] + 8);
     }
     /* helicopters: spawn, fly, drop */
     if (--CS_->spawn == 0) {
@@ -223,7 +234,6 @@ restart: /* no recursion on this machine: dmacc frames are static */
     for (int i = 0; i < NH; i++) {
       if (CS_->hx[i] == -999)
         continue;
-      heli_draw(i, 1);
       CS_->hx[i] += CS_->hvx[i];
       if (CS_->hx[i] < -13 || CS_->hx[i] > 253) {
         CS_->hx[i] = -999;
@@ -237,22 +247,21 @@ restart: /* no recursion on this machine: dmacc frames are static */
           CS_->ty[t] = CS_->hy[i] + 14;
         }
       }
-      heli_draw(i, 0);
     }
-    /* paratroopers */
+    /* paratroopers descend */
     for (int i = 0; i < NT; i++) {
       int st = CS_->tst[i];
       if (st == T_FREE || st == T_LAND)
         continue;
-      troop_erase(i);
       if (st == T_FALL) {
         CS_->ty[i] += 3;
         if (CS_->ty[i] > 70)
           CS_->tst[i] = T_CHUTE;
       } else if (st == T_CHUTE) {
         CS_->ty[i] += 1;
-        if (CS_->frame & 4) /* drift with the wind, gently */
-          CS_->tx[i] += ((CS_->frame & 8) ? 1 : -1);
+        if ((CS_->frame & 7) == 0) /* gentle wind; EVEN steps keep
+                                    * the cap blit word-aligned */
+          CS_->tx[i] += ((CS_->frame & 8) ? 2 : -2);
       } else {
         CS_->ty[i] += 5;
       }
@@ -262,13 +271,11 @@ restart: /* no recursion on this machine: dmacc frames are static */
           CS_->tst[i] = T_FREE;
           CS_->score += 2;
           snd_play(90, 60, 3);
-          troop_erase(i);
           continue;
         }
         CS_->tst[i] = T_LAND;
         CS_->landed++;
         snd_play(150, 50, 4);
-        troop_draw(i);
         draw_score();
         if (CS_->landed >= 4) {
           CS_->over = 1;
@@ -278,11 +285,10 @@ restart: /* no recursion on this machine: dmacc frames are static */
           led_blink(LED_BRIGHT(0xFF2020), 6);
           snd_play(110, 70, 20);
         }
-        continue;
       }
-      troop_draw(i);
     }
-    /* hits: bullets vs troopers, then helicopters */
+    /* hits: bullets vs troopers, then helicopters (the dead were
+     * already erased in phase 1 and simply aren't drawn) */
     for (int b = 0; b < NB; b++) {
       if (CS_->bx[b] == -999)
         continue;
@@ -293,7 +299,6 @@ restart: /* no recursion on this machine: dmacc frames are static */
           continue;
         int dx = bx - CS_->tx[i], dy = by - CS_->ty[i];
         if (dx > -9 && dx < 9 && dy > -11 && dy < 13) {
-          troop_erase(i);
           if (st == T_CHUTE && dy < 0) { /* chute hit: he drops */
             CS_->tst[i] = T_SHOT;
             CS_->score += 5;
@@ -301,7 +306,6 @@ restart: /* no recursion on this machine: dmacc frames are static */
             CS_->tst[i] = T_FREE;
             CS_->score += 10;
           }
-          sky(bx - 1, by - 1, 4, 4);
           CS_->bx[b] = -999;
           snd_play(500, 50, 2);
           led_blink(LED_BRIGHT(0xFFA000), 1);
@@ -315,9 +319,7 @@ restart: /* no recursion on this machine: dmacc frames are static */
           continue;
         int dx = bx - CS_->hx[i], dy = by - CS_->hy[i];
         if (dx > -13 && dx < 13 && dy > -5 && dy < 9) {
-          heli_draw(i, 1);
           CS_->hx[i] = -999;
-          sky(bx - 1, by - 1, 4, 4);
           CS_->bx[b] = -999;
           CS_->score += 20;
           snd_play(220, 70, 5);
@@ -326,6 +328,24 @@ restart: /* no recursion on this machine: dmacc frames are static */
         }
       }
     }
+
+    /* phase 3: draw, back to front — troopers (the landed included,
+     * every frame: a drifting chute crossing one must not leave a
+     * hole), then helis, bullets, and the turret in front */
+    for (int i = 0; i < NT; i++)
+      if (CS_->tst[i] != T_FREE)
+        troop_draw(i);
+    for (int i = 0; i < NH; i++)
+      if (CS_->hx[i] != -999)
+        heli_draw(i, 0);
+    draw_turret(); /* before the bullets: its arc-erase must not eat
+                    * a fresh muzzle round */
+    for (int i = 0; i < NB; i++)
+      if (CS_->bx[i] != -999) {
+        gfx_fill(CS_->bx[i] - 1, CS_->by[i] - 1, 3, 3, C_SHOT);
+        gfx_damage(CS_->bx[i] - 4, CS_->by[i] - 4, CS_->bx[i] + 6,
+                   CS_->by[i] + 8);
+      }
     if (CS_->score != CS_->drawn_score)
       draw_score();
     gfx_present();
