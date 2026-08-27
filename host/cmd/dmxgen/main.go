@@ -29,6 +29,7 @@ import (
 	"github.com/puhitaku/dma-cpu/host/dmacc"
 	"github.com/puhitaku/dma-cpu/host/emu"
 	"github.com/puhitaku/dma-cpu/host/fsimg"
+	"github.com/puhitaku/dma-cpu/host/gameassets"
 	"github.com/puhitaku/dma-cpu/host/img"
 	"github.com/puhitaku/dma-cpu/host/llir"
 	"github.com/puhitaku/dma-cpu/host/prog"
@@ -721,8 +722,9 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 // sticks of five, pulled up on the real board).
 const PinJoyAUp = 2
 
-// gameSFXHome is where the firmware stages the PCM blob (mono 16-bit
-// 44.1 kHz), well past the firmware image and below the game text.
+// gameSFXHome is the flash home the PCM+asset blob is LINKED at
+// (.gamesfx section), well past the firmware image and clear of the
+// game text window.
 const gameSFXHome = 0x10140000
 
 // gameSFX lists the clips baked into the blob, in sfx_tab order.
@@ -777,6 +779,7 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		"target/game/ll/dino.ll", "target/game/ll/lanwalk.ll", "target/game/ll/yacht.ll",
 		"target/game/ll/input.ll", "target/game/ll/fx.ll", "target/game/ll/seq.ll",
 		"target/game/ll/cpumon.ll", "target/game/ll/bench.ll", "target/game/ll/radio.ll", "target/game/ll/gfx.ll",
+		"target/game/ll/boing.ll", "target/game/ll/chute.ll", "target/game/ll/puni.ll",
 		"target/game/ll/lcd.ll", "target/game/ll/grt.ll"},
 		dmacc.Options{Entry: "gmain", NoSafepoints: true, XIPText: true,
 			/* the radiosity shooter is the one workload that wants the
@@ -843,9 +846,38 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			sfxBlob = append(sfxBlob, 0)
 		}
 	}
-	// Fixed audio region (fx.c/seq.c): drum PCM from 0x2002E000, the
-	// 16 KiB ring at 0x20038000. Nothing in the image may grow in.
-	const auBase, auEnd = 0x2002E000, 0x2003C000
+	// The sequencer's drum kit rides the blob too (synthesized at
+	// build time — gameassets.DrumPCM — instead of into a 40 KiB SRAM
+	// arena by the machine); g_daddr[1..5] get the flash addresses.
+	daddrSym, err := sy("g_daddr")
+	if err != nil {
+		return nil, err
+	}
+	for i, clip := range gameassets.DrumPCM() {
+		addr := uint32(gameSFXHome + len(sfxBlob))
+		if err := patchData(prog.Image, bd.GameData, daddrSym+uint32(4+4*i), addr); err != nil {
+			return nil, err
+		}
+		sfxBlob = append(sfxBlob, clip...)
+	}
+	// The Boing ball rides the same blob: patch its flash home into
+	// the demo's pointer and keep the whole thing under the window.
+	ballHome := uint32(gameSFXHome + len(sfxBlob))
+	ballAddr, err := sy("g_ball_home")
+	if err != nil {
+		return nil, err
+	}
+	if err := patchData(prog.Image, bd.GameData, ballAddr, ballHome); err != nil {
+		return nil, err
+	}
+	sfxBlob = append(sfxBlob, gameassets.BallBlob()...)
+	if gameSFXHome+len(sfxBlob) > int(bd.GameTextXIP)+0x100000 {
+		return nil, fmt.Errorf("game asset blob overflows flash: ends %#x",
+			gameSFXHome+len(sfxBlob))
+	}
+	// Fixed audio region (fx.c): the 16 KiB ring at 0x20038000 (the
+	// drum PCM moved to flash). Nothing in the image may grow in.
+	const auBase, auEnd = 0x20038000, 0x2003C000
 	for _, seg := range prog.Image.Segments {
 		end := seg.LinkAddr + uint32(len(seg.Data))
 		if seg.LinkAddr < auEnd && end > auBase {

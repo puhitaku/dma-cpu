@@ -10,11 +10,12 @@
 #define C_SELBG RGB(40, 70, 140)
 #define C_FOOT RGB(90, 100, 130)
 
-static const char *names[7] = {"Dinosaur",  "LANWalk",   "Yacht",
-                               "Sequencer", "Benchmark", "Radiosity",
-                               "Arm info"};
+static const char *names[10] = {"Dinosaur",  "LANWalk",   "Yacht",
+                                "Sequencer", "Benchmark", "Radiosity",
+                                "Arm info",  "Boing",     "Parachute",
+                                "Puni Puni"};
 
-#define NGAMES 7
+#define NGAMES 10
 #define VIS 6 /* rows on screen; the list scrolls beyond that */
 
 static int top; /* first visible item */

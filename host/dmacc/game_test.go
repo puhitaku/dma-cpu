@@ -14,6 +14,7 @@ import (
 	"github.com/puhitaku/dma-cpu/host/dmaasm"
 	"github.com/puhitaku/dma-cpu/host/dmacc"
 	"github.com/puhitaku/dma-cpu/host/emu"
+	"github.com/puhitaku/dma-cpu/host/gameassets"
 	"github.com/puhitaku/dma-cpu/host/llir"
 )
 
@@ -43,7 +44,8 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	}
 	var mods []*llir.Module
 	for _, p := range []string{"gmain", "menu", "dino", "lanwalk", "yacht",
-		"input", "fx", "seq", "cpumon", "bench", "radio", "gfx", "lcd", "grt"} {
+		"input", "fx", "seq", "cpumon", "bench", "radio", "gfx",
+		"boing", "chute", "puni", "lcd", "grt"} {
 		mods = append(mods, parseLL(t, "../../target/game/ll/"+p+".ll"))
 	}
 	mod, err := llir.Merge(mods...)
@@ -94,6 +96,11 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 		m.Poke32(tab+uint32(i*8), c.addr)
 		m.Poke32(tab+uint32(i*8+4), c.samples)
 	}
+	m.Poke32(mustSym(t, prog, "g_ball_home"), ballHome)
+	da := mustSym(t, prog, "g_daddr")
+	for i, a := range drumAddrs {
+		m.Poke32(da+uint32(4+4*i), a)
+	}
 	if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
 		Compact: true, Entry: entry, Scratch: bd.Scratch,
 	}); err != nil {
@@ -142,8 +149,24 @@ func stageSFX(t *testing.T, m *emu.Machine) []sfxClip {
 		clips = append(clips, sfxClip{home + off, uint32(len(data) / 2)})
 		off += uint32(len(data)+3) &^ 3
 	}
+	// the drum kit and the Boing ball ride the same blob (mirrors
+	// dmxgen buildGame)
+	drumAddrs = drumAddrs[:0]
+	for _, clip := range gameassets.DrumPCM() {
+		copy(m.Flash[home-0x10000000+off:], clip)
+		drumAddrs = append(drumAddrs, home+off)
+		off += uint32(len(clip))
+	}
+	ball := gameassets.BallBlob()
+	copy(m.Flash[home-0x10000000+off:], ball)
+	ballHome = home + off
 	return clips
 }
+
+// ballHome is stageSFX's ball-blob address, poked into g_ball_home;
+// drumAddrs are the staged drum clips', poked into g_daddr[1..].
+var ballHome uint32
+var drumAddrs []uint32
 
 // runUntil advances the machine in slices until the console contains
 // marker (counted from offset from0) or the cycle budget runs out.
@@ -525,13 +548,11 @@ func TestGameSeq(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
-	press(t, m, prog, pinUp) // wraps up: Dino -> Arm info (scrolls)
-	at = runUntil(t, m, "menu: Arm info", at, 100_000_000)
-	press(t, m, prog, pinUp) // -> Radiosity
-	at = runUntil(t, m, "menu: Radiosity", at, 100_000_000)
-	press(t, m, prog, pinUp) // -> Benchmark
-	at = runUntil(t, m, "menu: Benchmark", at, 100_000_000)
-	press(t, m, prog, pinUp) // -> Sequencer
+	press(t, m, prog, pinDown) // Dino -> LANWalk
+	at = runUntil(t, m, "menu: LANWalk", at, 100_000_000)
+	press(t, m, prog, pinDown) // -> Yacht
+	at = runUntil(t, m, "menu: Yacht", at, 100_000_000)
+	press(t, m, prog, pinDown) // -> Sequencer
 	at = runUntil(t, m, "menu: Sequencer", at, 100_000_000)
 	press(t, m, prog, pinA)
 	at = runUntil(t, m, "seq: up", at, 100_000_000)
@@ -561,7 +582,13 @@ func TestGameCPUMon(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
 	at := runUntil(t, m, "menu up", 0, 300_000_000)
-	press(t, m, prog, pinUp) // wraps to CPU Sleep
+	press(t, m, prog, pinUp) // wraps up: Dino -> Puni Puni (scrolls)
+	at = runUntil(t, m, "menu: Puni Puni", at, 100_000_000)
+	press(t, m, prog, pinUp) // -> Parachute
+	at = runUntil(t, m, "menu: Parachute", at, 100_000_000)
+	press(t, m, prog, pinUp) // -> Boing
+	at = runUntil(t, m, "menu: Boing", at, 100_000_000)
+	press(t, m, prog, pinUp) // -> Arm info
 	at = runUntil(t, m, "menu: Arm info", at, 100_000_000)
 	// simulate the firmware's park stamp so the live idle clock reads
 	// a nonzero MM:SS (the emulated timer is fast, so the exact value
@@ -803,5 +830,112 @@ func TestGameBench(t *testing.T) {
 		t.Errorf("MIPS headline: %d live-green pixels", n)
 	}
 	dumpPNG(t, p, "bench.png")
+	_ = at
+}
+
+func TestGameBoing(t *testing.T) {
+	t.Parallel()
+	m, prog := bootGame(t)
+	at := runUntil(t, m, "menu up", 0, 300_000_000)
+	press(t, m, prog, pinUp) // wraps: Dino -> Puni Puni
+	at = runUntil(t, m, "menu: Puni Puni", at, 100_000_000)
+	press(t, m, prog, pinUp) // -> Parachute
+	at = runUntil(t, m, "menu: Parachute", at, 100_000_000)
+	press(t, m, prog, pinUp) // -> Boing
+	at = runUntil(t, m, "menu: Boing", at, 100_000_000)
+	press(t, m, prog, pinA)
+	at = runUntil(t, m, "boing: start", at, 100_000_000)
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 120_000_000}); err != nil {
+		t.Fatal(err) // ~a dozen frames: the ball is on screen and moving
+	}
+	p := decodeLCD(m, 16)
+	bg := rgb565(170, 170, 170)
+	red := rgb565(216, 40, 40)
+	white := rgb565(255, 255, 255)
+	if n := p.countColor(0, 0, 239, 239, bg); n < 20000 {
+		t.Errorf("background: %d gray pixels", n)
+	}
+	nr := p.countColor(0, 0, 239, 239, red)
+	nw := p.countColor(0, 0, 239, 239, white)
+	if nr < 1000 || nw < 1000 {
+		t.Errorf("ball: %d red + %d white pixels", nr, nw)
+	}
+	// the checkered ball is roughly half red, half white
+	if nr+nw < 5000 || nr+nw > 9000 {
+		t.Errorf("ball area: %d checker pixels (want ~7000)", nr+nw)
+	}
+	dumpPNG(t, p, "boing.png")
+	_ = at
+}
+
+func TestGameChute(t *testing.T) {
+	t.Parallel()
+	m, prog := bootGame(t)
+	at := runUntil(t, m, "menu up", 0, 300_000_000)
+	press(t, m, prog, pinUp) // wraps: Dino -> Puni Puni
+	at = runUntil(t, m, "menu: Puni Puni", at, 100_000_000)
+	press(t, m, prog, pinUp) // -> Parachute
+	at = runUntil(t, m, "menu: Parachute", at, 100_000_000)
+	press(t, m, prog, pinA)
+	at = runUntil(t, m, "chute: start", at, 100_000_000)
+	// a helicopter spawns on the very first frame; let it fly in and
+	// drop, then fire a few rounds across the sky
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 100_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	press(t, m, prog, pinA) // fire
+	press(t, m, prog, pinLeft)
+	press(t, m, prog, pinA)
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 60_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	p := decodeLCD(m, 16)
+	sky := rgb565(10, 14, 40)
+	turret := rgb565(160, 160, 170)
+	if n := p.countColor(0, 0, 239, 225, sky); n < 30000 {
+		t.Errorf("sky: %d navy pixels", n)
+	}
+	if n := p.countColor(104, 200, 135, 227, turret); n < 100 {
+		t.Errorf("turret: %d pixels", n)
+	}
+	if n := p.countColor(0, 226, 239, 239, rgb565(70, 60, 50)); n < 2000 {
+		t.Errorf("ground: %d pixels", n)
+	}
+	dumpPNG(t, p, "chute.png")
+	_ = at
+}
+
+func TestGamePuni(t *testing.T) {
+	t.Parallel()
+	m, prog := bootGame(t)
+	at := runUntil(t, m, "menu up", 0, 300_000_000)
+	press(t, m, prog, pinUp) // wraps: Dino -> Puni Puni
+	at = runUntil(t, m, "menu: Puni Puni", at, 100_000_000)
+	press(t, m, prog, pinA)
+	at = runUntil(t, m, "puni: start", at, 100_000_000)
+	// soft-drop three pairs to the floor: hold DOWN through each fall
+	for pair := 0; pair < 3; pair++ {
+		m.SetPadIn(pinDown, false)
+		at = runUntil(t, m, "puni: lock", at, 600_000_000)
+		m.SetPadIn(pinDown, true)
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 20_000_000}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := decodeLCD(m, 16)
+	// six stacked blobs on the floor: some of the four colors present
+	colors := []uint16{rgb565(235, 70, 80), rgb565(60, 200, 90),
+		rgb565(70, 120, 240), rgb565(240, 200, 60)}
+	total := 0
+	for _, c := range colors {
+		total += p.countColor(12, 12, 119, 227, c)
+	}
+	if total < 800 {
+		t.Errorf("field: only %d blob pixels after three locked pairs", total)
+	}
+	if n := p.countColor(8, 8, 123, 231, rgb565(70, 76, 110)); n < 500 {
+		t.Errorf("well wall: %d pixels", n)
+	}
+	dumpPNG(t, p, "puni.png")
 	_ = at
 }

@@ -91,6 +91,9 @@ void gfx_sprite(const uint *rows, int w, int h, ushort fg, ushort bg,
                 ushort *dst); /* 1bpp rows (MSB left) -> RGB565 */
 void gfx_glyph_cell(int ch, ushort fg, ushort bg,
                     ushort *dst); /* one 8x8 font glyph -> 64 pixels */
+void gfx_disc_cell(int cw, int r, ushort fg, ushort bg,
+                   ushort *dst); /* filled disc in a cw x cw cell;
+                                  * multiply-heavy, init-time only */
 void gfx_damage(int x0, int y0, int x1, int y1);
 void gfx_present(void); /* flush the damage rect, reset it */
 
@@ -112,8 +115,9 @@ void frame_sync(uint us); /* pace the caller's loop to one tick per us */
  * budget counts in every loop that paces itself.
  * The audio ring is 16 KiB at a fixed 16 KiB-aligned address (the
  * ring wrap is an address mask): 4096 L|R frames, which is also one
- * sequencer step. Reserved region 0x2002E000..0x2003C000 holds the
- * drum PCM then the ring; dmxgen asserts the image stays clear. */
+ * sequencer step. Reserved region 0x20038000..0x2003C000 is the
+ * ring; dmxgen asserts the image stays clear. (The drum PCM lives in
+ * the flash blob — synthesized at build time by gameassets.) */
 #define AURING 0x20038000u
 #define AURING_BYTES 16384u
 void fx_init(void);
@@ -138,13 +142,16 @@ void led_tick(void); /* frame_sync drives the animations */
 void seq_run(void); /* the percussion sequencer demo */
 
 /* the games (each returns when the player exits to the menu) */
-int menu_run(void); /* 0 Dino 1 LANWalk 2 Yacht 3 Seq 4 Bench 5 Radio 6 CPUmon */
+int menu_run(void); /* index into menu.c's names[] */
 void dino_run(void);
 void lanwalk_run(void);
 void yacht_run(void);
 void cpumon_run(void); /* the "CPU is asleep" monitor */
 void bench_run(void);  /* the fixed-work MIPS benchmark */
 void radio_run(void);  /* progressive radiosity in the light box */
+void boing_run(void);  /* the precomputed bouncing-ball demo */
+void chute_run(void);  /* Parachute: defend the turret */
+void puni_run(void);   /* Puni Puni: falling-pairs chain puzzle */
 
 #define RGB(r, g, b) \
   ((ushort)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | (((b) & 0xF8) >> 3)))

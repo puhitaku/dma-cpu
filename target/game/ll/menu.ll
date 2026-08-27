@@ -10,7 +10,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @.str.3 = private unnamed_addr constant [9 x i8] c"menu up\0A\00", align 1
 @in_edge = external dso_local local_unnamed_addr global i32, align 4
 @.str.4 = private unnamed_addr constant [7 x i8] c"menu: \00", align 1
-@names = internal unnamed_addr constant [7 x ptr] [ptr @.str.12, ptr @.str.13, ptr @.str.14, ptr @.str.15, ptr @.str.16, ptr @.str.17, ptr @.str.18], align 4
+@names = internal unnamed_addr constant [10 x ptr] [ptr @.str.12, ptr @.str.13, ptr @.str.14, ptr @.str.15, ptr @.str.16, ptr @.str.17, ptr @.str.18, ptr @.str.19, ptr @.str.20, ptr @.str.21], align 4
 @.str.5 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
 @.str.6 = private unnamed_addr constant [8 x i8] c"start: \00", align 1
 @.str.7 = private unnamed_addr constant [6 x i8] c"beat \00", align 1
@@ -25,6 +25,9 @@ target triple = "thumbv6m-unknown-none-eabi"
 @.str.16 = private unnamed_addr constant [10 x i8] c"Benchmark\00", align 1
 @.str.17 = private unnamed_addr constant [10 x i8] c"Radiosity\00", align 1
 @.str.18 = private unnamed_addr constant [9 x i8] c"Arm info\00", align 1
+@.str.19 = private unnamed_addr constant [6 x i8] c"Boing\00", align 1
+@.str.20 = private unnamed_addr constant [10 x i8] c"Parachute\00", align 1
+@.str.21 = private unnamed_addr constant [10 x i8] c"Puni Puni\00", align 1
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local i32 @menu_run() local_unnamed_addr #0 {
@@ -56,11 +59,11 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
   %10 = icmp eq i32 %9, 0
   %11 = icmp eq i32 %7, 0
   %12 = add nsw i32 %7, -1
-  %13 = select i1 %11, i32 6, i32 %12
+  %13 = select i1 %11, i32 9, i32 %12
   %14 = select i1 %10, i32 %7, i32 %13
   %15 = and i32 %8, 2
   %16 = icmp eq i32 %15, 0
-  %17 = icmp eq i32 %14, 6
+  %17 = icmp eq i32 %14, 9
   %18 = add nsw i32 %14, 1
   %19 = select i1 %17, i32 0, i32 %18
   %20 = select i1 %16, i32 %14, i32 %19
@@ -91,7 +94,7 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
   tail call void @gfx_present() #3
   tail call void @snd_play(i32 noundef 700, i32 noundef 40, i32 noundef 2) #3
   tail call void @uputs(ptr noundef nonnull @.str.4) #3
-  %33 = getelementptr inbounds [7 x ptr], ptr @names, i32 0, i32 %20
+  %33 = getelementptr inbounds [10 x ptr], ptr @names, i32 0, i32 %20
   %34 = load ptr, ptr %33, align 4, !tbaa !7
   tail call void @uputs(ptr noundef %34) #3
   tail call void @uputs(ptr noundef nonnull @.str.5) #3
@@ -121,7 +124,7 @@ define dso_local i32 @menu_run() local_unnamed_addr #0 {
 47:                                               ; preds = %36
   tail call void @led(i32 noundef 16144, i32 noundef 16144) #3
   tail call void @uputs(ptr noundef nonnull @.str.6) #3
-  %48 = getelementptr inbounds [7 x ptr], ptr @names, i32 0, i32 %20
+  %48 = getelementptr inbounds [10 x ptr], ptr @names, i32 0, i32 %20
   %49 = load ptr, ptr %48, align 4, !tbaa !7
   tail call void @uputs(ptr noundef %49) #3
   tail call void @uputs(ptr noundef nonnull @.str.5) #3
@@ -164,7 +167,7 @@ define internal fastcc void @draw_window(i32 noundef %0) unnamed_addr #0 {
   %10 = select i1 %9, ptr @.str.8, ptr @.str.9
   tail call void @gfx_text(i32 noundef 216, i32 noundef 80, ptr noundef nonnull %10, i16 noundef zeroext 23344, i16 noundef zeroext 2181) #3
   %11 = load i32, ptr @top, align 4, !tbaa !3
-  %12 = icmp slt i32 %11, 1
+  %12 = icmp slt i32 %11, 4
   %13 = select i1 %12, ptr @.str.10, ptr @.str.9
   tail call void @gfx_text(i32 noundef 216, i32 noundef 190, ptr noundef nonnull %13, i16 noundef zeroext 23344, i16 noundef zeroext 2181) #3
   ret void
@@ -215,7 +218,7 @@ define internal fastcc void @draw_row(i32 noundef %0, i32 noundef range(i32 0, 2
 11:                                               ; preds = %9, %2
   %12 = phi i16 [ -1, %9 ], [ -18950, %2 ]
   %13 = add nsw i32 %5, 79
-  %14 = getelementptr inbounds [7 x ptr], ptr @names, i32 0, i32 %0
+  %14 = getelementptr inbounds [10 x ptr], ptr @names, i32 0, i32 %0
   %15 = load ptr, ptr %14, align 4, !tbaa !7
   tail call void @gfx_text2(i32 noundef 60, i32 noundef %13, ptr noundef %15, i16 noundef zeroext %12, i16 noundef zeroext %8) #3
   ret void

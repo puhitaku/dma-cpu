@@ -364,9 +364,10 @@ var GamePico = &Board{
 	SKU:  "rp2040",
 
 	GameRAMText: 0x20002000, // self-modifying records + the radiosity
-	// shooter's resident hot path (dmxgen ResidentFuncs): 30 KiB window
-	GameData:    0x20009B00, // data + the 240x240 RGB565 framebuffer;
-	// ends ~0.3 KiB under the reserved audio region at 0x2002E000
+	// shooter's resident hot path (dmxgen ResidentFuncs): 33 KiB window
+	GameData:    0x2000A400, // data + the 240x240 RGB565 framebuffer;
+	// grows toward the audio ring at 0x20038000 (the drum PCM moved
+	// to flash, returning its 40 KiB arena to this segment)
 	Scratch:     0x2003FE00,
 
 	FlashSize:   0x200000,

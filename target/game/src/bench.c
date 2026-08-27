@@ -48,7 +48,7 @@
 #define MEM_ROUNDS 8
 
 /* Working buffers live in free SRAM, NOT in .data: the game's data
- * segment ends just under the reserved audio region (0x2002E000), and
+ * segment once ended just under the old drum arena (0x2002E000), and
  * ~10 KiB of bench statics pushed it straight into the ring — a menu
  * blip then overwrote live data words (the emulator crashed on a PC
  * of replicated audio samples). 0x2003C000..0x2003FE00 is unclaimed

@@ -25,6 +25,12 @@ gmain(void)
       bench_run();
     else if (g == 5)
       radio_run();
+    else if (g == 7)
+      boing_run();
+    else if (g == 8)
+      chute_run();
+    else if (g == 9)
+      puni_run();
     else
       cpumon_run();
   }

@@ -187,6 +187,25 @@ gfx_blit(int x, int y, const ushort *src, int w, int h)
   gfx_damage(x, y, x + cw - 1, y + ch - 1);
 }
 
+/* gfx_disc_cell: render a filled disc of radius r centered in a
+ * cw x cw cell (background baked into the corners, so a cell blit
+ * erases as it draws — the dino margin trick, round). Doubled
+ * coordinates keep the circle centered on the even-sized cell.
+ * Multiply-heavy, so INIT-TIME ONLY: a game renders its discs into
+ * the arena once at entry and blits ever after. */
+void
+gfx_disc_cell(int cw, int r, ushort fg, ushort bg, ushort *dst)
+{
+  int rr = 4 * r * r;
+  for (int y = 0; y < cw; y++) {
+    int dy = 2 * y - cw + 1;
+    for (int x = 0; x < cw; x++) {
+      int dx = 2 * x - cw + 1;
+      dst[y * cw + x] = (dx * dx + dy * dy <= rr) ? fg : bg;
+    }
+  }
+}
+
 /* gfx_glyph_cell: render one font glyph into a 64-pixel cell, so hot
  * paths can blit text instead of re-rendering it per pixel (the
  * dino's score draw was ~60%% of its frame). */

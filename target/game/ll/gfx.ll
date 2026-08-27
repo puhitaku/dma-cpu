@@ -449,6 +449,52 @@ define dso_local void @gfx_blit(i32 noundef %0, i32 noundef %1, ptr noundef %2, 
 declare dso_local void @gdma_copy(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #2
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: write)
+define dso_local void @gfx_disc_cell(i32 noundef %0, i32 noundef %1, i16 noundef zeroext %2, i16 noundef zeroext %3, ptr noundef writeonly captures(none) %4) local_unnamed_addr #5 {
+  %6 = shl nsw i32 %1, 2
+  %7 = mul nsw i32 %6, %1
+  br label %8
+
+8:                                                ; preds = %22, %5
+  %9 = phi i32 [ 0, %5 ], [ %23, %22 ]
+  %10 = icmp slt i32 %9, %0
+  br i1 %10, label %12, label %11
+
+11:                                               ; preds = %8
+  ret void
+
+12:                                               ; preds = %8
+  %13 = shl nuw nsw i32 %9, 1
+  %14 = sub nsw i32 %13, %0
+  %15 = add nsw i32 %14, 1
+  %16 = mul nsw i32 %15, %15
+  %17 = mul nsw i32 %9, %0
+  %18 = getelementptr i16, ptr %4, i32 %17
+  br label %19
+
+19:                                               ; preds = %24, %12
+  %20 = phi i32 [ 0, %12 ], [ %33, %24 ]
+  %21 = icmp eq i32 %20, %0
+  br i1 %21, label %22, label %24
+
+22:                                               ; preds = %19
+  %23 = add nuw nsw i32 %9, 1
+  br label %8, !llvm.loop !23
+
+24:                                               ; preds = %19
+  %25 = shl nuw nsw i32 %20, 1
+  %26 = sub nsw i32 %25, %0
+  %27 = add nsw i32 %26, 1
+  %28 = mul nsw i32 %27, %27
+  %29 = add nuw nsw i32 %28, %16
+  %30 = icmp sgt i32 %29, %7
+  %31 = select i1 %30, i16 %3, i16 %2
+  %32 = getelementptr i16, ptr %18, i32 %20
+  store i16 %31, ptr %32, align 2, !tbaa !10
+  %33 = add nuw i32 %20, 1
+  br label %19, !llvm.loop !24
+}
+
+; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: write)
 define dso_local void @gfx_glyph_cell(i32 noundef %0, i16 noundef zeroext %1, i16 noundef zeroext %2, ptr noundef writeonly captures(none) %3) local_unnamed_addr #5 {
   %5 = shl i32 %0, 3
   %6 = and i32 %5, 1016
@@ -480,7 +526,7 @@ define dso_local void @gfx_glyph_cell(i32 noundef %0, i16 noundef zeroext %1, i1
 22:                                               ; preds = %18
   %23 = add nuw nsw i32 %10, 8
   %24 = add nuw nsw i32 %9, 1
-  br label %8, !llvm.loop !23
+  br label %8, !llvm.loop !25
 
 25:                                               ; preds = %18
   %26 = and i32 %19, %16
@@ -490,7 +536,7 @@ define dso_local void @gfx_glyph_cell(i32 noundef %0, i16 noundef zeroext %1, i1
   store i16 %28, ptr %29, align 2, !tbaa !10
   %30 = add nsw i32 %20, -1
   %31 = shl i32 %19, 1
-  br label %18, !llvm.loop !24
+  br label %18, !llvm.loop !26
 }
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: readwrite)
@@ -523,7 +569,7 @@ define dso_local void @gfx_sprite(ptr noundef readonly captures(none) %0, i32 no
 22:                                               ; preds = %18
   %23 = add nsw i32 %11, %1
   %24 = add nuw nsw i32 %10, 1
-  br label %9, !llvm.loop !25
+  br label %9, !llvm.loop !27
 
 25:                                               ; preds = %18
   %26 = add nsw i32 %20, -1
@@ -533,7 +579,7 @@ define dso_local void @gfx_sprite(ptr noundef readonly captures(none) %0, i32 no
   %30 = getelementptr i16, ptr %17, i32 %26
   store i16 %29, ptr %30, align 2, !tbaa !10
   %31 = shl i32 %19, 1
-  br label %18, !llvm.loop !26
+  br label %18, !llvm.loop !28
 }
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
@@ -583,3 +629,5 @@ attributes #9 = { minsize nobuiltin optsize "no-builtins" }
 !24 = distinct !{!24, !8, !9}
 !25 = distinct !{!25, !8, !9}
 !26 = distinct !{!26, !8, !9}
+!27 = distinct !{!27, !8, !9}
+!28 = distinct !{!28, !8, !9}
