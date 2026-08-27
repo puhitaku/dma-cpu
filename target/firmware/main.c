@@ -157,11 +157,12 @@ void stage_blob(uint32_t home, const uint8_t *src, size_t len)
 }
 
 #ifdef HIL_HAS_GAME
-/* gamepico (prompts/040): stage the game's XIP text, load its SRAM
- * segments, start the machine at gmain, and go to sleep — the DMA
- * CPU runs the whole console from here. */
-static uint8_t game_sect[4096];
-
+/* gamepico (prompts/040): the game's XIP text and PCM blobs are
+ * LINKED at their flash homes (.gametext / .gamesfx sections pinned
+ * by --section-start in CMakeLists), so the UF2 flashes them in
+ * place — no staging copy, no second embedded instance eating the
+ * firmware half. Load the SRAM segments, start the machine at gmain,
+ * and go to sleep — the DMA CPU runs the whole console from here. */
 static void game_start(void)
 {
     /* Full block reset, not just machine_reset(): the freeze/abort
@@ -170,33 +171,18 @@ static void game_start(void)
      * game programs its own from scratch. */
     dma_block_reset();
     machine_reset();
-    const uint8_t *blob = hil_game_blob_text;
-    uint32_t len = (uint32_t)sizeof hil_game_blob_text;
-    if (memcmp((const void *)(uintptr_t)HIL_GAME_TEXT_HOME, blob, len) != 0) {
-        uint32_t off = HIL_GAME_TEXT_HOME - 0x10000000u;
-        for (uint32_t o = 0; o < len; o += 4096) {
-            uint32_t n = len - o > 4096 ? 4096 : len - o;
-            memcpy(game_sect, blob + o, n);
-            memset(game_sect + n, 0xFF, 4096 - n);
-            flash_range_erase(off + o, 4096);
-            flash_range_program(off + o, game_sect, 4096);
-        }
-        printf("GAME: staged text (%u bytes)\n", (unsigned)len);
+    /* The references keep --gc-sections honest and prove the link
+     * put the blobs where the machine will fetch them. */
+    if ((uintptr_t)hil_game_blob_text != HIL_GAME_TEXT_HOME ||
+        (uintptr_t)hil_game_blob_sfx != HIL_GAME_SFX_HOME) {
+        printf("GAME: FAIL blob link (text %p sfx %p)\n",
+               (const void *)hil_game_blob_text,
+               (const void *)hil_game_blob_sfx);
+        return;
     }
-    /* stage the PCM blob the same way (skipped when unchanged) */
-    const uint8_t *sfx = hil_game_blob_sfx;
-    uint32_t sfxlen = (uint32_t)sizeof hil_game_blob_sfx;
-    if (memcmp((const void *)(uintptr_t)HIL_GAME_SFX_HOME, sfx, sfxlen) != 0) {
-        uint32_t soff = HIL_GAME_SFX_HOME - 0x10000000u;
-        for (uint32_t o = 0; o < sfxlen; o += 4096) {
-            uint32_t n = sfxlen - o > 4096 ? 4096 : sfxlen - o;
-            memcpy(game_sect, sfx + o, n);
-            memset(game_sect + n, 0xFF, 4096 - n);
-            flash_range_erase(soff + o, 4096);
-            flash_range_program(soff + o, game_sect, 4096);
-        }
-        printf("GAME: staged sfx (%u bytes)\n", (unsigned)sfxlen);
-    }
+    printf("GAME: text %u B, sfx %u B in place\n",
+           (unsigned)sizeof hil_game_blob_text,
+           (unsigned)sizeof hil_game_blob_sfx);
     uint32_t e;
     if (dmx_load(hil_game_prog_dmx, sizeof hil_game_prog_dmx, NULL, &e) != DMX_OK) {
         printf("GAME: FAIL load\n");

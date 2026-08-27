@@ -454,8 +454,14 @@ type kernBundle struct {
 	sym    map[string]uint32
 	// Raw payloads the firmware stages into fixed RAM homes before
 	// starting (exec-image blobs); homes are in sym as <NAME>_HOME.
+	// A non-empty blobSects entry instead LINKS the blob at its flash
+	// home (an ELF section the firmware CMake pins with
+	// --section-start), so it is flashed in place by the UF2 and
+	// never exists twice — the game console's text and PCM used to be
+	// embedded AND staged, wasting ~740 KiB of the firmware half.
 	blobs     [][]byte
 	blobNames []string
+	blobSects []string
 }
 
 // finishBundle verifies nothing (callers verify first), bakes the
@@ -887,9 +893,11 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	prog.Image.EntrySeg, prog.Image.EntryOff = 0, 0
 	b.blobs = append(b.blobs, textBlob)
 	b.blobNames = append(b.blobNames, "text")
+	b.blobSects = append(b.blobSects, ".gametext")
 	b.sym["TEXT_HOME"] = bd.GameTextXIP
 	b.blobs = append(b.blobs, pad4(sfxBlob))
 	b.blobNames = append(b.blobNames, "sfx")
+	b.blobSects = append(b.blobSects, ".gamesfx")
 	b.sym["SFX_HOME"] = gameSFXHome
 	if err := finishBundle(b, []*dmaasm.Result{prog}); err != nil {
 		return nil, err
@@ -2194,8 +2202,15 @@ func emitHeader(bd *boards.Board, v *emu.Variant, lay layout, tests []*test, sch
 	p("};")
 	p("#define HIL_N_TESTS %d", len(tests))
 	p("")
-	dump := func(name string, raw []byte) {
-		p("static const uint8_t %s[] = {", name)
+	// dumpSect emits one byte array; a non-empty sect pins it into a
+	// named ELF section the firmware link places at a fixed flash
+	// address (game blobs: flashed in place, no staging copy).
+	dumpSect := func(sect, name string, raw []byte) {
+		attr := ""
+		if sect != "" {
+			attr = fmt.Sprintf("__attribute__((used, aligned(4), section(\"%s\"))) ", sect)
+		}
+		p("static const uint8_t %s%s[] = {", attr, name)
 		for i := 0; i < len(raw); i += 16 {
 			end := min(i+16, len(raw))
 			var line []string
@@ -2206,6 +2221,7 @@ func emitHeader(bd *boards.Board, v *emu.Variant, lay layout, tests []*test, sch
 		}
 		p("};")
 	}
+	dump := func(name string, raw []byte) { dumpSect("", name, raw) }
 	// Phase 5d bundles share one emitted shape: the images plus the
 	// entry/vec/disp0/injCtrl/ticks quintet and per-bundle symbols.
 	emitBundle := func(prefix string, b *kernBundle) {
@@ -2213,7 +2229,11 @@ func emitHeader(bd *boards.Board, v *emu.Variant, lay layout, tests []*test, sch
 			dump(fmt.Sprintf("hil_%s_%s_dmx", strings.ToLower(prefix), b.names[i]), im)
 		}
 		for i, blob := range b.blobs {
-			dump(fmt.Sprintf("hil_%s_blob_%s", strings.ToLower(prefix), b.blobNames[i]), blob)
+			sect := ""
+			if i < len(b.blobSects) {
+				sect = b.blobSects[i]
+			}
+			dumpSect(sect, fmt.Sprintf("hil_%s_blob_%s", strings.ToLower(prefix), b.blobNames[i]), blob)
 		}
 		up := strings.ToUpper(prefix)
 		p("#define HIL_%s_ENTRY 0x%08Xu", up, b.entry0)

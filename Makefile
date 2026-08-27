@@ -199,9 +199,17 @@ else
 HIL_DEV_OPT = -DHIL_DEV_TESTS=OFF
 endif
 
+# gamepico links the game blobs at their XIP homes (passed both ways
+# so a cached ON never leaks into another board's build).
+ifeq ($(HIL_BOARD),gamepico)
+GAME_BLOB_OPT = -DHIL_GAME_BLOBS=ON
+else
+GAME_BLOB_OPT = -DHIL_GAME_BLOBS=OFF
+endif
+
 firmware: images
 	PATH="$(PATH_WITH_TOOLS)" PICO_SDK_PATH="$(PICO_SDK_PATH)" \
-	  cmake -S target/firmware -B $(BUILD_DIR) -G Ninja -DPICO_BOARD=$(PICO_BOARD) $(HIL_DEV_OPT)
+	  cmake -S target/firmware -B $(BUILD_DIR) -G Ninja -DPICO_BOARD=$(PICO_BOARD) $(HIL_DEV_OPT) $(GAME_BLOB_OPT)
 	PATH="$(PATH_WITH_TOOLS)" ninja -C $(BUILD_DIR)
 
 # Flash with OpenOCD over a Debug Probe, then watch the UART (115200) for

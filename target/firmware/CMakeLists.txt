@@ -46,6 +46,16 @@ if(HIL_DEV_TESTS)
     target_compile_definitions(dma_hil PRIVATE HIL_DEV_TESTS)
 endif()
 
+# gamepico: the game's XIP text and PCM blobs are linked at their
+# flash homes (one flash copy, no staging) — addresses must match
+# boards.GamePico.GameTextXIP and dmxgen's gameSFXHome.
+option(HIL_GAME_BLOBS "Pin the game blobs at their XIP flash homes" OFF)
+if(HIL_GAME_BLOBS)
+    target_link_options(dma_hil PRIVATE
+        "LINKER:--section-start=.gametext=0x10100000"
+        "LINKER:--section-start=.gamesfx=0x10140000")
+endif()
+
 target_link_libraries(dma_hil pico_stdlib hardware_pio
         hardware_flash)
 
