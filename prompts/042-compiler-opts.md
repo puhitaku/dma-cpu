@@ -1,10 +1,16 @@
-# 042 — Compiler optimization roadmap (parked)
+# 042 — Compiler optimization roadmap
 
 Ideas surveyed on top of the mature dmacc/dmaasm pipeline (2026-08-28),
 to revisit after the trivial steps in flight. Goal axes: text/data
 size and executed-record count, in that combined order. Ranked by
 leverage per effort; every item rides the existing differential-test
 and emulator harness.
+
+Status 2026-08-29: §2 (static cases), §3, §9 and §10 are DONE; §5 is
+measured and CLOSED as not worth building; the rest are open. The
+2026-08-29 wave also measured where executed records actually go
+(comparison lowering ~65%, see §10), which reranks everything still
+open.
 
 ## 1. Close the PGO loop (highest leverage)
 
@@ -112,15 +118,20 @@ call protocols repeat constantly at 8 B/record; comparable outliners
 take 5-15% of text. Gate by the §1 profile so only cold code pays the
 jump. Warm-up: trivial ICF (fold byte-identical function bodies).
 
-## 5. Copy coalescing — this machine's register allocator
+## 5. Copy coalescing — MEASURED, CLOSED (don't build)
 
-Every eliminated `move` is 8 bytes AND a cycle; with values in SRAM
-words, copy elimination is the whole value of register allocation.
-foldCopies, cast forwarding, and within-block slot coloring exist;
-the missing piece is an interference-based coalescer over whole
-functions (phi-edge copies are the target-rich zone). MEASURE FIRST:
-count surviving reg-reg-shaped moves in the xsh kernel; build it only
-if they exceed a few percent of records.
+The premise was "every eliminated move is 8 bytes AND a cycle";
+measurement (2026-08-29) says the class an intra-function coalescer
+can actually touch — same-function slot-to-slot copies, excluding the
+fixed ABI cells and constant loads — is 2.5-2.6% of static records
+and 1.3-1.4% of EXECUTED records in both the xsh kernel and the game.
+Even a 100%-yield coalescer caps below 3% of cycles; a realistic one
+lands under 1%. The structural reason: `move` is this machine's
+cheapest instruction (1 record, against 5-7 for arithmetic and 24-25
+for the compare macros in compact), so moves are 58% of instructions
+but only ~9% of records. foldCopies already harvests the free cases.
+Not worth whole-function liveness + interference + a parallel-copy
+sequencer; measured with the record-labelling probes described in §8.
 
 ## 6. PGO-shaped recursion clones
 
@@ -147,6 +158,16 @@ engine once: cycle AND flash-stall attribution from emulator traces
 through dmaasm symbols back to C lines, plus size/cycle ratchets in
 CI (the bench tests exist — pin them). The recurring zz_ throwaway
 probes are this tool asking to be born.
+
+Two hard-won methodology notes from the 2026-08-29 measurement round,
+for whoever builds it: dmaasm drops every `__`-prefixed symbol from
+Result.Symbols, so address-range attribution silently credits the
+runtime and compare millicode to whatever compiled function precedes
+them — derive ownership from the .dasm label stream instead. And the
+xsh cycle bench quantizes on the 15,000-cycle scheduler tick (blocked
+shells absorb whole idle ticks), so single commands are only good to
+~10 ticks; compare 5-command aggregates, or the deterministic cc_*
+image cycles.
 
 ## 9. Division by a constant divisor — DONE
 
@@ -209,9 +230,36 @@ reciprocal, so it stopped linking __rt_srem, __rt_udiv and the long
 division altogether), lean 115552 -> 116576,
 ls 9392 -> 9368.
 
+## 10. Comparison lowering — the measured 65%, partly DONE
+
+Fetch-attributed profiling (2026-08-29) put comparison lowering at
+~65% of ALL executed records — xsh commands and the game alike — with
+`x == 0` alone 52-58% of invocations at ~21 records each (2-record
+descriptor site + 19-record __cw_eqz). Nothing else in the program is
+within an order of magnitude. Two findings frame the design space:
+whole-image InlineCompares is a dead end (+69% text, overflows the
+board RAM windows — measured, not estimated), and the compact
+encoding's per-macro bank canonicalization adds ~2 records to every
+sniffer macro, ~20% of all executed records on its own (a dmaasm
+planner project, unexplored).
+
+Shipped (host/dmacc/facts.go + compare.go): a per-function BOOL/NONNEG
+fact lattice, fixed-point from the pessimistic bottom, routes sites to
+two shorter helpers — __cw_eqzp (a == 0 with bit 31 provably clear:
+one add of -1 replaces eqz's sub/or pair) and __cw_ltp (both operands
+nonneg: the sign of a-b IS the answer, one sub against the four-term
+borrow). eqzp covers 43% of the kernel's zero-tests and 75% of the
+game's. Measured: cc_collatz -7.9%, cal_flash -3.9%, cc_control -2.8%.
+
+Still on the table, in measured-value order: (a) a range analysis (or
+interval narrowing from the dominating branch) — __cw_ltp fires on
+only 0.5% of lt/ltu sites because loop bounds arrive as parameters or
+i32 loads with no fact; (b) the compact bank-state planner above;
+(c) per-site descriptor-vs-four-move selection from the §1 profile.
+
 ## If only two
 
-§1 (it compounds: every future heuristic becomes automatic) and §2+§3
-together (about a week, aimed at exactly the record-count hot spots
-the traces keep showing: bulk moves and shift-heavy inner loops). §3
-and §9 are done; §2 is still open.
+§1 (it compounds: every future heuristic becomes automatic) and the
+rest of §10 (comparisons remain the dominant executed cost even after
+eqzp; the range analysis and the compact planner are the two biggest
+unclaimed cycle levers on the books).
