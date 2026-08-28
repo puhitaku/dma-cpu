@@ -90,6 +90,75 @@ func tail(b []byte, n int) string {
 	return string(b)
 }
 
+// TestZZBenchVi prices the vi port on a real editing session — the
+// heaviest interactive application in the tree (a keypress can run
+// magnitudes more code than a whole shell command, and vi's text is
+// XIP by design). Each phase feeds its keys and runs until the screen
+// stops changing; the number recorded is cycles from feed to the LAST
+// console change, so the quiet-detection tail does not count. TXPace
+// off, as in the other benches.
+//
+//	DMACC_BENCH=1 go test ./dmacc/ -run TestZZBenchVi -v
+func TestZZBenchVi(t *testing.T) {
+	if os.Getenv("DMACC_BENCH") == "" {
+		t.Skip("set DMACC_BENCH=1 to run the cycle benchmark")
+	}
+	m, kernC := bootXsh(t)
+	registerVi(t, m, kernC, boards.Pico2)
+	m.TXPace = 0
+	// Small run chunks keep the cycles-to-last-change resolution fine
+	// (the recorded number quantizes to the chunk size); the quiet
+	// threshold stays at 50M cycles so a long silent compute stretch
+	// mid-phase (replace-char reflows before it repaints) cannot end a
+	// phase early.
+	phase := func(feed string, budget uint64) uint64 {
+		m.FeedConsole(feed)
+		var spent, lastChange uint64
+		quiet := 0
+		last := len(m.ConsoleOut)
+		for spent < budget && quiet < 100 {
+			rr, err := m.Run(emu.RunConfig{MaxCycles: 500_000})
+			if err != nil {
+				t.Fatalf("%v (console tail %q)", err, tail(m.ConsoleOut, 300))
+			}
+			spent += rr.Cycles
+			if len(m.ConsoleOut) == last {
+				quiet++
+			} else {
+				quiet, last, lastChange = 0, len(m.ConsoleOut), spent
+			}
+		}
+		if lastChange == 0 {
+			t.Fatalf("phase %q produced no output; console tail %q", feed, tail(m.ConsoleOut, 300))
+		}
+		return lastChange
+	}
+	steps := []struct{ name, feed string }{
+		{"open README", "vi README\r"},
+		{"insert a line", "ithe quick brown fox jumps over the lazy dog\x1b"},
+		{"yank line (yy)", "yy"},
+		{"paste x10 (p)", strings.Repeat("p", 10)},
+		{"delete x5 (dd)", strings.Repeat("dd", 5)},
+		{"replace char (rX)", "rX"},
+		{"open aaa line (o)", "o" + strings.Repeat("a", 20) + "\x1b"},
+		{"yank aaa (yy)", "yy"},
+		{"paste aaa x10 (p)", strings.Repeat("p", 10)},
+		{"subst %s/a/A/g", ":%s/a/A/g\r"},
+		{"quit (:q!)", ":q!\r"},
+	}
+	fmt.Printf("%-20s %14s\n", "vi phase", "cycles")
+	var total uint64
+	for _, s := range steps {
+		n := phase(s.feed, 20_000_000_000)
+		total += n
+		fmt.Printf("%-20s %14d\n", s.name, n)
+	}
+	fmt.Printf("%-20s %14d\n", "TOTAL", total)
+	if !strings.HasSuffix(string(m.ConsoleOut), "$ ") {
+		t.Fatalf("vi did not exit to the prompt; console tail %q", tail(m.ConsoleOut, 300))
+	}
+}
+
 // TestZZBenchFbcon prices the framebuffer console (prompts/036): the
 // same command set runs on Feather (fbcon rendering every byte) and
 // on Pico 2 (identical kernel, fb dormant), TXPace off, so the delta
