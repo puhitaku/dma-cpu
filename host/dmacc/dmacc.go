@@ -75,6 +75,14 @@ type Options struct {
 	// (facts.go, ipBounds.report). That witness is the diagnosis when a
 	// meet dies at one loose site.
 	BoundsReport io.Writer
+
+	// HotFuncs carves the OptSize decision per FUNCTION: a function
+	// named here keeps the four-move protocol even under OptSize, so
+	// the whole image pays descriptor compares except on the measured
+	// hot paths. The set is generated from emulator traces (host/pgo,
+	// regenerate with `make pgo`); OptSize alone still means
+	// descriptors everywhere.
+	HotFuncs map[string]bool
 }
 
 // Compile translates a parsed module into dmaasm source. The generated

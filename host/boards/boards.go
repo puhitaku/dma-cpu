@@ -269,7 +269,10 @@ var Feather = &Board{
 	// the resident tick/console path (dmacc ResidentFuncs) joins the shared
 	// runtime so the idle machine never reads flash while the display
 	// scans, plus the reciprocal divide-by-ten (__rt_udivmod10) and the
-	// fact-directed compare bodies (__cw_eqzp/__cw_ltp) */
+	// fact-directed compare bodies (__cw_eqzp/__cw_ltp). The PGO driver
+	// added the fb console's cursor_xor to that list (376 B, 17% of all
+	// kernel XIP-text reads), which leaves ~176 B of this window: the
+	// next resident candidate needs the window moved, not just naming. */
 	// Repacked after the flash literal-pool split + const-global
 	// rodata (measured: kernel data 32.5K with the profiled hot pool
 	// resident, sh data 8.6K all-cold). The arena covers sh's heap

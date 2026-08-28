@@ -10,6 +10,7 @@ import (
 	"github.com/puhitaku/dma-cpu/host/dmacc"
 	"github.com/puhitaku/dma-cpu/host/emu"
 	"github.com/puhitaku/dma-cpu/host/llir"
+	"github.com/puhitaku/dma-cpu/host/pgo"
 	"github.com/puhitaku/dma-cpu/host/prog"
 )
 
@@ -32,21 +33,32 @@ func compileKernel(t *testing.T, fs bool) string {
 	return compileKernelOpts(t, fs, false)
 }
 
-// compileKernelSized is the -Os build (descriptor compares), kept
-// measured so the speed/size gap of Options.OptSize stays visible.
+// compileKernelSized is the whole-image -Os build (descriptor
+// compares everywhere), kept measured so the speed/size gap of
+// Options.OptSize stays visible against the two other modes.
 func compileKernelSized(t *testing.T) string {
 	t.Helper()
-	return compileKernelFull(t, true, true, true, false)
+	return compileKernelFull(t, kernKey{fs: true, xip: true, cmp: "os"})
+}
+
+// compileKernelPGO is the shipped comparison policy without the
+// display driver, so the three-way size trade (balanced / all-Os /
+// profile-carved) is measurable on one kernel shape.
+func compileKernelPGO(t *testing.T) string {
+	t.Helper()
+	return compileKernelFull(t, kernKey{fs: true, xip: true, cmp: "pgo"})
 }
 
 func compileKernelOpts(t *testing.T, fs, xip bool) string {
-	return compileKernelFull(t, fs, xip, false, false)
+	return compileKernelFull(t, kernKey{fs: fs, xip: xip})
 }
 
 // compileKernelXsh is the deployable XIP configuration; fb picks the
-// real display driver (PSRAM boards) or the no-op stub.
+// real display driver (PSRAM boards) or the no-op stub. cmp "pgo" is
+// what dmxgen ships: descriptor compares everywhere EXCEPT the
+// measured hot functions (pgo.KernelHotFuncs).
 func compileKernelXsh(t *testing.T, fb bool) string {
-	return compileKernelFull(t, true, true, false, fb)
+	return compileKernelFull(t, kernKey{fs: true, xip: true, fb: fb, cmp: "pgo"})
 }
 
 // kernelCache memoizes compiled kernels per flag set: the compile is
@@ -56,9 +68,18 @@ func compileKernelXsh(t *testing.T, fb bool) string {
 // both store the identical string.
 var kernelCache sync.Map
 
-func compileKernelFull(t *testing.T, fs, xip, size, fb bool) string {
+// kernKey selects a kernel shape: fs picks the real filesystem, xip
+// the flash-text layout, fb the real display driver, and cmp the
+// comparison-site policy ("" balanced four-move, "os" descriptors
+// everywhere, "pgo" descriptors minus the profiled hot functions).
+type kernKey struct {
+	fs, xip, fb bool
+	cmp         string
+}
+
+func compileKernelFull(t *testing.T, key kernKey) string {
 	t.Helper()
-	key := [4]bool{fs, xip, size, fb}
+	fs, xip, fb := key.fs, key.xip, key.fb
 	if v, ok := kernelCache.Load(key); ok {
 		return v.(string)
 	}
@@ -81,19 +102,29 @@ func compileKernelFull(t *testing.T, fs, xip, size, fb bool) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := dmacc.Options{Entry: "kmain", NoSafepoints: true, XIPText: xip, OptSize: size,
+	opts := dmacc.Options{Entry: "kmain", NoSafepoints: true, XIPText: xip,
+		OptSize: key.cmp != "",
 		/* every XIP kernel hosts the shared runtime for its guests */
 		RuntimeHost: xip}
+	if key.cmp == "pgo" {
+		opts.HotFuncs = pgo.KernelHotFuncs
+	}
 	if xip && fs {
 		// The whole sync path must execute from SRAM: its QMI session
 		// tears down the XIP window the kernel text now lives behind.
 		opts.RAMTextFuncs = []string{"kflash_sync"}
-		// Mirror dmxgen: the 10 kHz tick/fire path stays resident so
-		// the idle machine issues zero flash reads while the display
-		// scans (prompts/036; ranked by TestProfileEnter).
+		// Mirror dmxgen's kernResident: the 10 kHz tick/fire path stays
+		// resident so the idle machine issues zero flash reads while
+		// the display scans (prompts/036, and the PGO driver's
+		// .ramtext histogram).
 		opts.ResidentFuncs = []string{"dma_ktick", "kenter", "kexit", "swtch",
 			"fire_income", "tick_income", "kcons_aim", "kcons_kick",
 			"kcons_on", "kcons_rx", "kcons_tx", "kcons_pending"}
+		if fb {
+			// dmxgen's kernResident: the fb console's cursor redraw is
+			// the kernel's densest XIP-text read source.
+			opts.ResidentFuncs = append(opts.ResidentFuncs, "cursor_xor")
+		}
 	}
 	dasm, err := dmacc.Compile(merged, opts)
 	if err != nil {

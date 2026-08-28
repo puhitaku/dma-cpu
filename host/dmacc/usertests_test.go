@@ -12,6 +12,7 @@ import (
 	"github.com/puhitaku/dma-cpu/host/emu"
 	"github.com/puhitaku/dma-cpu/host/fsimg"
 	"github.com/puhitaku/dma-cpu/host/llir"
+	"github.com/puhitaku/dma-cpu/host/pgo"
 	"github.com/puhitaku/dma-cpu/host/prog"
 )
 
@@ -102,7 +103,7 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 	kernC, err := dmaasm.Assemble(kcDasm, dmaasm.Options{
 		Variant: v, Compact: true,
 		TextBase: 0x10260000, DataBase: 0x2000EE00, RAMTextBase: 0x20004000,
-		PoolText: true, HotLits: dmaasm.XSHHotLits})
+		PoolText: true, HotLits: pgo.KernelLits})
 	if err != nil {
 		t.Fatal(err)
 	}

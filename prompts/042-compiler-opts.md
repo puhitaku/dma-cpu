@@ -6,34 +6,99 @@ size and executed-record count, in that combined order. Ranked by
 leverage per effort; every item rides the existing differential-test
 and emulator harness.
 
-Status 2026-08-29: §2 (static cases), §3, §9 and §10 (a) + (a1) are
-DONE (eqzp/ltp shipped, then the whole-program parameter/return
-bounds that feed them; §10's (b) planner idea is measured and
-CLOSED); §5 is measured and CLOSED as not worth building; the rest
-are open. The 2026-08-29 wave also measured where executed records
-actually go (comparison lowering ~65%, see §10), which reranks
+Status 2026-08-29: §1 (the PGO loop), §2 (static cases), §3, §9 and
+§10 (a) + (a1) are DONE (eqzp/ltp shipped, then the whole-program
+parameter/return bounds that feed them; §10's (b) planner idea is
+measured and CLOSED); §5 is measured and CLOSED as not worth
+building; the rest are open. The 2026-08-29 wave also measured where
+executed records actually go (comparison lowering ~65%, see §10),
+which reranks
 everything still open.
 
-## 1. Close the PGO loop (highest leverage)
+## 1. The PGO loop — DONE
 
-Every best optimization so far was profile-DISCOVERED but hand-APPLIED
-(XSHHotLits, ResidentFuncs, SizeApps, InlineCompares). Build the
-driver that turns emulator traces of representative workloads into
-committed settings:
+Every optimization up to here was profile-DISCOVERED but hand-APPLIED.
+The loop is closed now: `make pgo` runs the driver in
+`host/dmacc/zz_pgogen_test.go` (TestGenPGO, gated on GEN_PGO), which
+boots every deployable payload in the emulator, drives its
+representative workload, and rewrites the committed settings in
+`host/pgo`. Those files are build INPUTS, not goldens — regenerating
+moves layout and cycle counts, so it is a measurement to report.
 
-- per-FUNCTION OptSize (descriptor compares in cold code, four-move
-  in hot) instead of the per-app boolean — the 9% size vs 2x speed
-  trade becomes near-free;
-- per-site compare inlining (InlineCompares is all-or-nothing today);
-- hot/cold literal pools for every image (only the xsh kernel has a
-  generated hot set);
-- ResidentFuncs selection from measured flash-read parking, not
-  intuition;
+**What the driver measures.** `emu.Machine.ProfileWindows` counts bus
+reads per word over several disjoint ranges at once, so one emulated
+run prices everything:
+
+- literal-pool reads, folded back onto pool keys through
+  `dmaasm.Result.LitAddrs`. Images are profiled in their DEPLOYED
+  shape: LitAddrs names a key's address whether it landed resident in
+  SRAM data or cold in the flash text tail, so counting both regions
+  covers the whole pool. (Profiling an UNSPLIT image was the obvious
+  route and does not work — sh's all-resident data overruns its board
+  window.)
+- per-function text reads, one window over the image's XIP text minus
+  the cold pool words sharing its tail. A text read IS an instruction
+  fetch, so the same histogram is execution heat and the flash-parking
+  signal that ranks ResidentFuncs.
+- the same over the kernel's `.ramtext`, which prices what the current
+  ResidentFuncs list is already buying.
+
+Ownership comes from the `f_` function labels alone, which sidesteps
+the §8 attribution trap: under XIPText the runtime and compare
+millicode live in `.ramtext`, so the XIP text a histogram attributes
+holds nothing but dmacc's own labels.
+
+**Workloads.** kernel/sh: a feather boot to the prompt plus
+TestZZBenchXsh's command set run cold and warm; vi: TestZZBenchVi's
+editing session, on the same machine; game: gamepico boot to the menu,
+menu navigation, then Dino, LANWalk and Yacht to their first scoring
+event. Changing a workload re-derives every setting together.
+
+**What it produces.** `pgo.KernelLits` / `ShLits` / `ViLits` /
+`GameLits` (hot literal pools for all four images, replacing the
+kernel-only hand-run `XSHHotLits`), and `pgo.KernelHotFuncs` /
+`GameHotFuncs` — the per-FUNCTION carve-out of `dmacc.Options.OptSize`
+(`Options.HotFuncs`: OptSize everywhere, four-move compares on the
+functions covering the top 97% of executed text reads). Each set is
+ranked by read count and trimmed until the resident half fits every
+board that ships the image with 256 bytes of the window to spare; vi's
+is trimmed harder still, to the slack inside kalloc's 256-byte
+rounding, so its hot pool costs the arena nothing.
+
+**Measured, feather + gamepico.** Flash reads over the profiling
+workload: kernel 27.7M -> 14.0M (the old hand-run hot set covered only
+91.4% of this workload's pool reads; the new one covers 99.9% with 704
+keys against 1195, and `cursor_xor` joining ResidentFuncs took another
+19%), sh 416K -> 336K, vi 16.9M -> 13.3M (-21.4%, and free: its 268
+bytes fit the rounding slack), game 60.2M -> 36.8M. Deployed sizes:
+kernel flash text 245584 -> 238184 with SRAM data unchanged at 32768;
+game SRAM data 156476 -> 141020 (-15.1 KiB) for +9 KiB of flash text.
+Per-function OptSize on the game's LANWalk scene: 60.77M cycles
+balanced, 69.99M all-Os (+15.2%), 60.28M with the hot carve-out — the
+size win without the speed loss. On the kernel the same policy takes
+204296 bytes of text against 208512 balanced and 202496 all-Os, i.e.
+73% of the descriptor saving, and the xsh bench did not regress.
+
+**Still open**, with what the driver already provides toward it:
+
+- per-site compare inlining (InlineCompares is all-or-nothing today).
+  The per-function machinery is the same shape — `funcCtx.optSize` is
+  the pattern to copy — but a per-SITE decision needs site identity in
+  the profile, which means labelling compare sites in the .dasm and
+  attributing reads to them; the text histogram resolves to words
+  already, so only the labelling is missing.
 - hot-edge fallthrough + cold-block out-of-line layout (a taken jump
-  into unprefetched XIP parks the shared read master, so layout
-  counts double here).
-
-All the mechanisms exist; only the trace→settings harness is missing.
+  into unprefetched XIP parks the shared read master, so layout counts
+  double here). The driver gives per-word text read counts, which is
+  per-BLOCK heat for free — dmacc's block labels (`B_<func>_<n>`) are
+  in `Result.Symbols`, so switching `funcCounts`' owner predicate from
+  `f_` to the block labels yields an edge-weight profile without any
+  new measurement. What is missing is the emission side: dmacc lays
+  blocks out in IR order today.
+- ResidentFuncs past `cursor_xor`: the ranking says `cell_addr`
+  (14.8% of kernel XIP reads, 792 B) and `kfbcon_putc` (29.1%, 8.9
+  KiB) are next, and neither fits what the KernCRText window has left
+  (176 B on feather). They need a window move, not a setting.
 
 ## 2. Alignment-aware memcpy/memset — DONE for the static cases
 

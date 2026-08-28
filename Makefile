@@ -113,6 +113,19 @@ game-ll:
 	  echo "  target/game/src/$$f -> target/game/ll/$$(basename $$f .c).ll"; \
 	done
 
+# --- Profile-guided settings (prompts/042 §1) ---
+# Boots every deployable payload in the emulator, drives its
+# representative workload, and rewrites host/pgo/{lits,funcs}_gen.go
+# from the measured literal-pool and per-function heat. These are build
+# INPUTS, not test goldens: regenerating changes image layout and cycle
+# counts, so report the before/after instead of refreshing on a failure.
+# Takes ~15 minutes (the profiler disables the emulator's fast read
+# path) and needs no host toolchain.
+.PHONY: pgo
+pgo:
+	GEN_PGO=1 go test -count=1 -timeout 3h -run TestGenPGO ./host/dmacc/ -v
+	gofmt -w ./host/pgo
+
 # --- Compiler goldens (Phase 4) ---
 # Regenerate the committed IR goldens and host-truth expectations for the
 # dmacc differential tests. Needs a host clang. The target IR and the

@@ -14,13 +14,9 @@ import (
 	"github.com/puhitaku/dma-cpu/host/emu"
 	"github.com/puhitaku/dma-cpu/host/fsimg"
 	"github.com/puhitaku/dma-cpu/host/llir"
+	"github.com/puhitaku/dma-cpu/host/pgo"
 	"github.com/puhitaku/dma-cpu/host/prog"
 )
-
-// xshPoolSplit gates the flash literal-pool split for kernel/sh/
-// resident apps; the hot-pool profile generator turns it off to
-// measure an unsplit machine.
-var xshPoolSplit = true
 
 // buildUserScratch compiles an xv6 user program (name.ll + the userland
 // modules) and assembles it reloc-intact at canonical link bases.
@@ -223,23 +219,46 @@ func bootXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, *
 	return buildXshBoard(t, flash, bd)
 }
 
-func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, *dmaasm.Result) {
+// compileShDasm compiles the boot shell: recursion clones to depth 8,
+// flash-immutable text, the guest half of the kernel's shared runtime.
+func compileShDasm(t *testing.T, bd *boards.Board) string {
 	t.Helper()
-	v, err := emu.VariantByName(bd.SKU)
-	if err != nil {
-		t.Fatal(err)
-	}
 	shMod, err := llir.Merge(
 		parseLL(t, "../../target/xv6/ll/sh.ll"), parseLL(t, "../../target/xv6/ll/ulib.ll"),
 		parseLL(t, "../../target/xv6/ll/umalloc.ll"), parseLL(t, "../../target/xv6/ll/usys.ll"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 8, XIPText: true,
+	dasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 8, XIPText: true,
 		RuntimeExtern: &dmacc.ExternRT{Vec: bd.KernCRText, Regs: bd.KernCData}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	return dasm
+}
+
+// buildShXsh compiles and assembles the boot shell exactly as
+// buildXshBoard installs it. Split out so the PGO generator can reach
+// the Result's pool addresses and symbols without rebuilding a board.
+func buildShXsh(t *testing.T, v *emu.Variant, bd *boards.Board) *dmaasm.Result {
+	t.Helper()
+	res, err := dmaasm.Assemble(compileShDasm(t, bd), dmaasm.Options{
+		Variant: v, Compact: true,
+		TextBase: bd.ShTextXIP, DataBase: bd.ShData, RAMTextBase: bd.ShRText,
+		PoolText: true, HotLits: pgo.ShLits})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, *dmaasm.Result) {
+	t.Helper()
+	v, err := emu.VariantByName(bd.SKU)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sh := buildShXsh(t, v, bd)
 	kcDasm := compileKernelXsh(t, bd.FbBuf != 0)
 	idleDasm, err := dmacc.Compile(parseLL(t, "testdata/proc.ll"), dmacc.Options{})
 	if err != nil {
@@ -255,14 +274,14 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 			Variant: v, Compact: true,
 			TextBase: text, DataBase: data, RAMTextBase: rtext})
 	}
-	// The kernel splits its literal pool by the generated profile; sh
-	// is interactive and goes all-cold (xshPoolSplit gates both so the
-	// profile generator can build an unsplit machine to measure).
+	// Every image splits its literal pool by its own generated profile
+	// (host/pgo): the named keys stay in resident SRAM data, the rest
+	// append to the flash text tail.
 	casmPool := func(src string, text, data, rtext uint32, hot map[string]bool) (*dmaasm.Result, error) {
 		return dmaasm.Assemble(src, dmaasm.Options{
 			Variant: v, Compact: true,
 			TextBase: text, DataBase: data, RAMTextBase: rtext,
-			PoolText: xshPoolSplit, HotLits: hot})
+			PoolText: true, HotLits: hot})
 	}
 	// XIP layout (prompts/030): kernC and sh text executes from the
 	// flash window; only their .ramtext stubs and data live in SRAM.
@@ -270,11 +289,7 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernC, err := casmPool(kcDasm, bd.KernTextXIP, bd.KernCData, bd.KernCRText, dmaasm.XSHHotLits)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sh, err := casmPool(shDasm, bd.ShTextXIP, bd.ShData, bd.ShRText, nil)
+	kernC, err := casmPool(kcDasm, bd.KernTextXIP, bd.KernCData, bd.KernCRText, pgo.KernelLits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -551,8 +566,11 @@ func registerFlashApps(t *testing.T, m *emu.Machine, v *emu.Variant,
 // pre-relocated: text at tHome (executes in place from XIP flash),
 // [ramtext][data] at the board arena's first allocation. Returns the
 // result and the padded text/ramtext/data blobs.
-func buildUserResident(t *testing.T, v *emu.Variant, bd *boards.Board, tHome uint32,
-	name string, extra ...string) (*dmaasm.Result, []byte, []byte, []byte, uint32) {
+// compileUserResident compiles a pre-relocated registry image (vi and
+// the XIPApps): flash-immutable text, the guest half of the shared
+// runtime. Split out so the PGO generator can re-assemble one image
+// against several candidate hot-literal sets without recompiling it.
+func compileUserResident(t *testing.T, bd *boards.Board, name string, extra ...string) string {
 	t.Helper()
 	paths := append([]string{name, "ulib", "usys"}, extra...)
 	var mods []*llir.Module
@@ -568,6 +586,13 @@ func buildUserResident(t *testing.T, v *emu.Variant, bd *boards.Board, tHome uin
 	if err != nil {
 		t.Fatal(err)
 	}
+	return dasm
+}
+
+func buildUserResident(t *testing.T, v *emu.Variant, bd *boards.Board, tHome uint32,
+	name string, extra ...string) (*dmaasm.Result, []byte, []byte, []byte, uint32) {
+	t.Helper()
+	dasm := compileUserResident(t, bd, name, extra...)
 	probe, err := dmaasm.Assemble(dasm, dmaasm.Options{
 		Variant: v, Compact: true,
 		TextBase: 0x10000000, DataBase: 0x10040000, RAMTextBase: 0x10080000})
@@ -579,7 +604,7 @@ func buildUserResident(t *testing.T, v *emu.Variant, bd *boards.Board, tHome uin
 	res, err := dmaasm.Assemble(dasm, dmaasm.Options{
 		Variant: v, Compact: true,
 		TextBase: tHome, DataBase: sram + rt, RAMTextBase: sram,
-		PoolText: xshPoolSplit})
+		PoolText: true, HotLits: pgo.LitsFor(name)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -597,7 +622,8 @@ func buildUserResident(t *testing.T, v *emu.Variant, bd *boards.Board, tHome uin
 // registerVi compiles the BusyBox vi port, stages its blobs into the
 // machine's flash model at the same home dmxgen uses, and patches the
 // kernel's registry row 0 — the emulator twin of the firmware staging.
-func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result, bd *boards.Board) {
+func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result,
+	bd *boards.Board) *dmaasm.Result {
 	t.Helper()
 	res, text, rt, data, sram := buildUserResident(t, m.Variant(), bd, bd.ViHome,
 		"vi", "umalloc")
@@ -625,6 +651,7 @@ func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result, bd *boards.B
 	registerRow(t, m, kernC, idx, "vi", res, bd.ViHome, uint32(len(text)),
 		dHome, uint32(len(data)), 0, 0,
 		bd.ViHome, sram+uint32(len(rt)), sram, rtHome, uint32(len(rt)))
+	return res
 }
 
 // TestXv6Vi: the BusyBox vi port end to end — open a new file, insert

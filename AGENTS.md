@@ -214,6 +214,14 @@ phased plan). Phase outcomes are logged in the numbered
 - `make xv6-ll` / `make game-ll` / `make libc` regenerate the committed
   IR goldens of the kernel, the game console and picolibc; every C
   change on those trees needs the matching one.
+- `make pgo` regenerates the profile-guided settings in `host/pgo`
+  (hot literal pools per image, hot functions per image) by running
+  every deployable payload's workload in the emulator — see
+  `prompts/042-compiler-opts.md` §1. Those files are build INPUTS, not
+  goldens: regenerating moves image layout and cycle counts, so it is
+  a measurement to report, never a way to make a test pass. Re-run it
+  after a workload-relevant C change on the kernel, sh, vi or the game;
+  `make test` does not.
 - `make build` builds the `dmaemu`/`dmaasm`/`dmacc` CLIs; `make images` regenerates
   `target/firmware/generated/images.h` via `host/cmd/dmxgen` for the
   selected board (required whenever test programs, IR goldens or

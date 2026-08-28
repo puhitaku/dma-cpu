@@ -41,6 +41,7 @@ type funcCtx struct {
 	facts     factSet                     // this function's value bounds (facts.go)
 
 	hasCalls   bool
+	optSize    bool // this function's compare sites take the descriptor form
 	inRAM      bool // whole function emitted into .ramtext (RAMTextFuncs)
 	rec        bool // uses the recursion frame stack (push/pop)
 	frameBytes int  // data bytes emitted for this function's frame
@@ -51,6 +52,7 @@ type funcCtx struct {
 func (g *gen) emitFunc(f *llir.Func) error {
 	fc := &funcCtx{
 		g: g, f: f, rec: g.recSet[f.Name], inRAM: g.ramSet[f.Name],
+		optSize:   g.opts.OptSize && !g.opts.HotFuncs[f.Name],
 		declared:  map[string]bool{},
 		allocas:   map[string]string{},
 		constAddr: map[string]addrC{},

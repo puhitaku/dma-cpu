@@ -85,10 +85,10 @@ type Machine struct {
 	// drained word while the counter is live.
 	streamAddr uint32
 
-	// Read-profiling window (Profile): per-word read counts over
-	// [profLo, profHi) — literal-pool hotness for the flash-pool split.
-	profLo, profHi uint32
-	profCounts     []uint32
+	// Read-profiling windows (Profile / ProfileWindows): per-word read
+	// counts over each [lo, hi) — literal-pool hotness for the flash-pool
+	// split, and per-function fetch/flash-read heat over a text segment.
+	prof []profWindow
 
 	// SPI-mode SD card (sdcard.go): set SDImage to attach a card
 	// behind SPI0. spiRx is the RX FIFO the drain channel empties.
@@ -204,8 +204,13 @@ func applyAlias(cur, val, op uint32) uint32 {
 
 // Read performs a bus read of size bytes (1, 2, or 4).
 func (m *Machine) Read(addr uint32, size int) (uint32, error) {
-	if m.profCounts != nil && addr >= m.profLo && addr < m.profHi {
-		m.profCounts[(addr-m.profLo)>>2]++
+	if len(m.prof) != 0 {
+		for i := range m.prof {
+			if w := &m.prof[i]; addr >= w.lo && addr < w.hi {
+				w.counts[(addr-w.lo)>>2]++
+				break
+			}
+		}
 	}
 	if addr%uint32(size) != 0 {
 		return 0, fmt.Errorf("unaligned %d-byte read at %#08x", size, addr)
@@ -852,7 +857,7 @@ func (m *Machine) transfer(chIdx int) error {
 		if w.hi == 0 || ra < w.lo || ra >= w.hi {
 			*w = m.resolveWin(ra, false)
 		}
-		if w.buf != nil && m.profCounts == nil && ra >= w.lo && w.hi-ra >= sz && ra&(sz-1) == 0 {
+		if w.buf != nil && len(m.prof) == 0 && ra >= w.lo && w.hi-ra >= sz && ra&(sz-1) == 0 {
 			off := ra - w.lo
 			switch size {
 			case 1:
@@ -1094,6 +1099,11 @@ func (m *Machine) Clone() *Machine {
 	n.spiRx = append([]byte(nil), m.spiRx...)
 	n.sdc.cmd = append([]byte(nil), m.sdc.cmd...)
 	n.sdc.resp = append([]byte(nil), m.sdc.resp...)
+	// Profiling windows are per-machine: a clone counts its own reads.
+	n.prof = append([]profWindow(nil), m.prof...)
+	for i := range n.prof {
+		n.prof[i].counts = append([]uint32(nil), n.prof[i].counts...)
+	}
 	n.TraceW = nil
 	n.watch = nil
 	n.watchHit = nil
@@ -1105,17 +1115,53 @@ func (m *Machine) Clone() *Machine {
 // LoadedRanges exposes the LoadBytes bookkeeping (test/diagnostic use).
 func (m *Machine) LoadedRanges() [][2]uint32 { return m.loaded }
 
-// Profile starts counting bus reads per word over [lo, hi) — the
-// measurement side of the profile-guided literal-pool split. Counts
-// are indexed by (addr-lo)/4; pass lo==hi to stop.
-func (m *Machine) Profile(lo, hi uint32) {
-	if hi <= lo {
-		m.profCounts = nil
-		return
-	}
-	m.profLo, m.profHi = lo, hi
-	m.profCounts = make([]uint32, (hi-lo+3)/4)
+// profWindow is one read-profiling window: per-word counts over
+// [lo, hi), indexed by (addr-lo)/4.
+type profWindow struct {
+	lo, hi uint32
+	counts []uint32
 }
 
-// ProfileCounts returns the live count slice (nil when not profiling).
-func (m *Machine) ProfileCounts() []uint32 { return m.profCounts }
+// Profile starts counting bus reads per word over [lo, hi) — the
+// measurement side of the profile-guided literal-pool split. Counts
+// are indexed by (addr-lo)/4; pass lo==hi to stop. Replaces any
+// window set previously.
+func (m *Machine) Profile(lo, hi uint32) {
+	if hi <= lo {
+		m.prof = nil
+		return
+	}
+	m.ProfileWindows([][2]uint32{{lo, hi}})
+}
+
+// ProfileWindows profiles several disjoint ranges at once — one
+// emulated workload attributes literal-pool reads (SRAM data) and
+// instruction-fetch/flash reads (XIP text) for several images in a
+// single pass. Windows must not overlap; a read lands in the first
+// one that contains it. Passing no windows stops profiling.
+func (m *Machine) ProfileWindows(ws [][2]uint32) {
+	m.prof = nil
+	for _, w := range ws {
+		if w[1] <= w[0] {
+			// A degenerate window keeps its slot (lo == hi == 0 matches
+			// no address) so callers can index windows positionally.
+			m.prof = append(m.prof, profWindow{})
+			continue
+		}
+		m.prof = append(m.prof, profWindow{lo: w[0], hi: w[1],
+			counts: make([]uint32, (w[1]-w[0]+3)/4)})
+	}
+}
+
+// ProfileCounts returns the live count slice of the first window (nil
+// when not profiling).
+func (m *Machine) ProfileCounts() []uint32 { return m.ProfileCountsAt(0) }
+
+// ProfileCountsAt returns the live count slice of window i, in the
+// order given to ProfileWindows (nil when there is no such window).
+func (m *Machine) ProfileCountsAt(i int) []uint32 {
+	if i < 0 || i >= len(m.prof) {
+		return nil
+	}
+	return m.prof[i].counts
+}

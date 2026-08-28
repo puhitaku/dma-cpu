@@ -16,6 +16,7 @@ import (
 	"github.com/puhitaku/dma-cpu/host/emu"
 	"github.com/puhitaku/dma-cpu/host/gameassets"
 	"github.com/puhitaku/dma-cpu/host/llir"
+	"github.com/puhitaku/dma-cpu/host/pgo"
 )
 
 // Joystick A's pins, in the as-built harness order (input.c): the
@@ -32,16 +33,13 @@ const (
 var btnBit = map[int]uint32{pinUp: 0x1, pinDown: 0x2, pinLeft: 0x4,
 	pinRight: 0x8, pinA: 0x10}
 
-// bootGame compiles and boots the gamepico bare-metal image exactly
-// as dmxgen ships it (XIP text, SRAM data+ramtext, baked ctrl words).
-// All ten joystick pins start high: pulled up means released.
-func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
+// compileGameDasm compiles the gamepico bare-metal image. It mirrors
+// dmxgen's buildGame exactly: the harness must share the shipped
+// layout, or the data tail lands differently against the fixed audio
+// region (a divergence found as a PC of 0x23282328 — replayed drum
+// samples — in TestGameSeq).
+func compileGameDasm(t *testing.T) string {
 	t.Helper()
-	bd := boards.GamePico
-	v, err := emu.VariantByName(bd.SKU)
-	if err != nil {
-		t.Fatal(err)
-	}
 	var mods []*llir.Module
 	for _, p := range []string{"gmain", "menu", "dino", "lanwalk", "yacht",
 		"input", "fx", "seq", "cpumon", "bench", "radio", "gfx",
@@ -54,19 +52,43 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	}
 	dasm, err := dmacc.Compile(mod, dmacc.Options{
 		Entry: "gmain", NoSafepoints: true, XIPText: true,
-		/* mirror dmxgen's buildGame: the harness must share the shipped
-		 * layout, or the data tail lands differently against the fixed
-		 * audio region (a divergence found as a PC of 0x23282328 —
-		 * replayed drum samples — in TestGameSeq) */
 		ResidentFuncs: []string{"shoot", "clearance", "in_box",
-			"normal_of"}})
+			"normal_of"},
+		OptSize: true, HotFuncs: pgo.GameHotFuncs})
 	if err != nil {
 		t.Fatal(err)
 	}
-	prog, err := dmaasm.Assemble(dasm, dmaasm.Options{
+	return dasm
+}
+
+// bootGame compiles and boots the gamepico bare-metal image exactly
+// as dmxgen ships it (XIP text, SRAM data+ramtext, baked ctrl words).
+// All ten joystick pins start high: pulled up means released.
+func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
+	t.Helper()
+	bd := boards.GamePico
+	v, err := emu.VariantByName(bd.SKU)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prog, err := dmaasm.Assemble(compileGameDasm(t), dmaasm.Options{
 		Variant: v, Compact: true,
 		TextBase: bd.GameTextXIP, DataBase: bd.GameData,
-		RAMTextBase: bd.GameRAMText})
+		RAMTextBase: bd.GameRAMText,
+		PoolText:    true, HotLits: pgo.GameLits})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bootGameImage(t, prog), prog
+}
+
+// bootGameImage loads an assembled game image into a fresh machine and
+// applies the boot-time pokes the loader does on silicon: the helper
+// channel CTRL words, the staged PCM table and the ball blob's home.
+func bootGameImage(t *testing.T, prog *dmaasm.Result) *emu.Machine {
+	t.Helper()
+	bd := boards.GamePico
+	v, err := emu.VariantByName(bd.SKU)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +128,7 @@ func bootGame(t *testing.T) (*emu.Machine, *dmaasm.Result) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	return m, prog
+	return m
 }
 
 // sfxClip is one staged PCM clip: flash address and sample count.
