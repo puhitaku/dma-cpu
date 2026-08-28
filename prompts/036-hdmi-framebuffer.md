@@ -149,6 +149,31 @@ shift-free pan/clear loops with 8x unrolling):
 | echo (40 chars)     | +5.66M      | below noise |
 | scroll (12x ls /dev)| +157M       | +36M (~335k/scroll, 2-3 ms) |
 
+A second round (2026-08-29) took the scroll row from +40.2M to +29.8M
+(the tree had drifted up from the +36M above). It came from PROFILING
+first — `host/dmacc/zz_fbconprof_test.go` attributes machine fetches
+per kernel function, feather against pico2 — which found the cost was
+not in the pixels at all: ~40 % of it sat in the comparison millicode,
+because dmacc lowers every test as a call and the per-byte path made
+about thirty of them. The wins, in order: order kfbcon_putc by byte
+frequency instead of by the VT grammar (the control-byte switch used
+to run five equality sites ahead of the printable case); let the glyph
+blit un-draw the cursor it is about to overwrite, instead of a second
+cursor_xor; count the blit loops down to zero (`__cw_eqz`, three
+records) rather than up to a constant (`__cw_eq`, four); keep the
+cursor row's base address standing instead of multiplying it out per
+byte; and fill a full-width span in one DMA instead of sixteen. All
+size-neutral bar the frowa cache, which costs 2.6 K of XIP text (the
+kernel's data and .ramtext windows are down to ~40 and ~550 bytes of
+slack, so nothing could be spent there). Per console byte over
+`cat README` + 12x `ls /dev`: 13,584 cycles -> 9,750, and 7,337
+kernel-text fetches -> 4,869. What remains is mostly the scroll's own
+pixel move (ch11) plus the compare millicode; unrolling the blits
+would take another bite and is priced in kfbcon.c's comments — it does
+not fit those windows. `TestXv6FbconPixels` pins the rendered
+framebuffer bytes against the pre-round renderer, so the round changed
+no pixel.
+
 fbcon now costs less than the UART pacing it shadows. The open item
 noted here — dmacc lacking constant-shift strength reduction for
 lshr/ashr — was closed later by byte-lane constant shifts

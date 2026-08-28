@@ -65,6 +65,18 @@ kfb_owner(void)
   return fb_owner;
 }
 
+/* kfb_condark: fbcon's whole render gate in one word — zero exactly
+ * when the display is live and no process holds the framebuffer.
+ * kfbcon_putc tests it once per console byte, and on this machine a
+ * comparison is a millicode call: `fb_on` is only ever 0 or 1, so the
+ * two conditions fold into one word the caller compares against zero
+ * instead of two calls and two compares. */
+uint
+kfb_condark(void)
+{
+  return (fb_on ^ 1u) | fb_owner;
+}
+
 void
 kfb_setowner(uint pid)
 {

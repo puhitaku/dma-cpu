@@ -3,7 +3,6 @@ source_filename = "dma/kfbcon.c"
 target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
-@fcy = internal unnamed_addr global i32 0, align 4
 @fcx = internal unnamed_addr global i32 0, align 4
 @ffg = internal unnamed_addr global i32 0, align 4
 @fbg = internal unnamed_addr global i32 0, align 4
@@ -12,6 +11,9 @@ target triple = "thumbv6m-unknown-none-eabi"
 @fnpar = internal unnamed_addr global i32 0, align 4
 @fpriv = internal unnamed_addr global i1 false, align 4
 @fpar = internal unnamed_addr global [4 x i32] zeroinitializer, align 4
+@fcy = internal unnamed_addr global i32 0, align 4
+@fb_base = external dso_local local_unnamed_addr global i32, align 4
+@frowa = internal unnamed_addr global i32 0, align 4
 @fbpal = internal unnamed_addr constant [16 x i8] c"\00\80\10\90\02\82\12\DB\92\E0\1C\FC\03\E3\1F\FF", align 1
 @nibmask = internal unnamed_addr constant [16 x i32] [i32 0, i32 -16777216, i32 16711680, i32 -65536, i32 65280, i32 -16711936, i32 16776960, i32 -256, i32 255, i32 -16776961, i32 16711935, i32 -65281, i32 65535, i32 -16711681, i32 16777215, i32 -1], align 4
 @flut16 = internal unnamed_addr global [16 x i32] zeroinitializer, align 4
@@ -21,22 +23,24 @@ target triple = "thumbv6m-unknown-none-eabi"
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @kfbcon_reset() local_unnamed_addr #0 {
-  %1 = tail call i32 @kfb_active() #4
+  %1 = tail call i32 @kfb_active() #6
   %2 = icmp eq i32 %1, 0
-  br i1 %2, label %4, label %3
+  br i1 %2, label %5, label %3
 
 3:                                                ; preds = %0
-  store i32 0, ptr @fcy, align 4, !tbaa !3
   store i32 0, ptr @fcx, align 4, !tbaa !3
+  store i32 0, ptr @fcy, align 4, !tbaa !3
+  %4 = load i32, ptr @fb_base, align 4, !tbaa !3
+  store i32 %4, ptr @frowa, align 4, !tbaa !3
   store i32 7, ptr @ffg, align 4, !tbaa !3
   store i32 0, ptr @fbg, align 4, !tbaa !3
   store i32 0, ptr @fstate, align 4, !tbaa !3
   store i1 false, ptr @fcursor, align 4
-  tail call fastcc void @lut_build() #5
-  tail call fastcc void @clear_screen() #5
-  br label %4
+  tail call fastcc void @lut_build() #7
+  tail call fastcc void @clear_screen() #7
+  br label %5
 
-4:                                                ; preds = %0, %3
+5:                                                ; preds = %0, %3
   ret void
 }
 
@@ -112,52 +116,38 @@ define internal fastcc void @lut_build() unnamed_addr #2 {
 
 ; Function Attrs: minsize nounwind optsize
 define internal fastcc void @clear_screen() unnamed_addr #0 {
-  br label %1
-
-1:                                                ; preds = %5, %0
-  %2 = phi i32 [ 0, %0 ], [ %6, %5 ]
-  %3 = icmp eq i32 %2, 30
-  br i1 %3, label %4, label %5
-
-4:                                                ; preds = %1
+  %1 = load i32, ptr @fb_base, align 4, !tbaa !3
+  %2 = tail call fastcc i32 @bg_word() #7
+  tail call void @kdmaset(i32 noundef %1, i32 noundef %2, i32 noundef 307200) #6
   ret void
-
-5:                                                ; preds = %1
-  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %2, i32 noundef 80) #5
-  %6 = add nuw nsw i32 %2, 1
-  br label %1, !llvm.loop !13
 }
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
-  %2 = tail call i32 @kfb_active() #4
+  %2 = tail call i32 @kfb_condark() #6
   %3 = icmp eq i32 %2, 0
-  br i1 %3, label %211, label %4
+  br i1 %3, label %4, label %226
 
 4:                                                ; preds = %1
-  %5 = tail call i32 @kfb_owner() #4
-  %6 = icmp eq i32 %5, 0
-  br i1 %6, label %7, label %211
+  %5 = and i32 %0, 255
+  %6 = load i32, ptr @fstate, align 4, !tbaa !3
+  %7 = icmp eq i32 %6, 0
+  br i1 %7, label %170, label %8
 
-7:                                                ; preds = %4
-  %8 = load i1, ptr @fcursor, align 4
-  br i1 %8, label %9, label %10
+8:                                                ; preds = %4
+  %9 = load i1, ptr @fcursor, align 4
+  br i1 %9, label %10, label %11
 
-9:                                                ; preds = %7
-  tail call fastcc void @cursor_xor() #5
-  store i1 false, ptr @fcursor, align 4
-  br label %10
+10:                                               ; preds = %8
+  tail call fastcc void @cursor_xor() #7
+  br label %11
 
-10:                                               ; preds = %9, %7
-  %11 = and i32 %0, 255
-  %12 = load i32, ptr @fstate, align 4, !tbaa !3
-  switch i32 %12, label %160 [
-    i32 1, label %13
-    i32 2, label %17
-  ]
+11:                                               ; preds = %10, %8
+  %12 = icmp eq i32 %6, 1
+  br i1 %12, label %13, label %17
 
-13:                                               ; preds = %10
-  %14 = icmp eq i32 %11, 91
+13:                                               ; preds = %11
+  %14 = icmp eq i32 %5, 91
   br i1 %14, label %15, label %16
 
 15:                                               ; preds = %13
@@ -168,14 +158,14 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   store i32 0, ptr getelementptr inbounds nuw (i8, ptr @fpar, i32 8), align 4, !tbaa !3
   store i32 0, ptr getelementptr inbounds nuw (i8, ptr @fpar, i32 4), align 4, !tbaa !3
   store i32 0, ptr @fpar, align 4, !tbaa !3
-  br label %210
+  br label %225
 
 16:                                               ; preds = %13
   store i32 0, ptr @fstate, align 4, !tbaa !3
-  br label %210
+  br label %225
 
-17:                                               ; preds = %10
-  %18 = add nsw i32 %11, -48
+17:                                               ; preds = %11
+  %18 = add nsw i32 %5, -48
   %19 = icmp ult i32 %18, 10
   br i1 %19, label %20, label %31
 
@@ -196,7 +186,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   %29 = mul nsw i32 %28, 10
   %30 = add nsw i32 %29, %18
   store i32 %30, ptr %27, align 4, !tbaa !3
-  br label %210
+  br label %225
 
 31:                                               ; preds = %17
   %32 = trunc i32 %0 to i8
@@ -208,417 +198,442 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
 33:                                               ; preds = %31
   %34 = load i32, ptr @fnpar, align 4, !tbaa !3
   %35 = icmp slt i32 %34, 4
-  br i1 %35, label %36, label %210
+  br i1 %35, label %36, label %225
 
 36:                                               ; preds = %33
   %37 = add nuw nsw i32 %34, 1
   %38 = icmp eq i32 %34, 0
   %39 = select i1 %38, i32 2, i32 %37
   store i32 %39, ptr @fnpar, align 4
-  br label %210
+  br label %225
 
 40:                                               ; preds = %31
   store i1 true, ptr @fpriv, align 4
-  br label %210
+  br label %225
 
 41:                                               ; preds = %31
   store i32 0, ptr @fstate, align 4, !tbaa !3
   %42 = load i32, ptr @fpar, align 4, !tbaa !3
   %43 = tail call i32 @llvm.umax.i32(i32 %42, i32 1)
   %44 = load i1, ptr @fpriv, align 4
-  br i1 %44, label %45, label %49
+  br i1 %44, label %45, label %50
 
 45:                                               ; preds = %41
   %46 = icmp eq i32 %42, 1049
-  br i1 %46, label %47, label %210
+  br i1 %46, label %47, label %225
 
 47:                                               ; preds = %45
-  switch i8 %32, label %210 [
+  switch i8 %32, label %225 [
     i8 104, label %48
     i8 108, label %48
   ]
 
 48:                                               ; preds = %47, %47
-  tail call fastcc void @clear_screen() #5
-  store i32 0, ptr @fcy, align 4, !tbaa !3
+  tail call fastcc void @clear_screen() #7
   store i32 0, ptr @fcx, align 4, !tbaa !3
-  br label %210
+  store i32 0, ptr @fcy, align 4, !tbaa !3
+  %49 = load i32, ptr @fb_base, align 4, !tbaa !3
+  store i32 %49, ptr @frowa, align 4, !tbaa !3
+  br label %225
 
-49:                                               ; preds = %41
-  switch i8 %32, label %210 [
-    i8 65, label %50
-    i8 66, label %54
-    i8 67, label %58
-    i8 68, label %62
-    i8 72, label %66
-    i8 102, label %66
-    i8 74, label %79
-    i8 75, label %100
-    i8 109, label %111
+50:                                               ; preds = %41
+  switch i8 %32, label %225 [
+    i8 65, label %51
+    i8 66, label %58
+    i8 67, label %65
+    i8 68, label %69
+    i8 72, label %73
+    i8 102, label %73
+    i8 74, label %89
+    i8 75, label %110
+    i8 109, label %121
   ]
 
-50:                                               ; preds = %49
-  %51 = load i32, ptr @fcy, align 4, !tbaa !3
-  %52 = sub nsw i32 %51, %43
-  %53 = tail call i32 @llvm.smax.i32(i32 %52, i32 0)
-  store i32 %53, ptr @fcy, align 4
-  br label %210
+51:                                               ; preds = %50
+  %52 = load i32, ptr @fcy, align 4, !tbaa !3
+  %53 = sub nsw i32 %52, %43
+  %54 = tail call i32 @llvm.smax.i32(i32 %53, i32 0)
+  store i32 %54, ptr @fcy, align 4, !tbaa !3
+  %55 = load i32, ptr @fb_base, align 4, !tbaa !3
+  %56 = mul i32 %54, 10240
+  %57 = add i32 %56, %55
+  store i32 %57, ptr @frowa, align 4, !tbaa !3
+  br label %225
 
-54:                                               ; preds = %49
-  %55 = load i32, ptr @fcy, align 4, !tbaa !3
-  %56 = add nsw i32 %55, %43
-  %57 = tail call i32 @llvm.smin.i32(i32 %56, i32 29)
-  store i32 %57, ptr @fcy, align 4
-  br label %210
-
-58:                                               ; preds = %49
-  %59 = load i32, ptr @fcx, align 4, !tbaa !3
+58:                                               ; preds = %50
+  %59 = load i32, ptr @fcy, align 4, !tbaa !3
   %60 = add nsw i32 %59, %43
-  %61 = tail call i32 @llvm.smin.i32(i32 %60, i32 79)
-  store i32 %61, ptr @fcx, align 4
-  br label %210
+  %61 = tail call i32 @llvm.smin.i32(i32 %60, i32 29)
+  store i32 %61, ptr @fcy, align 4, !tbaa !3
+  %62 = load i32, ptr @fb_base, align 4, !tbaa !3
+  %63 = mul i32 %61, 10240
+  %64 = add i32 %63, %62
+  store i32 %64, ptr @frowa, align 4, !tbaa !3
+  br label %225
 
-62:                                               ; preds = %49
-  %63 = load i32, ptr @fcx, align 4, !tbaa !3
-  %64 = sub nsw i32 %63, %43
-  %65 = tail call i32 @llvm.smax.i32(i32 %64, i32 0)
-  store i32 %65, ptr @fcx, align 4
-  br label %210
+65:                                               ; preds = %50
+  %66 = load i32, ptr @fcx, align 4, !tbaa !3
+  %67 = add nsw i32 %66, %43
+  %68 = tail call i32 @llvm.smin.i32(i32 %67, i32 79)
+  store i32 %68, ptr @fcx, align 4
+  br label %225
 
-66:                                               ; preds = %49, %49
-  %67 = tail call i32 @llvm.usub.sat.i32(i32 %42, i32 1)
-  %68 = load i32, ptr @fnpar, align 4, !tbaa !3
-  %69 = icmp sgt i32 %68, 1
-  %70 = load i32, ptr getelementptr inbounds nuw (i8, ptr @fpar, i32 4), align 4
-  %71 = icmp ne i32 %70, 0
-  %72 = select i1 %69, i1 %71, i1 false
-  %73 = tail call i32 @llvm.smax.i32(i32 %67, i32 0)
-  %74 = tail call i32 @llvm.umin.i32(i32 %73, i32 29)
-  store i32 %74, ptr @fcy, align 4, !tbaa !3
-  %75 = tail call i32 @llvm.smax.i32(i32 %70, i32 1)
-  %76 = tail call i32 @llvm.umin.i32(i32 %75, i32 80)
-  %77 = add nsw i32 %76, -1
-  %78 = select i1 %72, i32 %77, i32 0
-  store i32 %78, ptr @fcx, align 4, !tbaa !3
-  br label %210
+69:                                               ; preds = %50
+  %70 = load i32, ptr @fcx, align 4, !tbaa !3
+  %71 = sub nsw i32 %70, %43
+  %72 = tail call i32 @llvm.smax.i32(i32 %71, i32 0)
+  store i32 %72, ptr @fcx, align 4
+  br label %225
 
-79:                                               ; preds = %49
-  switch i32 %42, label %90 [
-    i32 2, label %80
-    i32 1, label %81
+73:                                               ; preds = %50, %50
+  %74 = tail call i32 @llvm.usub.sat.i32(i32 %42, i32 1)
+  %75 = load i32, ptr @fnpar, align 4, !tbaa !3
+  %76 = icmp sgt i32 %75, 1
+  %77 = load i32, ptr getelementptr inbounds nuw (i8, ptr @fpar, i32 4), align 4
+  %78 = icmp ne i32 %77, 0
+  %79 = select i1 %76, i1 %78, i1 false
+  %80 = tail call i32 @llvm.smax.i32(i32 %74, i32 0)
+  %81 = tail call i32 @llvm.umin.i32(i32 %80, i32 29)
+  store i32 %81, ptr @fcy, align 4, !tbaa !3
+  %82 = load i32, ptr @fb_base, align 4, !tbaa !3
+  %83 = mul nuw nsw i32 %81, 10240
+  %84 = add i32 %82, %83
+  store i32 %84, ptr @frowa, align 4, !tbaa !3
+  %85 = tail call i32 @llvm.smax.i32(i32 %77, i32 1)
+  %86 = tail call i32 @llvm.umin.i32(i32 %85, i32 80)
+  %87 = add nsw i32 %86, -1
+  %88 = select i1 %79, i32 %87, i32 0
+  store i32 %88, ptr @fcx, align 4, !tbaa !3
+  br label %225
+
+89:                                               ; preds = %50
+  switch i32 %42, label %100 [
+    i32 2, label %90
+    i32 1, label %91
   ]
 
-80:                                               ; preds = %79
-  tail call fastcc void @clear_screen() #5
-  br label %210
+90:                                               ; preds = %89
+  tail call fastcc void @clear_screen() #7
+  br label %225
 
-81:                                               ; preds = %79, %88
-  %82 = phi i32 [ %89, %88 ], [ 0, %79 ]
-  %83 = load i32, ptr @fcy, align 4, !tbaa !3
-  %84 = icmp slt i32 %82, %83
-  br i1 %84, label %88, label %85
+91:                                               ; preds = %89, %98
+  %92 = phi i32 [ %99, %98 ], [ 0, %89 ]
+  %93 = load i32, ptr @fcy, align 4, !tbaa !3
+  %94 = icmp slt i32 %92, %93
+  br i1 %94, label %98, label %95
 
-85:                                               ; preds = %81
-  %86 = load i32, ptr @fcx, align 4, !tbaa !3
-  %87 = add nsw i32 %86, 1
-  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %83, i32 noundef %87) #5
-  br label %210
+95:                                               ; preds = %91
+  %96 = load i32, ptr @fcx, align 4, !tbaa !3
+  %97 = add nsw i32 %96, 1
+  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %93, i32 noundef %97) #7
+  br label %225
 
-88:                                               ; preds = %81
-  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %82, i32 noundef 80) #5
-  %89 = add nuw nsw i32 %82, 1
-  br label %81, !llvm.loop !14
+98:                                               ; preds = %91
+  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %92, i32 noundef 80) #7
+  %99 = add nuw nsw i32 %92, 1
+  br label %91, !llvm.loop !13
 
-90:                                               ; preds = %79
-  %91 = load i32, ptr @fcx, align 4, !tbaa !3
-  %92 = load i32, ptr @fcy, align 4, !tbaa !3
-  %93 = sub nsw i32 80, %91
-  tail call fastcc void @clear_cells(i32 noundef %91, i32 noundef %92, i32 noundef %93) #5
-  %94 = load i32, ptr @fcy, align 4, !tbaa !3
-  br label %95
-
-95:                                               ; preds = %98, %90
-  %96 = phi i32 [ %94, %90 ], [ %99, %98 ]
-  %97 = icmp slt i32 %96, 29
-  br i1 %97, label %98, label %210
-
-98:                                               ; preds = %95
-  %99 = add nsw i32 %96, 1
-  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %99, i32 noundef 80) #5
-  br label %95, !llvm.loop !15
-
-100:                                              ; preds = %49
-  switch i32 %42, label %107 [
-    i32 2, label %101
-    i32 1, label %103
-  ]
-
-101:                                              ; preds = %100
+100:                                              ; preds = %89
+  %101 = load i32, ptr @fcx, align 4, !tbaa !3
   %102 = load i32, ptr @fcy, align 4, !tbaa !3
-  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %102, i32 noundef 80) #5
-  br label %210
-
-103:                                              ; preds = %100
+  %103 = sub nsw i32 80, %101
+  tail call fastcc void @clear_cells(i32 noundef %101, i32 noundef %102, i32 noundef %103) #7
   %104 = load i32, ptr @fcy, align 4, !tbaa !3
-  %105 = load i32, ptr @fcx, align 4, !tbaa !3
-  %106 = add nsw i32 %105, 1
-  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %104, i32 noundef %106) #5
-  br label %210
+  br label %105
 
-107:                                              ; preds = %100
-  %108 = load i32, ptr @fcx, align 4, !tbaa !3
-  %109 = load i32, ptr @fcy, align 4, !tbaa !3
-  %110 = sub nsw i32 80, %108
-  tail call fastcc void @clear_cells(i32 noundef %108, i32 noundef %109, i32 noundef %110) #5
-  br label %210
+105:                                              ; preds = %108, %100
+  %106 = phi i32 [ %104, %100 ], [ %109, %108 ]
+  %107 = icmp slt i32 %106, 29
+  br i1 %107, label %108, label %225
 
-111:                                              ; preds = %49
-  %112 = load i32, ptr @fnpar, align 4, !tbaa !3
-  %113 = icmp eq i32 %112, 0
-  br i1 %113, label %114, label %115
+108:                                              ; preds = %105
+  %109 = add nsw i32 %106, 1
+  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %109, i32 noundef 80) #7
+  br label %105, !llvm.loop !14
 
-114:                                              ; preds = %111
+110:                                              ; preds = %50
+  switch i32 %42, label %117 [
+    i32 2, label %111
+    i32 1, label %113
+  ]
+
+111:                                              ; preds = %110
+  %112 = load i32, ptr @fcy, align 4, !tbaa !3
+  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %112, i32 noundef 80) #7
+  br label %225
+
+113:                                              ; preds = %110
+  %114 = load i32, ptr @fcy, align 4, !tbaa !3
+  %115 = load i32, ptr @fcx, align 4, !tbaa !3
+  %116 = add nsw i32 %115, 1
+  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %114, i32 noundef %116) #7
+  br label %225
+
+117:                                              ; preds = %110
+  %118 = load i32, ptr @fcx, align 4, !tbaa !3
+  %119 = load i32, ptr @fcy, align 4, !tbaa !3
+  %120 = sub nsw i32 80, %118
+  tail call fastcc void @clear_cells(i32 noundef %118, i32 noundef %119, i32 noundef %120) #7
+  br label %225
+
+121:                                              ; preds = %50
+  %122 = load i32, ptr @fnpar, align 4, !tbaa !3
+  %123 = icmp eq i32 %122, 0
+  br i1 %123, label %124, label %125
+
+124:                                              ; preds = %121
   store i32 1, ptr @fnpar, align 4, !tbaa !3
   store i32 0, ptr @fpar, align 4, !tbaa !3
-  br label %115
+  br label %125
 
-115:                                              ; preds = %114, %111
-  %116 = phi i32 [ 1, %114 ], [ %112, %111 ]
-  %117 = load i32, ptr @ffg, align 4
-  %118 = load i32, ptr @fbg, align 4
-  br label %119
+125:                                              ; preds = %124, %121
+  %126 = phi i32 [ 1, %124 ], [ %122, %121 ]
+  %127 = load i32, ptr @ffg, align 4
+  %128 = load i32, ptr @fbg, align 4
+  br label %129
 
-119:                                              ; preds = %155, %115
-  %120 = phi i32 [ %118, %115 ], [ %156, %155 ]
-  %121 = phi i32 [ %117, %115 ], [ %157, %155 ]
-  %122 = phi i32 [ 0, %115 ], [ %158, %155 ]
-  %123 = icmp slt i32 %122, %116
-  br i1 %123, label %124, label %159
+129:                                              ; preds = %165, %125
+  %130 = phi i32 [ %128, %125 ], [ %166, %165 ]
+  %131 = phi i32 [ %127, %125 ], [ %167, %165 ]
+  %132 = phi i32 [ 0, %125 ], [ %168, %165 ]
+  %133 = icmp slt i32 %132, %126
+  br i1 %133, label %134, label %169
 
-124:                                              ; preds = %119
-  %125 = getelementptr inbounds nuw [4 x i32], ptr @fpar, i32 0, i32 %122
-  %126 = load i32, ptr %125, align 4, !tbaa !3
-  switch i32 %126, label %131 [
-    i32 0, label %127
-    i32 1, label %128
-    i32 7, label %130
+134:                                              ; preds = %129
+  %135 = getelementptr inbounds nuw [4 x i32], ptr @fpar, i32 0, i32 %132
+  %136 = load i32, ptr %135, align 4, !tbaa !3
+  switch i32 %136, label %141 [
+    i32 0, label %137
+    i32 1, label %138
+    i32 7, label %140
   ]
 
-127:                                              ; preds = %124
+137:                                              ; preds = %134
   store i32 7, ptr @ffg, align 4, !tbaa !3
   store i32 0, ptr @fbg, align 4, !tbaa !3
-  br label %155
+  br label %165
 
-128:                                              ; preds = %124
-  %129 = or i32 %121, 8
-  store i32 %129, ptr @ffg, align 4, !tbaa !3
-  br label %155
+138:                                              ; preds = %134
+  %139 = or i32 %131, 8
+  store i32 %139, ptr @ffg, align 4, !tbaa !3
+  br label %165
 
-130:                                              ; preds = %124
-  store i32 %120, ptr @ffg, align 4, !tbaa !3
-  store i32 %121, ptr @fbg, align 4, !tbaa !3
-  br label %155
+140:                                              ; preds = %134
+  store i32 %130, ptr @ffg, align 4, !tbaa !3
+  store i32 %131, ptr @fbg, align 4, !tbaa !3
+  br label %165
 
-131:                                              ; preds = %124
-  %132 = add i32 %126, -30
-  %133 = icmp ult i32 %132, 8
-  br i1 %133, label %134, label %137
+141:                                              ; preds = %134
+  %142 = add i32 %136, -30
+  %143 = icmp ult i32 %142, 8
+  br i1 %143, label %144, label %147
 
-134:                                              ; preds = %131
-  %135 = and i32 %121, 8
-  %136 = or disjoint i32 %132, %135
-  store i32 %136, ptr @ffg, align 4, !tbaa !3
-  br label %155
-
-137:                                              ; preds = %131
-  %138 = and i32 %126, -8
-  %139 = icmp eq i32 %138, 40
-  br i1 %139, label %140, label %142
-
-140:                                              ; preds = %137
-  %141 = add nsw i32 %126, -40
-  store i32 %141, ptr @fbg, align 4, !tbaa !3
-  br label %155
-
-142:                                              ; preds = %137
-  %143 = add i32 %126, -90
-  %144 = icmp ult i32 %143, 8
-  br i1 %144, label %145, label %147
-
-145:                                              ; preds = %142
-  %146 = add nsw i32 %126, -82
+144:                                              ; preds = %141
+  %145 = and i32 %131, 8
+  %146 = or disjoint i32 %142, %145
   store i32 %146, ptr @ffg, align 4, !tbaa !3
-  br label %155
+  br label %165
 
-147:                                              ; preds = %142
-  %148 = add i32 %126, -100
-  %149 = icmp ult i32 %148, 8
+147:                                              ; preds = %141
+  %148 = and i32 %136, -8
+  %149 = icmp eq i32 %148, 40
   br i1 %149, label %150, label %152
 
 150:                                              ; preds = %147
-  %151 = add nsw i32 %126, -92
+  %151 = add nsw i32 %136, -40
   store i32 %151, ptr @fbg, align 4, !tbaa !3
-  br label %155
+  br label %165
 
 152:                                              ; preds = %147
-  switch i32 %126, label %155 [
-    i32 39, label %153
-    i32 49, label %154
+  %153 = add i32 %136, -90
+  %154 = icmp ult i32 %153, 8
+  br i1 %154, label %155, label %157
+
+155:                                              ; preds = %152
+  %156 = add nsw i32 %136, -82
+  store i32 %156, ptr @ffg, align 4, !tbaa !3
+  br label %165
+
+157:                                              ; preds = %152
+  %158 = add i32 %136, -100
+  %159 = icmp ult i32 %158, 8
+  br i1 %159, label %160, label %162
+
+160:                                              ; preds = %157
+  %161 = add nsw i32 %136, -92
+  store i32 %161, ptr @fbg, align 4, !tbaa !3
+  br label %165
+
+162:                                              ; preds = %157
+  switch i32 %136, label %165 [
+    i32 39, label %163
+    i32 49, label %164
   ]
 
-153:                                              ; preds = %152
+163:                                              ; preds = %162
   store i32 7, ptr @ffg, align 4, !tbaa !3
-  br label %155
+  br label %165
 
-154:                                              ; preds = %152
+164:                                              ; preds = %162
   store i32 0, ptr @fbg, align 4, !tbaa !3
-  br label %155
+  br label %165
 
-155:                                              ; preds = %154, %153, %152, %150, %145, %140, %134, %130, %128, %127
-  %156 = phi i32 [ %120, %152 ], [ %120, %128 ], [ %120, %134 ], [ %120, %145 ], [ %120, %153 ], [ 0, %154 ], [ %151, %150 ], [ %141, %140 ], [ %121, %130 ], [ 0, %127 ]
-  %157 = phi i32 [ %121, %152 ], [ %129, %128 ], [ %136, %134 ], [ %146, %145 ], [ 7, %153 ], [ %121, %154 ], [ %121, %150 ], [ %121, %140 ], [ %120, %130 ], [ 7, %127 ]
-  %158 = add nuw nsw i32 %122, 1
-  br label %119, !llvm.loop !16
+165:                                              ; preds = %164, %163, %162, %160, %155, %150, %144, %140, %138, %137
+  %166 = phi i32 [ %130, %162 ], [ %130, %138 ], [ %130, %144 ], [ %130, %155 ], [ %130, %163 ], [ 0, %164 ], [ %161, %160 ], [ %151, %150 ], [ %131, %140 ], [ 0, %137 ]
+  %167 = phi i32 [ %131, %162 ], [ %139, %138 ], [ %146, %144 ], [ %156, %155 ], [ 7, %163 ], [ %131, %164 ], [ %131, %160 ], [ %131, %150 ], [ %130, %140 ], [ 7, %137 ]
+  %168 = add nuw nsw i32 %132, 1
+  br label %129, !llvm.loop !15
 
-159:                                              ; preds = %119
-  tail call fastcc void @lut_build() #5
-  br label %210
+169:                                              ; preds = %129
+  tail call fastcc void @lut_build() #7
+  br label %225
 
-160:                                              ; preds = %10
-  %161 = trunc i32 %0 to i8
-  switch i8 %161, label %175 [
-    i8 27, label %162
-    i8 10, label %163
-    i8 13, label %164
-    i8 8, label %165
-    i8 9, label %170
-  ]
+170:                                              ; preds = %4
+  %171 = add nsw i32 %5, -32
+  %172 = icmp ult i32 %171, 95
+  br i1 %172, label %173, label %207
 
-162:                                              ; preds = %160
-  store i32 1, ptr @fstate, align 4, !tbaa !3
-  br label %210
+173:                                              ; preds = %170
+  %174 = shl nuw nsw i32 %5, 3
+  %175 = getelementptr inbounds nuw [1024 x i8], ptr @fbfont, i32 0, i32 %174
+  %176 = load i32, ptr @frowa, align 4, !tbaa !3
+  %177 = load i32, ptr @fcx, align 4, !tbaa !3
+  %178 = shl i32 %177, 3
+  %179 = add i32 %178, %176
+  br label %180
 
-163:                                              ; preds = %160
-  tail call fastcc void @newline() #5
-  br label %210
+180:                                              ; preds = %185, %173
+  %181 = phi i32 [ 8, %173 ], [ %201, %185 ]
+  %182 = phi i32 [ %179, %173 ], [ %200, %185 ]
+  %183 = phi ptr [ %175, %173 ], [ %186, %185 ]
+  %184 = icmp eq i32 %181, 0
+  br i1 %184, label %202, label %185
 
-164:                                              ; preds = %160
-  store i32 0, ptr @fcx, align 4, !tbaa !3
-  br label %210
+185:                                              ; preds = %180
+  %186 = getelementptr inbounds nuw i8, ptr %183, i32 1
+  %187 = load i8, ptr %183, align 1, !tbaa !7
+  %188 = zext i8 %187 to i32
+  %189 = getelementptr inbounds nuw [256 x i32], ptr @fluthi, i32 0, i32 %188
+  %190 = load i32, ptr %189, align 4, !tbaa !3
+  %191 = getelementptr inbounds nuw [256 x i32], ptr @flutlo, i32 0, i32 %188
+  %192 = load i32, ptr %191, align 4, !tbaa !3
+  %193 = inttoptr i32 %182 to ptr
+  store volatile i32 %190, ptr %193, align 4, !tbaa !3
+  %194 = add i32 %182, 4
+  %195 = inttoptr i32 %194 to ptr
+  store volatile i32 %192, ptr %195, align 4, !tbaa !3
+  %196 = add i32 %182, 640
+  %197 = inttoptr i32 %196 to ptr
+  store volatile i32 %190, ptr %197, align 4, !tbaa !3
+  %198 = add i32 %182, 644
+  %199 = inttoptr i32 %198 to ptr
+  store volatile i32 %192, ptr %199, align 4, !tbaa !3
+  %200 = add i32 %182, 1280
+  %201 = add nsw i32 %181, -1
+  br label %180, !llvm.loop !16
 
-165:                                              ; preds = %160
-  %166 = load i32, ptr @fcx, align 4, !tbaa !3
-  %167 = icmp sgt i32 %166, 0
-  br i1 %167, label %168, label %210
+202:                                              ; preds = %180
+  %203 = load i32, ptr @fcx, align 4, !tbaa !3
+  %204 = add nsw i32 %203, 1
+  store i32 %204, ptr @fcx, align 4, !tbaa !3
+  %205 = icmp sgt i32 %203, 78
+  br i1 %205, label %206, label %225
 
-168:                                              ; preds = %165
-  %169 = add nsw i32 %166, -1
-  store i32 %169, ptr @fcx, align 4, !tbaa !3
-  br label %210
+206:                                              ; preds = %202
+  tail call fastcc void @newline() #7
+  br label %225
 
-170:                                              ; preds = %160
-  %171 = load i32, ptr @fcx, align 4, !tbaa !3
-  %172 = and i32 %171, -8
-  %173 = tail call i32 @llvm.smin.i32(i32 %172, i32 71)
-  %174 = add nsw i32 %173, 8
-  store i32 %174, ptr @fcx, align 4
-  br label %210
-
-175:                                              ; preds = %160
-  %176 = add nsw i32 %11, -32
-  %177 = icmp ult i32 %176, 95
-  br i1 %177, label %178, label %210
-
-178:                                              ; preds = %175
-  %179 = shl nuw nsw i32 %11, 3
-  %180 = getelementptr inbounds nuw [1024 x i8], ptr @fbfont, i32 0, i32 %179
-  %181 = load i32, ptr @fcx, align 4, !tbaa !3
-  %182 = load i32, ptr @fcy, align 4, !tbaa !3
-  %183 = tail call fastcc i32 @cell_addr(i32 noundef %181, i32 noundef %182) #5
-  br label %184
-
-184:                                              ; preds = %188, %178
-  %185 = phi i32 [ 0, %178 ], [ %204, %188 ]
-  %186 = phi i32 [ %183, %178 ], [ %203, %188 ]
-  %187 = icmp eq i32 %185, 8
-  br i1 %187, label %205, label %188
-
-188:                                              ; preds = %184
-  %189 = getelementptr inbounds nuw i8, ptr %180, i32 %185
-  %190 = load i8, ptr %189, align 1, !tbaa !7
-  %191 = zext i8 %190 to i32
-  %192 = getelementptr inbounds nuw [256 x i32], ptr @fluthi, i32 0, i32 %191
-  %193 = load i32, ptr %192, align 4, !tbaa !3
-  %194 = getelementptr inbounds nuw [256 x i32], ptr @flutlo, i32 0, i32 %191
-  %195 = load i32, ptr %194, align 4, !tbaa !3
-  %196 = inttoptr i32 %186 to ptr
-  store volatile i32 %193, ptr %196, align 4, !tbaa !3
-  %197 = add i32 %186, 4
-  %198 = inttoptr i32 %197 to ptr
-  store volatile i32 %195, ptr %198, align 4, !tbaa !3
-  %199 = add i32 %186, 640
-  %200 = inttoptr i32 %199 to ptr
-  store volatile i32 %193, ptr %200, align 4, !tbaa !3
-  %201 = add i32 %186, 644
-  %202 = inttoptr i32 %201 to ptr
-  store volatile i32 %195, ptr %202, align 4, !tbaa !3
-  %203 = add i32 %186, 1280
-  %204 = add nuw nsw i32 %185, 1
-  br label %184, !llvm.loop !17
-
-205:                                              ; preds = %184
-  %206 = load i32, ptr @fcx, align 4, !tbaa !3
-  %207 = add nsw i32 %206, 1
-  store i32 %207, ptr @fcx, align 4, !tbaa !3
-  %208 = icmp sgt i32 %206, 78
+207:                                              ; preds = %170
+  %208 = load i1, ptr @fcursor, align 4
   br i1 %208, label %209, label %210
 
-209:                                              ; preds = %205
-  tail call fastcc void @newline() #5
+209:                                              ; preds = %207
+  tail call fastcc void @cursor_xor() #7
   br label %210
 
-210:                                              ; preds = %95, %36, %33, %159, %107, %103, %101, %85, %80, %66, %62, %58, %54, %50, %49, %48, %47, %45, %40, %24, %163, %168, %165, %175, %209, %205, %170, %164, %162, %15, %16
-  tail call fastcc void @cursor_xor() #5
-  store i1 true, ptr @fcursor, align 4
-  br label %211
+210:                                              ; preds = %209, %207
+  %211 = trunc i32 %0 to i8
+  switch i8 %211, label %225 [
+    i8 10, label %212
+    i8 27, label %213
+    i8 13, label %214
+    i8 8, label %215
+    i8 9, label %220
+  ]
 
-211:                                              ; preds = %1, %4, %210
+212:                                              ; preds = %210
+  tail call fastcc void @newline() #7
+  br label %225
+
+213:                                              ; preds = %210
+  store i32 1, ptr @fstate, align 4, !tbaa !3
+  br label %225
+
+214:                                              ; preds = %210
+  store i32 0, ptr @fcx, align 4, !tbaa !3
+  br label %225
+
+215:                                              ; preds = %210
+  %216 = load i32, ptr @fcx, align 4, !tbaa !3
+  %217 = icmp sgt i32 %216, 0
+  br i1 %217, label %218, label %225
+
+218:                                              ; preds = %215
+  %219 = add nsw i32 %216, -1
+  store i32 %219, ptr @fcx, align 4, !tbaa !3
+  br label %225
+
+220:                                              ; preds = %210
+  %221 = load i32, ptr @fcx, align 4, !tbaa !3
+  %222 = and i32 %221, -8
+  %223 = tail call i32 @llvm.smin.i32(i32 %222, i32 71)
+  %224 = add nsw i32 %223, 8
+  store i32 %224, ptr @fcx, align 4
+  br label %225
+
+225:                                              ; preds = %105, %169, %117, %113, %111, %95, %90, %73, %69, %65, %58, %51, %50, %48, %47, %45, %40, %36, %33, %24, %210, %206, %202, %213, %218, %215, %220, %214, %212, %16, %15
+  tail call fastcc void @cursor_xor() #7
+  store i1 true, ptr @fcursor, align 4
+  br label %226
+
+226:                                              ; preds = %1, %225
   ret void
 }
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfb_owner() local_unnamed_addr #1
+declare dso_local i32 @kfb_condark() local_unnamed_addr #1
 
-; Function Attrs: minsize nounwind optsize
-define internal fastcc void @cursor_xor() unnamed_addr #0 {
-  %1 = load i32, ptr @fcx, align 4, !tbaa !3
-  %2 = load i32, ptr @fcy, align 4, !tbaa !3
-  %3 = tail call fastcc i32 @cell_addr(i32 noundef %1, i32 noundef %2) #5
-  %4 = add i32 %3, 7680
-  br label %5
+; Function Attrs: minsize nofree norecurse nounwind optsize
+define internal fastcc void @cursor_xor() unnamed_addr #3 {
+  %1 = load i32, ptr @frowa, align 4, !tbaa !3
+  %2 = load i32, ptr @fcx, align 4, !tbaa !3
+  %3 = shl i32 %2, 3
+  %4 = add i32 %1, 7680
+  %5 = add i32 %4, %3
+  br label %6
 
-5:                                                ; preds = %10, %0
-  %6 = phi i32 [ %4, %0 ], [ %18, %10 ]
-  %7 = phi i32 [ 0, %0 ], [ %19, %10 ]
-  %8 = icmp eq i32 %7, 4
-  br i1 %8, label %9, label %10
+6:                                                ; preds = %11, %0
+  %7 = phi i32 [ %5, %0 ], [ %19, %11 ]
+  %8 = phi i32 [ 4, %0 ], [ %20, %11 ]
+  %9 = icmp eq i32 %8, 0
+  br i1 %9, label %10, label %11
 
-9:                                                ; preds = %5
+10:                                               ; preds = %6
   ret void
 
-10:                                               ; preds = %5
-  %11 = inttoptr i32 %6 to ptr
-  %12 = load volatile i32, ptr %11, align 4, !tbaa !3
-  %13 = xor i32 %12, -1
-  store volatile i32 %13, ptr %11, align 4, !tbaa !3
-  %14 = add i32 %6, 4
-  %15 = inttoptr i32 %14 to ptr
-  %16 = load volatile i32, ptr %15, align 4, !tbaa !3
-  %17 = xor i32 %16, -1
-  store volatile i32 %17, ptr %15, align 4, !tbaa !3
-  %18 = add i32 %6, 640
-  %19 = add nuw nsw i32 %7, 1
-  br label %5, !llvm.loop !18
+11:                                               ; preds = %6
+  %12 = inttoptr i32 %7 to ptr
+  %13 = load volatile i32, ptr %12, align 4, !tbaa !3
+  %14 = xor i32 %13, -1
+  store volatile i32 %14, ptr %12, align 4, !tbaa !3
+  %15 = add i32 %7, 4
+  %16 = inttoptr i32 %15 to ptr
+  %17 = load volatile i32, ptr %16, align 4, !tbaa !3
+  %18 = xor i32 %17, -1
+  store volatile i32 %18, ptr %16, align 4, !tbaa !3
+  %19 = add i32 %7, 640
+  %20 = add nsw i32 %8, -1
+  br label %6, !llvm.loop !17
 }
 
 ; Function Attrs: minsize nounwind optsize
@@ -626,128 +641,133 @@ define internal fastcc void @newline() unnamed_addr #0 {
   store i32 0, ptr @fcx, align 4, !tbaa !3
   %1 = load i32, ptr @fcy, align 4, !tbaa !3
   %2 = icmp slt i32 %1, 29
-  br i1 %2, label %3, label %5
+  br i1 %2, label %3, label %8
 
 3:                                                ; preds = %0
   %4 = add nsw i32 %1, 1
   store i32 %4, ptr @fcy, align 4, !tbaa !3
-  br label %8
+  %5 = load i32, ptr @fb_base, align 4, !tbaa !3
+  %6 = mul i32 %4, 10240
+  %7 = add i32 %5, %6
+  store i32 %7, ptr @frowa, align 4, !tbaa !3
+  br label %13
 
-5:                                                ; preds = %0
-  %6 = tail call i32 @kfb_base() #4
-  %7 = add i32 %6, 10240
-  tail call void @kdmacpy(i32 noundef %6, i32 noundef %7, i32 noundef 296960) #4
-  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef 29, i32 noundef 80) #5
-  br label %8
+8:                                                ; preds = %0
+  %9 = load i32, ptr @fb_base, align 4, !tbaa !3
+  %10 = add i32 %9, 10240
+  tail call void @kdmacpy(i32 noundef %9, i32 noundef %10, i32 noundef 296960) #6
+  %11 = add i32 %9, 296960
+  %12 = tail call fastcc i32 @bg_word() #7
+  tail call void @kdmaset(i32 noundef %11, i32 noundef %12, i32 noundef 10240) #6
+  br label %13
 
-8:                                                ; preds = %5, %3
+13:                                               ; preds = %8, %3
   ret void
-}
-
-; Function Attrs: minsize nounwind optsize
-define internal fastcc void @clear_cells(i32 noundef %0, i32 noundef %1, i32 noundef range(i32 -2147483647, -2147483648) %2) unnamed_addr #0 {
-  %4 = load i32, ptr @fbg, align 4, !tbaa !3
-  %5 = getelementptr inbounds nuw [16 x i8], ptr @fbpal, i32 0, i32 %4
-  %6 = load i8, ptr %5, align 1, !tbaa !7
-  %7 = zext i8 %6 to i32
-  %8 = shl nuw nsw i32 %7, 8
-  %9 = shl nuw nsw i32 %7, 16
-  %10 = shl nuw i32 %7, 24
-  %11 = or disjoint i32 %9, %8
-  %12 = or disjoint i32 %11, %10
-  %13 = or disjoint i32 %12, %7
-  %14 = tail call fastcc i32 @cell_addr(i32 noundef %0, i32 noundef %1) #5
-  %15 = icmp sgt i32 %2, 7
-  br i1 %15, label %18, label %16
-
-16:                                               ; preds = %3
-  %17 = shl nsw i32 %2, 1
-  br label %27
-
-18:                                               ; preds = %3
-  %19 = shl nsw i32 %2, 3
-  br label %20
-
-20:                                               ; preds = %18, %24
-  %21 = phi i32 [ %25, %24 ], [ %14, %18 ]
-  %22 = phi i32 [ %26, %24 ], [ 0, %18 ]
-  %23 = icmp eq i32 %22, 16
-  br i1 %23, label %42, label %24
-
-24:                                               ; preds = %20
-  tail call void @kdmaset(i32 noundef %21, i32 noundef %13, i32 noundef %19) #4
-  %25 = add i32 %21, 640
-  %26 = add nuw nsw i32 %22, 1
-  br label %20, !llvm.loop !19
-
-27:                                               ; preds = %16, %39
-  %28 = phi i32 [ %40, %39 ], [ %14, %16 ]
-  %29 = phi i32 [ %41, %39 ], [ 0, %16 ]
-  %30 = icmp eq i32 %29, 16
-  br i1 %30, label %42, label %31
-
-31:                                               ; preds = %27, %35
-  %32 = phi i32 [ %37, %35 ], [ %28, %27 ]
-  %33 = phi i32 [ %38, %35 ], [ %17, %27 ]
-  %34 = icmp eq i32 %33, 0
-  br i1 %34, label %39, label %35
-
-35:                                               ; preds = %31
-  %36 = inttoptr i32 %32 to ptr
-  store volatile i32 %13, ptr %36, align 4, !tbaa !3
-  %37 = add i32 %32, 4
-  %38 = add i32 %33, -1
-  br label %31, !llvm.loop !20
-
-39:                                               ; preds = %31
-  %40 = add i32 %28, 640
-  %41 = add nuw nsw i32 %29, 1
-  br label %27, !llvm.loop !21
-
-42:                                               ; preds = %27, %20
-  ret void
-}
-
-; Function Attrs: minsize nounwind optsize
-define internal fastcc i32 @cell_addr(i32 noundef %0, i32 noundef %1) unnamed_addr #0 {
-  %3 = tail call i32 @kfb_base() #4
-  %4 = mul i32 %1, 10240
-  %5 = shl i32 %0, 3
-  %6 = add i32 %4, %5
-  %7 = add i32 %6, %3
-  ret i32 %7
 }
 
 ; Function Attrs: minsize optsize
 declare dso_local void @kdmaset(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
-; Function Attrs: minsize optsize
-declare dso_local i32 @kfb_base() local_unnamed_addr #1
+; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, argmem: none, inaccessiblemem: none)
+define internal fastcc i32 @bg_word() unnamed_addr #4 {
+  %1 = load i32, ptr @fbg, align 4, !tbaa !3
+  %2 = getelementptr inbounds nuw [16 x i8], ptr @fbpal, i32 0, i32 %1
+  %3 = load i8, ptr %2, align 1, !tbaa !7
+  %4 = zext i8 %3 to i32
+  %5 = shl nuw nsw i32 %4, 8
+  %6 = shl nuw nsw i32 %4, 16
+  %7 = shl nuw i32 %4, 24
+  %8 = or disjoint i32 %6, %5
+  %9 = or disjoint i32 %8, %7
+  %10 = or disjoint i32 %9, %4
+  ret i32 %10
+}
+
+; Function Attrs: minsize nounwind optsize
+define internal fastcc void @clear_cells(i32 noundef %0, i32 noundef %1, i32 noundef range(i32 -2147483647, -2147483648) %2) unnamed_addr #0 {
+  %4 = tail call fastcc i32 @bg_word() #7
+  %5 = load i32, ptr @fb_base, align 4, !tbaa !3
+  %6 = mul i32 %1, 10240
+  %7 = shl i32 %0, 3
+  %8 = add i32 %6, %7
+  %9 = add i32 %8, %5
+  %10 = icmp sgt i32 %2, 7
+  br i1 %10, label %13, label %11
+
+11:                                               ; preds = %3
+  %12 = shl nsw i32 %2, 1
+  br label %22
+
+13:                                               ; preds = %3
+  %14 = shl nsw i32 %2, 3
+  br label %15
+
+15:                                               ; preds = %13, %19
+  %16 = phi i32 [ %20, %19 ], [ %9, %13 ]
+  %17 = phi i32 [ %21, %19 ], [ 16, %13 ]
+  %18 = icmp eq i32 %17, 0
+  br i1 %18, label %37, label %19
+
+19:                                               ; preds = %15
+  tail call void @kdmaset(i32 noundef %16, i32 noundef %4, i32 noundef %14) #6
+  %20 = add i32 %16, 640
+  %21 = add nsw i32 %17, -1
+  br label %15, !llvm.loop !18
+
+22:                                               ; preds = %11, %34
+  %23 = phi i32 [ %35, %34 ], [ %9, %11 ]
+  %24 = phi i32 [ %36, %34 ], [ 16, %11 ]
+  %25 = icmp eq i32 %24, 0
+  br i1 %25, label %37, label %26
+
+26:                                               ; preds = %22, %30
+  %27 = phi i32 [ %32, %30 ], [ %23, %22 ]
+  %28 = phi i32 [ %33, %30 ], [ %12, %22 ]
+  %29 = icmp eq i32 %28, 0
+  br i1 %29, label %34, label %30
+
+30:                                               ; preds = %26
+  %31 = inttoptr i32 %27 to ptr
+  store volatile i32 %4, ptr %31, align 4, !tbaa !3
+  %32 = add i32 %27, 4
+  %33 = add i32 %28, -1
+  br label %26, !llvm.loop !19
+
+34:                                               ; preds = %26
+  %35 = add i32 %23, 640
+  %36 = add nsw i32 %24, -1
+  br label %22, !llvm.loop !20
+
+37:                                               ; preds = %22, %15
+  ret void
+}
 
 ; Function Attrs: minsize optsize
 declare dso_local void @kdmacpy(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
-declare i32 @llvm.smin.i32(i32, i32) #3
+declare i32 @llvm.smin.i32(i32, i32) #5
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
-declare i32 @llvm.umax.i32(i32, i32) #3
+declare i32 @llvm.umax.i32(i32, i32) #5
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
-declare i32 @llvm.usub.sat.i32(i32, i32) #3
+declare i32 @llvm.usub.sat.i32(i32, i32) #5
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
-declare i32 @llvm.smax.i32(i32, i32) #3
+declare i32 @llvm.smax.i32(i32, i32) #5
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
-declare i32 @llvm.umin.i32(i32, i32) #3
+declare i32 @llvm.umin.i32(i32, i32) #5
 
 attributes #0 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { minsize optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #2 = { minsize nofree norecurse nosync nounwind optsize memory(readwrite, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #3 = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
-attributes #4 = { minsize nobuiltin nounwind optsize "no-builtins" }
-attributes #5 = { minsize nobuiltin optsize "no-builtins" }
+attributes #3 = { minsize nofree norecurse nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #4 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #5 = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
+attributes #6 = { minsize nobuiltin nounwind optsize "no-builtins" }
+attributes #7 = { minsize nobuiltin optsize "no-builtins" }
 
 !llvm.module.flags = !{!0, !1}
 !llvm.ident = !{!2}
@@ -773,4 +793,3 @@ attributes #5 = { minsize nobuiltin optsize "no-builtins" }
 !18 = distinct !{!18, !9, !10}
 !19 = distinct !{!19, !9, !10}
 !20 = distinct !{!20, !9, !10}
-!21 = distinct !{!21, !9, !10}

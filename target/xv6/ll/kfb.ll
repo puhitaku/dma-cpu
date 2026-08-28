@@ -37,6 +37,16 @@ define dso_local i32 @kfb_owner() local_unnamed_addr #0 {
   ret i32 %1
 }
 
+; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, argmem: none, inaccessiblemem: none)
+define dso_local i32 @kfb_condark() local_unnamed_addr #0 {
+  %1 = load i1, ptr @fb_on, align 4
+  %2 = xor i1 %1, true
+  %3 = zext i1 %2 to i32
+  %4 = load i32, ptr @fb_owner, align 4, !tbaa !3
+  %5 = or i32 %4, %3
+  ret i32 %5
+}
+
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(write, argmem: none, inaccessiblemem: none)
 define dso_local void @kfb_setowner(i32 noundef %0) local_unnamed_addr #2 {
   store i32 %0, ptr @fb_owner, align 4, !tbaa !3
