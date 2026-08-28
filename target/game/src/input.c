@@ -91,4 +91,10 @@ frame_sync(uint us)
   next += us;
   while ((int)(next - now_us()) > 0)
     ;
+  /* NO gd_wait here, deliberately: frame_sync runs during pcm clip
+   * playback (game-over loops), when ch11 belongs to the AUDIO
+   * stream for seconds — waiting on it froze dino's retry screen.
+   * The flush-vs-fb-write races are closed at the mutation sites
+   * instead: every gfx op that touches fb gd_waits first (the gdma
+   * paths always did; the CPU-store paths now do too). */
 }

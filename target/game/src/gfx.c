@@ -100,6 +100,11 @@ gfx_fill(int x, int y, int w, int h, ushort c)
     fillword = (uint)c | ((uint)c << 16);
     gdma_rows((uint)p, (uint)&fillword, halfof(w), h, LCD_W * 2, 0);
   } else {
+    /* CPU stores must not race a draining gdma op or the async lcd
+     * flush over the same fb bytes: a prior fill's LAST row (or the
+     * flush) lands AFTER these stores and eats them — the source of
+     * parity-dependent sprite holes (TestZZChuteTrace). */
+    gd_wait();
     for (int r = 0; r < h; r++, p += LCD_W)
       for (int i = 0; i < w; i++)
         p[i] = c;
@@ -111,6 +116,7 @@ void
 gfx_text(int x, int y, const char *s, ushort fg, ushort bg)
 {
   int cx = x;
+  gd_wait(); /* CPU stores below; see gfx_fill's CPU branch */
   for (; *s && cx + 8 <= LCD_W; s++, cx += 8) {
     const uchar *g = &fbfont[(uint)(*s & 0x7F) * 8];
     for (int r = 0; r < 8; r++) {
@@ -132,6 +138,7 @@ void
 gfx_text2(int x, int y, const char *s, ushort fg, ushort bg)
 {
   int cx = x;
+  gd_wait(); /* CPU stores below; see gfx_fill's CPU branch */
   for (; *s && cx + 16 <= LCD_W; s++, cx += 16) {
     const uchar *g = &fbfont[(uint)(*s & 0x7F) * 8];
     for (int r = 0; r < 8; r++) {
@@ -248,6 +255,7 @@ void
 gfx_blit_runs(int x, int y, const ushort *src, int cw, int ch,
               const uchar *rt)
 {
+  gd_wait(); /* edge pixels are CPU stores; see gfx_fill's CPU branch */
   uint dstrow = (uint)fb + (uint)((y * LCD_W + x) * 2);
   uint srow = (uint)src;
   for (int r = 0; r < ch; r++) {

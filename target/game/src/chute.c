@@ -169,11 +169,18 @@ static const signed char ady[9] = {-4, -5, -6, -7, -7, -7, -6, -5, -4};
 struct cst {
   int aim, score, landed, over, hold, drawn_score;
   int gunon, gunfx; /* gun alive; destruction countdown to the over screen */
+  /* bullets and debris move in 16ths of a pixel EVERY frame (slow
+   * speeds stay smooth at 30 fps), but positions stay whole pixels:
+   * each velocity feeds through a fractional accumulator (subpx())
+   * because px = v >> 4 would be a ~30-iteration runtime call per
+   * read on this machine — rt_lshr once ate 75% of a frame. */
   int bx[NB], by[NB], bvx[NB], bvy[NB]; /* bx == -999: free */
+  int bfx[NB], bfy[NB];                 /* subpixel accumulators */
   int hx[NH], hy[NH], hvx[NH], hdrop[NH];
   int tx[NT], ty[NT], tst[NT], ttm[NT]; /* ttm: freefall / grenade timer */
   int gx[NG], gy[NG], gvx[NG], gvy[NG]; /* gx == -999: free */
   int dx_[ND], dy_[ND], dvx[ND], dvy[ND]; /* debris; dx_ == -999: free */
+  int dfx[ND], dfy[ND]; /* subpixel accumulators */
   uint spawn, frame;
 };
 #define CS_ ((struct cst *)g_arena)
@@ -298,7 +305,27 @@ tfree(void)
   return -1;
 }
 
-/* spawn one debris rect (silently drops when the pool is full) */
+/* advance *p (whole pixels) by v 16ths of a pixel, carrying through
+ * the fractional accumulator *f — pure adds, because any >> here
+ * would be the ~30-iteration rt_lshr loop, per frame, per mover.
+ * |v| < 80, so the carry loops run at most a handful of times. */
+static void
+subpx(int *p, int *f, int v)
+{
+  int a = *f + v;
+  while (a >= 16) {
+    a -= 16;
+    (*p)++;
+  }
+  while (a < 0) {
+    a += 16;
+    (*p)--;
+  }
+  *f = a;
+}
+
+/* spawn one debris rect (silently drops when the pool is full).
+ * x/y in pixels; vx/vy in 16ths of a pixel per frame. */
 static void
 debris_spawn(int x, int y, int vx, int vy)
 {
@@ -308,6 +335,8 @@ debris_spawn(int x, int y, int vx, int vy)
       CS_->dy_[i] = y;
       CS_->dvx[i] = vx;
       CS_->dvy[i] = vy;
+      CS_->dfx[i] = 0;
+      CS_->dfy[i] = 0;
       return;
     }
 }
@@ -319,10 +348,10 @@ heli_kill(int i)
   int x = CS_->hx[i], y = CS_->hy[i];
   heli_draw(i, 1);
   CS_->hx[i] = -999;
-  debris_spawn(x - 8, y + 2, -2, -1); /* wreckage rains DOWN */
-  debris_spawn(x - 2, y + 4, -1, -2);
-  debris_spawn(x + 2, y + 2, 1, -1);
-  debris_spawn(x + 8, y + 4, 2, 0);
+  debris_spawn(x - 8, y + 2, -12, 4); /* wreckage rains DOWN, gently */
+  debris_spawn(x - 2, y + 4, -5, 9);
+  debris_spawn(x + 2, y + 2, 5, 7);
+  debris_spawn(x + 8, y + 4, 12, 2);
   CS_->score += 20;
   snd_play(220, 70, 5);
   led_blink(LED_BRIGHT(0xFF6000), 2);
@@ -338,11 +367,11 @@ gun_destroy(void)
   CS_->gunfx = 45; /* the remains tumble, then the over screen */
   turret_erase();
   sky(TUR_X - 14, GUN_Y, 28, 12);
-  debris_spawn(TUR_X - 10, GUN_Y + 2, -4, -6);
-  debris_spawn(TUR_X - 4, GUN_Y, -2, -8);
-  debris_spawn(TUR_X + 2, GUN_Y, 2, -7);
-  debris_spawn(TUR_X + 8, GUN_Y + 2, 4, -5);
-  debris_spawn(TUR_X, GUN_Y + 4, 6, -4);
+  debris_spawn(TUR_X - 10, GUN_Y + 2, -64, -96); /* the old arcs, x16 */
+  debris_spawn(TUR_X - 4, GUN_Y, -32, -128);
+  debris_spawn(TUR_X + 2, GUN_Y, 32, -112);
+  debris_spawn(TUR_X + 8, GUN_Y + 2, 64, -80);
+  debris_spawn(TUR_X, GUN_Y + 4, 96, -64);
   uputs("chute: gun destroyed\n");
   snd_play(90, 80, 20);
   led_blink(LED_BRIGHT(0xFF2020), 6);
@@ -439,9 +468,13 @@ restart: /* no recursion on this machine: dmacc frames are static */
      * simply isn't drawn), then draw back-to-front. */
 
     /* phase 1: erase */
+    int hudtouch = 0; /* a bullet crossed the score strip: repaint it */
     for (int i = 0; i < NB; i++)
-      if (CS_->bx[i] != -999)
+      if (CS_->bx[i] != -999) {
+        if (CS_->by[i] < 20)
+          hudtouch = 1;
         sky(CS_->bx[i] - 3, CS_->by[i] - 3, 6, 6);
+      }
     for (int i = 0; i < NH; i++)
       if (CS_->hx[i] != -999)
         heli_draw(i, 1);
@@ -470,8 +503,12 @@ restart: /* no recursion on this machine: dmacc frames are static */
           if (CS_->bx[i] == -999) {
             CS_->bx[i] = TUR_X + (int)adx[CS_->aim];
             CS_->by[i] = GUN_Y - 14;
-            CS_->bvx[i] = adx[CS_->aim];
-            CS_->bvy[i] = ady[CS_->aim];
+            /* 9/16 of the aim step: the full-pixel march was ultra
+             * fast once everything around it slowed down */
+            CS_->bvx[i] = (int)adx[CS_->aim] * 9;
+            CS_->bvy[i] = (int)ady[CS_->aim] * 9;
+            CS_->bfx[i] = 0;
+            CS_->bfy[i] = 0;
             snd_play(900, 40, 2);
             break;
           }
@@ -481,8 +518,8 @@ restart: /* no recursion on this machine: dmacc frames are static */
     for (int i = 0; i < NB; i++) {
       if (CS_->bx[i] == -999)
         continue;
-      CS_->bx[i] += CS_->bvx[i];
-      CS_->by[i] += CS_->bvy[i];
+      subpx(&CS_->bx[i], &CS_->bfx[i], CS_->bvx[i]);
+      subpx(&CS_->by[i], &CS_->bfy[i], CS_->bvy[i]);
       if (CS_->by[i] < 2 || CS_->bx[i] < 3 || CS_->bx[i] > 236)
         CS_->bx[i] = -999;
     }
@@ -540,7 +577,7 @@ restart: /* no recursion on this machine: dmacc frames are static */
         continue;
       }
       if (st == T_FALL) {
-        CS_->ty[i] += 4;
+        CS_->ty[i] += 2;
         if (--CS_->ttm[i] <= 0)
           CS_->tst[i] = T_CHUTE; /* the canopy opens */
       } else if (st == T_CHUTE) {
@@ -591,26 +628,27 @@ restart: /* no recursion on this machine: dmacc frames are static */
       if (CS_->gy[i] >= GROUND_Y - 2 || CS_->gx[i] < 3 || CS_->gx[i] > 236)
         CS_->gx[i] = -999;
     }
-    /* debris tumbles (half speed: it reads better slow), and
+    /* debris tumbles — subpixel, every frame (slow but SMOOTH; the
+     * old half-rate stepping read as 15 fps), with a lazy terminal
+     * velocity so heli wreckage rains instead of plummeting — and
      * destroys whatever it touches */
     for (int i = 0; i < ND; i++) {
       if (CS_->dx_[i] == -999)
         continue;
-      if (CS_->frame & 1) {
-        CS_->dx_[i] += CS_->dvx[i];
-        CS_->dy_[i] += CS_->dvy[i];
-        if ((CS_->frame & 3) == 1)
-          CS_->dvy[i]++;
-      }
-      if (CS_->dy_[i] >= GROUND_Y - 2 || CS_->dy_[i] < 16 ||
-          CS_->dx_[i] < 2 || CS_->dx_[i] > 236) {
-        CS_->dx_[i] = -999; /* y < 16 also keeps it out of the HUD */
+      subpx(&CS_->dx_[i], &CS_->dfx[i], CS_->dvx[i]);
+      subpx(&CS_->dy_[i], &CS_->dfy[i], CS_->dvy[i]);
+      CS_->dvy[i] += 8; /* gravity, 0.5 px/frame^2 */
+      if (CS_->dvy[i] > 32)
+        CS_->dvy[i] = 32; /* terminal: 2 px/frame */
+      int px = CS_->dx_[i], py = CS_->dy_[i];
+      if (py >= GROUND_Y - 2 || py < 4 || px < 2 || px > 236) {
+        CS_->dx_[i] = -999;
         continue;
       }
       for (int h = 0; h < NH; h++)
-        if (CS_->hx[h] != -999 && CS_->dx_[i] > CS_->hx[h] - 14 &&
-            CS_->dx_[i] < CS_->hx[h] + 14 && CS_->dy_[i] > CS_->hy[h] - 2 &&
-            CS_->dy_[i] < CS_->hy[h] + 12) {
+        if (CS_->hx[h] != -999 && px > CS_->hx[h] - 14 &&
+            px < CS_->hx[h] + 14 && py > CS_->hy[h] - 2 &&
+            py < CS_->hy[h] + 12) {
           heli_kill(h); /* chains: the wreck bursts too */
           CS_->dx_[i] = -999;
           break;
@@ -622,8 +660,8 @@ restart: /* no recursion on this machine: dmacc frames are static */
         if (st == T_FREE)
           continue;
         int ty = st == T_LAND ? GROUND_Y - 8 : CS_->ty[t];
-        if (CS_->dx_[i] > CS_->tx[t] - 10 && CS_->dx_[i] < CS_->tx[t] + 10 &&
-            CS_->dy_[i] > ty - 12 && CS_->dy_[i] < ty + 10) {
+        if (px > CS_->tx[t] - 10 && px < CS_->tx[t] + 10 &&
+            py > ty - 12 && py < ty + 10) {
           troop_kill(t);
           CS_->dx_[i] = -999;
           snd_play(300, 40, 2);
@@ -704,8 +742,11 @@ restart: /* no recursion on this machine: dmacc frames are static */
       if (CS_->dx_[i] != -999)
         gfx_damage(CS_->dx_[i] - 1, CS_->dy_[i] - 1, CS_->dx_[i] + 5,
                    CS_->dy_[i] + 4);
-    draw_score(); /* every frame: debris and bullets cross the HUD
-                   * strip, and their erases were eating the meter */
+    /* repaint the HUD only when something changed or crossed it —
+     * the every-frame repaint forced a HUD-to-ground damage rect,
+     * ~27 ms of SPI per frame, the whole budget on the wire */
+    if (hudtouch || CS_->score != CS_->drawn_score)
+      draw_score();
     gfx_present();
   }
 }
