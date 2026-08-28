@@ -28,14 +28,14 @@ func TestZZChuteTrace(t *testing.T) {
 	// struct cst field offsets from g_arena (see chute.c)
 	arena := mustSym(t, prog, "g_arena_w")
 	const (
-		offBX  = 32 // bx[3]
-		offBY  = 44
-		offBVX = 56
-		offBVY = 68
-		offHX  = 104 // hx[2]
-		offHY  = 112
-		offDX  = 296 // dx_[12]
-		offDY  = 344
+		offBX    = 32 // bx[3]
+		offBY    = 44
+		offBVX   = 56
+		offBVY   = 68
+		offHX    = 104 // hx[2]
+		offHY    = 112
+		offDX    = 296 // dx_[12]
+		offDY    = 344
 		offFrame = 684 // after dfx/dfy/dtl/dht joined the struct
 	)
 	rd := func(off, i int) int32 {

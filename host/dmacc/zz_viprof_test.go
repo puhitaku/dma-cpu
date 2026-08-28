@@ -8,8 +8,8 @@ package dmacc_test
 // times in an open file on the feather.
 
 import (
-	"os"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/puhitaku/dma-cpu/host/boards"

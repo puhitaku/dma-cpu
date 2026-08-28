@@ -19,7 +19,7 @@ func TestAppSizes(t *testing.T) {
 	v, _ := emu.VariantByName("rp2350")
 	for _, name := range []string{"echo", "cat", "ls", "toolbox", "hwtools", "fbtest", "show", "sh"} {
 		for _, sized := range []bool{false, true} {
-			mods := []*llir.Module{parseLL(t, "../../target/xv6/ll/" + name + ".ll"),
+			mods := []*llir.Module{parseLL(t, "../../target/xv6/ll/"+name+".ll"),
 				parseLL(t, "../../target/xv6/ll/ulib.ll"), parseLL(t, "../../target/xv6/ll/usys.ll")}
 			if name == "sh" {
 				mods = append(mods, parseLL(t, "../../target/xv6/ll/umalloc.ll"))

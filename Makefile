@@ -1,6 +1,6 @@
 # DMA-CPU build/test entry points (see prompts/overview.md, Phase 0).
 
-.PHONY: all build test vet clean test-hw
+.PHONY: all build test vet fmt clean test-hw
 
 all: build
 
@@ -9,8 +9,18 @@ build:
 	go build -o bin/dmaasm ./host/cmd/dmaasm
 	go build -o bin/dmacc ./host/cmd/dmacc
 
-test: vet
+test: fmt vet
 	go test ./...
+
+# gofmt's output is the house style, always — run `gofmt -w ./host` to
+# fix. Checked here so a hand-aligned struct or comment can never drift
+# the tree out of format again.
+fmt:
+	@out=$$(gofmt -l ./host); \
+	  if [ -n "$$out" ]; then \
+	    echo "gofmt: not formatted (run gofmt -w ./host):"; \
+	    echo "$$out"; exit 1; \
+	  fi
 
 vet:
 	go vet ./...

@@ -4,8 +4,8 @@ package dmacc_test
 // shadows? Dumps the 10x10 floor patch brightness (bR+bG+bB) after
 // ~256 shots. RAD_RAM layout mirrors radio.c.
 import (
-	"os"
 	"fmt"
+	"os"
 	"testing"
 )
 

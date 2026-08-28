@@ -27,6 +27,10 @@ phased plan). Phase outcomes are logged in the numbered
 - Every self-built tool is Go, standard library only (single module).
   Exceptions: the future LLVM backend (C++) and target-side code that
   runs on the Pico (`target/`, C99).
+- Go source is gofmt's output, always — there is no reason good enough
+  to override it, least of all hand-aligned struct fields or comment
+  columns (interleaving a comment mid-struct is what drifted the tree
+  before). Fix with `gofmt -w ./host`; `make test` fails on `gofmt -l`.
 - Write "RP2" for family-generic statements. Name a specific SKU only in
   datasheet citations ("RP2040 datasheet §2.5", "RP2350 datasheet §12.6")
   and where a value is genuinely SKU-specific.
@@ -186,7 +190,8 @@ phased plan). Phase outcomes are logged in the numbered
 
 ## Build, test, hardware
 
-- `make test` = `go vet` + all golden tests. Run it before committing.
+- `make test` = `gofmt -l` + `go vet` + all golden tests. Run it before
+  committing.
 - `make llgen` regenerates the compiler IR goldens + host expectations
   (needs host clang; only when host/dmacc/testdata/*.c change).
 - `make xv6-ll` / `make game-ll` / `make libc` regenerate the committed

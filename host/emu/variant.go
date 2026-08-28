@@ -142,11 +142,11 @@ var RP2350 = &Variant{
 	// 24, not 26: the RP2350 table runs PIO2_RX0..3 = 20..23, then
 	// SPI0_TX = 24 (26 is SPI1_TX; the old value was a dormant slip —
 	// only the RP2040 game console paces on SPI0).
-	DreqSPI0TX:    24,
-	DreqSPI0RX:    25,
-	DreqUART0TX:   28,
-	DreqUART0RX:   29,
-	GPIOPins:      48,
+	DreqSPI0TX:  24,
+	DreqSPI0RX:  25,
+	DreqUART0TX: 28,
+	DreqUART0RX: 29,
+	GPIOPins:    48,
 
 	gpioOutoverLSB: 12,
 	gpioOeoverLSB:  14,

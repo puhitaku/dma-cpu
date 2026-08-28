@@ -9,8 +9,8 @@ package dmacc_test
 // estimated analytically, not measured.
 
 import (
-	"os"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"testing"

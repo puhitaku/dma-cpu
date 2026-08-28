@@ -72,17 +72,17 @@ type dma struct {
 	// runnable() per channel; hp caches the CTRL high-priority bit;
 	// timerActive marks pacing timers with X and Y nonzero; timerListen
 	// holds the channels whose TREQ_SEL targets each timer.
-	ready       uint32
-	hp          uint32
-	timerActive uint32
-	timerListen [4]uint32
-	spiListen   uint32    // channels whose TREQ_SEL is the SPI0 TX DREQ
-	uartTxListen uint32   // channels on the UART0 TX DREQ (console drain)
-	uartRxListen uint32   // channels on the UART0 RX DREQ (console fill)
-	spiRxListen  uint32   // channels on the SPI0 RX DREQ (the SD drain)
-	hstxListen   uint32   // channels on the HSTX DREQ (the scanout)
-	pioTx       [4]uint32 // channels on PIO0 TX0..3 (DREQ 0..3)
-	pioListen   uint32    // union of pioTx, the fast gate
+	ready        uint32
+	hp           uint32
+	timerActive  uint32
+	timerListen  [4]uint32
+	spiListen    uint32    // channels whose TREQ_SEL is the SPI0 TX DREQ
+	uartTxListen uint32    // channels on the UART0 TX DREQ (console drain)
+	uartRxListen uint32    // channels on the UART0 RX DREQ (console fill)
+	spiRxListen  uint32    // channels on the SPI0 RX DREQ (the SD drain)
+	hstxListen   uint32    // channels on the HSTX DREQ (the scanout)
+	pioTx        [4]uint32 // channels on PIO0 TX0..3 (DREQ 0..3)
+	pioListen    uint32    // union of pioTx, the fast gate
 
 	// Timer next-fire schedule: ticking four fractional accumulators
 	// every cycle was ~8% of the suite, so each active timer instead
