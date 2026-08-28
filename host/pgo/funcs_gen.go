@@ -14,38 +14,38 @@ package pgo
 // that links a different module set (the displayless kernels take the
 // fb stub) simply has no function by some of these names.
 
-// KernelHotFuncs: 23 of 90 executed functions, covering 97.1% of the
-// 13985879 text reads the workload made.
+// KernelHotFuncs: 23 of 85 executed functions, covering 97.2% of the
+// 10833500 text reads the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
 var KernelHotFuncs = map[string]bool{
-	"badbuf":       true,
-	"bread":        true,
-	"cell_addr":    true,
-	"clear_cells":  true,
-	"cons_poll":    true,
-	"cputc":        true,
-	"cputc_wire":   true,
-	"dma_ksyscall": true,
-	"fileread":     true,
-	"filewrite":    true,
-	"kconsread":    true,
-	"kconswrite":   true,
-	"kdmacpy":      true,
-	"kdmaset":      true,
-	"kfb_active":   true,
-	"kfb_base":     true,
-	"kfbcon_putc":  true,
-	"kfs_read":     true,
-	"kfs_write":    true,
-	"memmove":      true,
-	"readi":        true,
-	"strncpy":      true,
-	"terminate":    true,
+	"badbuf":        true,
+	"bread":         true,
+	"clear_cells":   true,
+	"cons_poll":     true,
+	"cputc":         true,
+	"cputc_wire":    true,
+	"dma_ksyscall":  true,
+	"fileread":      true,
+	"filewrite":     true,
+	"kconsread":     true,
+	"kconswrite":    true,
+	"kdmacpy":       true,
+	"kdmaset":       true,
+	"kfb_condark":   true,
+	"kfbcon_putc":   true,
+	"kfs_forkcopy":  true,
+	"kfs_read":      true,
+	"kfs_write":     true,
+	"memmove":       true,
+	"readi":         true,
+	"strncpy":       true,
+	"terminate":     true,
+	"vfork_release": true,
 }
 
-// GameHotFuncs: 26 of 72 executed functions, covering 97.1% of the
-// 33726073 text reads the workload made.
+// GameHotFuncs: 26 of 72 executed functions, covering 97.2% of the
+// 36730338 text reads the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event.
 var GameHotFuncs = map[string]bool{
