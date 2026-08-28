@@ -85,6 +85,8 @@ phased plan). Phase outcomes are logged in the numbered
   because `jneg` is only correct for |v| < 2^28; compiled code must use
   them for arbitrary values. They dispatch through a pooled trampoline
   arena appended to .text (ABI v0.1, references/design_docs/abi.md).
+  Where an operand's bit 31 is provably clear the algebra collapses to
+  a single `jsign` (the restricted-range predicates in that doc).
 - libc = picolibc (submodule `target/libc/picolibc`, BSD-licensed).
   Third-party code may be committed when its licence permits and LICENSE
   records the attribution per origin (xv6, picolibc, the vi port); the
@@ -131,8 +133,12 @@ phased plan). Phase outcomes are logged in the numbered
   forwards pure copies, and lowers comparisons through shared millicode
   helpers by default (4-5 blocks/site; Options.InlineCompares restores
   the fast inline form, Options.OptSize shrinks the site further to two
-  descriptor records at ~2x the branch cost). `dmacc -size` prints block
-  attribution — measure before optimizing. dmxgen bakes relocations out
+  descriptor records at ~2x the branch cost). A per-value fact analysis
+  (`host/dmacc/facts.go`: BOOL/NONNEG over the IR, fixed-point from the
+  pessimistic bottom) routes the sites whose operands provably keep bit
+  31 clear to the shorter `__cw_eqzp`/`__cw_ltp` bodies — same site
+  size, less helper. `dmacc -size` prints block attribution — measure
+  before optimizing. dmxgen bakes relocations out
   of the HIL images (they load at link addresses only). When touching
   the lowering, keep the differential suite bit-exact — it caught the
   phase's only miscompile.

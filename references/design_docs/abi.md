@@ -98,6 +98,17 @@ caller-saved everywhere: no macro preserves it.
 - `jbool v, ifzero, ifone` (6 blocks): two-way dispatch on a word that
   must be 0 or 1 (16·v trampoline offset, 8·v in compact) — the cheap
   branch for materialized booleans.
+- Restricted-range predicates. When bit 31 of an operand is known clear
+  the full-range sign algebra collapses, and a compiler that can prove
+  it (dmacc's value facts, `host/dmacc/facts.go`) branches through the
+  shorter millicode helpers `__cw_eqzp`/`__cw_ltp`:
+  - `a == 0`, `a` nonneg: `a - 1` borrows into bit 31 at `a == 0` and
+    nowhere else in `[0, 2^31)`, so `jsign (a + 0xFFFFFFFF)` is the
+    whole test — one `add` where the general form needs `sub`+`or`.
+  - `a < b`, both nonneg: the difference lies in `(-2^31, 2^31)` and is
+    exactly representable, so its sign IS the answer and signed and
+    unsigned agree — `jsign (a - b)` replaces the four-term borrow of
+    `jlt`/`jltu`.
 - `and a, b, d` (6 blocks, clobbers `at`) and `andn a, b, d` = `a & ~b`
   (3 blocks) via the accumulator CLR alias.
 

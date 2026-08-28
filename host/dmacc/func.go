@@ -37,6 +37,7 @@ type funcCtx struct {
 	poolSym   map[string]string           // current block: value -> assigned pool slot
 	poolFree  []string                    // recycled slots (freed at block boundaries)
 	poolN     int                         // slots minted for this function
+	facts     factSet                     // per-value BOOL/NONNEG facts (facts.go)
 
 	hasCalls   bool
 	inRAM      bool // whole function emitted into .ramtext (RAMTextFuncs)
@@ -66,6 +67,7 @@ func (g *gen) emitFunc(f *llir.Func) error {
 		poolable:  map[string]bool{},
 		slotOf:    map[string]string{},
 		poolSym:   map[string]string{},
+		facts:     factsOf(f),
 	}
 	if fc.rec {
 		// The whole frame must be contiguous for push/pop: label it and
@@ -853,12 +855,10 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 			}
 			return nil
 		}
-		c, err := fc.op(ins.Args[0])
-		if err != nil {
+		t, f, j := fc.stub("St"), fc.stub("Sf"), fc.stub("Sj")
+		if err := fc.emitBoolBranch(ins.Args[0], t, f); err != nil {
 			return err
 		}
-		t, f, j := fc.stub("St"), fc.stub("Sf"), fc.stub("Sj")
-		fc.emitBoolBranch(c, t, f)
 		fc.label(t)
 		fc.ins("move %s, %s", av, res)
 		fc.ins("jump %s", j)
@@ -2096,11 +2096,9 @@ func (fc *funcCtx) emitBr(b *llir.Block, ins *llir.Instr) error {
 		}
 		return fc.flushEdgeStubs(p)
 	}
-	c, err := fc.op(cond)
-	if err != nil {
+	if err := fc.emitBoolBranch(cond, tLbl, fLbl); err != nil {
 		return err
 	}
-	fc.emitBoolBranch(c, tLbl, fLbl)
 	return fc.flushEdgeStubs(p)
 }
 

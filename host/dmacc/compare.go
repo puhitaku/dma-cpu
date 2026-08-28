@@ -16,16 +16,33 @@ import (
 // approach-B interrupts: safepoints never occur inside the sequence,
 // and ISRs use their own register bank.
 //
+// Fact-directed variants. The general helpers pay for operands that may
+// use the full 32-bit range; most do not, and facts.go proves it per
+// value. Where the proof holds the site routes to a shorter helper —
+// the predicate math is in references/design_docs/abi.md:
+//
+//	__cw_eqzp   a == 0, a nonneg: a-1 borrows into bit 31 only at a == 0,
+//	            so one add of -1 replaces eqz's sub/or pair.
+//	__cw_ltp    a < b, both nonneg: signed and unsigned agree and the
+//	            difference cannot wrap, so the sign of a-b IS the answer
+//	            and the four-term borrow of lt/ltu collapses to one sub.
+//
+// A branch on a value proven to be 0 or 1 rides eqzp as well — 0 and 1
+// are nonneg — and needs no jbool of its own (emitZeroTest).
+//
 // Options.InlineCompares restores the inline lowering (faster by a few
-// blocks per branch, much larger).
+// blocks per branch, much larger); it ignores the facts, since its
+// macros are already full-range and unconditional.
 
 type cmpHelper struct {
 	name string
 	text string
 }
 
-// The helper bodies. Predicate math is identical to the dmaasm inline
-// macros (references/design_docs/abi.md); `jsign` slots: negative sign first.
+// The helper bodies. The eq/eqz/lt/ltu math is identical to the dmaasm
+// inline macros, the eqzp/ltp math to the restricted-range predicates
+// (both in references/design_docs/abi.md); `jsign` slots: negative sign
+// first.
 var cmpHelpers = []cmpHelper{
 	{"eqz", `; a == 0 ? -> cw_t : cw_f  (sign of a | -a)
 __cw_eqz:
@@ -74,12 +91,30 @@ __cw_ltu_t:
 __cw_ltu_f:
     jumpr cw_f
 `},
+	{"eqzp", `; a == 0 ? -> cw_t : cw_f, a nonneg (sign of a-1)
+__cw_eqzp:
+    add cw_a, $0xFFFFFFFF, at
+    jsign at, __cw_eqzp_z, __cw_eqzp_n
+__cw_eqzp_z:
+    jumpr cw_t
+__cw_eqzp_n:
+    jumpr cw_f
+`},
+	{"ltp", `; a < b ? -> cw_t : cw_f, both nonneg (sign of a-b)
+__cw_ltp:
+    sub cw_a, cw_b, at
+    jsign at, __cw_ltp_t, __cw_ltp_f
+__cw_ltp_t:
+    jumpr cw_t
+__cw_ltp_f:
+    jumpr cw_f
+`},
 }
 
 // Descriptor unpack variants: the whole site collapses to two records
 // (park the descriptor address, jump). The descriptor is a constant
-// data block — [&b][t][f][&a] for two-operand kinds, [t][f][&a] for
-// eqz — that the helper copies onto the contiguous cw_pb..cw_pa cells
+// data block — [&b][t][f][&a] for two-operand kinds, [t][f][&a] for the
+// zero tests — that the helper copies onto the contiguous cw_pb..cw_pa cells
 // with one wcount=N move (both ends are word cells, so the classic
 // encoding moves whole words), then dereferences into cw_a/cw_b and
 // falls into the plain helper.
@@ -128,6 +163,27 @@ CWDua:
 CWDub:
     move @0, cw_b
     jump __cw_ltu
+`,
+	"eqzp": `__cw_eqzp_d:
+    move cw_d, CWDzp.read
+CWDzp:
+    move @0, cw_t, incrr, incrw, wcount=3
+    move cw_pa, CWDzpa.read
+CWDzpa:
+    move @0, cw_a
+    jump __cw_eqzp
+`,
+	"ltp": `__cw_ltp_d:
+    move cw_d, CWDp.read
+CWDp:
+    move @0, cw_pb, incrr, incrw, wcount=4
+    move cw_pa, CWDpa.read
+CWDpa:
+    move @0, cw_a
+    move cw_pb, CWDpb.read
+CWDpb:
+    move @0, cw_b
+    jump __cw_ltp
 `,
 }
 
@@ -212,30 +268,40 @@ func (fc *funcCtx) emitCompareBranch(ins *llir.Instr, t, f string) error {
 	if err != nil {
 		return err
 	}
+	fa, fb := fc.facts.of(ins.Args[0]), fc.facts.of(ins.Args[1])
 	signed := ins.Pred == "slt" || ins.Pred == "sge" || ins.Pred == "sgt" || ins.Pred == "sle"
 	if signed && w < 32 {
 		fc.sextInto(a, w, "sc0")
 		fc.sextInto(b, w, "sc1")
 		a, b = "sc0", "sc1"
+		// sc0/sc1 hold sign-extended words: whatever the narrow value
+		// words proved, these two range over all of i32.
+		fa, fb = 0, 0
 	}
 	if fc.g.opts.InlineCompares {
 		return fc.emitInlineCompare(ins.Pred, a, b, t, f)
 	}
-	// Equality against zero has a dedicated one-operand helper.
+	// Equality against zero has dedicated one-operand lowerings.
 	if ins.Pred == "eq" || ins.Pred == "ne" {
 		x, y := ins.Args[0], ins.Args[1]
 		if y.Kind == llir.VConst && uint32(y.Int) == 0 || x.Kind == llir.VConst && uint32(x.Int) == 0 {
-			v := a
+			v, vf := a, fa
 			if x.Kind == llir.VConst && uint32(x.Int) == 0 {
-				v = b
+				v, vf = b, fb
 			}
 			if ins.Pred == "eq" {
-				fc.emitCmpSite("eqz", v, "", t, f)
+				fc.emitZeroTest(v, vf, t, f)
 			} else {
-				fc.emitCmpSite("eqz", v, "", f, t)
+				fc.emitZeroTest(v, vf, f, t)
 			}
 			return nil
 		}
+	}
+	// Both operands nonneg: the difference cannot wrap, so signed and
+	// unsigned "less than" are the same one-subtraction test.
+	lt, ltu := "lt", "ltu"
+	if fa&fb&factNonNeg != 0 {
+		lt, ltu = "ltp", "ltp"
 	}
 	switch ins.Pred {
 	case "eq":
@@ -243,35 +309,55 @@ func (fc *funcCtx) emitCompareBranch(ins *llir.Instr, t, f string) error {
 	case "ne":
 		fc.emitCmpSite("eq", a, b, f, t)
 	case "slt":
-		fc.emitCmpSite("lt", a, b, t, f)
+		fc.emitCmpSite(lt, a, b, t, f)
 	case "sge":
-		fc.emitCmpSite("lt", a, b, f, t)
+		fc.emitCmpSite(lt, a, b, f, t)
 	case "sgt":
-		fc.emitCmpSite("lt", b, a, t, f)
+		fc.emitCmpSite(lt, b, a, t, f)
 	case "sle":
-		fc.emitCmpSite("lt", b, a, f, t)
+		fc.emitCmpSite(lt, b, a, f, t)
 	case "ult":
-		fc.emitCmpSite("ltu", a, b, t, f)
+		fc.emitCmpSite(ltu, a, b, t, f)
 	case "uge":
-		fc.emitCmpSite("ltu", a, b, f, t)
+		fc.emitCmpSite(ltu, a, b, f, t)
 	case "ugt":
-		fc.emitCmpSite("ltu", b, a, t, f)
+		fc.emitCmpSite(ltu, b, a, t, f)
 	case "ule":
-		fc.emitCmpSite("ltu", b, a, f, t)
+		fc.emitCmpSite(ltu, b, a, f, t)
 	default:
 		return fmt.Errorf("unsupported icmp predicate %q", ins.Pred)
 	}
 	return nil
 }
 
-// emitBoolBranch branches on a 0/1 word: outlined it is a 3-block eqz
-// site; inline it is jbool.
-func (fc *funcCtx) emitBoolBranch(cond, ifTrue, ifFalse string) {
-	if fc.g.opts.InlineCompares {
-		fc.ins("jbool %s, %s, %s", cond, ifFalse, ifTrue)
+// emitZeroTest branches on whether the word v is zero, taking the
+// cheapest lowering its facts allow. A proven boolean is nonneg too, so
+// it lands on eqzp: jbool is a 12-record macro, and neither of its two
+// placements beats that — inline it is +8 records at EVERY site (the
+// xv6 kernel's .ramtext overruns its window and the compare sites stop
+// being descriptor-sized), and outlined it saves one executed record
+// over eqzp for another shared body and two frozen vector slots.
+func (fc *funcCtx) emitZeroTest(v string, vf uint8, ifZero, ifNonzero string) {
+	if vf&factNonNeg != 0 {
+		fc.emitCmpSite("eqzp", v, "", ifZero, ifNonzero)
 		return
 	}
-	fc.emitCmpSite("eqz", cond, "", ifFalse, ifTrue)
+	fc.emitCmpSite("eqz", v, "", ifZero, ifNonzero)
+}
+
+// emitBoolBranch branches on an i1 value: the zero test its facts
+// allow, or jbool under Options.InlineCompares.
+func (fc *funcCtx) emitBoolBranch(cond *llir.Value, ifTrue, ifFalse string) error {
+	c, err := fc.op(cond)
+	if err != nil {
+		return err
+	}
+	if fc.g.opts.InlineCompares {
+		fc.ins("jbool %s, %s, %s", c, ifFalse, ifTrue)
+		return nil
+	}
+	fc.emitZeroTest(c, fc.facts.of(cond), ifFalse, ifTrue)
+	return nil
 }
 
 // emitInlineCompare is the pre-outlining lowering (kept behind

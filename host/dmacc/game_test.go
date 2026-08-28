@@ -189,6 +189,13 @@ func runUntil(t *testing.T, m *emu.Machine, marker string, from0 int,
 // Fixed-length presses get swallowed when they start during a long
 // draw (in_prev still holds the previous press across a 16M-cycle
 // flush), and overstayed holds trip hold-to-quit gestures.
+//
+// The hold ends at the frame that observes it, not at a cycle count:
+// in_poll writes g_in_down once per frame, so watching that word stops
+// the run on the frame boundary itself. A plain cycle step overshoots
+// by however many frames fit in it — enough to hand a 45-frame
+// hold-to-quit gesture a whole press at any frame rate the codegen
+// happens to reach.
 func press(t *testing.T, m *emu.Machine, prog *dmaasm.Result, pin int) {
 	t.Helper()
 	bit := btnBit[pin]
@@ -198,7 +205,8 @@ func press(t *testing.T, m *emu.Machine, prog *dmaasm.Result, pin int) {
 			if (m.Peek32(down)&bit != 0) == want {
 				return
 			}
-			if _, err := m.Run(emu.RunConfig{MaxCycles: 1_000_000}); err != nil {
+			if _, err := m.Run(emu.RunConfig{MaxCycles: 1_000_000,
+				WatchWrites: []uint32{down}}); err != nil {
 				t.Fatal(err)
 			}
 		}
