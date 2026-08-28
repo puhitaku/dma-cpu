@@ -154,6 +154,29 @@ func TestZZBenchVi(t *testing.T) {
 		fmt.Printf("%-20s %14d\n", s.name, n)
 	}
 	fmt.Printf("%-20s %14d\n", "TOTAL", total)
+
+	// Human pace. The bursts above amortize the repaint — vi skips it
+	// whenever the next key is already waiting — so they price typing
+	// faster than the machine, not a person at the keyboard. Here each
+	// key goes in alone and runs to quiescence before the next one,
+	// which is what a keypress actually costs.
+	fmt.Printf("\n%-20s %6s %14s %14s\n", "human-paced", "keys", "cycles", "per key")
+	human := func(name string, keys ...string) {
+		var tot uint64
+		for _, k := range keys {
+			tot += phase(k, 4_000_000_000)
+		}
+		fmt.Printf("%-20s %6d %14d %14d\n", name, len(keys), tot, tot/uint64(len(keys)))
+	}
+	phase("vi README\r", 20_000_000_000)
+	human("motion l", "l", "l", "l", "l", "l", "l", "l", "l", "l", "l")
+	human("replace (rX)", "rX")
+	human("delete char (x)", "x")
+	phase("i", 4_000_000_000)
+	human("insert 5 chars", "h", "e", "l", "l", "o")
+	phase("\x1b", 4_000_000_000)
+	phase(":q!\r", 20_000_000_000)
+
 	if !strings.HasSuffix(string(m.ConsoleOut), "$ ") {
 		t.Fatalf("vi did not exit to the prompt; console tail %q", tail(m.ConsoleOut, 300))
 	}

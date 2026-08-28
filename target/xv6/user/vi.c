@@ -360,6 +360,12 @@ struct globals {
 	char *screenbegin;       // index into text[], of top line on the screen
 	char *screen;            // pointer to the virtual screen buffer
 	int screensize;          //            and its size
+	int dirty_lo, dirty_hi;  // text[] offsets changed since the last
+	                         // refresh() (lo > hi: none were)
+	int dirty_delta;         // how much text[] grew (or shrank) there
+	int dirty_lines;         // how many newlines came (or went) with it
+	smallint dirty_all;      // screen[] holds nothing worth keeping
+	int total_lines;         // newlines in text[]: the status line total
 	int tabstop;
 	int last_search_char;    // last char searched for (int because of Unicode)
 	smallint last_search_cmd;    // command used to invoke last char search
@@ -391,6 +397,7 @@ struct globals {
 	char *edit_file__cur_line;
 #endif
 	int refresh__old_offset;
+	int refresh__old_screenbegin;
 	int format_edit_status__tot;
 
 	// a few references only
@@ -492,6 +499,12 @@ struct globals {
 #define screen                  (G.screen             )
 #define screensize              (G.screensize         )
 #define screenbegin             (G.screenbegin        )
+#define dirty_lo                (G.dirty_lo           )
+#define dirty_hi                (G.dirty_hi           )
+#define dirty_delta             (G.dirty_delta        )
+#define dirty_lines             (G.dirty_lines        )
+#define dirty_all               (G.dirty_all          )
+#define total_lines             (G.total_lines        )
 #define tabstop                 (G.tabstop            )
 #define last_search_char        (G.last_search_char   )
 #define last_search_cmd         (G.last_search_cmd    )
@@ -515,6 +528,7 @@ struct globals {
 
 #define edit_file__cur_line     (G.edit_file__cur_line)
 #define refresh__old_offset     (G.refresh__old_offset)
+#define refresh__old_screenbegin (G.refresh__old_screenbegin)
 #define format_edit_status__tot (G.format_edit_status__tot)
 
 #define YDreg          (G.YDreg         )
@@ -544,6 +558,8 @@ struct globals {
 #define INIT_G() do { \
 	SET_PTR_TO_GLOBALS(xzalloc(sizeof(G))); \
 	last_modified_count--; \
+	dirty_lo = INT_MAX; \
+	dirty_hi = -1; \
 	/* "" but has space for 2 chars: */ \
 	IF_FEATURE_VI_SEARCH(last_search_pattern = xzalloc(2);) \
 	tabstop = 8; \
@@ -770,6 +786,62 @@ static int count_lines(char *start, char *stop)
 	return cnt;
 }
 
+// count newlines from start up to (not including) stop
+static int count_newlines(const char *start, const char *stop)
+{
+	int cnt = 0;
+
+	while (start < stop) {
+		if (*start++ == '\n')
+			cnt++;
+	}
+	return cnt;
+}
+
+//----- What changed in text[] since the last refresh ----------
+// screen[] holds the lines the terminal is showing, so a line only
+// needs re-formatting when the text under it can have been rewritten
+// or landed on another row. [dirty_lo,dirty_hi] is the changed span
+// in current text[] offsets and dirty_delta how much text[] grew
+// there, which is what keeps dirty_hi in current offsets as further
+// changes come in.
+//
+// Text before dirty_lo did not move at all. Text after dirty_hi did
+// move - by dirty_delta bytes - but a byte moving inside the file is
+// not a line moving down the screen: as long as the change added or
+// removed no newline (dirty_lines), every line after it is still the
+// same line with the same contents, and the screen still shows it.
+//
+// total_lines is the newline count the status line reports, kept as
+// text[] is edited rather than counted over the whole buffer after
+// every change.
+
+// "n" bytes at "p" are new, text[] grew by "delta" there (negative
+// when it shrank), and the change brought "lines" newlines with it
+static void text_changed(char *p, int n, int delta, int lines)
+{
+	int lo = p - text;
+
+	if (dirty_lo > lo)
+		dirty_lo = lo;
+	dirty_hi += delta;
+	if (dirty_hi < lo + n - 1)
+		dirty_hi = lo + n - 1;
+	dirty_delta += delta;
+	dirty_lines += lines;
+	total_lines += lines;
+}
+
+// screen[] shows text[] again: nothing is outstanding
+static void text_repainted(void)
+{
+	dirty_lo = INT_MAX;
+	dirty_hi = -1;
+	dirty_delta = 0;
+	dirty_lines = 0;
+	dirty_all = FALSE;
+}
+
 static char *find_line(int li)	// find beginning of line #li
 {
 	char *q;
@@ -813,6 +885,7 @@ static int get_column(char *p)
 static void screen_erase(void)
 {
 	memset(screen, ' ', screensize);	// clear new screen
+	dirty_all = TRUE;	// screen[] no longer shows anything
 }
 
 static void new_screen(int ro, int co)
@@ -992,8 +1065,9 @@ static char* format_line(char *src /*, int li*/)
 static void refresh(int full_screen)
 {
 #define old_offset refresh__old_offset
+#define old_screenbegin refresh__old_screenbegin
 
-	int li, changed;
+	int li, changed, all_lines;
 	char *tp, *sp;		// pointer into text[] and screen[]
 
 	if (ENABLE_FEATURE_VI_WIN_RESIZE IF_FEATURE_VI_ASK_TERMINAL(&& !G.get_rowcol_error) ) {
@@ -1010,21 +1084,50 @@ static void refresh(int full_screen)
 #endif
 	}
 	sync_cursor(dot, &crow, &ccol);	// where cursor will be (on "dot")
+
+	// Which lines have to be formatted and compared at all: scrolling
+	// and a new horizontal offset move every one of them, and so does
+	// anything that threw screen[] away. (Not the same thing as
+	// full_screen, which is about writing every column of the lines
+	// that do differ.)
+	all_lines = full_screen || dirty_all
+		|| offset != old_offset || screenbegin - text != old_screenbegin;
+	if (!all_lines
+	 && dirty_lo > dirty_hi && dirty_delta == 0 && dirty_lines == 0
+	) {
+		goto rf0;	// text[] did not change: screen[] still shows it
+	}
 	tp = screenbegin;	// index into text[] of top line
 
 	// compare text[] to screen[] and mark screen[] lines that need updating
 	for (li = 0; li < rows - 1; li++) {
 		int cs, ce;				// column start & end
 		char *out_buf;
-		// format current text line
-		out_buf = format_line(tp /*, li*/);
+		char *next_tp = tp;
 
 		// skip to the end of the current text[] line
 		if (tp < end) {
 			char *t = memchr(tp, '\n', end - tp);
 			if (!t) t = end - 1;
-			tp = t + 1;
+			next_tp = t + 1;
 		}
+
+		// This line's text ends before the change, or it begins past
+		// the newline after the change and no newline came or went:
+		// either way screen[] is still showing it. "> dirty_hi + 1"
+		// and not "> dirty_hi" because the newline this line starts
+		// after must be one of the bytes that only moved.
+		if (!all_lines
+		 && (next_tp - text <= dirty_lo
+		     || (dirty_lines == 0 && tp - text > dirty_hi + 1))
+		) {
+			tp = next_tp;
+			continue;
+		}
+
+		// format current text line
+		out_buf = format_line(tp /*, li*/);
+		tp = next_tp;
 
 		// see if there are any changes between virtual screen and out_buf
 		changed = FALSE;	// assume no change
@@ -1073,13 +1176,17 @@ static void refresh(int full_screen)
 		}
 	}
 
+ rf0:
 	place_cursor(crow, ccol);
 
 	if (!keep_index)
 		cindex = ccol + offset;
 
 	old_offset = offset;
+	old_screenbegin = screenbegin - text;
+	text_repainted();
 #undef old_offset
+#undef old_screenbegin
 }
 
 //----- Force refresh of all Lines -----------------------------
@@ -1273,11 +1380,13 @@ static int format_edit_status(void)
 	// we're on, then we shouldn't have to do this count_lines()
 	cur = count_lines(text, dot);
 
-	// count_lines() is expensive.
-	// Call it only if something was changed since last time
-	// we were here:
+	// the total used to be "cur + count_lines(dot, end - 1) - 1", a
+	// walk to the end of the file after every change. text[] keeps
+	// its own newline count now; the same arithmetic on it is
+	// total_lines, less one when "dot" sits on a last line that has
+	// no newline of its own.
 	if (modified_count != last_modified_count) {
-		tot = cur + count_lines(dot, end - 1) - 1;
+		tot = total_lines - (*end_line(dot) != '\n');
 		last_modified_count = modified_count;
 	}
 
@@ -1523,6 +1632,8 @@ static uintptr_t text_hole_make(char *p, int size)	// at "p", make a 'size' byte
 	}
 	memmove(p + size, p, end - size - p);
 	memset(p, ' ', size);	// clear new hole
+	// the hole is blank; whoever fills it counts its newlines
+	text_changed(p, size, size, 0);
 	return bias;
 }
 
@@ -1569,6 +1680,7 @@ static char *text_hole_delete(char *p, char *q, int undo)
 	if (dest < text || dest >= end)
 		goto thd0;
 	modified_count++;
+	text_changed(dest, 0, -hole_size, -count_newlines(dest, dest + hole_size));
 	if (src >= end)
 		goto thd_atend;	// just delete the end of the buffer
 	memmove(dest, src, cnt);
@@ -1758,6 +1870,9 @@ static void undo_pop(void)
 		u_start = text + undo_entry->start;
 		text_hole_make(u_start, undo_entry->length);
 		memcpy(u_start, undo_entry->undo_text, undo_entry->length);
+		text_changed(u_start, undo_entry->length, 0,
+			count_newlines(undo_entry->undo_text,
+				undo_entry->undo_text + undo_entry->length));
 # if ENABLE_FEATURE_VI_VERBOSE_STATUS
 		status_line("Undo [%d] %s %d chars at position %d",
 			modified_count, "restored",
@@ -2014,6 +2129,8 @@ static int file_insert(const char *fn, char *p, int initial)
 	size = (statbuf.st_size < INT_MAX ? (int)statbuf.st_size : INT_MAX);
 	p += text_hole_make(p, size);
 	cnt = full_read(fd, p, size);
+	if (cnt > 0)
+		text_changed(p, cnt, 0, count_newlines(p, p + cnt));
 	if (cnt < 0) {
 		status_line_bold_errno(fn);
 		p = text_hole_delete(p, p + size - 1, NO_UNDO);	// un-do buffer insert
@@ -2103,6 +2220,7 @@ static uintptr_t stupid_insert(char *p, char c) // stupidly insert the char c at
 	bias = text_hole_make(p, 1);
 	p += bias;
 	*p = c;
+	text_changed(p, 1, 0, c == '\n');
 	return bias;
 }
 
@@ -2132,7 +2250,8 @@ static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
 		p += stupid_insert(p, '^');	// use ^ to indicate literal next
 		refresh(FALSE);	// show the ^
 		c = get_one_char();
-		*p = c;
+		*p = c;	// overwrites the '^' stupid_insert() put there
+		text_changed(p, 1, 0, c == '\n');
 #if ENABLE_FEATURE_VI_UNDO
 		undo_push_insert(p, 1, undo);
 #else
@@ -2231,7 +2350,8 @@ static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
 					// previous line was empty except for autoindent
 					// move the indent to the current line
 					memmove(bol + 1, bol, len);
-					*bol = '\n';
+					*bol = '\n';	// the NL just moved down
+					text_changed(bol, len + 1, 0, 0);
 					return p;
 				}
 			} else {
@@ -2317,6 +2437,11 @@ static int init_text_buffer(char *fn)
 	free(text);
 	text_size = 10240;
 	screenbegin = dot = end = text = xzalloc(text_size);
+	// a brand new buffer: no lines in it yet, the offsets recorded so
+	// far went with the old one, and screen[] still shows that file
+	total_lines = 0;
+	text_repainted();
+	dirty_all = TRUE;
 
 	update_filename(fn);
 	rc = file_insert(fn, text, 1);
@@ -2356,6 +2481,7 @@ static uintptr_t string_insert(char *p, const char *s, int undo) // insert the s
 	bias = text_hole_make(p, i);
 	p += bias;
 	memcpy(p, s, i);
+	text_changed(p, i, 0, count_newlines(s, s + i));
 	return bias;
 }
 #endif
@@ -4245,6 +4371,7 @@ static void do_cmd(int c)
 		do {
 			dot_end();		// move to NL
 			if (dot < end - 1) {	// make sure not last char in text[]
+				text_changed(dot, 1, 0, -1);	// one line less
 #if ENABLE_FEATURE_VI_UNDO
 				undo_push(dot, 1, UNDO_DEL);
 				*dot++ = ' ';	// replace NL with space
@@ -4520,15 +4647,18 @@ static void do_cmd(int c)
 			if (isalpha(*dot)) {
 				undo_push(dot, 1, undo_del);
 				*dot = islower(*dot) ? toupper(*dot) : tolower(*dot);
+				text_changed(dot, 1, 0, 0);	// a letter for a letter
 				undo_push(dot, 1, UNDO_INS_CHAIN);
 				undo_del = UNDO_DEL_CHAIN;
 			}
 #else
 			if (islower(*dot)) {
 				*dot = toupper(*dot);
+				text_changed(dot, 1, 0, 0);	// a letter for a letter
 				modified_count++;
 			} else if (isupper(*dot)) {
 				*dot = tolower(*dot);
+				text_changed(dot, 1, 0, 0);
 				modified_count++;
 			}
 #endif

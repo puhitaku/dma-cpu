@@ -83,6 +83,25 @@ user/: KEEP where portable (umalloc.c, ulib.c, sh.c, the utilities);
 usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs
 (`dma/usys.c`). DMA-native commands live here too (see Layout).
 
+## File disposition (user/vi.c)
+
+`user/vi.c` is BusyBox 1.38.0's editor (prompts/033) compiled against
+`user/libbb.h`, this tree's shim for the BusyBox runtime; the feature
+set it builds with is the `ENABLE_FEATURE_VI_*` block at the top of
+that header. Where the port departs from vendor vi.c:
+
+| Change | Why |
+|---|---|
+| `refresh()` re-formats only the screen lines the change since the last one can have reached — `text_changed()` records the touched span, how much text[] grew there and how many newlines came or went, and a screen the change did not reach is skipped whole (`text_repainted()` clears it, `screen_erase()` invalidates it) | vendor vi re-formats and 80-column-diffs all 23 lines on every keystroke, one changed cell or none; that was most of what a keypress cost on this machine. A byte moving is not a line moving: only a newline coming or going dirties the lines below |
+| `format_edit_status()` reads the kept `total_lines` where vendor vi computes `cur + count_lines(dot, end - 1) - 1` | the vendor call walks to the end of the file after every change — the one per-keystroke term that grew with file size. `total_lines` counts the same newlines incrementally, in the two holes text[] changes through plus the handful of in-place writers (`stupid_insert`, ctrl-V, `J`, `~`) |
+| `open(NULL)` guarded, 2-arg `open()`, no getopt32, no EXINIT/`.exrc`, `main()` exits rather than returns | the xv6 API, and no environment to read; each marked `dma:` at its site |
+
+`TestXv6ViScreen` (host/dmacc/viscreen_test.go) is the regression net
+for all of it: it folds vi's escape output back into a 24x80 cell grid
+and pins the rendered screen, phase by phase, against a golden taken
+before the repaint work. vi may emit different bytes; it may not draw
+a different screen.
+
 ## Progress
 
 - [x] `user/umalloc.c` + `kernel/string.c` compile and run

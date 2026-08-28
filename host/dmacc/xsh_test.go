@@ -601,6 +601,12 @@ func registerVi(t *testing.T, m *emu.Machine, kernC *dmaasm.Result, bd *boards.B
 	t.Helper()
 	res, text, rt, data, sram := buildUserResident(t, m.Variant(), bd, bd.ViHome,
 		"vi", "umalloc")
+	// vi is the tree's biggest binary and the only one with a flash
+	// window of its own; log what it spends of it, so a size
+	// regression shows up in any run that registers vi.
+	t.Logf("vi image: text=%d ramtext=%d data=%d, %d bytes of the %d-byte "+
+		"window free", len(text), len(rt), len(data),
+		int(bd.ViEnd-bd.ViHome)-len(text)-len(rt)-len(data), bd.ViEnd-bd.ViHome)
 	// Flash layout: [text pad4][ramtext pad8][data], no relocs.
 	rtHome := bd.ViHome + uint32(len(text))
 	dHome := rtHome + uint32(len(rt))
