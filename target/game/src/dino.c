@@ -1,8 +1,8 @@
 /* dino.c: the Chrome-runner clone. White sky, scrolling ground, a
  * T-rex that jumps cacti; speed climbs with the score. Sprites are
- * 1bpp art pre-rendered into RGB565 cells at start (background baked
- * in, so every frame is opaque gdma blits), and all movers step in
- * 2 px increments to keep the copies word-aligned. */
+ * 1bpp art pre-rendered into RGB565 cells at start and drawn through
+ * exact-silhouette run tables, and all movers step in 2 px
+ * increments to keep the copies word-aligned. */
 #include "g.h"
 
 /* art_dino_a: 21x22 */
@@ -171,7 +171,7 @@ static const uint art_cloud[5] = {
  * 1bpp art at every dino_run() entry, nothing static. Offsets are
  * byte positions, each array's end is the next one's start. The
  * frame loop is TWO-PHASE (erase every mover at its old spot, then
- * draw back-to-front through per-cell SPAN tables), so no draw ever
+ * draw back-to-front through per-cell RUN tables), so no draw ever
  * precedes an erase and overlapping sprites occlude cleanly — the
  * old baked-margin trick punched holes in whatever a margin crossed
  * (a jump over a cactus bit its top off until the next redraw). */
@@ -392,7 +392,7 @@ restart:
     }
 
     /* --- TWO-PHASE FRAME: erase every mover at its old spot, then
-     * draw back-to-front (clouds, obstacles, dino) through the span
+     * draw back-to-front (clouds, obstacles, dino) through the run
      * tables — no draw ever precedes an erase, so an overlap can't
      * punch a hole that survives the frame. */
     int dy = GROUND_Y - DH - ypix;

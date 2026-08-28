@@ -60,5 +60,6 @@ compile-time errors, never miscompiles):
   by default; benchmark without them via `dmacc -nosafepoints`.
 
 To run a program on real hardware, add it to the HIL specs in
-`host/cmd/dmxgen/main.go` (see the `cc_*` entries) and `make test-hw` from
-the repo root — the firmware checks it against the emulator's results.
+`host/cmd/dmxgen/main.go` (see the `cc_*` entries) and `make test-hw
+HIL_DEV=1` from the repo root — the on-boot suite that checks it against
+the emulator's results is compiled in only by that flag.

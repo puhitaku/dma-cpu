@@ -48,8 +48,9 @@ rebuild.
   memchr memcmp` (plus `memcpy`/`memset`, which clang lowers to the
   native DMA runtime — one INCR block).
 - No floats (`%f` prints nothing useful), no `%lld` (long long varargs
-  are a compile-time error at the call site), no scanf/stdin (there is
-  no input device yet), no malloc (no sbrk story yet).
+  are a compile-time error at the call site), no scanf/stdin (the
+  UART's RX side is reachable, but picolibc's input is not wired to
+  it), no malloc (no sbrk story yet).
 
 ## How it fits together
 
@@ -72,7 +73,8 @@ Link by passing the goldens to dmacc after your program:
 
 (see `examples/primes/Makefile`). Unreferenced modules cost data words
 but no runtime; the whole set adds roughly 150 KB of text when printf
-is used, so the RP2350 layouts give text 192 KB of headroom.
+is used, and dmacc's default link map leaves 192 KiB of text headroom
+on either SKU.
 
 The compiler features that make this possible — varargs (static va
 areas sized whole-program), indirect calls (picolibc's `FILE` is three

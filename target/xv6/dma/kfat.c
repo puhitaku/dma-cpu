@@ -1,9 +1,10 @@
 /* Read-only FAT32 (vfat) driver over an XIP-resident volume
- * (prompts/029) or, since prompts/037, an SD card in SPI mode: the
- * parked ARM executes single-sector reads through the same mailbox
- * as the flash executor (kflash.c op 4/5), and this driver reads the
- * volume through a small SRAM sector cache — every byte access
- * funnels through rd8(), so the two backends differ only in vmap().
+ * (prompts/029) or, since prompts/037, an SD card in SPI mode: sector
+ * reads go through the same executor seam as the flash primitives
+ * (kflash_sd op 4/5 — the machine's own ksd.c driver, or the parked
+ * ARM's mailbox as fallback), and this driver reads the volume
+ * through a small SRAM sector cache — every byte access funnels
+ * through rd8(), so the two backends differ only inside it.
  * SD volumes may carry an MBR; partition 0 is used when present. The mount mechanism lives in kfsglue.c: paths under
  * the mount point route here instead of namei, and file.c's verbatim
  * fd operations reach these nodes through the vfs_* dispatch shims
@@ -76,7 +77,7 @@ sdsec(uint lba)
   return sdcache[v];
 }
 
-/* sd_up brings the card up once (op 5 through the ARM executor) and
+/* sd_up brings the card up once (op 5 through the SD executor) and
  * learns its capacity; a card swap is only seen after unmount clears
  * sdsectors, so mounting forces a fresh init. Returns 0 when ready. */
 static int
@@ -140,7 +141,7 @@ rd32(uint a)
   return rd16(a) | (rd16(a + 2) << 16);
 }
 
-/* fat_mount_sd: bring the card up through the ARM executor and mount
+/* fat_mount_sd: bring the card up through the SD executor and mount
  * the vfat volume on it (partition 0 when an MBR is present, else a
  * superfloppy BPB at sector 0). Returns 0 on success. */
 int fat_mount(uint base);

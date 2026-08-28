@@ -123,9 +123,10 @@ gfx_text(int x, int y, const char *s, ushort fg, ushort bg)
       ushort *p = &fb[(y + r) * LCD_W + cx];
       uint bits = g[r];
       /* LEFT-running mask, walking pixels right-to-left: on this
-       * machine << 1 is one sniff double, while ANY >> — even >> 1 —
-       * is a ~30-iteration runtime loop (rt_lshr was 75%% of the
-       * frame in the sampling profile) */
+       * machine << 1 is one sniff double, while ANY >> is a runtime
+       * call — rt_ashr rebuilds the word bit by bit, and even
+       * rt_lshr's sub-16 bit-reversal path costs ~25 instructions
+       * (rt_lshr was 75%% of the frame in the sampling profile) */
       uint mask = 1;
       for (int i = 7; i >= 0; i--, mask <<= 1)
         p[i] = (bits & mask) ? fg : bg;

@@ -2,10 +2,11 @@
  * original really was — the "3D" checkered sphere is PRECOMPUTED
  * (dmxgen's gameBallBlob ray-casts 8 rotation phases offline) and
  * runtime is nothing but DMA span blits: per frame the machine
- * restores the grid under the old position (~30 fills) and copies
- * one row-span per scanline of the ball from flash (~90 copies),
- * every one on ch11's word fast path. The machine never touches a
- * pixel; it decides ~120 things per frame and sleeps. */
+ * restores the grid under the old position (~10 fills: the cell plus
+ * the grid lines crossing it) and copies one row-span per scanline of
+ * the ball from flash (~90 copies), every one on ch11's word fast
+ * path. The machine never touches a pixel; it decides ~100 things per
+ * frame and sleeps. */
 #include "g.h"
 
 /* must match dmxgen gameBallBlob's palette */

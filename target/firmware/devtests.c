@@ -21,11 +21,11 @@ static inline uint32_t cal_reg(uint32_t off) { return HIL_CAL_CH_BASE + off; }
 #define CAL_DST (HIL_MACHINE_RAM_START + 0x100u)
 
 #if defined(ADAFRUIT_FEATHER_RP2350)
-/* --- PSRAM probes (prompts/036 follow-up) ------------------------------
+/* --- PSRAM probes (prompts/041) ----------------------------------------
  * The recorded ~1 ms/word machine-access figure was measured in the
- * PSRAM-framebuffer era, with the line copier saturating CS1; the
- * intrinsic DMA-master cost on today's quiet QMI was never separated
- * from that contention. These probes decompose it:
+ * PSRAM-framebuffer era, with the line copier saturating CS1; these
+ * probes separated the intrinsic DMA-master cost from that contention
+ * and found it wire-speed (~113 ns/word). They decompose it as:
  *   psram_arm     ARM window baselines (the QSPI-transaction floor)
  *   psram_dma     DMA-channel window access: burst and single-beat
  *                 (machine-record-like), vs an SRAM-target control
@@ -295,8 +295,10 @@ static void run_test(const hil_test *t)
     machine_reset();
 }
 
-/* --- Calibration experiments (see the emulator's TODO(hw-calibration)
- * sites). Each prints raw observations plus the emulator's behaviour. --- */
+/* --- Calibration experiments: the silicon side of the semantics the
+ * emulator guesses at (prompts/004-hw-calibration.md records the
+ * verdicts). Each prints raw observations plus the emulator's
+ * behaviour. --- */
 
 /* Emulator: a trigger arriving while EN=0 is dropped, and enabling the
  * channel later does not revive it. Load-bearing for the interrupt design

@@ -118,17 +118,17 @@ void frame_sync(uint us); /* pace the caller's loop to one tick per us */
  * SM1 WS2811). snd_tick runs from frame_sync, so a tone's frame
  * budget counts in every loop that paces itself.
  * The audio ring is 16 KiB at a fixed 16 KiB-aligned address (the
- * ring wrap is an address mask): 4096 L|R frames, which is also one
- * sequencer step. Reserved region 0x20038000..0x2003C000 is the
- * ring; dmxgen asserts the image stays clear. (The drum PCM lives in
- * the flash blob — synthesized at build time by gameassets.) */
+ * ring wrap is an address mask): 4096 L|R frames. Reserved region
+ * 0x20038000..0x2003C000 is the ring; dmxgen asserts the image stays
+ * clear. (The drum PCM lives in the flash blob — synthesized at build
+ * time by gameassets.) */
 #define AURING 0x20038000u
 #define AURING_BYTES 16384u
 void fx_init(void);
 void snd_play(uint hz, uint vol, uint frames); /* vol 0..255 */
 void snd_sweep(uint hz, uint vol, uint frames, uint step); /* -step Hz/frame */
 void snd_noise(uint vol, uint frames); /* low LFSR noise burst */
-void snd_rate(uint div_fp8); /* SM0 CLKDIV, keep 15900..26300 in-band */
+void snd_rate(uint div_fp8); /* SM0 CLKDIV, keep 19875..32875 in-band */
 void snd_off(void); /* silence immediately */
 extern uint sfx_tab[4]; /* {addr,samples} x {dino_fail, lanwalk_success} */
 void pcm_play(uint addr, uint samples); /* mono 16-bit clip from flash */

@@ -1,4 +1,4 @@
-/* cal_flash2 driver program (prompts/023): runs the machine-only
+/* cal_flash driver program (prompts/028): runs the machine-only
  * flash probe (kflash.c's kflash_cal) as a standalone image. The
  * results land in the exported calres words; the firmware prints
  * them, and SWD can read them even if the machine wedges. */

@@ -267,9 +267,9 @@ sd_token_wait(void)
 
 /* sd_begin_read: CMD17 + data-token wait. 0 on token. The wait is
  * iteration-counted, so it must be sized for the FAST clock: the SD
- * spec allows 100 ms of access time, and at 18.75 MHz two hundred
- * thousand polled bytes was only ~100 ms of wall clock — the 295 kHz
- * CSD read enjoyed a 60x longer budget purely by running slower. */
+ * spec allows 100 ms of access time, and at 25 MHz two hundred
+ * thousand polled bytes was only ~65 ms of wire time — the 295 kHz
+ * CSD read enjoyed an 80x longer budget purely by running slower. */
 static int
 sd_begin_read(uint lba)
 {
@@ -298,7 +298,7 @@ sd_begin_read(uint lba)
 
 static uint sd_slow; /* the fast clock failed: stay at init speed */
 
-/* The speed ladder: reads run at 18.75 MHz; a failure drops to the
+/* The speed ladder: reads run at 25 MHz; a failure drops to the
  * proven identification clock permanently (one diag line marks it)
  * after a wait-ready absorbs whatever the failed attempt left. */
 static int

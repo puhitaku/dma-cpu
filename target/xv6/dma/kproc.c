@@ -1272,9 +1272,11 @@ dma_ksyscall(void)
     break;
   case SYS_sync:
     /* The machine-executor sync runs a QMI direct-mode session that
-     * owns the XIP bus: the scanout must not touch PSRAM meanwhile
-     * (prompts/036). Bracketing here — not inside kflash_sync —
-     * keeps the fb driver out of the sync's .ramtext closure. */
+     * owns the XIP bus, so the display is bracketed across it
+     * (prompts/036; the pause/resume pair is a no-op now that the
+     * scanout runs entirely out of SRAM). Bracketing here — not
+     * inside kflash_sync — keeps the fb driver out of the sync's
+     * .ramtext closure. */
     kfb_pause();
     ret = fsready ? (uint)kflash_sync() : (uint)-1;
     kfb_resume();

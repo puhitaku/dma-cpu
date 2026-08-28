@@ -4,7 +4,7 @@
  * its soft shadows. Five walls are split into 10x10 patches, box
  * faces into per-visibility grids (the tall box's front at 6x12);
  * a 2x2 ceiling light carries the initial energy. A
- * sixth, INVISIBLE wall closes the camera opening (5x5, never drawn):
+ * sixth, INVISIBLE wall closes the camera opening (4x4, never drawn):
  * without it the opening is an energy sink and the camera-facing box
  * sides — lit only by third-bounce light off the wall strips in front
  * of them — quantize to black. The closed box bounces the ceiling
@@ -22,9 +22,9 @@
  *    their corner positions and normals are compile-time numbers,
  *    and vertical edges stay vertical on screen);
  *  - occlusion is 5 stratified samples along the pair segment tested
- *    point-in-rotated-box (4 muls each) behind an AABB precheck;
- *    the sample fraction scales the form factor, which is also what
- *    softens the shadow edges;
+ *    point-in-rotated-box (4 muls each) behind an AABB precheck; two
+ *    interior samples block the pair outright, one scales the form
+ *    factor to 2/5 and softens the shadow edge (see clearance());
  *  - the form factor F = dp*dq*A / (pi*r2*r2) is staged as two
  *    guarded divisions so u32 never overflows (see shoot());
  *  - the camera sits at the box opening (z in [200,440], focal 200):
@@ -579,7 +579,7 @@ clearance(int p, int q)
 /* --- the shooter ---
  * shoot/clearance/in_box/normal_of/brightest are noinline: dmxgen
  * places them (ResidentFuncs) in the game's SRAM ramtext, so the
- * 660-receiver inner loop never touches XIP flash. --- */
+ * 680-receiver inner loop never touches XIP flash. --- */
 
 static void
 normal_of(int p, int *nx, int *ny, int *nz)
@@ -612,7 +612,7 @@ shooter_scale(int p) /* Q8 area ratio vs a wall patch */
   if (p < NWALL)
     return 256;
   if (p >= NFRONT)
-    return (PSIZEF * PSIZEF * 256) / AREA; /* 48x48 vs 24x24: 1024 */
+    return (PSIZEF * PSIZEF * 256) / AREA; /* 60x60 vs 24x24: 1600 */
   return areaq[pface[p - NWALL]];
 }
 
@@ -644,7 +644,7 @@ shoot(int p)
     if (vis == 0)
       continue;
     /* F = dp*dq*AREA / (pi*r2*r2), staged so u32 never overflows:
-     * a <= 1024 (dp*dq <= r2), b <= (900<<10)/64, and the fold to a
+     * a <= 1024 (dp*dq <= r2), b <= (576<<10)/64, and the fold to a
      * Q12 form factor is a*b*41 >> 15 (41/32768 ~ 1/(256*pi)). The
      * receiver term is area-free by design — see the header. */
     uint a = ((uint)(dp * dq) << 10) / r2;

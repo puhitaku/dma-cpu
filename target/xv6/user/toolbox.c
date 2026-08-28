@@ -1,7 +1,7 @@
 /* toolbox: the dma utilities as ONE multi-call binary, dispatched on
- * argv[0] busybox-style — the disk stores a single blob with hard
- * links named kill, free, sync, mount, umount (fsimg
- * AddLink), so usys/ulib are paid for once instead of per tool
+ * argv[0] busybox-style — one blob carries hard links named kill,
+ * free, sync, mount, umount, mkdir, rm, clear (fsimg AddLink), so
+ * usys/ulib are paid for once instead of per tool
  * (prompts/029; the disk budget is real memory too). Printf-free. */
 #include "kernel/types.h"
 #include "kernel/stat.h"

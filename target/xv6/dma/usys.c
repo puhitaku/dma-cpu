@@ -69,9 +69,9 @@ pause(int n)
   return dma_trap();
 }
 
-/* Console read with blocking semantics: the kernel returns 0 while no
+/* Console read with blocking semantics: the kernel returns -2 while no
  * cooked line is available (its line discipline echoes and edits), so
- * poll once per tick. fd is ignored until the file layer exists. */
+ * wait for readiness and ask again. */
 int
 read(int fd, void *buf, int n)
 {
@@ -140,9 +140,10 @@ exit(int status)
     ;
 }
 
-/* File-layer syscalls sh.c and ulib.c reference: the kernel answers
- * -1 until fs.c is ported (sh degrades gracefully — redirection and
- * pipes report failure, `cd` prints its error). */
+/* File-layer syscalls: the kernel routes them into the fs layer
+ * (kfsglue.c over the verbatim fs.c/file.c) once the disk is mounted,
+ * and answers -1 before that — a kernel built without the file layer
+ * (kfsstub.c) answers -1 always, and sh degrades gracefully. */
 int
 open(const char *path, int mode)
 {

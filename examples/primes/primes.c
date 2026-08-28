@@ -3,7 +3,7 @@
  * printf goes to UART0: the emulator shows it as console output
  * (`make run`), and on real hardware the same bytes appear on the
  * board's serial port. main()'s return value becomes the `exitcode`
- * word. The `limit` global is volatile so clang -O1 cannot compute the
+ * word. The `limit` global is volatile so clang -Oz cannot compute the
  * whole program at compile time — without it you would be flashing the
  * answer, not the computation.
  */

@@ -91,8 +91,9 @@ fx_init(void)
   W32(SM1_SHIFTCTRL) = (1u << 17) | (24u << 25); /* autopull 24, left */
   W32(SM1_PINCTRL) = (1u << 29) | ((uint)PIN_WS << 10);
   W32(SM1_INSTR) = 0x0008; /* jmp bitloop */
-  /* Silence into the ring, then let ch9 stream it forever (the count
-   * is ~54 hours of audio; a demo reboots long before it runs dry). */
+  /* Silence into the ring, then let ch9 stream it forever (one word
+   * per L|R frame, so the count is ~27 hours of audio at 44 kHz; a
+   * demo reboots long before it runs dry). */
   gdma_fill(AURING, 0, AURING_BYTES);
   W32(DMACH(9) + 0x0) = AURING;
   W32(DMACH(9) + 0x4) = PIO_TXF0;
@@ -101,15 +102,14 @@ fx_init(void)
   W32(PIO_CTRL) = 0x3; /* SM0 | SM1 on */
 }
 
-/* snd_play: a square wave, pitched inside the amp's clock window.
- * The MAX98357 tracks LRCLK only within its specified ranges, so the
- * sample rate fs = 1e9 / div_fp8 is clamped to the continuous
- * 30.4-50.4 kHz band, and coarser pitch comes from the ring period P
- * (a power of two, so the 1024-frame ring wraps seamlessly):
- * f = fs / P. Bands touch at geometric midpoints; a requested pitch
- * in a gap lands on the nearest band edge — bleep-grade tuning.
- * (The ring is 4096 frames now; the doubling loop just runs two more
- * rounds.) */
+/* tone_set: a square wave, pitched inside the amp's clock window —
+ * snd_play and snd_sweep both ride it. The MAX98357 tracks LRCLK only
+ * within its specified ranges, so the sample rate fs = 1e9 / div_fp8
+ * is clamped to the continuous 30.4-50.4 kHz band, and coarser pitch
+ * comes from the ring period P (a power of two, so the 4096-frame
+ * ring wraps seamlessly): f = fs / P. Bands touch at geometric
+ * midpoints; a requested pitch in a gap lands on the nearest band
+ * edge — bleep-grade tuning. */
 static uint sw_hz, sw_vol, sw_step; /* live sweep: Hz falls per tick */
 static int nz_vol; /* noise voice level, fading per tick; 0 = off */
 

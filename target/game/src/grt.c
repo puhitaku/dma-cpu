@@ -131,9 +131,10 @@ gpio_in(int pin)
 {
   /* Returns the RAW masked bit (nonzero = high), deliberately not a
    * 0/1 bool: `!= 0` makes clang canonicalize the test into
-   * lshr 17 + and 1, and every >> on this machine is a ~30-iteration
-   * runtime loop — the sampling profiler clocked that one shift at
-   * 71%% of the dino frame. A bare mask has nothing to canonicalize. */
+   * lshr 17 + and 1, and a shift that wide misses rt_lshr's
+   * bit-reversal path for the MSB-first rebuild loop — the sampling
+   * profiler clocked that one shift at 71%% of the dino frame. A bare
+   * mask has nothing to canonicalize. */
   return W32(IOBANK0 + 8 * (uint)pin) & 0x20000u;
 }
 
@@ -222,7 +223,7 @@ gdma_rows(uint dst, uint src, uint words, int rows, uint dstride,
  * CTRL are constant, so each row is ONE trigger write plus the
  * completion poll. A full-width rectangle is contiguous in the fb:
  * one burst, one poll — the per-row spin waited out the WIRE row by
- * row (61 us per full row at 62.5 Mbit) and profiled as the hottest
+ * row (123 us per full row at 31.25 Mbit) and profiled as the hottest
  * paint-path function. */
 void
 gdma_spi_rows(uint src, uint halfwords, int rows, uint sstride)

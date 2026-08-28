@@ -6,10 +6,12 @@
  *
  *   console   the console device (open/read/write as usual)
  *   fat0      the raw vfat volume bytes, straight off XIP
- *   sd0       the raw SD card (boards with the ARM SD executor);
- *             size 0 until the card is up — the first read inits it
+ *   sd0       the raw SD card (boards with an SD executor); size 0
+ *             until the card is up — the first read inits it
  *   gpio      one "NN=x" line per pad (input buffer level)
  *   pio0..2   the PIO block's enabled-SM mask
+ *   fb0       the framebuffer's geometry and owning pid ("off" when
+ *             the board has no display)
  *   apps      the exec registry: one runnable command name per line
  */
 #include "types.h"

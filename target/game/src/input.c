@@ -13,9 +13,10 @@ static uint in_prev;
 static int in_primed; /* first poll only baselines (no phantom edges) */
 
 /* Per-stick pin tables in BTN bit order (up, down, left, right,
- * press) — the harness wires roles out of GPIO order (g.h). The
- * poll runs every frame at 60 fps, so the GPIO STATUS addresses are
- * precomputed and read inline: no per-pin call, no address math. */
+ * press) — the harness wires roles out of GPIO order (g.h). The poll
+ * runs once per frame (30 fps for most games, 60 for dino), so the
+ * GPIO STATUS addresses are precomputed and read inline: no per-pin
+ * call, no address math. */
 static const uchar joyA[5] = {3, 4, 2, 5, 6};
 static const uchar joyB[5] = {8, 9, 7, 10, 11};
 #define GSTAT(pin) (IOBANK0 + 8u * (pin))

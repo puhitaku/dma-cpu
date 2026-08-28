@@ -344,9 +344,10 @@ tfree(void)
 }
 
 /* advance *p (whole pixels) by v 16ths of a pixel, carrying through
- * the fractional accumulator *f — pure adds, because any >> here
- * would be the ~30-iteration rt_lshr loop, per frame, per mover.
- * |v| < 80, so the carry loops run at most a handful of times. */
+ * the fractional accumulator *f — pure adds, because any >> here is
+ * signed: the ~30-iteration rt_ashr loop, per frame, per mover.
+ * |v| <= 128 (the gun's own remains), so the carry loops run at most
+ * eight times. */
 static void
 subpx(int *p, int *f, int v)
 {

@@ -1,7 +1,7 @@
-/* Shared declarations for the HIL firmware, split three ways
- * (prompts/042): main.c is the bare boot path, executor.c is the
- * parked ARM's service loop plus the fallback drivers, devtests.c is
- * the on-boot TEST/CAL/EXP battery (HIL_DEV=1 builds only). */
+/* Shared declarations for the HIL firmware, split three ways: main.c
+ * is the bare boot path, executor.c is the parked ARM's service loop
+ * plus the fallback drivers, devtests.c is the on-boot TEST/CAL/EXP
+ * battery (HIL_DEV=1 builds only). */
 #ifndef HIL_FIRMWARE_HIL_H
 #define HIL_FIRMWARE_HIL_H
 
@@ -76,9 +76,9 @@ void park_forever(void);
 /* --- MicroSD in SPI mode (prompts/037). ---
  * Wiring: SCK=GPIO22, MOSI=GPIO23, MISO=GPIO20 (the Feather's SPI0
  * pins), CS=GPIO10 (D10, the Adalogger FeatherWing convention). The
- * machine's kernel reads the card one 512-byte sector at a time
- * through the park executor's mailbox (op 4; op 5 initializes),
- * and mounts the vfat partition with its own read-only driver. */
+ * machine's kernel drives the card itself (ksd.c) and mounts the vfat
+ * partition with its own read-only driver; the park executor's mailbox
+ * (op 4 reads a 512-byte sector, op 5 initializes) is the fallback. */
 #define SD_SPI  spi0
 #define SD_SCK  22
 #define SD_MOSI 23
@@ -86,7 +86,7 @@ void park_forever(void);
 #define SD_CS   10
 
 /* Shared HSTX video geometry (main.c blanks the framebuffer,
- * executor.c's core-1 feeder scans it out). */
+ * executor.c's fallback core-1 feeder scans it out). */
 #define VF_W      640
 #define VF_ROWS   480
 #define VF_LINES  480

@@ -1,11 +1,16 @@
-# DMA-machine HIL firmware (see main.c). Build for Pico 2 / RP2350:
+# DMA-machine HIL firmware (see main.c). Normally built through the repo
+# Makefile, which regenerates the board's generated/images.h and passes
+# the matching -DPICO_BOARD (docs/building-firmware.md):
+#
+#   make firmware HIL_BOARD=pico2   # or pico, feather, gamepico
+#
+# By hand, per board — generated/images.h is board-specific, not per-SKU:
 #
 #   export PICO_SDK_PATH=~/.pico-sdk/sdk/2.3.0
-#   cmake -S target/firmware -B target/firmware/build -G Ninja \
+#   go run ./host/cmd/dmxgen -board pico2 -o target/firmware/generated/images.h
+#   cmake -S target/firmware -B target/firmware/build-pico2 -G Ninja \
 #         -DPICO_BOARD=pico2
-#   ninja -C target/firmware/build
-#
-# Regenerate generated/images.h with cmd/dmxgen when test programs change.
+#   ninja -C target/firmware/build-pico2
 cmake_minimum_required(VERSION 3.13)
 
 set(PICO_BOARD pico2 CACHE STRING "Board type")

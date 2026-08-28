@@ -123,12 +123,11 @@ void video_dma_start(void)
 }
 #endif
 
-/* Phase 5a (prompts/012): the preemptive round-robin proto-kernel. Two
- * relocated instances of the same compiled C program are scheduled by
- * kernel.dasm; a two-injector chain patches both dispatch words on
- * every pacing-timer tick, and the running process detours into the
- * scheduler at its next safepoint. The images arrive pre-wired from
- * dmxgen; this only loads, arms, starts A, and samples the counters. */
+/* Arm the preemption source (prompts/012): TIMER1 paces at
+ * HIL_TICK_CYCLES and every pulse makes channel `ch` copy the ISR
+ * vector word onto the running process's dispatch site, which detours
+ * into the scheduler at its next safepoint. The images arrive
+ * pre-wired from dmxgen; only the injector channel is armed here. */
 void arm_tick_ch(int ch, uint32_t vec, uint32_t disp0, uint32_t ctrl)
 {
     reg_wr(HIL_TIMER0_ADDR + 4, (1u << 16) | HIL_TICK_CYCLES); /* TIMER1: 100 us tick */
@@ -216,8 +215,9 @@ static void game_start(void)
 
 #ifdef HIL_HAS_XSH
 /* Phase 7 (prompts/019): hand the console to UPSTREAM xv6 sh.c on the
- * full filesystem kernel. The RAM disk (echo, cat, wc, README as an
- * xv6 fs image) is staged first; exec resolves paths on it, and
+ * full filesystem kernel. The RAM disk (README plus whatever the
+ * session writes, as an xv6 fs image) is staged first; exec resolves
+ * paths on it and falls back to the flash app registry by name, and
  * redirection and pipes work from the $ prompt. */
 #ifdef HIL_XSH_KTEXT_HOME
 /* XIP-resident text (prompts/030): the machine executes the fs kernel
@@ -275,8 +275,8 @@ static void xsh_start(void)
 #if SCAN_CH_MASK
 #if HIL_XSH_DTAB_RAM
     /* Flash-starvation isolation: the program runs from SRAM, so no
-     * scanout read ever touches the XIP window (the copy overlays fb
-     * rows 453+ — visible garbage, diagnostic builds only). */
+     * scanout read ever touches the XIP window (the table caps the
+     * arena and ends just shy of the console rings, clear of fb). */
     memcpy((void *)(uintptr_t)HIL_XSH_DTAB_RAM, hil_xsh_blob_dtab,
            sizeof hil_xsh_blob_dtab);
 #else
@@ -548,11 +548,10 @@ static void __no_inline_not_in_flash_func(flash_continuous_read)(void)
 
 #if HIL_CLK_SYS_KHZ && PICO_RP2350
 /* Flash XIP retiming for the overclock: the bootrom's M0 CLKDIV was
- * chosen for the boot clock; at 300 MHz CLKDIV=3 would run the quad
- * read at 100 MHz with a 2-cycle (6.7 ns) RXDELAY — right at the
- * part's edge. CLKDIV=4 + RXDELAY=4 (75 MHz, 13 ns) keeps the same
- * margins the 150 MHz map had. Runs from SRAM: it retunes the very
- * window the CPU executes from. */
+ * chosen for the boot clock, so at 300 MHz the same divider clocks the
+ * quad read far past the part's rating, and the capture point moves
+ * with it. Each board picks its own CLKDIV/RXDELAY pair below. Runs
+ * from SRAM: it retunes the very window the CPU executes from. */
 static void __no_inline_not_in_flash_func(overclock_flash_retiming)(void)
 {
     uint32_t t = qmi_hw->m[0].timing;
@@ -614,12 +613,13 @@ static void __no_inline_not_in_flash_func(overclock_psram_retiming)(void)
 #endif
 
 /* Bring clk_sys to HIL_CLK_SYS_KHZ before anything derives timing
- * from it: the UART divisor (stdio_init_all runs after), the SD SPI
- * baud (spi_init runs per-op), the PSRAM QMI divider (register-only
- * retiming — the SDK runtime computed it at the boot clock),
- * and the machine itself (the DMA engine runs on clk_sys; the tick
- * timer compensates via HIL_TICK_CYCLES). clk_hstx lives on the
- * repurposed USB PLL, so the video signal never notices. */
+ * from it: the SD SPI baud (spi_init runs per-op), the PSRAM QMI
+ * divider (register-only retiming — the SDK runtime computed it at
+ * the boot clock), and the machine itself (the DMA engine runs on
+ * clk_sys; the tick timer compensates via HIL_TICK_CYCLES). clk_peri
+ * lands back on its boot frequency so the UART divisor survives, and
+ * clk_hstx lives on the repurposed USB PLL, so the video signal never
+ * notices. */
 #endif /* HIL_CLK_SYS_KHZ && PICO_RP2350 */
 
 #if HIL_CLK_SYS_KHZ && !PICO_RP2350

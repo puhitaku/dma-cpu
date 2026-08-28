@@ -5,7 +5,7 @@
  * SimpleTerminal reference (references/simpleterminal, MIT/X — see
  * LICENSE); state fits the machine: no allocation, no recursion.
  *
- * Rendering writes RGB332 bytes through the uncached PSRAM window.
+ * Rendering writes RGB332 bytes straight into the SRAM framebuffer.
  * The unit of work is a 4-pixel word looked up BY FONT BYTE in two
  * 256-word LUTs (left/right half of the row), rebuilt on color
  * changes: one glyph row = one font load, two LUT loads, two stores,
@@ -14,7 +14,7 @@
  * shifts through a per-bit runtime loop; the benchmark caught it at
  * ~50k cycles per glyph.) Scrolling is one bulk-DMA row move (ch11,
  * ~2.7 ms) plus a cleared row: the pure-DMA scanout reads fb rows at
- * fixed addresses from its flash descriptor table, so the old O(1)
+ * fixed addresses from its immutable descriptor table, so the old O(1)
  * vertical pan has no consumer anymore. The screen has no text
  * shadow buffer; the cursor is an XOR-inverted underline (cell rows
  * 6-7) so it un-draws by re-XOR. */

@@ -9,7 +9,7 @@
 #include "user/user.h"
 
 /* fbtest: exercise the framebuffer API end to end — acquire, draw a
- * test card straight into PSRAM (16-color bars, R/G/B ramps, a gray
+ * test card straight into the fb (16-color bars, R/G/B ramps, a gray
  * ramp, white border), verify a sample, hold it ~5 s, release. */
 static int
 t_fbtest(void)

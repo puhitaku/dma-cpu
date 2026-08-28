@@ -1,6 +1,6 @@
 /* HDMI framebuffer state (prompts/036). The display pipeline is a
  * pure-DMA scanout: two board-pool channels (a walker and an
- * executor) run a descriptor program from a flash table — per line,
+ * executor) run a descriptor program from an SRAM table — per line,
  * command words then the fb row into the HSTX FIFO, paced by the HSTX
  * DREQ; the tail descriptor re-triggers the walker, so the frame
  * loops forever with no CPU. This is the third act of the 036 story:
@@ -13,7 +13,7 @@
  *   - the framebuffer: 640x480 RGB332 bytes in SRAM (fb_base), one
  *     row per scan line, rows at fixed addresses;
  *   - scroll moves pixels (kfbcon, one ch11 burst) — the descriptor
- *     table is immutable flash, so there is no pan.
+ *     table is immutable, so there is no pan.
  *
  * fb_base == 0 means the board has no display and every entry point
  * is a no-op. The scanout runs from ARM boot (showing black), so
@@ -71,8 +71,8 @@ kfb_setowner(uint pid)
   fb_owner = pid;
 }
 
-/* kfb_setpan is vestigial: the pure-DMA scanout reads fb rows at
- * fixed addresses from its flash descriptor table, so there is no pan
+/* kfb_setpan is vestigial: the pure-DMA scanout reads fb rows at fixed
+ * addresses from its immutable descriptor table, so there is no pan
  * to set (kfbcon scrolls by moving pixels). The control word remains
  * written for inspection/debug only. */
 void
@@ -98,9 +98,9 @@ void kfbcon_reset(void);
 /* SYS_fb (kproc.c dispatches here so lean kernels can stub it out).
  * op 0: fill a 5-word {base, w, h, bpp, pitch} info struct at a1
  * (badinfo reports the caller's buffer-validity check). op 1: acquire
- * — fbcon detaches and the pan resets to 0, handing pid a linear
- * framebuffer. op 2: release — clear, fbcon resumes. A dying owner is
- * released by terminate(). */
+ * — fbcon detaches and clears, handing pid a linear framebuffer.
+ * op 2: release — clear, fbcon resumes. A dying owner is released by
+ * terminate(). */
 int
 kfb_syscall(uint op, uint a1, uint pid, int badinfo)
 {
@@ -147,7 +147,7 @@ kfb_init(void)
     fb_base = 0;
     return -1;
   }
-  kdmaset(fb_base, 0, FB_ROWS * FB_PITCH); /* 150 KB blank via ch11 */
+  kdmaset(fb_base, 0, FB_ROWS * FB_PITCH); /* 300 KB blank via ch11 */
   W32(fb_ctl) = 0;
   fb_on = 1;
   return (FB_ROWS * FB_PITCH) >> 10;

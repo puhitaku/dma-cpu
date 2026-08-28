@@ -58,6 +58,11 @@ missing device by dropping a binary from a board's app set.
 
 ## File disposition (kernel/)
 
+Every upstream file still sits in `kernel/`; the port compiles only
+string.c (XV6_SRCS) plus fs.c and file.c (XV6_FS_SRCS). The table
+records what took over for the rest — DELETE/REPLACE mean "nothing
+here builds it", not that the file was removed.
+
 | Upstream | Fate |
 |---|---|
 | string.c | KEEP (32-bit clean; first file through the pipeline) |
@@ -66,11 +71,11 @@ missing device by dropping a binary from a board's app set.
 | pipe.c | REPLACED by `xv6/dma/kpipe.c` (deposit-rendezvous: peers complete blocked ends; no kernel stacks to sleep on) |
 | proc.c, syscall.c, sysproc.c | REPLACED by `xv6/dma/kproc.c` (upstream's are built around kernel stacks/swtch/paging; the shapes survive — struct proc, the state enum, sleep/wakeup, exit/wait, round-robin scheduler(), upstream syscall numbers) |
 | sysfile.c | REPLACED by the fd-level bodies in `xv6/dma/kfsglue.c` (mailbox ABI instead of trapframe args) |
-| console.c, printf.c | ADAPT (backed by the `__dma_uart_*` path) |
-| spinlock.c, sleeplock.c | ADAPT (single hart: no-op locks with intact API) |
-| exec.c | ADAPT (loads DMX images via Tier-2 relocation instead of ELF+paging) |
-| kalloc.c | ADAPT (region allocator, no page tables) |
-| vm.c, vm.h | DELETE (no MMU; isolation by relocation) |
+| console.c, printk.c | REPLACED by the console paths in `xv6/dma/kproc.c` (cooked input, the `__dma_uart_*` wire) and printk in `kfsglue.c` |
+| spinlock.c, sleeplock.c | REPLACED by the no-op bodies in `xv6/dma/kfsglue.c` (single hart; the API stays intact) |
+| exec.c | REPLACED by SYS_exec in `xv6/dma/kproc.c` (loads DMX images via Tier-2 relocation instead of ELF+paging) |
+| kalloc.c | REPLACED by the arena allocator in `xv6/dma/kproc.c` (first-fit with coalescing, no page tables) |
+| vm.c | DELETE (no MMU; isolation by relocation) — vm.h survives for its SBRK_* flags |
 | trap.c, kernelvec.S, trampoline.S, swtch.S, entry.S, start.c | REPLACE (approach-B safepoints, injector chains, crt0/loader — already built in the substrate) |
 | riscv.h, memlayout.h, plic.c, uart.c, virtio_disk.c | REPLACE (DMA-machine equivalents in `xv6/dma/`) |
 
@@ -82,7 +87,8 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs
 
 - [x] `user/umalloc.c` + `kernel/string.c` compile unmodified and run
   on the machine (self-checking allocator exercise,
-  `TestXv6Malloc`); `xv6/dma/sbrk.c` provides the heap.
+  `TestXv6Malloc`); the heap came from a `xv6/dma/sbrk.c` stub, since
+  replaced by the kernel's SYS_sbrk (below).
 - [x] Syscall mechanism: call-shaped kernel entry (`xv6/dma/usys.c`
   stubs → kernel.dasm vectors → C kernel core). write/getpid/uptime/
   pause/exit live under preemption (`TestXv6Syscalls`, prompts/014).
@@ -223,24 +229,31 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs
   `toolbox` binary (busybox-style argv[0] dispatch, hard links from
   fsimg.AddLink), the disk slimmed to 96 KB, and the machine RAM
   base dropped to 0x20002000 (the firmware's unused headroom).
-- [ ] More peripherals for the machine (GPIO/PIO surface).
+- [x] More peripherals for the machine (prompts/034): SYS_gpio /
+  SYS_pinmux / SYS_pio drive IO_BANK0, PADS_BANK0 and the PIO register
+  files straight from the machine (`xv6/dma/kgpio.c`, front ends in
+  `user/hwtools.c`), and devfs lists the machine's resources as
+  readable files under /dev (`xv6/dma/kdev.c`).
 
 ## Presentation goals (beyond xv6)
 
 The machine presents itself at an upcoming event. Display output, two
 options, both PIO-era techniques on the machine's own terms:
 
-- [ ] Option 1 — DVI out: the PIO/HSTX DVI technique (RP2350 HSTX
-  serializer driving a DVI signal; framebuffer fed by the machine).
+- [x] Option 1 — DVI out (prompts/036): the RP2350 HSTX serializer
+  driving a DVI signal, fed by a pure-DMA scanout the machine owns —
+  640x480x8 in SRAM plus a terminal emulator on it (`xv6/dma/kfb.c`,
+  `kfbcon.c`); SYS_fb hands the framebuffer to a user program.
 - [ ] Option 2 — USB out: driving a DisplayLink-class USB display
   adapter with a PIO USB host; reference OSS vendored as the
   `references/pico-usb-disp` submodule (htlabnet Pico_USB_Disp — the
   T6 protocol encoder + PIO USB host are the parts to study).
-- [ ] mount() + external SD card: a second block device (SPI SD via
-  PIO or spare channels) mounted into the fs when the internal disk
-  runs short; syscall/design reference vendored as `references/xv6-ns`
-  (an xv6 fork with mount and more syscalls — we take mount, NOT
-  namespaces).
+- [x] mount() + external SD card (prompts/037): `mount sd0 /mnt` puts
+  a vfat card under the fs — SPI SD driven by the machine itself
+  (`xv6/dma/ksd.c`, CMD17 sectors and CMD18 spans) behind the same
+  read-only FAT32 driver as the XIP volume; syscall/design reference
+  vendored as `references/xv6-ns` (an xv6 fork with mount and more
+  syscalls — we take mount, NOT namespaces).
 
 `references/` submodules are study material, not vendored code: if
 anything is derived from them into the tree, it gets a LICENSE

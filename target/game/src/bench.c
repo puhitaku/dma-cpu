@@ -194,9 +194,10 @@ k_rand(uint *ops)
 static uint
 k_shr1(uint *ops)
 {
-  /* the pathological shift: >>1 walks the runtime's rebuild loop the
-   * LONGEST way (31 iterations per shift; >>17 in the rand kernel is
-   * its short end). One >>1 plus one add per step. */
+  /* the small-count shift: >>1 takes rt_lshr's bit-reversal path —
+   * reverse, one left double, reverse back — where >>17 in the rand
+   * kernel falls to the MSB-first rebuild loop. One >>1 plus one add
+   * per step. */
   uint v = 0xDEADBEEFu, s = 0;
   for (int i = 0; i < SHR_N; i++) {
     s += v >> 1;
