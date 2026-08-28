@@ -39,10 +39,17 @@ type flashState struct {
 
 func (m *Machine) flashRead(addr uint32) (uint32, bool) {
 	// TIMER0 raw-low: a monotonic microsecond counter on silicon. The
-	// model returns a scaled cycle count so the kernel's timer-based
-	// flash delays terminate quickly off-silicon (65536 "us" per cycle).
+	// model returns a scaled cycle count so timer-based waits finish
+	// quickly off-silicon, but the tick has to stay finer than the
+	// intervals a driver waits out — the flash parts' own program and
+	// erase times (W25Q16JV/W25Q64JV, Program/Erase AC characteristics:
+	// tPP 0.4-3 ms, tW 10-15 ms, tSE 45-400 ms, tCE 5-100 s) and the
+	// panel's 120 ms resets. At 256 "us" per cycle a page program is
+	// ~2 ticks and the longest chip erase ~390k, all inside the 32-bit
+	// counter; a tick coarser than tPP would round every one of them
+	// to nothing.
 	if addr == m.v.TimerRawL {
-		return uint32(m.Cycle << 16), true
+		return uint32(m.Cycle << 8), true
 	}
 	switch addr {
 	case QMIBase + qmiDirectCSR:
