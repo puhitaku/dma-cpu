@@ -15,7 +15,7 @@ package pgo
 // fb stub) simply has no function by some of these names.
 
 // KernelHotFuncs: 23 of 90 executed functions, covering 97.1% of the
-// 13984290 text reads the workload made.
+// 13985879 text reads the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
 var KernelHotFuncs = map[string]bool{
@@ -45,7 +45,7 @@ var KernelHotFuncs = map[string]bool{
 }
 
 // GameHotFuncs: 26 of 72 executed functions, covering 97.1% of the
-// 36802168 text reads the workload made.
+// 33726073 text reads the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event.
 var GameHotFuncs = map[string]bool{

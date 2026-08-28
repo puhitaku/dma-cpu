@@ -10,10 +10,10 @@ package pgo
 // count and trimmed until the resident half fits every board that ships
 // the image, with 256 bytes of the window left over.
 
-// KernelLits: 704 of 6085 pool words resident (2816 bytes of SRAM),
-// covering 99.9% of the 121331060 pool reads the workload made.
+// KernelLits: 705 of 6085 pool words resident (2820 bytes of SRAM),
+// covering 99.9% of the 120920628 pool reads the workload made.
 // Trimmed from 1250 loop-rate keys by the KernCData window (100.0%
-// coverage untrimmed): the 546 coldest of them pay flash instead.
+// coverage untrimmed): the 545 coldest of them pay flash instead.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
 var KernelLits = map[string]bool{
@@ -630,6 +630,7 @@ var KernelLits = map[string]bool{
 	"&__cw_ltp":             true,
 	"&__cw_ltp_d":           true,
 	"&__cw_ltp_f":           true,
+	"&__cw_ltp_t":           true,
 	"&__cw_ltu":             true,
 	"&__cw_ltu_d":           true,
 	"&__cw_ltu_f":           true,
@@ -878,8 +879,8 @@ var ViLits = map[string]bool{
 	"&__L64":                 true,
 }
 
-// GameLits: 1222 of 5280 pool words resident (4888 bytes of SRAM),
-// covering 100.0% of the 23353743 pool reads the workload made.
+// GameLits: 1221 of 5280 pool words resident (4884 bytes of SRAM),
+// covering 100.0% of the 21534197 pool reads the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event.
 var GameLits = map[string]bool{
@@ -1839,7 +1840,6 @@ var GameLits = map[string]bool{
 	"&__L166":                true,
 	"&__L167":                true,
 	"&__L168":                true,
-	"&__L169":                true,
 	"&__L186":                true,
 	"&__L222":                true,
 	"&__L268":                true,
