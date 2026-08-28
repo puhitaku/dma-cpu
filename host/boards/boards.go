@@ -182,8 +182,9 @@ var Pico2 = &Board{
 	SKU:  "rp2350",
 
 	KernText: 0x20002000, KernData: 0x20003000,
-	KernCRText: 0x20004000, KernCData: 0x2000E800, /* +10K: the resident
-	// tick/console path (dmacc ResidentFuncs); the data window's slack pays */
+	KernCRText: 0x20004000, KernCData: 0x2000EA00, /* +10.5K: the resident
+	// tick/console path (dmacc ResidentFuncs) and the reciprocal
+	// divide-by-ten (dmacc __rt_udivmod10); the data window's slack pays */
 	ShRText: 0x20019800, ShData: 0x2001C000,
 	IdleText: 0x20024000, IdleData: 0x20025000,
 	DiskHome: 0x20026000, DiskMax: 0x6000, // 24 KiB: data only — apps in flash
@@ -217,8 +218,9 @@ var Pico = &Board{
 	// KernCData +1 KiB: the shared-runtime host plus the resident-exec
 	// path grew ramtext past the old window (the data side has slack).
 	KernText: 0x20002000, KernData: 0x20003000,
-	KernCRText: 0x20004000, KernCData: 0x2000E800, /* +10K: the resident
-	// tick/console path (dmacc ResidentFuncs); the data window's slack pays */
+	KernCRText: 0x20004000, KernCData: 0x2000EA00, /* +10.5K: the resident
+	// tick/console path (dmacc ResidentFuncs) and the reciprocal
+	// divide-by-ten (dmacc __rt_udivmod10); the data window's slack pays */
 	ShRText: 0x20018800, ShData: 0x2001B000,
 	IdleText: 0x2001F800, IdleData: 0x20020800,
 	DiskHome: 0x20021800, DiskMax: 0x6000, // 24 KiB: data files only
@@ -261,10 +263,10 @@ var Feather = &Board{
 	// page + force-included bodies grew ramtext to ~31.6K, and the
 	// slot-colored data side had the slack to give.
 	KernText: 0x20002000, KernData: 0x20002400,
-	KernCRText: 0x20002600, KernCData: 0x2000D200, /* ramtext grows +10K: the
-	// resident tick/console path (dmacc ResidentFuncs) joins the shared
+	KernCRText: 0x20002600, KernCData: 0x2000D300, /* ramtext grows +10.25K:
+	// the resident tick/console path (dmacc ResidentFuncs) joins the shared
 	// runtime so the idle machine never reads flash while the display
-	// scans */
+	// scans, and the reciprocal divide-by-ten (__rt_udivmod10) joins it */
 	// Repacked after the flash literal-pool split + const-global
 	// rodata (measured: kernel data 32.5K with the profiled hot pool
 	// resident, sh data 8.6K all-cold). The arena covers sh's heap

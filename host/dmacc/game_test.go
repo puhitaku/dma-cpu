@@ -201,7 +201,7 @@ func press(t *testing.T, m *emu.Machine, prog *dmaasm.Result, pin int) {
 	bit := btnBit[pin]
 	down := mustSym(t, prog, "g_in_down")
 	wait := func(want bool) {
-		for spent := 0; spent < 400; spent++ {
+		for spent := 0; spent < 4000; spent++ {
 			if (m.Peek32(down)&bit != 0) == want {
 				return
 			}

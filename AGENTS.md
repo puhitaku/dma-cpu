@@ -168,12 +168,17 @@ phased plan). Phase outcomes are logged in the numbered
   bare-metal C on the machine, no xv6 — one shared arena (`g_arena`)
   holds the running game's bulk state, and a 16 KiB ring at a 16
   KiB-aligned address feeds I2S through ch9. Two rules the silicon
-  taught: (a) the machine has no right-shift instruction, so every
-  `>>`, `/` and `%` is a runtime CALL — cheap only for unsigned counts
-  under 16, which take the sniffer's OUT_REV path — and per-frame code
-  uses fractional accumulators, lookup tables and left shifts instead;
-  after a C edit run `make game-ll` and grep the regenerated IR for
-  `ashr`/`lshr`/`sdiv`/`udiv`/`urem` on frame paths; (b) the LCD flush
+  taught: (a) the machine has no right-shift instruction and no divide,
+  so `>>`, `/` and `%` are only cheap when the compiler can see the
+  count or the divisor — a constant count is a byte-lane copy and a
+  constant power-of-two divisor a shift and a mask, both inline, and
+  the divisor 10 is an outlined reciprocal (~410 cycles); a VARIABLE
+  count or any other divisor is a runtime call, and a general divide
+  costs thousands of cycles. Per-frame code still prefers fractional
+  accumulators, lookup tables and left shifts; after a C edit run
+  `make game-ll` and grep the regenerated IR for
+  `ashr`/`lshr`/`sdiv`/`udiv`/`urem` on frame paths, and check that the
+  operand is a constant; (b) the LCD flush
   is asynchronous and `gdma_rows` returns with its last row still
   draining, so every CPU-store path into `fb` calls `gd_wait()` first
   — but `frame_sync` must NOT, because ch11 belongs to pcm playback

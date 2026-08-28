@@ -77,7 +77,10 @@ compiled programs; ABI v0.1, references/design_docs/abi.md):
   `(x^S)-S` (3+5 blocks, no branch).
 - **Runtime library** (.dasm, appended on demand): mul (Horner,
   32 iters), udiv/urem/sdiv/srem (restoring division; big-divisor
-  special case avoids remainder overflow), shl/lshr/ashr (MSB-first bit
+  special case avoids remainder overflow; divisor 10 goes to the
+  shift-add reciprocal instead, and a constant power-of-two divisor
+  never reaches the library at all — prompts/042 §9),
+  shl/lshr/ashr (MSB-first bit
   loops — the machine has no right shift), memcpy/memset (one patched
   INCR block: a DMA engine memcpy is a single instruction; count 0 is
   the silicon-verified zero-count NOP, so no length guard).
@@ -112,7 +115,10 @@ Clang constant-folding initially hollowed out three tests (41-cycle
 | cc_collatz | 2,049,368 | 9.3 KB |
 
 Cost intuition: ALU ops 3–6 blocks, comparisons 12–18, runtime mul
-~900 blocks, division ~1,800 — a C `/` costs about 200 µs on silicon.
+~900 blocks, division ~1,800 — a C `/` by a value the compiler cannot
+see costs about 200 µs on silicon. Constant divisors have since stopped
+paying it (prompts/042 §3 and §9): a power of two is inline byte lanes,
+and 10 is ~410 emulator cycles against the long division's ~6,900.
 Code density lands where overview §5 predicted (~50–80 B per C-level
 operation): the risk-1 mitigation list (compressed blocks, overlays)
 stays live for the xv6 phase.

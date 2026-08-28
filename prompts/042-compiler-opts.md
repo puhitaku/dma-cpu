@@ -148,9 +148,70 @@ through dmaasm symbols back to C lines, plus size/cycle ratchets in
 CI (the bench tests exist — pin them). The recurring zz_ throwaway
 probes are this tool asking to be born.
 
+## 9. Division by a constant divisor — DONE
+
+clang -Oz leaves division by a constant as an IR `udiv`/`sdiv`/`urem`/
+`srem` on this target (no backend runs after it), so every one of them
+used to become the general `__rt_udivmod` — 31 restoring-division
+rounds, ~6,900 emulator cycles compact. Implemented in
+host/dmacc/func.go (emitDivConst, divConstant, divConstInline,
+signBias) and host/dmacc/runtime.go (`__rt_udivmod10`):
+
+- **Powers of two, no call at all.** `udiv x, 2^n` is the byte-lane
+  logical shift §3 already had; `urem x, 2^n` is one `andn`. The signed
+  pair needs C's truncation toward zero, which a shift does not do:
+  `sdiv x, 2^n` is `(x + bias) >>a n` with `bias = (x < 0 ? 2^n-1 : 0)`,
+  computed branchlessly as `(x >>a 31) >>u (32-n)`; `srem x, 2^n` is
+  `((x + bias) & (2^n-1)) - bias`, which beats subtracting the shifted
+  quotient. A negative constant divides by the magnitude and negates
+  the quotient (the remainder takes the dividend's sign either way), so
+  `x / INT_MIN` falls out as the n = 31 case.
+- **Divisor 10 (and 100, two chained calls), outlined.**
+  `__rt_udivmod10` multiplies by 204/256 and finishes the reciprocal
+  with the two byte-granular steps x257/256 and x65537/65536, then one
+  sub-byte `>>3`: 3435973836/2^35, which is 2.3e-11 short of 1/10, so
+  the quotient never overshoots and a single compare fixes the
+  remainder (a sweep of all 2^32 dividends bounds it by 13). 204*x
+  would overflow, so the low byte multiplies separately —
+  `204x >> 8 == 204*(x>>8) + (204*(x&255) >> 8)`, exactly. Measured
+  412 cycles compact / 860 classic against __rt_udivmod's 6,871 /
+  8,315, for ~1.4 KB of shared .ramtext (the kernel windows moved
+  +512 B / +256 B to fit it).
+- **The dynamic divisor was the real hot one.** Both printf digit
+  loops (xv6 printint, picolibc __ultoa_invert) take the base as a
+  PARAMETER, so no constant-divisor lowering can ever see them.
+  `__rt_udivmod` therefore tests for 10 itself — 16 records ahead of a
+  ~6,900-cycle loop — and tail-jumps into the reciprocal, which fills
+  the same rt_dquo/rt_drem cells.
+
+Not done, and not worth doing: the general constant divisor. The cure
+is a magic-number multiply, whose `(x * M) >> 32` needs a 64-bit high
+product; the sniffer accumulates 32 bits and drops the carry. Summing
+16x16 partial products does reach it, but at three multiplies plus the
+adds it is no cheaper than the reciprocal call it would replace. New
+divisors go in `divConstChain` (powers of ten compose: one call per
+digit) or as a new case in emitDivConst.
+
+Measured (feather images, emulator cycles / flash bytes):
+cc_stdio 3372616/36504 -> 2998486/37708, ccc_stdio 3179894/22812 ->
+2887076/24104, cc_collatz and cal_flash unchanged. cc_arith
+327199/10148 -> 328759/11616 is the honest cost side: it divides only
+by runtime values, so it pays the 16-record base test on all 40 of its
+divisions (~1,600 cycles) and links the reciprocal beside the long
+division it still uses.
+
+xsh warm cycles: ls 3539995 -> 3239986 (-8.5%), free 2834984 ->
+2115028 (-25%), cat README | wc 2444994 -> 2400225, cat README
+1499970 -> 1454991, echo hi 989983 -> 975004. Sizes: fs-kern-xip text
+205176 -> 205136 with ramtext 41968 -> 43488, sh-xip 62888/7696 ->
+63640/6208 (sh's `srem` by 8 went inline and its `/10` moved to the
+reciprocal, so it stopped linking __rt_srem, __rt_udiv and the long
+division altogether), lean 115552 -> 116576,
+ls 9392 -> 9368.
+
 ## If only two
 
 §1 (it compounds: every future heuristic becomes automatic) and §2+§3
 together (about a week, aimed at exactly the record-count hot spots
 the traces keep showing: bulk moves and shift-heavy inner loops). §3
-is done; §2 is still open.
+and §9 are done; §2 is still open.

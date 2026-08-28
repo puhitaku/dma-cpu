@@ -2,6 +2,7 @@ package dmacc
 
 import (
 	"fmt"
+	"math/bits"
 	"sort"
 	"strconv"
 	"strings"
@@ -478,7 +479,12 @@ func (fc *funcCtx) prepass() error {
 					fc.hasCalls = true
 				}
 			case "udiv", "sdiv", "urem", "srem":
-				fc.hasCalls = true
+				// A power-of-two divisor is byte lanes and masks in
+				// place; every other constant, and every variable one,
+				// goes to a routine.
+				if !divConstInline(ins) {
+					fc.hasCalls = true
+				}
 			case "mul":
 				// A constant factor is a double-and-add chain in place.
 				if ins.Args[0].Kind != llir.VConst && ins.Args[1].Kind != llir.VConst {
@@ -817,6 +823,9 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 		return fc.emitRuntimeOp(ins)
 
 	case "udiv", "sdiv", "urem", "srem":
+		if done, err := fc.emitDivConst(ins); done || err != nil {
+			return err
+		}
 		return fc.emitRuntimeOp(ins)
 
 	case "icmp":
@@ -1291,8 +1300,206 @@ func (fc *funcCtx) emitShrConst(ins *llir.Instr) (bool, error) {
 	return true, nil
 }
 
-// emitRuntimeOp lowers variable-count lshr/ashr and udiv/sdiv/urem/srem
-// via runtime calls.
+// --- Division by a constant ---
+//
+// __rt_udivmod is 31 restoring-division rounds — ~6,900 emulator
+// cycles whatever the divisor — and clang leaves division by a
+// constant as an IR div on this target (no backend runs after it). So
+// the divisors the compiler CAN see are lowered here instead: powers of two
+// as byte lanes and masks with no call at all, 10 and 100 as calls to
+// the reciprocal routine (runtime.go, __rt_udivmod10).
+//
+// Every other constant still calls __rt_udivmod. The general cure is a
+// magic-number multiply — q = (x * M) >> (32 + s) — and its high half
+// is a 64-bit product this machine has no way to spell: the sniffer
+// accumulates 32 bits and drops the carry. Splitting x into halves and
+// summing partial products does reach the same answer, but at three
+// multiplies plus the adds it is no cheaper than the reciprocal call it
+// would replace. divConstChain below is where a new divisor goes.
+
+// divConstChain maps a constant divisor to the /10 steps that divide by
+// it. Truncating division composes for positive factors —
+// trunc(trunc(x/10)/10) == trunc(x/100) — so a power of ten is one call
+// per digit, and adding 1000 is one more entry. Each step is a call
+// though, and the routine's ~410 cycles stop being a bargain against
+// __rt_udivmod's ~6,900 long before the chain runs out of divisors.
+var divConstChain = map[uint32]int{10: 1, 100: 2}
+
+// divConstant reads a div/rem instruction's divisor at the operation's
+// own width and signedness: mag is its magnitude, neg its sign (always
+// false for the unsigned ops). ok is false when the divisor is not a
+// constant.
+func divConstant(ins *llir.Instr) (mag uint32, neg, ok bool) {
+	d := ins.Args[1]
+	if d.Kind != llir.VConst {
+		return 0, false, false
+	}
+	w, err := width(ins.Typ)
+	if err != nil {
+		return 0, false, false
+	}
+	k := uint32(d.Int) &^ maskComplement(w)
+	if ins.Op == "sdiv" || ins.Op == "srem" {
+		if k>>uint(w-1)&1 != 0 {
+			k |= maskComplement(w) // sign-extend to the full word
+		}
+		if int32(k) < 0 {
+			return uint32(-int32(k)), true, true
+		}
+	}
+	return k, false, true
+}
+
+// divConstInline reports whether emitDivConst takes an instruction
+// without emitting a call — which is what lets the prologue skip saving
+// lr. The identity and power-of-two divisors qualify; a zero divisor is
+// undefined in C and keeps whatever the runtime does with it.
+func divConstInline(ins *llir.Instr) bool {
+	mag, _, ok := divConstant(ins)
+	return ok && mag != 0 && mag&(mag-1) == 0
+}
+
+// signBias emits dst = (x < 0 ? 2^n - 1 : 0) for 1 <= n <= 31, the bias
+// that turns an arithmetic right shift into C's truncation toward zero.
+// Branchless: s = x >>a 31 is 0 or -1 (all ones), and s >>u (32-n) is 0
+// or exactly the low n ones. n == 1 collapses to the sign bit itself.
+// x must not name sc1 or sc2, which the lane shifts use as scratch.
+func (fc *funcCtx) signBias(x string, n int, dst string) {
+	fc.laneShrConst(x, 31, dst) // 0 or 1
+	if n == 1 {
+		return
+	}
+	fc.ins("xor %s, $1, %s", dst, dst)          // 1 or 0
+	fc.ins("add %s, $0xffffffff, %s", dst, dst) // 0 or -1
+	fc.laneShrConst(dst, 32-n, dst)
+}
+
+// emitDivConst lowers a udiv/sdiv/urem/srem whose divisor is a constant
+// this machine has a short sequence for, and reports whether it took the
+// instruction.
+//
+// Powers of two, with x already sign-extended to the full word when the
+// operation is signed and the type is not:
+//
+//	udiv x, 2^n  = x >>u n                     (byte lanes)
+//	urem x, 2^n  = x & (2^n - 1)               (one andn)
+//	sdiv x, 2^n  = (x + bias) >>a n            bias = signBias(x, n)
+//	srem x, 2^n  = ((x + bias) & (2^n-1)) - bias
+//
+// C truncates toward zero, which the shifts do not: they floor. Adding
+// 2^n - 1 before shifting a negative dividend rounds the quotient the
+// other way, and nothing overflows doing it — the bias is positive and
+// smaller than 2^n <= 2^31, so x + bias stays inside [x, -1] for every
+// negative x, INT_MIN included.
+//
+// The remainder identity follows from the quotient's: for x >= 0 it is
+// the plain mask, and for x < 0, ((x - 1) mod 2^n) - (2^n - 1) lands in
+// (-2^n, 0], which is C's sign-of-the-dividend remainder. INT_MIN % 2^n
+// is 0 both ways.
+//
+// A negative divisor divides by its magnitude and negates the quotient;
+// the remainder takes the dividend's sign whatever the divisor's is, so
+// it is the magnitude's remainder unchanged. That covers x / INT_MIN,
+// which is the n == 31 case.
+func (fc *funcCtx) emitDivConst(ins *llir.Instr) (bool, error) {
+	mag, neg, ok := divConstant(ins)
+	if !ok || mag == 0 {
+		return false, nil
+	}
+	steps, chained := divConstChain[mag]
+	pow2 := mag&(mag-1) == 0
+	signed := ins.Op == "sdiv" || ins.Op == "srem"
+	rem := ins.Op == "urem" || ins.Op == "srem"
+	if !pow2 && !(chained && !signed) {
+		return false, nil
+	}
+	w, err := width(ins.Typ)
+	if err != nil {
+		return false, err
+	}
+	av, err := fc.op(ins.Args[0])
+	if err != nil {
+		return false, err
+	}
+	res := fc.word(ins.Res)
+
+	// x / 1 is x and x % 1 is 0, at either sign.
+	if mag == 1 {
+		switch {
+		case rem:
+			fc.ins("move $0, %s", res)
+		case !neg:
+			return true, fc.forward(ins.Res, ins.Args[0])
+		default:
+			fc.ins("sub zero, %s, %s", av, res)
+			fc.maskTo(res, w)
+		}
+		return true, nil
+	}
+	if signed && w < 32 {
+		// The value word of a narrow signed operand holds only w bits;
+		// every identity here reads the whole word.
+		fc.sextInto(av, w, "sc0")
+		av = "sc0"
+	}
+	switch {
+	case pow2 && !signed:
+		if rem {
+			fc.ins("andn %s, $0x%x, %s", av, ^(mag - 1), res)
+			return true, nil
+		}
+		fc.laneShrConst(av, bits.TrailingZeros32(mag), res)
+		return true, nil
+
+	case pow2:
+		n := bits.TrailingZeros32(mag)
+		fc.signBias(av, n, res)
+		if rem {
+			fc.ins("add %s, %s, sc1", av, res)
+			fc.ins("andn sc1, $0x%x, sc1", ^(mag - 1))
+			fc.ins("sub sc1, %s, %s", res, res)
+			fc.maskTo(res, w)
+			return true, nil
+		}
+		fc.ins("add %s, %s, %s", av, res, res)
+		fc.laneShrConst(res, n, res)
+		s := uint32(1) << uint(31-n)
+		fc.ins("xor %s, $0x%x, %s", res, s, res)
+		fc.ins("add %s, $0x%x, %s", res, -s, res)
+		if neg {
+			fc.ins("sub zero, %s, %s", res, res)
+		}
+		fc.maskTo(res, w)
+		return true, nil
+	}
+
+	// Unsigned 10 and its powers: one call per digit, quotient in r0 —
+	// which is also the next step's dividend, so the calls simply
+	// follow one another. The single-step remainder comes back in r1;
+	// a longer chain rebuilds it from the quotient.
+	fc.hasCalls = true
+	fc.ins("move %s, %s", av, fc.rtReg("r0"))
+	for i := 0; i < steps; i++ {
+		fc.rtCall("udivmod10")
+	}
+	if !rem {
+		fc.ins("move %s, %s", fc.rtReg("r0"), res)
+		return true, nil
+	}
+	if steps == 1 {
+		fc.ins("move %s, %s", fc.rtReg("r1"), res)
+		return true, nil
+	}
+	fc.ins("move %s, %s", fc.rtReg("r0"), res)
+	fc.emitMulConst(res, mag, res)
+	fc.ins("sub %s, %s, %s", av, res, res)
+	return true, nil
+}
+
+// emitRuntimeOp lowers variable-count lshr/ashr, and the div/rem whose
+// divisor emitDivConst declined, via runtime calls. Those divides still
+// meet the reciprocal on the way: __rt_udivmod checks for a divisor of
+// 10 before starting its long division.
 func (fc *funcCtx) emitRuntimeOp(ins *llir.Instr) error {
 	w, err := width(ins.Typ)
 	if err != nil {

@@ -38,6 +38,7 @@ var vecSlots = []vecSlot{
 	{"cw", "eq"}, {"cw", "eqz"}, {"cw", "lt"}, {"cw", "ltu"},
 	{"cw", "eq_d"}, {"cw", "eqz_d"}, {"cw", "lt_d"}, {"cw", "ltu_d"},
 	{"cw", "eqzp"}, {"cw", "ltp"}, {"cw", "eqzp_d"}, {"cw", "ltp_d"},
+	{"rt", "udivmod10"},
 }
 
 const vecSlotBase = 0x20 // cells + pad before the first stub

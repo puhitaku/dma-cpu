@@ -7,15 +7,26 @@ import "fmt"
 // r0/r1/r2, result in r0. All routines are leaves except the udiv/urem/
 // sdiv/srem wrappers, which save lr and call __rt_udivmod.
 //
-// Division uses restoring long division MSB-first; multiplies extract
-// bits by repeated doubling and sign tests. The machine has no right
-// shift: __rt_lshr borrows the DMA sniffer's OUT_REV bit reversal for
-// counts under 16 (reverse, left-shift, reverse back); larger counts,
-// and __rt_ashr always, consume bits from the top. The shift routines
-// serve counts the compiler cannot see: a constant count is lowered
-// inline instead, as a copy between the byte lanes of the little-endian
-// value words (func.go, laneShrConst and emitShl). memcpy/memset patch a
-// single INCR block — a DMA engine's native talent. They take a byte
+// Division has two engines. __rt_udivmod is restoring long division,
+// MSB-first: 31 rounds, ~6,900 emulator cycles for any divisor.
+// __rt_udivmod10 is the shift-add reciprocal for the one divisor that
+// dominates every program that prints a number — ~410 cycles, no loop.
+// The compiler reaches it directly when it can see the constant 10
+// (func.go, emitDivConst), and __rt_udivmod jumps to it when the
+// divisor arrives in a register: printf-style digit loops take the
+// base as a parameter, so the constant is nowhere in sight at compile
+// time. Divisors that are powers of two never call anything — they are
+// byte-lane shifts and masks at the site.
+//
+// Multiplies extract bits by repeated doubling and sign tests. The
+// machine has no right shift: __rt_lshr borrows the DMA sniffer's
+// OUT_REV bit reversal for counts under 16 (reverse, left-shift,
+// reverse back); larger counts, and __rt_ashr always, consume bits from
+// the top. The shift routines serve counts the compiler cannot see: a
+// constant count is lowered inline instead, as a copy between the byte
+// lanes of the little-endian value words (func.go, laneShrConst and
+// emitShl). memcpy/memset patch a single INCR block — a DMA engine's
+// native talent. They take a byte
 // count from an arbitrary address, so they burst size8: one transfer per
 // byte, whatever the length (a zero count is the silicon-verified NOP,
 // so n=0 needs no guard). Calls whose length is a compile-time constant
@@ -75,11 +86,19 @@ rt_mul_done:
 	},
 	{
 		name: "udivmod",
-		data: "rt_drem: .word 0\nrt_dquo: .word 0\nrt_dcnt: .word 0\n",
-		text: `; quotient -> rt_dquo, remainder -> rt_drem. Divisors with the
-; sign bit set would overflow the shifted remainder, but their quotient
-; is 0 or 1, so they get a direct compare instead.
+		deps: []string{"udivmod10"},
+		data: "rt_dcnt: .word 0\n",
+		text: `; quotient -> rt_dquo, remainder -> rt_drem. Divisor 10 hands over to
+; the reciprocal routine, which fills the same two cells and returns to
+; THIS routine's caller (it is a leaf, so lr still points there): a
+; printf digit loop takes its base as a parameter, so the compiler
+; never sees the constant, and the test costs 16 records against the
+; ~6,900 cycles the long division would spend. Divisors with the sign
+; bit set would overflow the shifted remainder, but their quotient is
+; 0 or 1, so they get a direct compare instead.
 __rt_udivmod:
+    jeq r1, $10, __rt_udivmod10, rt_udm_wide
+rt_udm_wide:
     jsign r1, rt_udm_big, rt_udm_norm
 rt_udm_big:
     jltu r0, r1, rt_udm_blo, rt_udm_bhs
@@ -111,6 +130,71 @@ rt_udm_skip:
     add rt_dcnt, $0xFFFFFFFF, rt_dcnt
     jneg rt_dcnt, rt_udm_done, rt_udm_loop
 rt_udm_done:
+    ret
+`,
+	},
+	{
+		name: "udivmod10",
+		data: "rt_drem: .word 0\nrt_dquo: .word 0\n" +
+			"rt_dta: .word 0\nrt_dtb: .word 0\n",
+		text: `; x / 10 and x % 10 by the shift-add reciprocal, exact for every
+; uint32 and with no loop. Quotient -> rt_dquo and r0, remainder ->
+; rt_drem and r1: the cell pair is __rt_udivmod's contract (so that
+; routine can jump straight here), and the r0/r1 copies are what a
+; compiled site reads, through the vector page in a guest image.
+;
+; The reciprocal is 51/64 * 257/256 * 65537/65536 / 8 =
+; 858993459/2^33, which falls 2.3e-11 short of 1/10, so the quotient
+; never exceeds x/10 and the fixup only ever has to add. The textbook
+; chain opens with (x>>1) + (x>>2) and reaches 51/64 by a third step,
+; x 17/16; folding all three into the one constant 204/256 costs a
+; multiply and saves two sub-byte shifts, which are the expensive kind.
+; 204*x would overflow, so the low byte multiplies separately and comes
+; back through its own lane shift: 204x >> 8 == 204*(x >> 8) +
+; (204*(x & 255) >> 8), exactly, and 204*(x >> 8) < 2^32.
+;
+; A sweep of all 2^32 dividends puts the pre-fixup remainder of THIS
+; form in [0, 13], so the single compare at the end finishes it.
+;
+; Every shift has a constant count, so each is the byte-lane sequence
+; the compiler emits for one (func.go, laneShrConst): a whole-byte
+; count is a lane copy, and the sub-byte >>3 splits the word at the
+; byte boundary — (q >> 8) << 5 for everything above the low byte,
+; OR'd with byte 1 of q << 5 — the two halves agreeing on the bits they
+; both carry. Left shifts ride mulc, which doubles the sniffer's
+; accumulator once per bit of its constant.
+__rt_udivmod10:
+    move $0, rt_dta
+    move r0+1, rt_dta, size8, count=3, incrr, incrw  ; a = x >> 8
+    andn r0, $0xFFFFFF00, rt_dtb                     ; b = x & 255
+    mulc rt_dta, 204, rt_dquo
+    mulc rt_dtb, 204, rt_dtb
+    move $0, rt_dta
+    move rt_dtb+1, rt_dta, size8   ; 204b >> 8, one byte wide
+    add rt_dquo, rt_dta, rt_dquo   ; q = 204x >> 8  (x 51/64)
+    move $0, rt_dta
+    move rt_dquo+1, rt_dta, size8, count=3, incrr, incrw
+    add rt_dquo, rt_dta, rt_dquo   ; q += q >> 8    (x 257/256)
+    move $0, rt_dta
+    move rt_dquo+2, rt_dta, size16
+    add rt_dquo, rt_dta, rt_dquo   ; q += q >> 16   (x 65537/65536)
+    move $0, rt_dta
+    move rt_dquo+1, rt_dta, size8, count=3, incrr, incrw
+    mulc rt_dta, 32, rt_dta
+    mulc rt_dquo, 32, rt_dtb
+    move $0, rt_dquo
+    move rt_dtb+1, rt_dquo, size8
+    or rt_dquo, rt_dta, rt_dquo    ; q >>= 3
+    mulc rt_dquo, 10, rt_drem
+    sub r0, rt_drem, rt_drem       ; r = x - 10q, in [0, 13]
+    add rt_drem, $0xFFFFFFF6, rt_dta
+    jsign rt_dta, rt_udm10_out, rt_udm10_fix
+rt_udm10_fix:
+    move rt_dta, rt_drem           ; r -= 10
+    add rt_dquo, $1, rt_dquo
+rt_udm10_out:
+    move rt_dquo, r0
+    move rt_drem, r1
     ret
 `,
 	},
