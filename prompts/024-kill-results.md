@@ -30,7 +30,7 @@ genuinely time-share the console — and stop dead when the kill lands.
   calls wait(), so its adoptees (including already-ZOMBIE children of
   the dying process) free straight to UNUSED instead of lingering.
 - usys kill(); disk gains `kill` (the user/kill.c behavior, rewritten
-  printf-free in dma/killprog.c — printf is a ~20 KB tax per binary
+  printf-free in user/killprog.c — printf is a ~20 KB tax per binary
   that the 128 KB disk cannot afford) and `spin` (prints its pid, dots
   forever; the demo victim).
 

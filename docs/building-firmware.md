@@ -102,8 +102,9 @@ device), then copy `target/firmware/build-<board>/dma_hil.uf2` onto it.
 - a **tag** push — build **and** publish a GitHub release with the
   `.uf2`/`.elf` files attached.
 
-CI installs the toolchain from `apt`, checks out pico-sdk at the pinned
-version (`PICO_SDK_REF` in the workflow), and builds with `PICO_TOOLS=`
-empty — exactly the injectable-path flow described above. See
-[building-hardware.md](building-hardware.md) for how to wire the boards
-these firmwares run on.
+CI installs cmake/ninja/clang from `apt` and arm-none-eabi-gcc from the
+official ARM release (the Ubuntu package omits newlib), checks out
+pico-sdk at the pinned version (`PICO_SDK_REF` in the workflow), and
+builds with `PICO_TOOLS=` empty — exactly the injectable-path flow
+described above. See [building-hardware.md](building-hardware.md) for
+how to wire the boards these firmwares run on.

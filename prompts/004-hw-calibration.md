@@ -36,8 +36,8 @@ free-running counter loop, 4 blocks/iteration). That is exactly 15
 sys-clk per block = 2.5 sys-clk per bus transfer (each block is 6
 transfers: 4 fetch + 1 exec + 1 fix). The emulator's 1-transfer-per-cycle
 model therefore maps to hardware time as ≈2.5 sys-clk per emulated cycle
-on an otherwise idle bus. (Cornell's RP2040 figure of ~8 M blocks/s at
-133 MHz gives the same ≈16.6 clk/block ballpark.)
+on an otherwise idle bus. (The reference article's RP2040 figure of
+~8 M blocks/s at 133 MHz gives the same ≈16.6 clk/block ballpark.)
 
 ## Calibration experiments: expected vs observed
 

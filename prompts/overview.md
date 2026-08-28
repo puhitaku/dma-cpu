@@ -53,7 +53,9 @@ register has (`+0x1000` XOR, `+0x2000` SET, `+0x3000` CLR — RP2040 datasheet
 §2.1.2), which give AND/OR/XOR/NOT as transport-triggered side effects.
 Branches are absolute-address stores into the fetch channel's `READ_ADDR`;
 conditional branches compute one of two block addresses in the sniffer and
-store it there. Throughput is ~8 M blocks/s; one "assembler instruction"
+store it there. Throughput is ~8 M blocks/s — measured since as 15
+sys-clk per block, i.e. 10 M/s at 150 MHz
+(`prompts/004-hw-calibration.md`); one "assembler instruction"
 (DMAasm macro) is typically 1–5 blocks, so effective speed is roughly 1.5–8
 MIPS depending on instruction mix (multiplies and shifts are far slower).
 
@@ -258,6 +260,11 @@ become loader-patched relocations like everything else.
 
 ### 4.3 Object format and relocations
 
+**Realized as DMX, not ELF — see `references/design_docs/dmx.md`.** The
+loadable format carries segments, ABS32 relocations, init writes and an
+entry point; no ELF container was ever needed. The analysis below is the
+reasoning that produced it:
+
 An "instruction" is 1–5 control blocks; every field is a 32-bit word; every
 operand is an *address* (source, destination, or jump target). Therefore:
 
@@ -331,6 +338,9 @@ Consequences:
 
 Each phase produces a CLI-testable artifact so a coding agent can iterate
 autonomously (emulator-first, hardware-in-the-loop as a later CI stage).
+Every phase below has since been built and run on silicon; the numbered
+`prompts/NNN-*.md` documents are the record, and the annotations here mark
+where the plan changed on contact.
 
 **Language policy: every tool we build ourselves is written in Go** — the
 `dmaemu` emulator, the `dmaasm` assembler and linker, the image
@@ -427,8 +437,7 @@ the translator as its executable spec. Original plan for reference:
       DMA-hosted bytecode interpreter trading ~10× speed for ~10× density.
       RP2350 relieves pressure (520 KB SRAM, 16 channels) and should be the
       xv6 target; RP2040 remains the toolchain reference target.
-15. Milestone ladder (first rung DONE — prompts/012-sched-results.md:
-    preemptive two-process round-robin on silicon):
+15. Milestone ladder (climbed to the top — prompts/012 through 021):
     timer-preemptive round-robin of two DMA "processes" →
     syscall via software-interrupt idiom (a block that patches
     `dispatch_target` itself) → UART console shell → xv6-derived kernel.

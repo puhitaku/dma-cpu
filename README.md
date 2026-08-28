@@ -4,8 +4,8 @@ CPU made of DMA on Raspberry Pi Pico.
 
 The DMA controller in the RP2 microcontroller family (RP2040, RP2350, and
 compatible chips) is Turing-complete. This project builds a full toolchain
-for it: an emulator, an assembler/linker, a program loader, LLVM/Clang
-support, and eventually an xv6-derived kernel running entirely on DMA
+for it: an emulator, an assembler/linker, a program loader, a C compiler
+riding stock clang, and an xv6-derived kernel that runs entirely on DMA
 channels. See `prompts/overview.md` for the design analysis, the phased
 development plan, and references.
 
@@ -36,25 +36,30 @@ else is docs, examples, and vendored dependencies.
   in `host/dmacc/testdata/` pin it against host clang.
 - `host/img/` — the DMX executable format (`references/design_docs/dmx.md`): builder,
   encoder/decoder, and the reference loader with Tier-2 relocation (same
-  image runs at any placement). `host/fsimg/` builds xv6 filesystem images.
+  image runs at any placement). `host/fsimg/` builds xv6 filesystem images
+  and the golden vfat volumes.
 - `host/boards/` — deployable-target descriptors (SKU, memory partition,
   flash sections, installed apps); `host/prog/hil/` holds the HIL test
   programs as embedded `.dasm` assets.
 - `host/cmd/` — the CLIs: `dmaemu` (runs a raw block image or DMX
   executable under a JSON config, reporting JSON), `dmaasm`, `dmacc`,
-  `dmxgen` (bakes emulator expectations into the firmware header), and
-  `sldgen`.
+  `dmxgen` (builds a board's images and bakes them, with their emulator
+  expectations, into the firmware header), and `sldgen` (converts images
+  into slides for the viewer).
 
 ### `target/` — bare-metal C for the Pico
 
 - `target/loader/` — the DMX loader for the RP2 side; parses DMX,
   relocates, and starts the machine. No SDK dependency; build with
   `-DDMX_TARGET_RP2350` for RP2350 (RP2040 is the default). Validated on
-  RP2350 silicon.
-- `target/firmware/` — the HIL (hardware-in-the-loop) runner: `dmxgen`
-  bakes emulator-computed expectations into the firmware, which runs the
-  images on the real DMA machine and reports expected-vs-observed over
-  UART. The emulator is silicon-calibrated against a Pico 2; see
+  both SKUs' silicon.
+- `target/firmware/` — the ARM-side bootloader: it sets the clocks,
+  stages the flash-resident images, loads the SRAM segments through the
+  loader, starts the DMA machine and parks. Built with `HIL_DEV=1` it
+  also carries the hardware-in-the-loop battery, where `dmxgen` bakes
+  emulator-computed expectations into the firmware and the boot run
+  reports expected-vs-observed over UART. The emulator is
+  silicon-calibrated against a Pico 2; see
   `prompts/004-hw-calibration.md` for the results (all golden tests pass
   on hardware at ~10 M blocks/s).
 - `target/libc/` — the DMA machine's C library: DMA-specific config and
@@ -72,12 +77,13 @@ else is docs, examples, and vendored dependencies.
   (`building-hardware.md`).
 - `prompts/` — the phased design log: the analysis in `overview.md` and a
   per-phase results document for each step.
-- `references/` — material to consult, none of it built into the product:
+- `references/` — material to consult, none of it compiled here:
   `datasheets/` (the RP2040/RP2350 and peripheral datasheets),
   `design_docs/` (the project's own specs — `abi.md` and `dmx.md`), and
-  reference-only git submodules studied but never compiled. Contrast
-  `target/libc/picolibc`, which *is* compiled and linked. Copyrighted
-  material stays untracked (see Coding rules in `prompts/overview.md`).
+  source trees read rather than built — some of them the origin of a port
+  that now lives under `target/`, each attributed in `LICENSE`. Contrast
+  `target/libc/picolibc`, which *is* compiled and linked. The reference
+  article stays untracked (see Coding rules in `prompts/overview.md`).
 - `examples/` — standalone programs built through the toolchain.
 
 ## Build and test

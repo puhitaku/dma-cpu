@@ -23,6 +23,12 @@ Program CTRL words: `EN | SIZE | TREQ=permanent | CHAIN_TO(fix) |
 IRQ_QUIET` (SKU-encoded), plus `SNIFF_EN`/`BSWAP`/size/TREQ variations per
 instruction. CHAIN_TO and TREQ_SEL are fields — never OR over them.
 
+The table above is the classic encoding. The Tier-C compact encoding
+(`prompts/010-compact-isa.md`) is a second encoding, not an ABI change: it
+runs on the fixed `emu.Compact*` map — fetch on channel 7, the transfer-mode
+banks on 0–6, cleanup on 8, no fix channel — with the injector at channel 9
+by the same convention.
+
 ## Register file (`.regs` directive)
 
 Registers are SRAM words. `.regs` reserves 32 words (128 bytes) at its
@@ -85,12 +91,13 @@ caller-saved everywhere: no macro preserves it.
   sign bit (bit 7 after BSWAP, CLR mask `0xFFFFFF7F`) and dispatch
   through a pooled trampoline pair: slot 0 (+0) sign clear, slot 1
   (+128) sign set. Pairs pack 8 to a 256-byte arena bank appended after
-  the program text. `jeq` clobbers `at`; `jlt`/`jltu` clobber `at` and
+  the program text (16 to a bank in compact, whose slots are 8-byte
+  records). `jeq` clobbers `at`; `jlt`/`jltu` clobber `at` and
   `at2`. The remaining predicates are operand/target swaps: `gt` =
   `jlt b, a`; `ge`/`le`/`hs`/`ls` = swapped targets.
 - `jbool v, ifzero, ifone` (6 blocks): two-way dispatch on a word that
-  must be 0 or 1 (16·v trampoline offset) — the cheap branch for
-  materialized booleans.
+  must be 0 or 1 (16·v trampoline offset, 8·v in compact) — the cheap
+  branch for materialized booleans.
 - `and a, b, d` (6 blocks, clobbers `at`) and `andn a, b, d` = `a & ~b`
   (3 blocks) via the accumulator CLR alias.
 
@@ -106,7 +113,10 @@ config, restores `dispatch` (EOI), re-arms the injector, and returns via
 
 ## Segments and images
 
-Programs are two segments — `.text` (16-byte blocks) and `.data` (words,
-including the register file and the literal pool) — packaged as DMX
-(doc/dmx.md), fully relocatable via ABS32 relocs. Binaries are
-SKU-specific; sources (`.dasm`) are SKU-portable.
+Programs are two segments — `.text` (16-byte blocks; 8-byte records under
+the compact encoding) and `.data` (words, including the register file and
+the literal pool) — packaged as DMX (`references/design_docs/dmx.md`), fully
+relocatable via ABS32 relocs. A `.ramtext` directive splits a third segment
+off the text tail, so an image whose text executes from flash keeps its
+self-modified records in RAM. Binaries are SKU-specific; sources (`.dasm`)
+are SKU-portable.

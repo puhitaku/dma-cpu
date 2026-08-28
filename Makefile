@@ -167,8 +167,10 @@ PATH_WITH_TOOLS = $(if $(strip $(PICO_TOOLS)),$(PICO_TOOLS):,)$$PATH
 
 # The deployable target, U-Boot style: a board (boards/boards.go) fixes
 # the SKU, memory partition, flash sections, and installed apps.
-#   make firmware HIL_BOARD=pico2   (RP2350; the default)
-#   make firmware HIL_BOARD=pico    (RP2040)
+#   make firmware HIL_BOARD=pico2    (RP2350 HIL bench; the default)
+#   make firmware HIL_BOARD=pico     (RP2040 HIL bench)
+#   make firmware HIL_BOARD=feather  (RP2350 presentation console)
+#   make firmware HIL_BOARD=gamepico (RP2040 game console)
 HIL_BOARD ?= pico2
 # The pico-sdk board name matches our board names except where a
 # vendor board carries a longer SDK identifier (boards.Board.PicoBoard).
@@ -214,8 +216,9 @@ firmware: images
 	  cmake -S target/firmware -B $(BUILD_DIR) -G Ninja -DPICO_BOARD=$(PICO_BOARD) $(HIL_DEV_OPT) $(GAME_BLOB_OPT)
 	PATH="$(PATH_WITH_TOOLS)" ninja -C $(BUILD_DIR)
 
-# Flash with OpenOCD over a Debug Probe, then watch the UART (115200) for
-# TEST/CAL lines. Automated capture-and-diff is a future CI stage.
+# Flash with OpenOCD over a Debug Probe, then watch the UART (115200):
+# TEST/CAL lines under HIL_DEV=1, the payload's own output on a release
+# build. Automated capture-and-diff is a future CI stage.
 test-hw: firmware
 	$(OPENOCD) -f interface/cmsis-dap.cfg -c "adapter speed 5000" -f $(OPENOCD_TARGET_$(HIL_BOARD)) \
 	  -c "program $(BUILD_DIR)/dma_hil.elf verify reset exit"

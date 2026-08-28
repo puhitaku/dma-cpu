@@ -70,7 +70,7 @@ Ctrl-C killed the whole machine.
   deliver_sigint/sigint_one/in_subtree, the kexit diversion,
   SYS_signal (23) / SYS_sigreturn (24).
 - usys.c: sigctx, __dma_sigentry, signal(); user.h: SIGINT, signal().
-- xv6/dma/trap.c: the polite-exit demo (on the disk).
+- xv6/user/trap.c: the polite-exit demo (on the disk).
 - syncprog.c went printf-free (write(2, ...)) — the ~16 KB printf tax
   was the difference between "disk full" and shipping trap.
 - Kernel growth (lean 78.6 KB text, compact fs 110 KB + 29 KB data)

@@ -191,6 +191,11 @@ presentation app on SYS_fb.
 
 ## The framebuffer moves to SRAM (third silicon round)
 
+*Superseded in one number: prompts/041 re-measured the "~1000x slower"
+PSRAM figure on a quiet bus and found copier contention — DMA-master
+access through the window is wire-speed. What still bars PSRAM from the
+render side is sustained window traffic while the display scans.*
+
 The display held sync only while the machine idled. The chain of
 measurements that explained it, in order:
 
@@ -236,6 +241,13 @@ registers snapshotted at boot (per-burst EB quad, no continuous-read
 mode — register restore is exact and cannot fault).
 
 ## Final architecture: the core-1 video feeder (fourth silicon round)
+
+*Superseded: the pure-DMA scanout came back and holds
+(`host/boards/scanout.go`); the core-1 feeder is the
+`HIL_VIDEO_CPU_FEEDER=1` fallback. What changed: console DMA silenced
+the idle machine's flash reads, the descriptor table runs from SRAM,
+HIGH_PRIORITY is the pixel pair's alone, and exec's flash copies go
+through the QMI streamer.*
 
 The SRAM framebuffer alone was not enough. With the console at the
 prompt, sh retries its read every tick — hundreds of wide kernel

@@ -61,7 +61,7 @@ check asserts the binary hasn't grown into the slot.
 - kbio.c: fs_dirty sector bitmap via log_write (32 sectors = one word).
 - kflash.c: driver + sync + header logic; kflash_arm selects executor.
 - SYS_sync wired (upstream number 22; user.h already declared sync());
-  xv6/dma/syncprog.c gives sh a `sync` command (on the disk).
+  xv6/user/syncprog.c gives sh a `sync` command (on the disk).
 - emu/flash.go: Machine.Flash + QMI + NOR model; XIP reads bus-served.
 - fsimg disks carry the console device inode + sync program.
 - dmxgen: slot constant, mailbox address, disk-length macros; the xsh

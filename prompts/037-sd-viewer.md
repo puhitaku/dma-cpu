@@ -6,6 +6,10 @@ over UART and a digital joystick.
 
 ## SD driver (SPI mode)
 
+*Superseded: the machine drives the card itself now (`xv6/dma/ksd.c`,
+`boards.MachineSDExec`); the ARM keeps only boot staging, and contiguous
+spans read through one CMD18 instead of per-sector CMD17.*
+
 Wiring (Feather RP2350): SCK=GPIO22, MOSI=GPIO23, MISO=GPIO20 (the
 board's SPI0 pins), CS=GPIO10 (D10 — the Adalogger FeatherWing
 convention). 10k pull-ups on CS/CMD/DAT0, DAT1/DAT2 not grounded.
@@ -56,7 +60,7 @@ the last of its kind, and its 185 KiB made every window a fight.
 ## The converter: `sldgen`
 
 Silicon confirmed the mount (the card's macOS Spotlight droppings
-listed fine), so the deck tooling followed: `go run ./cmd/sldgen -o
+listed fine), so the deck tooling followed: `go run ./host/cmd/sldgen -o
 deck img1.png img2.jpg ...` emits NN-<stem>.sld in argument order
 (the numeric prefix makes the viewer's name sort replay it) plus
 slides.bin, slide N at offset N*153600, for the future raw fast
