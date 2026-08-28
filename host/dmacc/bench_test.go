@@ -50,9 +50,13 @@ func TestZZBenchXsh(t *testing.T) {
 		return spent, false
 	}
 
-	// Boot to the first prompt.
-	if _, ok := waitPrompt(2_000_000_000); !ok {
-		t.Fatalf("no boot prompt; console %q", m.ConsoleOut)
+	// bootXsh returns AT the first prompt (goldenBoot runs the boot
+	// once per board and clones it), so there are no boot bytes left
+	// to watch for; wait only if this build stopped short of it.
+	if !strings.HasSuffix(string(m.ConsoleOut), "$ ") {
+		if _, ok := waitPrompt(2_000_000_000); !ok {
+			t.Fatalf("no boot prompt; console %q", m.ConsoleOut)
+		}
 	}
 
 	cmds := []string{
@@ -123,8 +127,12 @@ func TestZZBenchFbcon(t *testing.T) {
 			}
 			return spent, false
 		}
-		if _, ok := waitPrompt(2_000_000_000); !ok {
-			t.Fatalf("%s: no boot prompt; console %q", bd.Name, tail(m.ConsoleOut, 200))
+		// bootXshBoard returns at the first prompt (goldenBoot); wait
+		// only if this build stopped short of it.
+		if !strings.HasSuffix(string(m.ConsoleOut), "$ ") {
+			if _, ok := waitPrompt(2_000_000_000); !ok {
+				t.Fatalf("%s: no boot prompt; console %q", bd.Name, tail(m.ConsoleOut, 200))
+			}
 		}
 		res := map[string]uint64{}
 		for _, c := range []string{"echo 0123456789012345678901234567890123456789", "ls /dev", "cat README"} {
