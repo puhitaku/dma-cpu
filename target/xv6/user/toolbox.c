@@ -217,7 +217,11 @@ main(int argc, char **argv)
     exit(t_mkdir(argc, argv));
   if (streq(base, "rm"))
     exit(t_rm(argc, argv));
-  write(2, "toolbox: kill spin trap free sync mount umount wc mkdir rm "
-           "gpio mux blink fbtest show\n", 87);
+  /* The names dispatched above — sizeof, not a hand-counted length:
+   * the previous literal had drifted from the dispatch AND ran one
+   * byte long, writing its own NUL to the console. */
+  static const char usage[] =
+      "toolbox: kill free sync clear mount umount mkdir rm\n";
+  write(2, usage, sizeof(usage) - 1);
   exit(1);
 }

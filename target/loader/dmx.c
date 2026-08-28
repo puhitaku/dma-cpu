@@ -160,7 +160,11 @@ int dmx_load(const uint8_t *image, size_t len, const dmx_placement *pl,
         return DMX_ERR_RANGE;
     }
     uint32_t entry = place[entry_seg] + entry_off;
-    if ((entry % 16) != 0) {
+    /* Format-level granularity is one compact record (8); the encoding's
+     * own rule — 16 for classic control blocks — is checked in dmx_start,
+     * which is where the machine config says which encoding this is.
+     * Mirrors host/img (Image.validate) and emu.SetupFetchExec. */
+    if ((entry % 8) != 0) {
         return DMX_ERR_ALIGN;
     }
     *entry_out = entry;

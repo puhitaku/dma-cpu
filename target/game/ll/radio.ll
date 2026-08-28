@@ -1146,8 +1146,8 @@ define internal fastcc void @shoot(i32 noundef range(i32 0, -2147483648) %0) unn
   %47 = load i32, ptr %4, align 4
   br label %48
 
-48:                                               ; preds = %174, %19
-  %49 = phi i32 [ 0, %19 ], [ %175, %174 ]
+48:                                               ; preds = %178, %19
+  %49 = phi i32 [ 0, %19 ], [ %179, %178 ]
   %50 = icmp eq i32 %49, 680
   br i1 %50, label %51, label %52
 
@@ -1159,7 +1159,7 @@ define internal fastcc void @shoot(i32 noundef range(i32 0, -2147483648) %0) unn
 
 52:                                               ; preds = %48
   %53 = icmp eq i32 %49, %0
-  br i1 %53, label %174, label %54
+  br i1 %53, label %178, label %54
 
 54:                                               ; preds = %52
   %55 = getelementptr inbounds nuw i16, ptr inttoptr (i32 537116672 to ptr), i32 %49
@@ -1176,12 +1176,12 @@ define internal fastcc void @shoot(i32 noundef range(i32 0, -2147483648) %0) unn
   %66 = sub nsw i32 %65, %44
   %67 = mul nsw i32 %45, %58
   %68 = mul nsw i32 %46, %62
-  %69 = add nsw i32 %68, %67
-  %70 = mul nsw i32 %47, %66
-  %71 = add nsw i32 %69, %70
-  %72 = ashr i32 %71, 8
-  %73 = icmp slt i32 %72, 1
-  br i1 %73, label %174, label %74
+  %69 = mul nsw i32 %47, %66
+  %70 = add i32 %67, 134217728
+  %71 = add i32 %70, %68
+  %72 = add i32 %71, %69
+  %73 = icmp ult i32 %72, 134217984
+  br i1 %73, label %178, label %74
 
 74:                                               ; preds = %54
   call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %5) #11
@@ -1196,120 +1196,124 @@ define internal fastcc void @shoot(i32 noundef range(i32 0, -2147483648) %0) unn
   %80 = load i32, ptr %7, align 4, !tbaa !3
   %81 = mul nsw i32 %80, %66
   %82 = add nsw i32 %79, %81
-  %83 = ashr i32 %82, 8
-  %84 = icmp sgt i32 %83, -1
-  br i1 %84, label %173, label %85
+  %83 = add nsw i32 %82, 134217728
+  %84 = lshr i32 %83, 8
+  %85 = add nuw nsw i32 %84, 3670016
+  %86 = icmp ult i32 %82, -134217728
+  br i1 %86, label %177, label %87
 
-85:                                               ; preds = %74
-  %86 = mul nsw i32 %58, %58
-  %87 = mul nsw i32 %62, %62
-  %88 = add nuw i32 %87, %86
-  %89 = mul nsw i32 %66, %66
-  %90 = add i32 %88, %89
-  %91 = icmp ult i32 %90, 64
-  br i1 %91, label %173, label %92
+87:                                               ; preds = %74
+  %88 = mul nsw i32 %58, %58
+  %89 = mul nsw i32 %62, %62
+  %90 = add nuw i32 %89, %88
+  %91 = mul nsw i32 %66, %66
+  %92 = add i32 %90, %91
+  %93 = icmp ult i32 %92, 64
+  br i1 %93, label %177, label %94
 
-92:                                               ; preds = %85
-  %93 = tail call fastcc i32 @clearance(i32 noundef %0, i32 noundef %49) #12
-  %94 = icmp eq i32 %93, 0
-  br i1 %94, label %173, label %95
+94:                                               ; preds = %87
+  %95 = tail call fastcc i32 @clearance(i32 noundef %0, i32 noundef %49) #12
+  %96 = icmp eq i32 %95, 0
+  br i1 %96, label %177, label %97
 
-95:                                               ; preds = %92
-  %96 = mul i32 %72, -1024
-  %97 = mul i32 %96, %83
-  %98 = udiv i32 %97, %90
-  %99 = udiv i32 589824, %90
-  %100 = tail call i32 @llvm.umin.i32(i32 %99, i32 4096)
-  %101 = mul nuw i32 %98, 41
-  %102 = mul i32 %101, %100
-  %103 = lshr i32 %102, 15
-  %104 = mul nuw nsw i32 %93, 51
-  %105 = mul nuw nsw i32 %104, %103
-  %106 = icmp samesign ult i32 %105, 256
-  br i1 %106, label %173, label %107
+97:                                               ; preds = %94
+  %98 = shl i32 %72, 2
+  %99 = and i32 %98, -1024
+  %100 = sub i32 536870912, %99
+  %101 = mul i32 %100, %85
+  %102 = udiv i32 %101, %92
+  %103 = udiv i32 589824, %92
+  %104 = tail call i32 @llvm.umin.i32(i32 %103, i32 4096)
+  %105 = mul nuw i32 %102, 41
+  %106 = mul i32 %105, %104
+  %107 = lshr i32 %106, 15
+  %108 = mul nuw nsw i32 %95, 51
+  %109 = mul nuw nsw i32 %108, %107
+  %110 = icmp samesign ult i32 %109, 256
+  br i1 %110, label %177, label %111
 
-107:                                              ; preds = %95
-  %108 = lshr i32 %105, 8
-  %109 = icmp samesign ugt i32 %49, 663
-  %110 = icmp samesign ult i32 %49, 500
-  %111 = trunc nuw i32 %49 to i16
-  %112 = udiv i16 %111, 100
-  %113 = zext nneg i16 %112 to i32
-  %114 = select i1 %110, i32 %113, i32 5
-  %115 = select i1 %109, i32 0, i32 %114
-  %116 = getelementptr inbounds nuw [6 x [3 x i16]], ptr @rho, i32 0, i32 %115
-  %117 = mul i32 %108, %25
-  %118 = lshr i32 %117, 12
-  %119 = load i16, ptr %116, align 2, !tbaa !14
-  %120 = zext i16 %119 to i32
-  %121 = mul i32 %118, %120
-  %122 = lshr i32 %121, 8
-  %123 = mul i32 %108, %30
-  %124 = lshr i32 %123, 12
-  %125 = getelementptr inbounds nuw i8, ptr %116, i32 2
-  %126 = load i16, ptr %125, align 2, !tbaa !14
-  %127 = zext i16 %126 to i32
-  %128 = mul i32 %124, %127
-  %129 = lshr i32 %128, 8
-  %130 = mul i32 %108, %35
-  %131 = lshr i32 %130, 12
-  %132 = getelementptr inbounds nuw i8, ptr %116, i32 4
-  %133 = load i16, ptr %132, align 2, !tbaa !14
-  %134 = zext i16 %133 to i32
-  %135 = mul i32 %131, %134
-  %136 = lshr i32 %135, 8
-  %137 = getelementptr inbounds nuw i16, ptr inttoptr (i32 537120752 to ptr), i32 %49
-  %138 = load i16, ptr %137, align 2, !tbaa !14
-  %139 = zext i16 %138 to i32
-  %140 = add nuw nsw i32 %122, %139
-  %141 = tail call i32 @llvm.umin.i32(i32 %140, i32 65535)
-  %142 = trunc nuw i32 %141 to i16
-  store i16 %142, ptr %137, align 2, !tbaa !14
-  %143 = getelementptr inbounds nuw i16, ptr inttoptr (i32 537122112 to ptr), i32 %49
-  %144 = load i16, ptr %143, align 2, !tbaa !14
-  %145 = zext i16 %144 to i32
-  %146 = add nuw nsw i32 %129, %145
-  %147 = tail call i32 @llvm.umin.i32(i32 %146, i32 65535)
-  %148 = trunc nuw i32 %147 to i16
-  store i16 %148, ptr %143, align 2, !tbaa !14
-  %149 = getelementptr inbounds nuw i16, ptr inttoptr (i32 537123472 to ptr), i32 %49
-  %150 = load i16, ptr %149, align 2, !tbaa !14
-  %151 = zext i16 %150 to i32
-  %152 = add nuw nsw i32 %136, %151
-  %153 = tail call i32 @llvm.umin.i32(i32 %152, i32 65535)
-  %154 = trunc nuw i32 %153 to i16
-  store i16 %154, ptr %149, align 2, !tbaa !14
-  %155 = getelementptr inbounds nuw i16, ptr inttoptr (i32 537124832 to ptr), i32 %49
-  %156 = load i16, ptr %155, align 2, !tbaa !14
-  %157 = zext i16 %156 to i32
-  %158 = add nuw nsw i32 %122, %157
-  %159 = tail call i32 @llvm.umin.i32(i32 %158, i32 65535)
-  %160 = trunc nuw i32 %159 to i16
-  store i16 %160, ptr %155, align 2, !tbaa !14
-  %161 = getelementptr inbounds nuw i16, ptr inttoptr (i32 537126192 to ptr), i32 %49
-  %162 = load i16, ptr %161, align 2, !tbaa !14
-  %163 = zext i16 %162 to i32
-  %164 = add nuw nsw i32 %129, %163
-  %165 = tail call i32 @llvm.umin.i32(i32 %164, i32 65535)
-  %166 = trunc nuw i32 %165 to i16
-  store i16 %166, ptr %161, align 2, !tbaa !14
-  %167 = getelementptr inbounds nuw i16, ptr inttoptr (i32 537127552 to ptr), i32 %49
-  %168 = load i16, ptr %167, align 2, !tbaa !14
-  %169 = zext i16 %168 to i32
-  %170 = add nuw nsw i32 %136, %169
-  %171 = tail call i32 @llvm.umin.i32(i32 %170, i32 65535)
-  %172 = trunc nuw i32 %171 to i16
-  store i16 %172, ptr %167, align 2, !tbaa !14
-  br label %173
+111:                                              ; preds = %97
+  %112 = lshr i32 %109, 8
+  %113 = icmp samesign ugt i32 %49, 663
+  %114 = icmp samesign ult i32 %49, 500
+  %115 = trunc nuw i32 %49 to i16
+  %116 = udiv i16 %115, 100
+  %117 = zext nneg i16 %116 to i32
+  %118 = select i1 %114, i32 %117, i32 5
+  %119 = select i1 %113, i32 0, i32 %118
+  %120 = getelementptr inbounds nuw [6 x [3 x i16]], ptr @rho, i32 0, i32 %119
+  %121 = mul i32 %112, %25
+  %122 = lshr i32 %121, 12
+  %123 = load i16, ptr %120, align 2, !tbaa !14
+  %124 = zext i16 %123 to i32
+  %125 = mul i32 %122, %124
+  %126 = lshr i32 %125, 8
+  %127 = mul i32 %112, %30
+  %128 = lshr i32 %127, 12
+  %129 = getelementptr inbounds nuw i8, ptr %120, i32 2
+  %130 = load i16, ptr %129, align 2, !tbaa !14
+  %131 = zext i16 %130 to i32
+  %132 = mul i32 %128, %131
+  %133 = lshr i32 %132, 8
+  %134 = mul i32 %112, %35
+  %135 = lshr i32 %134, 12
+  %136 = getelementptr inbounds nuw i8, ptr %120, i32 4
+  %137 = load i16, ptr %136, align 2, !tbaa !14
+  %138 = zext i16 %137 to i32
+  %139 = mul i32 %135, %138
+  %140 = lshr i32 %139, 8
+  %141 = getelementptr inbounds nuw i16, ptr inttoptr (i32 537120752 to ptr), i32 %49
+  %142 = load i16, ptr %141, align 2, !tbaa !14
+  %143 = zext i16 %142 to i32
+  %144 = add nuw nsw i32 %126, %143
+  %145 = tail call i32 @llvm.umin.i32(i32 %144, i32 65535)
+  %146 = trunc nuw i32 %145 to i16
+  store i16 %146, ptr %141, align 2, !tbaa !14
+  %147 = getelementptr inbounds nuw i16, ptr inttoptr (i32 537122112 to ptr), i32 %49
+  %148 = load i16, ptr %147, align 2, !tbaa !14
+  %149 = zext i16 %148 to i32
+  %150 = add nuw nsw i32 %133, %149
+  %151 = tail call i32 @llvm.umin.i32(i32 %150, i32 65535)
+  %152 = trunc nuw i32 %151 to i16
+  store i16 %152, ptr %147, align 2, !tbaa !14
+  %153 = getelementptr inbounds nuw i16, ptr inttoptr (i32 537123472 to ptr), i32 %49
+  %154 = load i16, ptr %153, align 2, !tbaa !14
+  %155 = zext i16 %154 to i32
+  %156 = add nuw nsw i32 %140, %155
+  %157 = tail call i32 @llvm.umin.i32(i32 %156, i32 65535)
+  %158 = trunc nuw i32 %157 to i16
+  store i16 %158, ptr %153, align 2, !tbaa !14
+  %159 = getelementptr inbounds nuw i16, ptr inttoptr (i32 537124832 to ptr), i32 %49
+  %160 = load i16, ptr %159, align 2, !tbaa !14
+  %161 = zext i16 %160 to i32
+  %162 = add nuw nsw i32 %126, %161
+  %163 = tail call i32 @llvm.umin.i32(i32 %162, i32 65535)
+  %164 = trunc nuw i32 %163 to i16
+  store i16 %164, ptr %159, align 2, !tbaa !14
+  %165 = getelementptr inbounds nuw i16, ptr inttoptr (i32 537126192 to ptr), i32 %49
+  %166 = load i16, ptr %165, align 2, !tbaa !14
+  %167 = zext i16 %166 to i32
+  %168 = add nuw nsw i32 %133, %167
+  %169 = tail call i32 @llvm.umin.i32(i32 %168, i32 65535)
+  %170 = trunc nuw i32 %169 to i16
+  store i16 %170, ptr %165, align 2, !tbaa !14
+  %171 = getelementptr inbounds nuw i16, ptr inttoptr (i32 537127552 to ptr), i32 %49
+  %172 = load i16, ptr %171, align 2, !tbaa !14
+  %173 = zext i16 %172 to i32
+  %174 = add nuw nsw i32 %140, %173
+  %175 = tail call i32 @llvm.umin.i32(i32 %174, i32 65535)
+  %176 = trunc nuw i32 %175 to i16
+  store i16 %176, ptr %171, align 2, !tbaa !14
+  br label %177
 
-173:                                              ; preds = %85, %107, %95, %92, %74
+177:                                              ; preds = %87, %111, %97, %94, %74
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %7) #11
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %6) #11
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %5) #11
-  br label %174
+  br label %178
 
-174:                                              ; preds = %173, %54, %52
-  %175 = add nuw nsw i32 %49, 1
+178:                                              ; preds = %177, %54, %52
+  %179 = add nuw nsw i32 %49, 1
   br label %48, !llvm.loop !31
 }
 
@@ -1634,94 +1638,102 @@ define internal fastcc range(i32 0, 6) i32 @clearance(i32 noundef range(i32 0, -
   %44 = and i1 %43, %42
   %45 = select i1 %41, i1 %44, i1 false
   %46 = select i1 %38, i1 true, i1 %45
-  br i1 %46, label %47, label %79
+  br i1 %46, label %47, label %86
 
-47:                                               ; preds = %2, %76
-  %48 = phi i32 [ %77, %76 ], [ 0, %2 ]
-  %49 = phi i32 [ %78, %76 ], [ 1, %2 ]
-  %50 = icmp eq i32 %49, 6
-  br i1 %50, label %51, label %56
+47:                                               ; preds = %2
+  %48 = add nsw i32 %5, -524288
+  %49 = add nsw i32 %8, -524288
+  %50 = add nsw i32 %11, -524288
+  br label %51
 
-51:                                               ; preds = %47
-  %52 = icmp sgt i32 %48, 1
-  %53 = icmp eq i32 %48, 1
-  %54 = select i1 %53, i32 2, i32 5
-  %55 = select i1 %52, i32 0, i32 %54
-  br label %79
+51:                                               ; preds = %47, %83
+  %52 = phi i32 [ %84, %83 ], [ 0, %47 ]
+  %53 = phi i32 [ %85, %83 ], [ 1, %47 ]
+  %54 = icmp eq i32 %53, 6
+  br i1 %54, label %55, label %60
 
-56:                                               ; preds = %47
-  %57 = mul nuw nsw i32 %49, 43
-  %58 = mul nsw i32 %57, %15
-  %59 = ashr i32 %58, 8
-  %60 = add nsw i32 %59, %5
-  %61 = mul nsw i32 %57, %19
-  %62 = ashr i32 %61, 8
-  %63 = add nsw i32 %62, %8
-  %64 = mul nsw i32 %57, %23
-  %65 = ashr i32 %64, 8
-  %66 = add nsw i32 %65, %11
-  br i1 %38, label %67, label %70
+55:                                               ; preds = %51
+  %56 = icmp sgt i32 %52, 1
+  %57 = icmp eq i32 %52, 1
+  %58 = select i1 %57, i32 2, i32 5
+  %59 = select i1 %56, i32 0, i32 %58
+  br label %86
 
-67:                                               ; preds = %56
-  %68 = tail call fastcc i32 @in_box(i32 noundef 0, i32 noundef %60, i32 noundef %63, i32 noundef %66) #12
-  %69 = icmp eq i32 %68, 0
-  br i1 %69, label %70, label %74
+60:                                               ; preds = %51
+  %61 = mul nuw nsw i32 %53, 43
+  %62 = mul nsw i32 %61, %15
+  %63 = add nsw i32 %62, 134217728
+  %64 = lshr i32 %63, 8
+  %65 = add nsw i32 %48, %64
+  %66 = mul nsw i32 %61, %19
+  %67 = add nsw i32 %66, 134217728
+  %68 = lshr i32 %67, 8
+  %69 = add nsw i32 %49, %68
+  %70 = mul nsw i32 %61, %23
+  %71 = add nsw i32 %70, 134217728
+  %72 = lshr i32 %71, 8
+  %73 = add nsw i32 %50, %72
+  br i1 %38, label %74, label %77
 
-70:                                               ; preds = %67, %56
-  br i1 %45, label %71, label %76
+74:                                               ; preds = %60
+  %75 = tail call fastcc i32 @in_box(i32 noundef 0, i32 noundef %65, i32 noundef %69, i32 noundef %73) #12
+  %76 = icmp eq i32 %75, 0
+  br i1 %76, label %77, label %81
 
-71:                                               ; preds = %70
-  %72 = tail call fastcc i32 @in_box(i32 noundef 1, i32 noundef %60, i32 noundef %63, i32 noundef %66) #12
-  %73 = icmp eq i32 %72, 0
-  br i1 %73, label %76, label %74
+77:                                               ; preds = %74, %60
+  br i1 %45, label %78, label %83
 
-74:                                               ; preds = %71, %67
-  %75 = add nsw i32 %48, 1
-  br label %76
+78:                                               ; preds = %77
+  %79 = tail call fastcc i32 @in_box(i32 noundef 1, i32 noundef %65, i32 noundef %69, i32 noundef %73) #12
+  %80 = icmp eq i32 %79, 0
+  br i1 %80, label %83, label %81
 
-76:                                               ; preds = %74, %71, %70
-  %77 = phi i32 [ %75, %74 ], [ %48, %71 ], [ %48, %70 ]
-  %78 = add nuw nsw i32 %49, 1
-  br label %47, !llvm.loop !34
+81:                                               ; preds = %78, %74
+  %82 = add nsw i32 %52, 1
+  br label %83
 
-79:                                               ; preds = %2, %51
-  %80 = phi i32 [ %55, %51 ], [ 5, %2 ]
-  ret i32 %80
+83:                                               ; preds = %81, %78, %77
+  %84 = phi i32 [ %82, %81 ], [ %52, %78 ], [ %52, %77 ]
+  %85 = add nuw nsw i32 %53, 1
+  br label %51, !llvm.loop !34
+
+86:                                               ; preds = %2, %55
+  %87 = phi i32 [ %59, %55 ], [ 5, %2 ]
+  ret i32 %87
 }
 
 ; Function Attrs: minsize mustprogress nofree noinline norecurse nosync nounwind optsize willreturn memory(none)
-define internal fastcc range(i32 0, 2) i32 @in_box(i32 noundef range(i32 0, 2) %0, i32 noundef range(i32 -8421376, 8421375) %1, i32 noundef range(i32 -8421376, 8421375) %2, i32 noundef range(i32 -8421376, 8421375) %3) unnamed_addr #8 {
+define internal fastcc range(i32 0, 2) i32 @in_box(i32 noundef range(i32 0, 2) %0, i32 noundef range(i32 -557056, 16285695) %1, i32 noundef range(i32 -557056, 16285695) %2, i32 noundef range(i32 -557056, 16285695) %3) unnamed_addr #8 {
   %5 = icmp eq i32 %0, 0
   %6 = select i1 %5, i32 -30, i32 48
   %7 = icmp sgt i32 %2, %6
-  br i1 %7, label %8, label %29
+  br i1 %7, label %8, label %28
 
 8:                                                ; preds = %4
   %9 = select i1 %5, i32 42, i32 -45
-  %10 = select i1 %5, i32 75, i32 -79
-  %11 = select i1 %5, i32 245, i32 243
-  %12 = select i1 %5, i32 -330, i32 -268
-  %13 = add nsw i32 %9, %1
-  %14 = add nsw i32 %3, %12
-  %15 = mul nsw i32 %13, %11
-  %16 = mul nsw i32 %14, %10
-  %17 = add nsw i32 %16, %15
-  %18 = ashr i32 %17, 8
-  %19 = mul nsw i32 %14, %11
-  %20 = mul nsw i32 %13, %10
-  %21 = sub nsw i32 %19, %20
-  %22 = ashr i32 %21, 8
-  %23 = add nsw i32 %18, 35
-  %24 = icmp ult i32 %23, 71
-  %25 = add nsw i32 %22, 35
-  %26 = icmp ult i32 %25, 71
-  %27 = select i1 %24, i1 %26, i1 false
-  %28 = zext i1 %27 to i32
-  br label %29
+  %10 = select i1 %5, i32 -75, i32 79
+  %11 = select i1 %5, i32 75, i32 -79
+  %12 = select i1 %5, i32 245, i32 243
+  %13 = select i1 %5, i32 -330, i32 -268
+  %14 = add nsw i32 %9, %1
+  %15 = add nsw i32 %3, %13
+  %16 = mul nsw i32 %14, %12
+  %17 = mul nsw i32 %15, %11
+  %18 = mul nsw i32 %15, %12
+  %19 = mul nsw i32 %10, %14
+  %20 = add i32 %16, 8960
+  %21 = add i32 %20, %17
+  %22 = icmp ult i32 %21, 18176
+  %23 = add nsw i32 %19, 8960
+  %24 = add i32 %23, %18
+  %25 = icmp ult i32 %24, 18176
+  %26 = select i1 %22, i1 %25, i1 false
+  %27 = zext i1 %26 to i32
+  br label %28
 
-29:                                               ; preds = %4, %8
-  %30 = phi i32 [ %28, %8 ], [ 0, %4 ]
-  ret i32 %30
+28:                                               ; preds = %4, %8
+  %29 = phi i32 [ %27, %8 ], [ 0, %4 ]
+  ret i32 %29
 }
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)

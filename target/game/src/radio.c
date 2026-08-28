@@ -30,8 +30,11 @@
  *  - the camera sits at the box opening (z in [200,440], focal 200):
  *    the opening projects EXACTLY to the 240x240 screen — no
  *    clipping anywhere;
- *  - every hot right shift is < 16 to stay on the runtime's OUT_REV
- *    fast path.
+ *  - every right shift in the shooter is UNSIGNED and < 16, so it
+ *    rides the runtime's OUT_REV fast path: the Q8 dot products are
+ *    signed, so they shift through asr8() rather than `>>` (the
+ *    drawing path's wider Q12 shifts stay signed — they run per
+ *    redraw, not per receiver).
  *
  * Patch state lives in the free SRAM window at 0x2003C000 (the ARM's
  * park stamp moved to 0x2003FF00 to make it contiguous; bench.c's
@@ -515,6 +518,23 @@ repaint(int all)
   gfx_present();
 }
 
+/* asr8: v >> 8 for a SIGNED v, without the signed shift. dmacc lowers
+ * every >> to a runtime call; __rt_lshr fast-paths counts below 16
+ * through the sniffer's bit reversal, but __rt_ashr always rebuilds
+ * the word bit by bit (~30 iterations) — and the shooter's dot
+ * products are signed. Biasing into non-negative territory makes the
+ * shift unsigned, and floor() semantics are unchanged: for u = v + B
+ * with B a power of two, (u >>u 8) - B/8ths == v >>s 8 exactly.
+ * Callers here are bounded by the room (|v| < 2^20 — see the scene
+ * constants), far inside the 2^27 the bias affords. */
+#define ASR_BIAS (1 << 27)
+
+static int
+asr8(int v)
+{
+  return (int)(((uint)(v + ASR_BIAS)) >> 8) - (ASR_BIAS >> 8);
+}
+
 /* --- occlusion: 5 samples along the segment vs both boxes --- */
 
 static __attribute__((noinline)) int
@@ -529,8 +549,8 @@ in_box(int b, int x, int y, int z)
   if (y <= top)
     return 0; /* above the box (floor is +HALF, always below) */
   int dx = x - cx, dz = z - cz;
-  int lx = (dx * c + dz * sn) >> 8;   /* R^T */
-  int lz = (dz * c - dx * sn) >> 8;
+  int lx = asr8(dx * c + dz * sn);   /* R^T */
+  int lz = asr8(dz * c - dx * sn);
   return lx > -h && lx < h && lz > -h && lz < h;
 }
 
@@ -556,9 +576,9 @@ clearance(int p, int q)
   for (int s = 1; s <= 5; s++) {
     /* t = s/6 via *43>>8 (43/256 = 0.168 ~ 1/5.95) */
     int t = s * 43;
-    int x = px + ((dx * t) >> 8);
-    int y = py + ((dy * t) >> 8);
-    int z = pz + ((dz * t) >> 8);
+    int x = px + asr8(dx * t);
+    int y = py + asr8(dy * t);
+    int z = pz + asr8(dz * t);
     if ((t0 && in_box(0, x, y, z)) || (t1 && in_box(1, x, y, z)))
       inb++;
   }
@@ -629,12 +649,12 @@ shoot(int p)
     if (q == p)
       continue;
     int dx = pcx[q] - px, dy = pcy[q] - py, dz = pcz[q] - pz;
-    int dp = (dx * pnx + dy * pny + dz * pnz) >> 8;
+    int dp = asr8(dx * pnx + dy * pny + dz * pnz);
     if (dp <= 0)
       continue;
     int qnx, qny, qnz;
     normal_of(q, &qnx, &qny, &qnz);
-    int dq = -((dx * qnx + dy * qny + dz * qnz) >> 8);
+    int dq = -asr8(dx * qnx + dy * qny + dz * qnz);
     if (dq <= 0)
       continue;
     uint r2 = (uint)(dx * dx) + (uint)(dy * dy) + (uint)(dz * dz);

@@ -50,7 +50,9 @@ static const struct {
     {"gpio", DK_GPIO, 0},       {"pio0", DK_PIO, 0}, {"pio1", DK_PIO, 1},
     {"pio2", DK_PIO, 2},        {"fb0", DK_FB, 0},   {"apps", DK_APPS, 0},
 };
-#define NDEV ((int)(sizeof(devtab) / sizeof(devtab[0])))
+/* Entries in devtab — NOT param.h's NDEV (the maximum major
+ * device number), which this used to shadow. */
+#define NDEVTAB ((int)(sizeof(devtab) / sizeof(devtab[0])))
 
 static struct inode devnodes[NDEVNODE];
 
@@ -183,7 +185,7 @@ dev_getnode(uint ident) /* ident: 0 = the /dev dir, 1+i = devtab[i] */
   free->major = 0;
   if (ident == 0) {
     free->type = T_DIR;
-    free->size = (uint)((NDEV + 2) * sizeof(struct dirent));
+    free->size = (uint)((NDEVTAB + 2) * sizeof(struct dirent));
   } else {
     int idx = (int)ident - 1;
     if (devtab[idx].kind == DK_CONSOLE) {
@@ -224,7 +226,7 @@ dev_lookup(struct inode *dir, const char *name)
     return 0;
   if ((name[0] == '.' && name[1] == 0))
     return dev_getnode(0);
-  for (int i = 0; i < NDEV; i++) {
+  for (int i = 0; i < NDEVTAB; i++) {
     const char *a = devtab[i].name, *b = name;
     while (*a && *a == *b) {
       a++;
@@ -243,7 +245,7 @@ dev_readi(struct inode *ip, uint dst, uint off, uint n)
     struct dirent de;
     uint made = 0, want = n / sizeof(de);
     uint start = off / sizeof(de);
-    for (uint e = start; e < (uint)NDEV && made < want; e++) {
+    for (uint e = start; e < (uint)NDEVTAB && made < want; e++) {
       de.inum = (ushort)(e + 1);
       for (int i = 0; i < DIRSIZ; i++)
         de.name[i] = 0;
