@@ -149,11 +149,11 @@ shift-free pan/clear loops with 8x unrolling):
 | echo (40 chars)     | +5.66M      | below noise |
 | scroll (12x ls /dev)| +157M       | +36M (~335k/scroll, 2-3 ms) |
 
-fbcon now costs less than the UART pacing it shadows. dmacc still
-lacks constant-shift strength reduction for lshr/ashr (shl has it) —
-an open item that would speed the whole kernel; llvm.usub.sat was
-added to the intrinsic set along the way (clang emits it for clamped
-subtraction).
+fbcon now costs less than the UART pacing it shadows. The open item
+noted here — dmacc lacking constant-shift strength reduction for
+lshr/ashr — was closed later by byte-lane constant shifts
+(prompts/042 §3); llvm.usub.sat was added to the intrinsic set along
+the way (clang emits it for clamped subtraction).
 
 ## The sync saga (second silicon round)
 

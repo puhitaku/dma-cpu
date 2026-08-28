@@ -129,8 +129,9 @@ calls, no memmove, no external functions beyond the intrinsic set
 - In-tree LLVM backend (Phase 4b, optional): the translator now defines
   its acceptance tests.
 - Performance: compiler use of the cheap `jneg` under value-range
-  proofs; byte-lane fast paths for shifts by 8/16/24; direct-address
-  folding through more GEP shapes; dead value-word elimination.
+  proofs; direct-address folding through more GEP shapes; dead
+  value-word elimination. (Byte-lane fast paths for constant shifts
+  were listed here and are done — prompts/042 §3.)
 - Recursion via a frame-pointer discipline (indirect frame addressing
   exists — it is the load/store patch idiom) when xv6 needs it.
 - ISR-in-C: compile a function into an approach-B ISR bank (the

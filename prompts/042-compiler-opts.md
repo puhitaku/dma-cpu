@@ -60,23 +60,44 @@ Still open: constant length with RUNTIME addresses (needs the IR
 `align` attribute, which host/llir drops, plus a self-patching record —
 RAM-resident under XIPText); variable lengths.
 
-## 3. Byte-lane constant shifts (complements the sniffer path)
+## 3. Byte-lane constant shifts — DONE
 
-__rt_lshr's OUT_REV sniffer trick (rev, n doublings, rev back;
-~21+4n) made the GENERAL routine fast. Byte-lane lowering removes the
-call entirely for the static cases: little-endian byte addressability
-means `x >> 8` is the three bytes at &x+1 — zero the result word plus
-one 3-byte burst, 2 records inline vs ~53+call today (n=16 currently
-falls into the ~7*(32-n) rebuild loop, ~112). `(x >> k) & 0xFF` is
-ONE record with the mask fused; shl by 8k mirrors. Constant counts
-n = 8k+r compose in the reversed domain (rev, byte-lane 8k, r
-doublings, rev) for a fixed ~20 records at any constant n. ashr needs
-a jsign-picked 0x00/0xFF lane fill. Dispatch belongs next to
-emitMulConst's constant path; the sniffer routine stays as the
-variable-count fallback. (While there: fix runtime.go's stale header
-comment — it still describes the pre-sniffer doubling-only lowering —
-and give __rt_mul an early-out once the remaining multiplier bits are
-zero instead of the fixed 31 iterations.)
+Implemented in host/dmacc/func.go (laneShr / laneShl / shlConst /
+laneShrConst / emitShrConst); the sniffer routines stayed as the
+variable-count fallback. Every constant shl/lshr/ashr is now inline.
+
+Where the sketch below guessed differently: the composition for
+n = 8k+r does NOT need the reversed domain. Shifting right by 8k
+first leaves at least eight leading zeros, so the remaining r bits
+come out of a left shift by 8-r plus one more lane; below one byte the
+word splits at the byte boundary and the two halves merge with an OR.
+`mulc`'s counted accumulate carries those sub-byte shifts in three
+blocks up to six bits. ashr needs no jsign-picked lane fill either:
+the fold (y ^ s) - s with s = 1 << (31-n) is two blocks on top of the
+logical shift. __rt_mul got byte-wide leading-zero skipping (not a
+tail early-out — the accumulator still owes one doubling per remaining
+bit, so only LEADING zeros are free).
+
+Measured (feather images, emulator cycles / flash bytes): cc_bits
+188837/11028 -> 56779/5612, cc_collatz 398663/3956 -> 335681/2720,
+cc_arith 431879/10680 -> 327199/10148, cc_stdio 3637588/41532 ->
+3372664/36644, fs-kern-xip text 214240 -> 205288, xsh warm commands
+-2% overall.
+
+The original sketch, for the record:
+
+> __rt_lshr's OUT_REV sniffer trick (rev, n doublings, rev back;
+> ~21+4n) made the GENERAL routine fast. Byte-lane lowering removes the
+> call entirely for the static cases: little-endian byte addressability
+> means `x >> 8` is the three bytes at &x+1 — zero the result word plus
+> one 3-byte burst, 2 records inline vs ~53+call today (n=16 currently
+> falls into the ~7*(32-n) rebuild loop, ~112). `(x >> k) & 0xFF` is
+> ONE record with the mask fused; shl by 8k mirrors. Constant counts
+> n = 8k+r compose in the reversed domain (rev, byte-lane 8k, r
+> doublings, rev) for a fixed ~20 records at any constant n. ashr needs
+> a jsign-picked 0x00/0xFF lane fill. Dispatch belongs next to
+> emitMulConst's constant path; the sniffer routine stays as the
+> variable-count fallback.
 
 ## 4. Record-level outliner (biggest remaining size lever)
 
@@ -129,4 +150,5 @@ probes are this tool asking to be born.
 
 §1 (it compounds: every future heuristic becomes automatic) and §2+§3
 together (about a week, aimed at exactly the record-count hot spots
-the traces keep showing: bulk moves and shift-heavy inner loops).
+the traces keep showing: bulk moves and shift-heavy inner loops). §3
+is done; §2 is still open.

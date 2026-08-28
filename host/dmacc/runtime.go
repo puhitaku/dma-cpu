@@ -11,7 +11,10 @@ import "fmt"
 // bits by repeated doubling and sign tests. The machine has no right
 // shift: __rt_lshr borrows the DMA sniffer's OUT_REV bit reversal for
 // counts under 16 (reverse, left-shift, reverse back); larger counts,
-// and __rt_ashr always, consume bits from the top. memcpy/memset patch a
+// and __rt_ashr always, consume bits from the top. The shift routines
+// serve counts the compiler cannot see: a constant count is lowered
+// inline instead, as a copy between the byte lanes of the little-endian
+// value words (func.go, laneShrConst and emitShl). memcpy/memset patch a
 // single INCR block — a DMA engine's native talent. They take a byte
 // count from an arbitrary address, so they burst size8: one transfer per
 // byte, whatever the length (a zero count is the silicon-verified NOP,
@@ -30,10 +33,32 @@ type rtRoutine struct {
 var rtRoutines = []rtRoutine{
 	{
 		name: "mul",
-		data: "rt_macc: .word 0\nrt_mcnt: .word 0\n",
-		text: `__rt_mul:
+		data: "rt_macc: .word 0\nrt_mcnt: .word 0\nrt_mtmp: .word 0\nrt_mbyte: .word 0\n",
+		text: `; r0 * r1, MSB-first over the multiplier. Leading zero BYTES of r1
+; retire eight bits at a time up front: the accumulator is still zero
+; there, so the doublings those passes would do are no-ops, and one
+; byte-lane shift plus a counter step stands in for eight full ~6-macro
+; passes. The count guard doubles as the r1 == 0 exit — four rounds
+; drive it negative and the routine returns the zero accumulator.
+; Counters step by adding a negative literal: add is three blocks
+; where sub is five. rt_mbyte holds only the top byte of r1, written
+; size8 over a word that starts at zero and is never written wider, so
+; its upper three lanes stay zero without a clearing record.
+__rt_mul:
     move zero, rt_macc
     move $31, rt_mcnt
+rt_mul_bskip:
+    move r1+3, rt_mbyte, size8
+    add rt_mbyte, $0xFFFFFFFF, rt_mtmp
+    jneg rt_mtmp, rt_mul_bs_go, rt_mul_loop
+rt_mul_bs_go:
+    add rt_mcnt, $0xFFFFFFF8, rt_mcnt
+    jneg rt_mcnt, rt_mul_done, rt_mul_bs_shl
+rt_mul_bs_shl:
+    move $0, rt_mtmp
+    move r1, rt_mtmp+1, size8, count=3, incrr, incrw
+    move rt_mtmp, r1
+    jump rt_mul_bskip
 rt_mul_loop:
     shl rt_macc, rt_macc
     jsign r1, rt_mul_add, rt_mul_skip
@@ -41,7 +66,7 @@ rt_mul_add:
     add rt_macc, r0, rt_macc
 rt_mul_skip:
     shl r1, r1
-    sub rt_mcnt, $1, rt_mcnt
+    add rt_mcnt, $0xFFFFFFFF, rt_mcnt
     jneg rt_mcnt, rt_mul_done, rt_mul_loop
 rt_mul_done:
     move rt_macc, r0
@@ -83,7 +108,7 @@ rt_udm_sub:
     add rt_dquo, $1, rt_dquo
 rt_udm_skip:
     shl r0, r0
-    sub rt_dcnt, $1, rt_dcnt
+    add rt_dcnt, $0xFFFFFFFF, rt_dcnt
     jneg rt_dcnt, rt_udm_done, rt_udm_loop
 rt_udm_done:
     ret
@@ -169,10 +194,11 @@ rt_srem_done:
 	},
 	{
 		name: "shl",
-		text: `__rt_shl:
+		text: `; r0 << r1, for counts only known at run time.
+__rt_shl:
     andn r1, $0xFFFFFFE0, r1
 rt_shl_loop:
-    sub r1, $1, r1
+    add r1, $0xFFFFFFFF, r1
     jneg r1, rt_shl_done, rt_shl_go
 rt_shl_go:
     shl r0, r0
@@ -184,16 +210,17 @@ rt_shl_done:
 	{
 		name: "lshr",
 		data: "rt_lres: .word 0\nrt_lcnt: .word 0\nrt_lrev: .word 0\nrt_lnorm: .word 0\n",
-		text: `; r0 >> r1. Shifts below 16 go through the sniffer's OUT_REV bit
-; reversal: x >> n == rev(rev(x) << n), so reverse, do n cheap left
-; doublings, reverse back — ~21 + 4n instructions instead of
-; ~7*(32-n). Larger shifts keep the MSB-first rebuild loop, whose
-; cost falls as n rises. OUT_REV lives in SNIFF_CTRL (bit 10) and
-; transforms SNIFF_DATA reads only (writes store raw). Both CTRL
-; flavors are computed BEFORE engaging: while OUT_REV is on, any
-; accumulator read is reversed, so the restore must be a plain store
-; of a precomputed word, never a read-modify-write. %sniff is
-; caller-saved per the ABI, so clobbering the accumulator is free.
+		text: `; r0 >> r1, for counts only known at run time. Shifts below 16 go
+; through the sniffer's OUT_REV bit reversal: x >> n == rev(rev(x) << n),
+; so reverse, do n cheap left doublings, reverse back — ~21 + 4n
+; instructions instead of ~7*(32-n). Larger shifts keep the MSB-first
+; rebuild loop, whose cost falls as n rises. OUT_REV lives in
+; SNIFF_CTRL (bit 10) and transforms SNIFF_DATA reads only (writes
+; store raw). Both CTRL flavors are computed BEFORE engaging: while
+; OUT_REV is on, any accumulator read is reversed, so the restore must
+; be a plain store of a precomputed word, never a read-modify-write.
+; %sniff is caller-saved per the ABI, so clobbering the accumulator is
+; free.
 __rt_lshr:
     andn r1, $0xFFFFFFE0, r1
     jlt r1, $16, rt_lshr_rev, rt_lshr_slow
@@ -205,7 +232,7 @@ rt_lshr_rev:
     move %sniff, rt_lres
     move rt_lnorm, %sniffctrl
 rt_lshr_dbl:
-    sub r1, $1, r1
+    add r1, $0xFFFFFFFF, r1
     jneg r1, rt_lshr_out, rt_lshr_go2
 rt_lshr_go2:
     shl rt_lres, rt_lres
@@ -229,7 +256,7 @@ rt_lshr_1:
     add rt_lres, $1, rt_lres
 rt_lshr_0:
     shl r0, r0
-    sub rt_lcnt, $1, rt_lcnt
+    add rt_lcnt, $0xFFFFFFFF, rt_lcnt
     jump rt_lshr_loop
 rt_lshr_done:
     move rt_lres, r0
@@ -240,6 +267,8 @@ rt_lshr_done:
 		name: "ashr",
 		data: "rt_ares: .word 0\nrt_acnt: .word 0\n",
 		text: `; like lshr's slow path, but the result starts as the sign fill.
+; Reached only by a run-time count: a constant one folds into the
+; logical shift as (y ^ s) - s.
 __rt_ashr:
     andn r1, $0xFFFFFFE0, r1
     move $31, rt_acnt
@@ -259,7 +288,7 @@ rt_ashr_1:
     add rt_ares, $1, rt_ares
 rt_ashr_0:
     shl r0, r0
-    sub rt_acnt, $1, rt_acnt
+    add rt_acnt, $0xFFFFFFFF, rt_acnt
     jump rt_ashr_loop
 rt_ashr_done:
     move rt_ares, r0

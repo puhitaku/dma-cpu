@@ -467,16 +467,27 @@ func (fc *funcCtx) prepass() error {
 	}
 	for _, b := range f.Blocks {
 		for _, ins := range b.Instrs {
-			// Conservative: ops that may lower to runtime calls count as
-			// calls, so the prologue always saves lr before one happens.
-			// Tail calls never clobber lr and don't count.
+			// Ops that lower to runtime calls count as calls, so the
+			// prologue always saves lr before one happens. Tail calls
+			// never clobber lr and don't count.
 			switch ins.Op {
 			case "call":
 				if !isNopIntrinsic(ins.Callee) && !fc.tail[ins] {
 					fc.hasCalls = true
 				}
-			case "mul", "shl", "lshr", "ashr", "udiv", "sdiv", "urem", "srem":
+			case "udiv", "sdiv", "urem", "srem":
 				fc.hasCalls = true
+			case "mul":
+				// A constant factor is a double-and-add chain in place.
+				if ins.Args[0].Kind != llir.VConst && ins.Args[1].Kind != llir.VConst {
+					fc.hasCalls = true
+				}
+			case "shl", "lshr", "ashr":
+				// Constant counts lower to byte lanes; only a shift by a
+				// value the compiler cannot see reaches the runtime.
+				if ins.Args[1].Kind != llir.VConst {
+					fc.hasCalls = true
+				}
 			}
 		}
 	}
@@ -797,7 +808,13 @@ func (fc *funcCtx) emitInstr(b *llir.Block, ins *llir.Instr) error {
 	case "shl":
 		return fc.emitShl(ins)
 
-	case "lshr", "ashr", "udiv", "sdiv", "urem", "srem":
+	case "lshr", "ashr":
+		if done, err := fc.emitShrConst(ins); done || err != nil {
+			return err
+		}
+		return fc.emitRuntimeOp(ins)
+
+	case "udiv", "sdiv", "urem", "srem":
 		return fc.emitRuntimeOp(ins)
 
 	case "icmp":
@@ -1085,6 +1102,115 @@ func (fc *funcCtx) emitMul(ins *llir.Instr) error {
 	return nil
 }
 
+// --- Byte-lane constant shifts ---
+//
+// Every value is a little-endian word in byte-addressable SRAM, so a
+// constant shift by a whole number of bytes is a copy of a byte range:
+// x >> 8 is the three bytes at &x+1 landing at &res+0, x << 16 is the
+// low half of x landing at &res+2. The result word is zeroed first, so
+// the lanes the copy does not cover read as zero.
+
+// laneable reports whether an operand is a bare data-word symbol — the
+// only form a byte offset can be taken of. Literals ($imm), MMIO names
+// and absolute addresses are not, and neither is an operand that
+// already carries an offset or a block field.
+func laneable(op string) bool {
+	return op != "" && !strings.ContainsAny(op, "$%@+.")
+}
+
+// laneSrc returns an operand equal to src that byte offsets can be
+// taken of, ferrying through scratch when src is not addressable or
+// aliases dst (the lane copies zero dst before reading src).
+func (fc *funcCtx) laneSrc(src, dst, scratch string) string {
+	if laneable(src) && src != dst {
+		return src
+	}
+	fc.ins("move %s, %s", src, scratch)
+	return scratch
+}
+
+// laneShr emits dst = src >> (8*k) for k in 1..3. src and dst must be
+// distinct addressable words.
+func (fc *funcCtx) laneShr(src string, k int, dst string) {
+	fc.ins("move $0, %s", dst)
+	switch k {
+	case 1:
+		fc.ins("move %s+1, %s, size8, count=3, incrr, incrw", src, dst)
+	case 2:
+		fc.ins("move %s+2, %s, size16", src, dst)
+	case 3:
+		fc.ins("move %s+3, %s, size8", src, dst)
+	}
+}
+
+// laneShl emits dst = src << (8*k) for k in 1..3: laneShr mirrored.
+func (fc *funcCtx) laneShl(src string, k int, dst string) {
+	fc.ins("move $0, %s", dst)
+	switch k {
+	case 1:
+		fc.ins("move %s, %s+1, size8, count=3, incrr, incrw", src, dst)
+	case 2:
+		fc.ins("move %s, %s+2, size16", src, dst)
+	case 3:
+		fc.ins("move %s, %s+3, size8", src, dst)
+	}
+}
+
+// shlConst emits dst = src << n (n >= 0, exact mod 2^32) for the bits a
+// byte lane cannot carry. mulc's counted accumulate doubles the sniffer
+// sum once per transfer, so it carries up to six bits in one three-block
+// macro where a doubling chain spends three blocks per bit. Its count
+// holds 2^n, which is what caps a step at six.
+func (fc *funcCtx) shlConst(src string, n int, dst string) {
+	for n > 6 {
+		fc.ins("mulc %s, 64, %s", src, dst)
+		src, n = dst, n-6
+	}
+	switch {
+	case n == 1:
+		fc.ins("shl %s, %s", src, dst)
+	case n > 1:
+		fc.ins("mulc %s, %d, %s", src, 1<<n, dst)
+	case src != dst:
+		fc.ins("move %s, %s", src, dst)
+	}
+}
+
+// laneShrConst emits dst = src >>u n for 1 <= n <= 31.
+//
+// Whole bytes are one lane copy. A leftover r = n%8 rides a left shift
+// by 8-r through the lanes the copy freed, then one more lane brings it
+// down: src >> 8k has at least eight leading zeros, so that shift
+// cannot overflow.
+//
+// Below one byte there is no such headroom, so the word splits at the
+// byte boundary: x >> n is (x >> 8) << (8-n) for everything above the
+// low byte, OR'd with byte 1 of x << (8-n) for the rest. That byte
+// holds bits n..n+7 of x, so the two halves overlap on bits 8..n+7 —
+// and place them at the same positions, which is what makes the merge
+// a disjunction.
+func (fc *funcCtx) laneShrConst(src string, n int, dst string) {
+	k, r := n/8, n%8
+	switch {
+	case r == 0:
+		fc.laneShr(fc.laneSrc(src, dst, "sc1"), k, dst)
+	case k > 0:
+		fc.laneShr(fc.laneSrc(src, "sc1", "sc2"), k, "sc1")
+		fc.shlConst("sc1", 8-r, "sc1")
+		fc.laneShr("sc1", 1, dst)
+	default:
+		s := fc.laneSrc(src, "sc1", "sc2")
+		fc.laneShr(s, 1, "sc1")
+		fc.shlConst("sc1", 8-n, "sc1")
+		fc.shlConst(s, 8-n, "sc2")
+		fc.ins("move $0, %s", dst)
+		fc.ins("move sc2+1, %s, size8", dst)
+		fc.ins("or %s, sc1, %s", dst, dst)
+	}
+}
+
+// emitShl lowers a left shift. A constant count splits into a byte-lane
+// copy for its 8*k bits and a mulc for the remaining 0..7.
 func (fc *funcCtx) emitShl(ins *llir.Instr) error {
 	w, err := width(ins.Typ)
 	if err != nil {
@@ -1100,13 +1226,12 @@ func (fc *funcCtx) emitShl(ins *llir.Instr) error {
 		n := int(uint32(sh.Int)) & 31
 		if n == 0 {
 			return fc.forward(ins.Res, a)
-		} else if n <= 10 {
-			fc.ins("shl %s, %s", av, res)
-			for i := 1; i < n; i++ {
-				fc.ins("shl %s, %s", res, res)
-			}
+		}
+		if k := n / 8; k > 0 {
+			fc.laneShl(fc.laneSrc(av, res, "sc1"), k, res)
+			fc.shlConst(res, n%8, res)
 		} else {
-			fc.emitMulConst(av, uint32(1)<<n, res)
+			fc.shlConst(av, n, res)
 		}
 		fc.maskTo(res, w)
 		return nil
@@ -1124,7 +1249,50 @@ func (fc *funcCtx) emitShl(ins *llir.Instr) error {
 	return nil
 }
 
-// emitRuntimeOp lowers lshr/ashr/udiv/sdiv/urem/srem via runtime calls.
+// emitShrConst lowers lshr/ashr by a constant count and reports whether
+// it took the instruction: every constant count goes through the byte
+// lanes (laneShrConst), so only a run-time count reaches the runtime.
+// An arithmetic shift is the logical one plus the sign fold
+// (y ^ s) - s with s = 1 << (31-n), two blocks either way. The
+// subtraction rides `add` with the negated constant: three blocks
+// against `sub`'s five.
+func (fc *funcCtx) emitShrConst(ins *llir.Instr) (bool, error) {
+	sh := ins.Args[1]
+	if sh.Kind != llir.VConst {
+		return false, nil
+	}
+	n := int(uint32(sh.Int)) & 31
+	if n == 0 {
+		return true, fc.forward(ins.Res, ins.Args[0])
+	}
+	signed := ins.Op == "ashr"
+	w, err := width(ins.Typ)
+	if err != nil {
+		return false, err
+	}
+	av, err := fc.op(ins.Args[0])
+	if err != nil {
+		return false, err
+	}
+	res := fc.word(ins.Res)
+	if signed && w < 32 {
+		fc.sextInto(av, w, "sc0")
+		av = "sc0"
+	}
+	fc.laneShrConst(av, n, res)
+	if signed {
+		s := uint32(1) << uint(31-n)
+		fc.ins("xor %s, $0x%x, %s", res, s, res)
+		fc.ins("add %s, $0x%x, %s", res, -s, res)
+	}
+	if signed || w < 32 {
+		fc.maskTo(res, w)
+	}
+	return true, nil
+}
+
+// emitRuntimeOp lowers variable-count lshr/ashr and udiv/sdiv/urem/srem
+// via runtime calls.
 func (fc *funcCtx) emitRuntimeOp(ins *llir.Instr) error {
 	w, err := width(ins.Typ)
 	if err != nil {
