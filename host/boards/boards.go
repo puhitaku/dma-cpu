@@ -6,17 +6,6 @@
 // exactly one place.
 package boards
 
-// Video scanout DMA channels of the retired PSRAM-copier design
-// (prompts/036, first act); the shipped engine is the two-channel
-// walker/executor program in scanout.go. The compact machine is the
-// contiguous ch0..8 and ch9+ is the board pool (kdma.c), so the
-// display engine rides the top of the RP2350's 16 either way.
-const (
-	FbChanWalk = 13 // ring walker: control blocks -> executor's alias0
-	FbChanExec = 14 // executor: streams to the HSTX FIFO / kicks the copier
-	FbChanCopy = 15 // line copier: PSRAM -> SRAM line buffers
-)
-
 // Board describes one deployable target.
 type Board struct {
 	Name      string

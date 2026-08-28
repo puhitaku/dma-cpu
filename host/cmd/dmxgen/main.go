@@ -941,6 +941,13 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	return b, nil
 }
 
+// nimgRows is the kernel's flash-image registry capacity and MUST
+// track NIMG in target/xv6/dma/kproc.c, which declares the array this
+// generator fills (struct kimg kimages[NIMG]). Every kernel-side
+// lookup loop is bounded by NIMG, so a row written past it would land
+// in flash and stay invisible forever.
+const nimgRows = 20
+
 // buildXsh: UPSTREAM user/sh.c as the boot shell on the FULL
 // filesystem kernel, the WHOLE SYSTEM in Tier-C compact encoding
 // (Phase 8, prompts/020): 8-byte records halve text, the tick
@@ -1365,8 +1372,10 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		if cursor > bd.AppsEnd {
 			return nil, fmt.Errorf("apps blob overflows its flash budget by %d bytes", cursor-bd.AppsEnd)
 		}
-		if rowIdx > 24 {
-			return nil, fmt.Errorf("registry rows exhausted: %d > NIMG", rowIdx)
+		// rowIdx is the row COUNT here (patchRow post-increments), so the
+		// last legal index is nimgRows-1 and a count of nimgRows fits.
+		if rowIdx > nimgRows {
+			return nil, fmt.Errorf("registry rows exhausted: %d rows > NIMG (%d, kproc.c)", rowIdx, nimgRows)
 		}
 	}
 
@@ -1492,11 +1501,6 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	}
 	return b, nil
 }
-
-// fsSlotXIP is the persistent-fs slot: one 4 KB header sector + the
-// disk image, at a fixed flash offset above the firmware region (the
-// firmware asserts it does not grow past it).
-const fsSlotXIP = 0x10200000
 
 const sysWantConsole = "hello from pid 1 via SYS_write\n" +
 	"pid 1 saw the clock advance\n" +

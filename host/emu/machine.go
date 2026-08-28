@@ -662,9 +662,11 @@ const burstMin = 16
 // used. Eligibility: the channel is the sole ready channel (checked
 // by the caller), unpaced (permanent TREQ, so no credit accounting),
 // counting down normally, with no observers (sniffer, trace, watch)
-// and no ring wrapping; nothing can preempt it before the next timer
-// pulse, because triggers only fire from completions and the XIP
-// stream DREQ is inactive.
+// and no ring wrapping. Triggers only fire from completions, so
+// nothing can preempt it — except the sources step() would have
+// serviced during those cycles: pacing timers, the XIP stream DREQ
+// (excluded outright), and the time-paced level grants, which cap the
+// run so a waiting listener is never starved for a whole burst.
 func (m *Machine) burstLen(chIdx int) uint64 {
 	d := &m.dma
 	c := &d.ch[chIdx]
@@ -681,10 +683,53 @@ func (m *Machine) burstLen(chIdx int) uint64 {
 			k = gap
 		}
 	}
+	if gap := m.pacedGrantGap(); gap < k {
+		k = gap
+	}
 	if k > 1<<16 {
 		k = 1 << 16
 	}
 	return k
+}
+
+// pacedGrantGap reports how many cycles may pass before step() owes a
+// level grant to a channel that is armed and out of credit, for the
+// sources whose grant is a function of TIME rather than of machine
+// state: the UART TX pace, the HSTX drain pace, and the PIO TX
+// cadences. A burst skips those cycles' step() calls, so without this
+// cap a bulk copy would starve the console, the display or the audio
+// ring for its whole length — silicon interleaves them instead. The
+// state-driven grants (SPI TX/RX, UART RX, the XIP streamer) need no
+// cap: nothing a plain memory burst does can assert them.
+func (m *Machine) pacedGrantGap() uint64 {
+	d := &m.dma
+	gap := ^uint64(0)
+	due := func(next uint64) {
+		g := uint64(1) // already owed: take the per-word path
+		if next > m.Cycle {
+			g = next - m.Cycle
+		}
+		if g < gap {
+			gap = g
+		}
+	}
+	if m.TXPace != 0 && d.uartTxListen != 0 && d.starved(d.uartTxListen) {
+		due(m.lastTX + m.TXPace)
+	}
+	if m.HSTXPace != 0 && d.hstxListen != 0 && d.starved(d.hstxListen) {
+		due(m.hstxNext)
+	}
+	if d.pioListen != 0 {
+		ctrl := m.mmio[m.v.PIO0Base]
+		for sm := 0; sm < 4; sm++ {
+			lst := d.pioTx[sm]
+			if lst == 0 || ctrl&(1<<uint(sm)) == 0 || !d.starved(lst) {
+				continue
+			}
+			due(m.pioNext[sm])
+		}
+	}
+	return gap
 }
 
 // burst executes k words of the channel in one tight loop over the
@@ -1026,7 +1071,10 @@ func (m *Machine) Clone() *Machine {
 		n.mmio[k] = v
 	}
 	n.GPIOEvents = append([]GPIOEvent(nil), m.GPIOEvents...)
-	n.HSTXOut = nil /* clones start a fresh capture (and drop the cap) */
+	// Clones start a fresh scanout capture: a booted parent has often
+	// already spent the 1<<20-word cap, so an inherited buffer costs
+	// 4 MB per clone and still records nothing of the clone's own run.
+	n.HSTXOut = nil
 	for i := range m.PIO0TX {
 		n.PIO0TX[i] = append([]uint32(nil), m.PIO0TX[i]...)
 	}
@@ -1038,7 +1086,6 @@ func (m *Machine) Clone() *Machine {
 	if m.PSRAM != nil {
 		n.PSRAM = append([]byte(nil), m.PSRAM...)
 	}
-	n.HSTXOut = append([]uint32(nil), m.HSTXOut...)
 	n.fl.rx = append([]byte(nil), m.fl.rx...)
 	n.fl.page = append([]byte(nil), m.fl.page...)
 	if m.SDImage != nil {

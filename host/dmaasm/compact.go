@@ -88,7 +88,7 @@ type primKind int
 
 const (
 	pRec       primKind = iota // the block's own record
-	pSwitch                    // window-selector rewrite (from -> to)
+	pSwitch                    // window-selector rewrite (to a bank)
 	pCount                     // count-set record for a bank channel
 	pStageRead                 // SNIFF_DATA -> at, on the sniff bank
 	pStagePush                 // at -> %pc, on the plain bank
@@ -96,10 +96,10 @@ const (
 )
 
 type prim struct {
-	kind     primKind
-	from, to int    // pSwitch
-	bank     int    // pCount
-	k        uint32 // pCount
+	kind primKind
+	to   int    // pSwitch
+	bank int    // pCount
+	k    uint32 // pCount
 }
 
 type cstate struct {
@@ -121,7 +121,7 @@ func (st *cstate) switchTo(b int, ps []prim) []prim {
 	if st.bank == b {
 		return ps
 	}
-	ps = append(ps, prim{kind: pSwitch, from: st.bank, to: b})
+	ps = append(ps, prim{kind: pSwitch, to: b})
 	st.bank = b
 	return ps
 }
@@ -221,8 +221,7 @@ func planCount(shapes []cshape) uint32 {
 // --- Pass-1 literal interning for planner-generated records ---
 
 // internPlanLits interns every literal the emitter will need for the
-// given shapes: window literals (plain and pre-swapped variants) and
-// count values.
+// given shapes: bank-window literals and count values.
 func (a *asm) internPlanLits(shapes []cshape) {
 	st := newCstate()
 	var prims []prim
@@ -233,7 +232,7 @@ func (a *asm) internPlanLits(shapes []cshape) {
 	for _, p := range prims {
 		switch p.kind {
 		case pSwitch:
-			swop := operand{kind: opLit, num: a.switchLitVal(p.from, p.to), isNum: true}
+			swop := operand{kind: opLit, num: a.switchLitVal(p.to), isNum: true}
 			a.internLit(swop)
 			a.sysLits[litKey(swop)] = true /* read per bank switch: resident */
 		case pCount:
@@ -245,20 +244,11 @@ func (a *asm) internPlanLits(shapes []cshape) {
 }
 
 // switchLitVal is the pool word a switch record reads: the target
-// window address, pre-transformed for the current bank's data path.
-func (a *asm) switchLitVal(from, to int) uint32 {
-	w := emu.CompactWindow(to)
-	if from == emu.CompactBswap {
-		return bswap32(w)
-	}
-	// size8/size16 transfers read the literal's low byte/half, which are
-	// the low bits of the full window address — the same literal works.
-	return w
-}
-
-func bswap32(x uint32) uint32 {
-	return x<<24 | x>>24 | x<<8&0x00FF0000 | x>>8&0x0000FF00
-}
+// window address, plain. No transform is ever needed — a switch record
+// only ever executes on the plain or sniff bank (both 32-bit), because
+// the bswap and size banks auto-return through cleanup and the planner
+// is therefore never on one when it emits a switch.
+func (a *asm) switchLitVal(to int) uint32 { return emu.CompactWindow(to) }
 
 // --- Pass-2 record emitter ---
 
@@ -279,7 +269,7 @@ func (c *cemit) emitPrims(ps []prim, src, dst img.Ptr) {
 		case pHalt:
 			c.text.RecordP(img.Abs(0), img.Abs(0))
 		case pSwitch:
-			c.text.RecordP(c.a.litNumPtr(c.a.switchLitVal(p.from, p.to)), c.scrP)
+			c.text.RecordP(c.a.litNumPtr(c.a.switchLitVal(p.to)), c.scrP)
 		case pCount:
 			c.text.RecordP(c.a.litNumPtr(p.k),
 				img.Abs(emu.ChanRegAddr(p.bank, emu.OffAl2TransCount)))

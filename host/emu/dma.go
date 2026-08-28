@@ -264,6 +264,18 @@ func (d *dma) levelDreqMask(mask uint32) {
 	}
 }
 
+// starved reports whether any channel in the mask is armed and out of
+// credit — i.e. waiting for its level DREQ to be re-granted.
+func (d *dma) starved(mask uint32) bool {
+	for m := mask; m != 0; m &= m - 1 {
+		i := bits.TrailingZeros32(m)
+		if d.ch[i].busy && d.ch[i].credit == 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // regRead returns the value of the register at offset (alias-op already
 // stripped by the bus). Unmodelled registers (e.g. RP2350 SECCFG/MPU)
 // read as zero.

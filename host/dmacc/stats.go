@@ -24,7 +24,6 @@ var blockCost = map[string]int{
 	"jump": 1, "jumpr": 1, "ret": 1, "gpio": 1, "halt": 1, "nop": 1,
 	"jneg": 6, "jbool": 6, "safepoint": 2, "call": 2,
 	"jsign": 4 + 2, "jeq": 12 + 2, "jlt": 16 + 2, "jltu": 16 + 2,
-	"jzero": 8 + 2,
 }
 
 func (s *Stats) record(fn, category, mnemonic string) {
