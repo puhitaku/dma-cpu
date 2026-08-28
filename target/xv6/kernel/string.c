@@ -4,9 +4,22 @@ void *
 memset(void *dst, int c, uint n)
 {
   char *cdst = (char *)dst;
-  int i;
-  for (i = 0; i < n; i++) {
-    cdst[i] = c;
+  uint w;
+
+  while (n > 0 && ((uint)cdst & 3) != 0) {
+    *cdst++ = c;
+    n--;
+  }
+  w = (uchar)c;
+  w |= w << 8;
+  w |= w << 16;
+  while (n >= 4) {
+    *(uint *)cdst = w;
+    cdst += 4;
+    n -= 4;
+  }
+  while (n-- > 0) {
+    *cdst++ = c;
   }
   return dst;
 }
@@ -41,11 +54,36 @@ memmove(void *dst, const void *src, uint n)
   if (s < d && s + n > d) {
     s += n;
     d += n;
+    if ((((uint)s ^ (uint)d) & 3) == 0) {
+      while (n > 0 && ((uint)d & 3) != 0) {
+        *--d = *--s;
+        n--;
+      }
+      while (n >= 4) {
+        d -= 4;
+        s -= 4;
+        *(uint *)d = *(const uint *)s;
+        n -= 4;
+      }
+    }
     while (n-- > 0)
       *--d = *--s;
-  } else
+  } else {
+    if ((((uint)s ^ (uint)d) & 3) == 0) {
+      while (n > 0 && ((uint)d & 3) != 0) {
+        *d++ = *s++;
+        n--;
+      }
+      while (n >= 4) {
+        *(uint *)d = *(const uint *)s;
+        d += 4;
+        s += 4;
+        n -= 4;
+      }
+    }
     while (n-- > 0)
       *d++ = *s++;
+  }
 
   return dst;
 }

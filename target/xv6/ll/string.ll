@@ -4,22 +4,56 @@ target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: write)
-define dso_local noundef ptr @memset(ptr noundef returned writeonly captures(ret: address, provenance) %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+define dso_local noundef ptr @memset(ptr noundef returned %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #0 {
   %4 = trunc i32 %1 to i8
   br label %5
 
-5:                                                ; preds = %8, %3
-  %6 = phi i32 [ 0, %3 ], [ %10, %8 ]
-  %7 = icmp eq i32 %6, %2
-  br i1 %7, label %11, label %8
+5:                                                ; preds = %13, %3
+  %6 = phi i32 [ %2, %3 ], [ %15, %13 ]
+  %7 = phi ptr [ %0, %3 ], [ %14, %13 ]
+  %8 = icmp ne i32 %6, 0
+  %9 = ptrtoint ptr %7 to i32
+  %10 = and i32 %9, 3
+  %11 = icmp ne i32 %10, 0
+  %12 = select i1 %8, i1 %11, i1 false
+  br i1 %12, label %13, label %16
 
-8:                                                ; preds = %5
-  %9 = getelementptr inbounds nuw i8, ptr %0, i32 %6
-  store i8 %4, ptr %9, align 1, !tbaa !3
-  %10 = add nuw i32 %6, 1
+13:                                               ; preds = %5
+  %14 = getelementptr inbounds nuw i8, ptr %7, i32 1
+  store i8 %4, ptr %7, align 1, !tbaa !3
+  %15 = add i32 %6, -1
   br label %5, !llvm.loop !6
 
-11:                                               ; preds = %5
+16:                                               ; preds = %5
+  %17 = and i32 %1, 255
+  %18 = mul nuw i32 %17, 16843009
+  br label %19
+
+19:                                               ; preds = %23, %16
+  %20 = phi i32 [ %6, %16 ], [ %25, %23 ]
+  %21 = phi ptr [ %7, %16 ], [ %24, %23 ]
+  %22 = icmp ugt i32 %20, 3
+  br i1 %22, label %23, label %26
+
+23:                                               ; preds = %19
+  store i32 %18, ptr %21, align 4, !tbaa !9
+  %24 = getelementptr inbounds nuw i8, ptr %21, i32 4
+  %25 = add i32 %20, -4
+  br label %19, !llvm.loop !11
+
+26:                                               ; preds = %19, %30
+  %27 = phi i32 [ %31, %30 ], [ %20, %19 ]
+  %28 = phi ptr [ %32, %30 ], [ %21, %19 ]
+  %29 = icmp eq i32 %27, 0
+  br i1 %29, label %33, label %30
+
+30:                                               ; preds = %26
+  %31 = add i32 %27, -1
+  %32 = getelementptr inbounds nuw i8, ptr %28, i32 1
+  store i8 %4, ptr %28, align 1, !tbaa !3
+  br label %26, !llvm.loop !12
+
+33:                                               ; preds = %26
   ret ptr %0
 }
 
@@ -50,7 +84,7 @@ define dso_local range(i32 -255, 256) i32 @memcmp(ptr noundef readonly captures(
 18:                                               ; preds = %10
   %19 = getelementptr inbounds nuw i8, ptr %6, i32 1
   %20 = getelementptr inbounds nuw i8, ptr %7, i32 1
-  br label %4, !llvm.loop !9
+  br label %4, !llvm.loop !13
 
 21:                                               ; preds = %4, %14
   %22 = phi i32 [ %17, %14 ], [ 0, %4 ]
@@ -58,62 +92,152 @@ define dso_local range(i32 -255, 256) i32 @memcmp(ptr noundef readonly captures(
 }
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: readwrite)
-define dso_local noundef ptr @memmove(ptr noundef returned writeonly captures(address, ret: address, provenance) %0, ptr noundef readonly captures(address) %1, i32 noundef %2) local_unnamed_addr #2 {
+define dso_local noundef ptr @memmove(ptr noundef returned %0, ptr noundef %1, i32 noundef %2) local_unnamed_addr #2 {
   %4 = icmp eq i32 %2, 0
-  br i1 %4, label %33, label %5
+  br i1 %4, label %99, label %5
 
 5:                                                ; preds = %3
   %6 = icmp ult ptr %1, %0
-  br i1 %6, label %8, label %7
+  br i1 %6, label %7, label %55
 
-7:                                                ; preds = %8, %5
-  br label %23
+7:                                                ; preds = %5
+  %8 = getelementptr inbounds nuw i8, ptr %1, i32 %2
+  %9 = icmp ugt ptr %8, %0
+  br i1 %9, label %10, label %55
 
-8:                                                ; preds = %5
-  %9 = getelementptr inbounds nuw i8, ptr %1, i32 %2
-  %10 = icmp ugt ptr %9, %0
-  br i1 %10, label %11, label %7
+10:                                               ; preds = %7
+  %11 = getelementptr inbounds nuw i8, ptr %0, i32 %2
+  %12 = ptrtoint ptr %8 to i32
+  %13 = ptrtoint ptr %11 to i32
+  %14 = xor i32 %12, %13
+  %15 = and i32 %14, 3
+  %16 = icmp eq i32 %15, 0
+  br i1 %16, label %21, label %17
 
-11:                                               ; preds = %8
-  %12 = getelementptr inbounds nuw i8, ptr %0, i32 %2
-  br label %13
+17:                                               ; preds = %35, %10
+  %18 = phi i32 [ %2, %10 ], [ %36, %35 ]
+  %19 = phi ptr [ %8, %10 ], [ %37, %35 ]
+  %20 = phi ptr [ %11, %10 ], [ %38, %35 ]
+  br label %45
 
-13:                                               ; preds = %18, %11
-  %14 = phi i32 [ %2, %11 ], [ %19, %18 ]
-  %15 = phi ptr [ %9, %11 ], [ %20, %18 ]
-  %16 = phi ptr [ %12, %11 ], [ %22, %18 ]
-  %17 = icmp eq i32 %14, 0
-  br i1 %17, label %33, label %18
+21:                                               ; preds = %10, %30
+  %22 = phi i32 [ %34, %30 ], [ %2, %10 ]
+  %23 = phi ptr [ %31, %30 ], [ %8, %10 ]
+  %24 = phi ptr [ %33, %30 ], [ %11, %10 ]
+  %25 = icmp ne i32 %22, 0
+  %26 = ptrtoint ptr %24 to i32
+  %27 = and i32 %26, 3
+  %28 = icmp ne i32 %27, 0
+  %29 = and i1 %25, %28
+  br i1 %29, label %30, label %35
 
-18:                                               ; preds = %13
-  %19 = add i32 %14, -1
-  %20 = getelementptr inbounds i8, ptr %15, i32 -1
-  %21 = load i8, ptr %20, align 1, !tbaa !3
-  %22 = getelementptr inbounds i8, ptr %16, i32 -1
-  store i8 %21, ptr %22, align 1, !tbaa !3
-  br label %13, !llvm.loop !10
+30:                                               ; preds = %21
+  %31 = getelementptr inbounds i8, ptr %23, i32 -1
+  %32 = load i8, ptr %31, align 1, !tbaa !3
+  %33 = getelementptr inbounds i8, ptr %24, i32 -1
+  store i8 %32, ptr %33, align 1, !tbaa !3
+  %34 = add i32 %22, -1
+  br label %21, !llvm.loop !14
 
-23:                                               ; preds = %7, %28
-  %24 = phi i32 [ %29, %28 ], [ %2, %7 ]
-  %25 = phi ptr [ %30, %28 ], [ %1, %7 ]
-  %26 = phi ptr [ %32, %28 ], [ %0, %7 ]
-  %27 = icmp eq i32 %24, 0
-  br i1 %27, label %33, label %28
+35:                                               ; preds = %21, %40
+  %36 = phi i32 [ %44, %40 ], [ %22, %21 ]
+  %37 = phi ptr [ %42, %40 ], [ %23, %21 ]
+  %38 = phi ptr [ %41, %40 ], [ %24, %21 ]
+  %39 = icmp ugt i32 %36, 3
+  br i1 %39, label %40, label %17
 
-28:                                               ; preds = %23
-  %29 = add i32 %24, -1
-  %30 = getelementptr inbounds nuw i8, ptr %25, i32 1
-  %31 = load i8, ptr %25, align 1, !tbaa !3
-  %32 = getelementptr inbounds nuw i8, ptr %26, i32 1
-  store i8 %31, ptr %26, align 1, !tbaa !3
-  br label %23, !llvm.loop !11
+40:                                               ; preds = %35
+  %41 = getelementptr inbounds i8, ptr %38, i32 -4
+  %42 = getelementptr inbounds i8, ptr %37, i32 -4
+  %43 = load i32, ptr %42, align 4, !tbaa !9
+  store i32 %43, ptr %41, align 4, !tbaa !9
+  %44 = add i32 %36, -4
+  br label %35, !llvm.loop !15
 
-33:                                               ; preds = %23, %13, %3
+45:                                               ; preds = %17, %50
+  %46 = phi i32 [ %51, %50 ], [ %18, %17 ]
+  %47 = phi ptr [ %52, %50 ], [ %19, %17 ]
+  %48 = phi ptr [ %54, %50 ], [ %20, %17 ]
+  %49 = icmp eq i32 %46, 0
+  br i1 %49, label %99, label %50
+
+50:                                               ; preds = %45
+  %51 = add i32 %46, -1
+  %52 = getelementptr inbounds i8, ptr %47, i32 -1
+  %53 = load i8, ptr %52, align 1, !tbaa !3
+  %54 = getelementptr inbounds i8, ptr %48, i32 -1
+  store i8 %53, ptr %54, align 1, !tbaa !3
+  br label %45, !llvm.loop !16
+
+55:                                               ; preds = %7, %5
+  %56 = ptrtoint ptr %1 to i32
+  %57 = ptrtoint ptr %0 to i32
+  %58 = xor i32 %56, %57
+  %59 = and i32 %58, 3
+  %60 = icmp eq i32 %59, 0
+  br i1 %60, label %65, label %61
+
+61:                                               ; preds = %79, %55
+  %62 = phi i32 [ %2, %55 ], [ %80, %79 ]
+  %63 = phi ptr [ %1, %55 ], [ %81, %79 ]
+  %64 = phi ptr [ %0, %55 ], [ %82, %79 ]
+  br label %89
+
+65:                                               ; preds = %55, %74
+  %66 = phi i32 [ %78, %74 ], [ %2, %55 ]
+  %67 = phi ptr [ %75, %74 ], [ %1, %55 ]
+  %68 = phi ptr [ %77, %74 ], [ %0, %55 ]
+  %69 = icmp ne i32 %66, 0
+  %70 = ptrtoint ptr %68 to i32
+  %71 = and i32 %70, 3
+  %72 = icmp ne i32 %71, 0
+  %73 = select i1 %69, i1 %72, i1 false
+  br i1 %73, label %74, label %79
+
+74:                                               ; preds = %65
+  %75 = getelementptr inbounds nuw i8, ptr %67, i32 1
+  %76 = load i8, ptr %67, align 1, !tbaa !3
+  %77 = getelementptr inbounds nuw i8, ptr %68, i32 1
+  store i8 %76, ptr %68, align 1, !tbaa !3
+  %78 = add i32 %66, -1
+  br label %65, !llvm.loop !17
+
+79:                                               ; preds = %65, %84
+  %80 = phi i32 [ %88, %84 ], [ %66, %65 ]
+  %81 = phi ptr [ %87, %84 ], [ %67, %65 ]
+  %82 = phi ptr [ %86, %84 ], [ %68, %65 ]
+  %83 = icmp ugt i32 %80, 3
+  br i1 %83, label %84, label %61
+
+84:                                               ; preds = %79
+  %85 = load i32, ptr %81, align 4, !tbaa !9
+  store i32 %85, ptr %82, align 4, !tbaa !9
+  %86 = getelementptr inbounds nuw i8, ptr %82, i32 4
+  %87 = getelementptr inbounds nuw i8, ptr %81, i32 4
+  %88 = add i32 %80, -4
+  br label %79, !llvm.loop !18
+
+89:                                               ; preds = %61, %94
+  %90 = phi i32 [ %95, %94 ], [ %62, %61 ]
+  %91 = phi ptr [ %96, %94 ], [ %63, %61 ]
+  %92 = phi ptr [ %98, %94 ], [ %64, %61 ]
+  %93 = icmp eq i32 %90, 0
+  br i1 %93, label %99, label %94
+
+94:                                               ; preds = %89
+  %95 = add i32 %90, -1
+  %96 = getelementptr inbounds nuw i8, ptr %91, i32 1
+  %97 = load i8, ptr %91, align 1, !tbaa !3
+  %98 = getelementptr inbounds nuw i8, ptr %92, i32 1
+  store i8 %97, ptr %92, align 1, !tbaa !3
+  br label %89, !llvm.loop !19
+
+99:                                               ; preds = %89, %45, %3
   ret ptr %0
 }
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: readwrite)
-define dso_local noundef ptr @memcpy(ptr noundef returned captures(address, ret: address, provenance) %0, ptr noundef readonly captures(address) %1, i32 noundef %2) local_unnamed_addr #2 {
+define dso_local noundef ptr @memcpy(ptr noundef returned %0, ptr noundef %1, i32 noundef %2) local_unnamed_addr #2 {
   %4 = tail call ptr @memmove(ptr noundef %0, ptr noundef %1, i32 noundef %2) #3
   ret ptr %0
 }
@@ -141,7 +265,7 @@ define dso_local range(i32 -255, 256) i32 @strncmp(ptr noundef readonly captures
   %16 = add i32 %7, -1
   %17 = getelementptr inbounds nuw i8, ptr %5, i32 1
   %18 = getelementptr inbounds nuw i8, ptr %6, i32 1
-  br label %4, !llvm.loop !12
+  br label %4, !llvm.loop !20
 
 19:                                               ; preds = %9
   %20 = zext i8 %10 to i32
@@ -172,7 +296,7 @@ define dso_local noundef ptr @strncpy(ptr noundef returned writeonly captures(re
   %13 = getelementptr inbounds nuw i8, ptr %7, i32 1
   store i8 %12, ptr %7, align 1, !tbaa !3
   %14 = icmp eq i8 %12, 0
-  br i1 %14, label %15, label %4, !llvm.loop !13
+  br i1 %14, label %15, label %4, !llvm.loop !21
 
 15:                                               ; preds = %4, %10
   %16 = phi ptr [ %13, %10 ], [ %7, %4 ]
@@ -188,7 +312,7 @@ define dso_local noundef ptr @strncpy(ptr noundef returned writeonly captures(re
   %22 = add nsw i32 %18, -1
   %23 = getelementptr inbounds nuw i8, ptr %19, i32 1
   store i8 0, ptr %19, align 1, !tbaa !3
-  br label %17, !llvm.loop !14
+  br label %17, !llvm.loop !22
 
 24:                                               ; preds = %17
   ret ptr %0
@@ -213,7 +337,7 @@ define dso_local noundef ptr @safestrcpy(ptr noundef returned writeonly captures
   %14 = getelementptr inbounds nuw i8, ptr %6, i32 1
   store i8 %13, ptr %6, align 1, !tbaa !3
   %15 = icmp eq i8 %13, 0
-  br i1 %15, label %16, label %5, !llvm.loop !15
+  br i1 %15, label %16, label %5, !llvm.loop !23
 
 16:                                               ; preds = %5, %10
   %17 = phi ptr [ %14, %10 ], [ %6, %5 ]
@@ -234,7 +358,7 @@ define dso_local i32 @strlen(ptr noundef readonly captures(none) %0) local_unnam
   %5 = load i8, ptr %4, align 1, !tbaa !3
   %6 = icmp eq i8 %5, 0
   %7 = add nuw nsw i32 %3, 1
-  br i1 %6, label %8, label %2, !llvm.loop !16
+  br i1 %6, label %8, label %2, !llvm.loop !24
 
 8:                                                ; preds = %2
   ret i32 %3
@@ -257,11 +381,19 @@ attributes #3 = { minsize nobuiltin optsize "no-builtins" }
 !6 = distinct !{!6, !7, !8}
 !7 = !{!"llvm.loop.mustprogress"}
 !8 = !{!"llvm.loop.unroll.disable"}
-!9 = distinct !{!9, !7, !8}
-!10 = distinct !{!10, !7, !8}
+!9 = !{!10, !10, i64 0}
+!10 = !{!"int", !4, i64 0}
 !11 = distinct !{!11, !7, !8}
 !12 = distinct !{!12, !7, !8}
 !13 = distinct !{!13, !7, !8}
 !14 = distinct !{!14, !7, !8}
 !15 = distinct !{!15, !7, !8}
 !16 = distinct !{!16, !7, !8}
+!17 = distinct !{!17, !7, !8}
+!18 = distinct !{!18, !7, !8}
+!19 = distinct !{!19, !7, !8}
+!20 = distinct !{!20, !7, !8}
+!21 = distinct !{!21, !7, !8}
+!22 = distinct !{!22, !7, !8}
+!23 = distinct !{!23, !7, !8}
+!24 = distinct !{!24, !7, !8}

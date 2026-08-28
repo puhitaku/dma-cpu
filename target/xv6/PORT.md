@@ -65,7 +65,7 @@ here builds it", not that the file was removed.
 
 | Upstream | Fate |
 |---|---|
-| string.c | KEEP (32-bit clean; first file through the pipeline) |
+| string.c | KEEP (32-bit clean; first file through the pipeline); memset/memmove copy a word at a time once dst and src are mutually word-aligned, byte-wise otherwise — same for `user/ulib.c` |
 | fs.c, file.c | KEEP — compile VERBATIM against `xv6/dma/shim` headers (no-op locks, pointer-data bufs, fs-view proc); prompts/019 |
 | bio.c, log.c, virtio_disk.c | REPLACED by `xv6/dma/kbio.c` (RAM disk: bread returns pointers into the image; no log) |
 | pipe.c | REPLACED by `xv6/dma/kpipe.c` (deposit-rendezvous: peers complete blocked ends; no kernel stacks to sleep on) |
@@ -85,7 +85,7 @@ usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs
 
 ## Progress
 
-- [x] `user/umalloc.c` + `kernel/string.c` compile unmodified and run
+- [x] `user/umalloc.c` + `kernel/string.c` compile and run
   on the machine (self-checking allocator exercise,
   `TestXv6Malloc`); the heap came from a `xv6/dma/sbrk.c` stub, since
   replaced by the kernel's SYS_sbrk (below).

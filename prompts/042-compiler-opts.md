@@ -54,7 +54,9 @@ Two findings for whoever picks up the rest:
   defines memmove/memset itself, as C byte loops (kernel/string.c,
   usr/ulib.c), and a size8RW transfer counter over the xsh benchmark
   shows single-digit burst transfers per command. Speeding those up
-  means recognizing the loops, not the calls.
+  means recognizing the loops, not the calls. Done in the C instead:
+  both trees now step a word at a time when dst and src are mutually
+  word-aligned (8-14% off echo/pipe workloads).
 
 Still open: constant length with RUNTIME addresses (needs the IR
 `align` attribute, which host/llir drops, plus a self-patching record —
