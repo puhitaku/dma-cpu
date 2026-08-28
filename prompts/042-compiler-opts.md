@@ -251,11 +251,58 @@ nonneg: the sign of a-b IS the answer, one sub against the four-term
 borrow). eqzp covers 43% of the kernel's zero-tests and 75% of the
 game's. Measured: cc_collatz -7.9%, cal_flash -3.9%, cc_control -2.8%.
 
-Still on the table, in measured-value order: (a) a range analysis (or
-interval narrowing from the dominating branch) — __cw_ltp fires on
-only 0.5% of lt/ltu sites because loop bounds arrive as parameters or
-i32 loads with no fact; (c) per-site descriptor-vs-four-move selection
-from the §1 profile.
+(a) is DONE as far as a per-function analysis can take it. The
+BOOL/NONNEG bit lattice became an upper-bound lattice — one uint32 per
+SSA value, "this word is <= max", with NONNEG and BOOL as its named
+thresholds — carrying the arithmetic of bounds through and/or/xor/add/
+mul/shift/div/rem/trunc/phi/select. On top of it, a dominator tree and
+BRANCH-DOMINATED narrowing: a block whose only predecessor is its
+immediate dominator picks up what that edge proves, and the comparison
+sites read the facts at their own block. The narrowings are the
+unsigned bounds (`ult`/`ule` against anything bounded), the signed
+zero guards (`x >= 0`, `x > -1` and their negations), the signed
+compares once one side is known nonneg, `eq` against anything bounded,
+and switch case edges; conjunctions are walked through LLVM's
+`select`-shaped `&&`. Phis read each incoming value on ITS OWN edge and
+re-derive it there, which closes the unsigned loop counter — including
+the rotated shape whose header is its own latch — with no assumption at
+all.
+
+Routing, static sites (before -> after): xsh kernel ltp 7 -> 35 of 218
+lt/ltu (3.1% -> 23%), the game 6 -> 26 of 274 (2.1% -> 9.6%), sh 1 -> 2
+of 88. eqzp is flat (259 -> 260 of 592 kernel zero-tests): zero-tests
+were already routed by the value lattice. Cycles: cc_control 17235 ->
+16803 (-2.5%), vi TOTAL 218.0M -> 217.5M (-0.23%), every other golden
+and the xsh 5-command sum unchanged; all text/data sizes unchanged.
+
+What (a) cannot reach from inside one function, measured: SIGNED
+counters. `slt i, n` bounds i's word only once i is known nonneg, so
+the derivation must assume what it proves. An assume-and-verify round
+for exactly that shape (seed the counter phi AND its `add phi, k` steps
+at the nonneg bound, run the fixed point, re-derive, drop whatever
+lands past bit 31, repeat) was built, proved — a state where every
+stored bound is implied by the same rules over the stored bounds of its
+inputs is an inductive invariant, since SSA values are written once and
+a phi's inputs are produced strictly earlier — and MEASURED: it
+discharges the assumption on 36 kernel and 20 game counters and moves
+ONE comparison site. It was removed again. The reason it does not pay:
+a signed loop's BOUND is an i32 parameter or load (`s:load|` 22,
+`s:call|` 12, `s:param|` 9 in the game alone), `slt a, b` needs BOTH
+sides nonneg, and LLVM's canonical rotated loop exits on `icmp eq inc,
+n`, which bounds nothing at all.
+
+The two levers that would reach those, neither taken here: (a1)
+whole-program parameter ranges — llir.Merge already gives dmacc every
+caller, so a param's bound is the meet over its call sites; (a2)
+honouring `nsw`/`nuw`, which llir currently drops in the parser. `add
+nsw a, b` with both words nonneg is nonneg, which closes every signed
+counter and the `icmp eq inc, n` loops with it — but it buys that by
+reading LLVM's poison semantics into a machine whose arithmetic wraps,
+and that is a policy decision, not a lowering one.
+
+Still on the table, in measured-value order: (a1)/(a2) above and
+(c) per-site descriptor-vs-four-move selection from the §1 profile —
+(b), the compact bank-state planner, is measured and CLOSED below.
 
 ### (b) The compact bank-state planner — MEASURED, CLOSED (don't build)
 
@@ -307,8 +354,10 @@ the §7 encoding-v2 rebuild if it is ever wanted.
 
 ## If only two
 
-§1 (it compounds: every future heuristic becomes automatic) and the
-rest of §10 (comparisons remain the dominant executed cost even after
-eqzp). The range analysis, §10 (a), is now the biggest unclaimed cycle
-lever on the books on its own: the compact planner beside it priced
-out at 2.5% of its own tax and is closed.
+§1 (it compounds: every future heuristic becomes automatic) and
+§10 (a1), whole-program parameter ranges (comparisons remain the
+dominant executed cost; the per-function analysis is spent and the
+planner priced out, so the interprocedural bound — llir.Merge already
+hands dmacc every call site — is the one lever left that reaches the
+signed compares).
+

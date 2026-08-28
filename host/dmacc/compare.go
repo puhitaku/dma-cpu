@@ -17,9 +17,12 @@ import (
 // and ISRs use their own register bank.
 //
 // Fact-directed variants. The general helpers pay for operands that may
-// use the full 32-bit range; most do not, and facts.go proves it per
-// value. Where the proof holds the site routes to a shorter helper —
-// the predicate math is in references/design_docs/abi.md:
+// use the full 32-bit range; most do not, and facts.go proves it — per
+// value, and per BLOCK where a dominating branch narrowed the value
+// further than its definition did. Sites therefore ask for the facts at
+// their own block (facts.at, fc.curBlock), not for the function-wide
+// ones. Where the proof holds the site routes to a shorter helper — the
+// predicate math is in references/design_docs/abi.md:
 //
 //	__cw_eqzp   a == 0, a nonneg: a-1 borrows into bit 31 only at a == 0,
 //	            so one add of -1 replaces eqz's sub/or pair.
@@ -268,7 +271,7 @@ func (fc *funcCtx) emitCompareBranch(ins *llir.Instr, t, f string) error {
 	if err != nil {
 		return err
 	}
-	fa, fb := fc.facts.of(ins.Args[0]), fc.facts.of(ins.Args[1])
+	fa, fb := fc.facts.at(fc.curBlock, ins.Args[0]), fc.facts.at(fc.curBlock, ins.Args[1])
 	signed := ins.Pred == "slt" || ins.Pred == "sge" || ins.Pred == "sgt" || ins.Pred == "sle"
 	if signed && w < 32 {
 		fc.sextInto(a, w, "sc0")
@@ -356,7 +359,7 @@ func (fc *funcCtx) emitBoolBranch(cond *llir.Value, ifTrue, ifFalse string) erro
 		fc.ins("jbool %s, %s, %s", c, ifFalse, ifTrue)
 		return nil
 	}
-	fc.emitZeroTest(c, fc.facts.of(cond), ifFalse, ifTrue)
+	fc.emitZeroTest(c, fc.facts.at(fc.curBlock, cond), ifFalse, ifTrue)
 	return nil
 }
 

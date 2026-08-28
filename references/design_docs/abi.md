@@ -109,6 +109,11 @@ caller-saved everywhere: no macro preserves it.
     exactly representable, so its sign IS the answer and signed and
     unsigned agree — `jsign (a - b)` replaces the four-term borrow of
     `jlt`/`jltu`.
+
+  The predicates are unchanged by where the proof comes from: bit 31 may
+  be known clear from the value's definition or only inside the region a
+  dominating branch narrows it in (`if (x < n)`), so the same comparison
+  can lower differently in two blocks of one function.
 - `and a, b, d` (6 blocks, clobbers `at`) and `andn a, b, d` = `a & ~b`
   (3 blocks) via the accumulator CLR alias.
 

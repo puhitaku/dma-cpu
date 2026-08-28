@@ -133,11 +133,12 @@ phased plan). Phase outcomes are logged in the numbered
   forwards pure copies, and lowers comparisons through shared millicode
   helpers by default (4-5 blocks/site; Options.InlineCompares restores
   the fast inline form, Options.OptSize shrinks the site further to two
-  descriptor records at ~2x the branch cost). A per-value fact analysis
-  (`host/dmacc/facts.go`: BOOL/NONNEG over the IR, fixed-point from the
-  pessimistic bottom) routes the sites whose operands provably keep bit
-  31 clear to the shorter `__cw_eqzp`/`__cw_ltp` bodies — same site
-  size, less helper. `dmacc -size` prints block attribution — measure
+  descriptor records at ~2x the branch cost). A value-range analysis
+  (`host/dmacc/facts.go`: an upper bound per SSA word, fixed-point from
+  the pessimistic top, narrowed inside the region a dominating branch
+  proves it in) routes the sites whose operands provably keep bit 31
+  clear to the shorter `__cw_eqzp`/`__cw_ltp` bodies — same site size,
+  less helper. The same comparison may lower differently in two blocks. `dmacc -size` prints block attribution — measure
   before optimizing. dmxgen bakes relocations out
   of the HIL images (they load at link addresses only). When touching
   the lowering, keep the differential suite bit-exact — it caught the
