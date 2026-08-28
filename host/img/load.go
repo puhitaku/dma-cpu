@@ -10,10 +10,10 @@ import (
 
 // Placement maps a segment index to its load address. Segments not present
 // load at their link address (Tier 1). Load addresses must be word-aligned;
-// the entry segment must land 16-byte aligned.
+// the entry must land 16-byte aligned (8 for compact records).
 type Placement map[int]uint32
 
-// ABI v0 draft defaults (to be frozen in Phase 2): the machine occupies
+// ABI v0 defaults (references/design_docs/abi.md): the machine occupies
 // channels 0–2 and one reserved SRAM word near the top of memory.
 func DefaultMachine() emu.FetchExecConfig {
 	return emu.FetchExecConfig{Fetch: 0, Exec: 1, Fix: 2, Scratch: 0x2003FF00}

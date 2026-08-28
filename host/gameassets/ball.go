@@ -9,7 +9,7 @@ import "math"
 // HERE, offline — a checkered sphere ray-cast per pixel for each
 // rotation phase — and the machine only ever span-blits the result
 // (the Amiga original was precomputed too; palette cycling stood in
-// for the spin). Layout, shared with boing.c: 96 x {x0, w} span
+// for the spin). Layout, shared with boing.c: 88 x {x0, w} span
 // bytes (even, so every row blit stays on the word-DMA fast path),
 // then NPH phases of 88x88 RGB565. Phase NPH wraps to phase 0: the
 // per-phase longitude step spans the checker's 90-degree color

@@ -1595,7 +1595,7 @@ func (fc *funcCtx) emitMemRT(rt string, dst, src, n *llir.Value) error {
 	return nil
 }
 
-// --- Recursion frame stack (see gen.computeRecSet) ---
+// --- Recursion frame stack (see gen.computeRecursion) ---
 //
 // A recSet function keeps ONE copy of its code; each activation saves
 // the whole frame to the software stack on entry and restores it on
@@ -1874,7 +1874,8 @@ func (fc *funcCtx) emitSwitch(b *llir.Block, ins *llir.Instr) error {
 	}
 
 	// Dense value sets dispatch through a jump table: bounds-check,
-	// scale by 16 (one block per slot), add the table base, jump.
+	// scale by the instruction size (one jump per slot), add the table
+	// base, jump.
 	minV, maxV := uint32(ins.Cases[0].Val), uint32(ins.Cases[0].Val)
 	for _, c := range ins.Cases {
 		if uint32(c.Val) < minV {

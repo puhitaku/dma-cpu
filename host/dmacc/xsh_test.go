@@ -177,9 +177,6 @@ func bootXshFlash(t *testing.T, flash []byte) (*emu.Machine, *dmaasm.Result) {
 	return bootXshBoard(t, flash, boards.Pico2)
 }
 
-// bootXshBoard boots the xsh stack exactly as a board deploys it —
-// the RAM partition, flash sections and app placement all come from
-// boards/boards.go, the same definitions dmxgen ships.
 // goldenBoot caches one BOOTED machine per board (blank-flash shape
 // only): the ~14s emulated boot to the first shell prompt is
 // identical for every console-script test, so it runs once and each
@@ -193,6 +190,9 @@ type goldenBoot struct {
 
 var goldens sync.Map // board name -> *goldenBoot
 
+// bootXshBoard boots the xsh stack exactly as a board deploys it —
+// the RAM partition, flash sections and app placement all come from
+// boards/boards.go, the same definitions dmxgen ships.
 func bootXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, *dmaasm.Result) {
 	t.Helper()
 	if flash == nil {
@@ -848,14 +848,7 @@ func TestXv6Fbcon(t *testing.T) {
 	}
 }
 
-// TestXv6SD mounts a vfat SD card end to end: the kernel's fat
-// driver reads the card sector-by-sector through the ARM-executor
-// mailbox (played by serviceMailbox), for both a superfloppy card
-// (BPB at sector 0) and an MBR-partitioned one. Then the slide
-// viewer: `show /sd` loads .sld files straight into the framebuffer,
-// navigates on a console key, and quits on 'q' — fb content is
-// asserted against the card's bytes.
-// TestXv6ViFeather: the pre-relocated vi inside the feather's 66K
+// TestXv6ViFeather: the pre-relocated vi inside the feather's 82K
 // arena — text from flash, [ramtext][data] at the arena bottom, the
 // shell's heap up top. Launch, insert a line, quit without saving
 // (the feather ships read-only).
@@ -895,6 +888,13 @@ func TestXv6ViFeather(t *testing.T) {
 	}
 }
 
+// TestXv6SD mounts a vfat SD card end to end: the kernel's fat
+// driver reads the card sector-by-sector through the ARM-executor
+// mailbox (played by serviceMailbox), for both a superfloppy card
+// (BPB at sector 0) and an MBR-partitioned one. Then the slide
+// viewer: `show /sd` loads .sld files straight into the framebuffer,
+// navigates on a console key, and quits on 'q' — fb content is
+// asserted against the card's bytes.
 func TestXv6SD(t *testing.T) {
 	t.Parallel()
 	slideA := make([]byte, 4096)
@@ -1022,7 +1022,7 @@ func TestXv6SD(t *testing.T) {
 						fed4 = true
 					}
 				}
-				// Deck phase: select series 169 (slides reversed: B then
+				// Deck phase: select series 169u (slides reversed: B then
 				// A) and page through it via seek().
 				if fed4 && !fed5 && strings.HasSuffix(out, "$ ") {
 					m.FeedConsole("show /sd/deck.sldk 169 under\r")
@@ -1031,7 +1031,7 @@ func TestXv6SD(t *testing.T) {
 				wantA := binary.LittleEndian.Uint32(slideA[0:])
 				wantB := binary.LittleEndian.Uint32(slideB[0:])
 				if fed5 && !fed6 && m.Peek32(fbBuf) == wantB {
-					m.FeedConsole("2\r") // page JUMP to slide 2 (series 169: A)
+					m.FeedConsole("2\r") // page JUMP to slide 2 (series 169u: A)
 					fed6 = true
 				}
 				if fed6 && !fed7 && m.Peek32(fbBuf) == wantA {

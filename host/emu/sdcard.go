@@ -6,11 +6,12 @@ package emu
 // into the card and one response byte into the RX queue; SSPSR.RNE
 // and the SPI0 RX DREQ track the queue level. Command handling covers
 // the SPI-mode init handshake (CMD0/8/55/ACMD41/58/16), capacity
-// (CMD9, CSD v2 synthesized from the image size) and single-sector
-// reads (CMD17, block addressing — the OCR reports CCS=1). Responses
-// are prefixed with one 0xFF (the card's Ncr gap), so drivers that
-// poll for R1 exercise their loops. Reads past the image serve 0xFF,
-// like a bigger card with unwritten sectors.
+// (CMD9, CSD v2 synthesized from the image size), single-sector reads
+// (CMD17) and multi-block streaming (CMD18 until CMD12) — all
+// block-addressed, since the OCR reports CCS=1. Responses are prefixed
+// with one 0xFF (the card's Ncr gap), so drivers that poll for R1
+// exercise their loops. Reads past the image serve 0xFF, like a bigger
+// card with unwritten sectors.
 type sdCard struct {
 	cmd  []byte // command frame being collected
 	resp []byte // queued response bytes (shifted out on further clocks)

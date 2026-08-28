@@ -6,9 +6,11 @@
 // exactly one place.
 package boards
 
-// Video scanout DMA channels (kfb.c mirrors these): the compact
-// machine owns channels 0-10, so the display engine rides the top of
-// the RP2350's 16.
+// Video scanout DMA channels of the retired PSRAM-copier design
+// (prompts/036, first act); the shipped engine is the two-channel
+// walker/executor program in scanout.go. The compact machine is the
+// contiguous ch0..8 and ch9+ is the board pool (kdma.c), so the
+// display engine rides the top of the RP2350's 16 either way.
 const (
 	FbChanWalk = 13 // ring walker: control blocks -> executor's alias0
 	FbChanExec = 14 // executor: streams to the HSTX FIFO / kicks the copier
@@ -49,11 +51,11 @@ type Board struct {
 	AppsEnd     uint32 // RAM disk instead (small-RAM boards free ~80 KiB)
 
 	// --- video (0 = the board has no display) ---
-	// PSRAM holds the framebuffer; FbHome..FbEnd is the SRAM slice the
-	// scanout engine builds its ring, kick table and line buffers in
-	// (prompts/036). PSRAMBase is the *uncached* CS1 alias: both the
-	// scanout channels and the renderer use it, so there is no cache
-	// to keep coherent.
+	// The framebuffer is SRAM (FbBuf): PSRAM can never be the render
+	// target, because window traffic on the shared read master breaks
+	// scanout sync (prompts/036, prompts/041). FbHome..FbEnd survives
+	// as the pan word the pure-DMA scanout no longer uses. PSRAMBase
+	// is the *uncached* CS1 alias, the ARM's bulk store.
 	PSRAMBase uint32
 	PSRAMSize uint32
 	FbBuf     uint32 // the SRAM framebuffer itself
@@ -173,7 +175,7 @@ var stdLinks = []string{"kill", "free", "sync", "mount",
 
 // LinksFor returns the multi-call names linked onto the given app
 // image (busybox-style argv[0] dispatch): the toolbox carries the
-// board's ToolboxLinks; fbtools always carries the fb pair.
+// board's ToolboxLinks; hwtools always carries the gpio/mux/blink trio.
 func (b *Board) LinksFor(app string) []string {
 	switch app {
 	case "toolbox":
@@ -252,7 +254,7 @@ var Pico = &Board{
 // Feather: Adafruit Feather RP2350 with PSRAM — RP2350A, 520 KiB
 // SRAM, 8 MiB flash, 8 MiB QSPI PSRAM on QMI CS1 (GPIO8), HSTX pins
 // GPIO12-19 on the 22-pin DVI port. The Pico2 experience plus an
-// HDMI console: the framebuffer lives at the start of PSRAM and a
+// HDMI console: the framebuffer lives at the top of SRAM and a
 // pure-DMA ring scans it out (prompts/036). The scanout working set
 // is carved off the top of the arena (32 KiB).
 var Feather = &Board{
@@ -298,8 +300,8 @@ var Feather = &Board{
 	ShTextXIP:   0x104A0000,
 	AppsHome:    0x104C0000, AppsEnd: 0x10540000,
 	// vi returns via pre-relocation: text executes in place from
-	// flash, so its arena claim is only [ramtext][data] (~41K) plus
-	// a small heap — inside the 66K arena the fb once priced it out
+	// flash, so its arena claim is only [ramtext][data] (24.8K) plus
+	// a small heap — inside the 82K arena the fb once priced it out
 	// of. Section sits above the scanout staging blob (DTab + ~17K).
 	ViHome: 0x10560000, ViEnd: 0x105E0000,
 	// Apps are flash-resident registry rows (the pico pattern): the
@@ -359,7 +361,7 @@ var Feather = &Board{
 // a 240x240 ST7789 LCD on SPI0 (write-only 8-pin module: no TE, no
 // MISO), two joysticks, two chained WS2811 LEDs (PIO), a MAX98357A
 // I2S amp (PIO; SD_MODE strapped high = (L+R)/2, GAIN strapped).
-// clk_sys overclocks to 200 MHz for machine headroom; clk_peri moves
+// clk_sys overclocks to 250 MHz for machine headroom; clk_peri moves
 // to a repurposed 125 MHz USB PLL (the RP2040 has no peri divider),
 // keeping UART in spec and SPI0 at the ST7789's 62.5 MHz ceiling.
 var GamePico = &Board{
@@ -367,7 +369,7 @@ var GamePico = &Board{
 	SKU:  "rp2040",
 
 	GameRAMText: 0x20002000, // self-modifying records + the radiosity
-	// shooter's resident hot path (dmxgen ResidentFuncs): 33 KiB window
+	// shooter's resident hot path (dmxgen ResidentFuncs): 36 KiB window
 	GameData:    0x2000B000, // data + the 240x240 RGB565 framebuffer;
 	// grows toward the audio ring at 0x20038000 (the drum PCM moved
 	// to flash, returning its 40 KiB arena to this segment)

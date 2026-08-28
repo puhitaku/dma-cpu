@@ -3,7 +3,7 @@ package img
 import "encoding/binary"
 
 // Builder constructs an Image programmatically. It is the low-level
-// producer API that the Phase 2 assembler will target; tests use it
+// producer API the dmaasm assembler emits through; tests use it
 // directly. Offsets returned by the emit methods are segment-relative;
 // combined with relocations they stand in for symbols.
 type Builder struct {

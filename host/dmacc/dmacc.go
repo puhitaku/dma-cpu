@@ -1,14 +1,17 @@
-// Package dmacc compiles LLVM IR (the clang -O1 subset parsed by llir)
+// Package dmacc compiles LLVM IR (the clang -Oz subset parsed by llir)
 // to dmaasm source. It is the back half of the Phase 4 compiler: clang
 // lowers C to IR, dmacc lowers IR to the DMA machine.
 //
 // Model (prompts/overview.md §4.5): there is no register allocator —
 // every SSA value, parameter, and phi gets its own SRAM word, because on
-// this machine a spill slot costs exactly as much as a register. Frames
-// are static (one per function), so v0 rejects recursion; calls follow
-// ABI v0 (args r0–r3, result r0, lr saved to a frame word by non-leaf
-// callees). Interruptibility: a safepoint is emitted at every backward
-// branch unless Options.NoSafepoints.
+// this machine a spill slot costs exactly as much as a register (words
+// whose live ranges never overlap are shared afterwards). Frames are
+// static (one per function), so recursion needs a mechanism of its own:
+// a software frame stack, or depth cloning where an activation can span
+// a fork (computeRecursion). Calls follow ABI v0 (args r0–r3, result
+// r0, lr saved to a frame word by non-leaf callees). Interruptibility:
+// a safepoint is emitted at every backward branch unless
+// Options.NoSafepoints.
 //
 // The output is SKU-portable .dasm; per-SKU encoding happens in dmaasm.
 package dmacc

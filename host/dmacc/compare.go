@@ -160,8 +160,8 @@ func (fc *funcCtx) wordAddr(op string) (string, bool) {
 	return sym, true
 }
 
-// emitCmpSite emits one outlined-comparison site, preferring the
-// two-record descriptor form.
+// emitCmpSite emits one outlined-comparison site: the four-move
+// protocol, or the two-record descriptor form under Options.OptSize.
 func (fc *funcCtx) emitCmpSite(helper, a, b, t, f string) {
 	fc.g.cmpUsed[helper] = true
 	// RAMTextFuncs code runs while XIP is down; its descriptors would

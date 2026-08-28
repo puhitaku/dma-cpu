@@ -32,7 +32,7 @@
  *
  * Layout (little-endian u32):
  *   0x00  "SLDK"        0x04  version (1)
- *   0x08  series count  0x0C  bytes per slide (153600)
+ *   0x08  series count  0x0C  bytes per slide (307200)
  *   0x10  series entries, 24 bytes each:
  *         name[12] (NUL-padded), count, offset, reserved
  *   then the slides, contiguous per series.

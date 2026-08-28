@@ -498,7 +498,7 @@ func (d *dma) levelDreq(dreq uint32) {
 }
 
 // pulseTimer is pulseDreq for a pacing timer, over the cached listener
-// set (tickTimers runs every cycle; the generic scan was the hot path).
+// set (fireDue calls it per due pulse; the generic scan was the hot path).
 func (d *dma) pulseTimer(i int) {
 	for m := d.timerListen[i]; m != 0; m &= m - 1 {
 		j := bits.TrailingZeros32(m)
@@ -557,9 +557,10 @@ func (d *dma) sniff(chIdx int, datum uint32, sizeBytes int) {
 // crcUpdate runs a bitwise CRC over the datum's bytes (least-significant
 // byte first, matching bus order). Non-reflected variants shift MSB-first.
 //
-// TODO(hw-calibration): the exact bit/byte ordering of the hardware sniffer
-// CRC must be validated against real RP2 silicon in the Phase 0 HIL tests;
-// only SUM is load-bearing for the machine ABI.
+// The CRC32 bit/byte ordering is silicon-confirmed (the HIL calibration
+// experiment's HIL_CAL_EXPECT_CRC32 matched, prompts/004-hw-calibration.md);
+// the CRC16 and reflected variants stay unprobed, and only SUM is
+// load-bearing for the machine ABI.
 func crcUpdate(crc, datum uint32, sizeBytes, width int, poly uint32, reflected bool) uint32 {
 	mask := uint32(0xFFFFFFFF)
 	if width < 32 {

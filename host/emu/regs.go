@@ -8,7 +8,7 @@
 // This file holds the definitions shared across the RP2 family; every
 // SKU-specific encoding (CTRL bit layout, global register offsets, sizes)
 // lives in Variant (variant.go). Sources: RP2040 datasheet §2.5 and
-// RP2350 datasheet §12.6 (doc/).
+// RP2350 datasheet §12.6 (references/datasheets/).
 package emu
 
 // Address map (common to RP2040 and RP2350).

@@ -27,7 +27,7 @@ func parseLL(t *testing.T, path string) *llir.Module {
 }
 
 // compileKernel builds the kernel core: lean (kproc + fs stubs) or
-// full (verbatim fs.c/file.c + glue — ~134 KB text, wide layouts only).
+// full (verbatim fs.c/file.c + glue — ~231 KB text, wide layouts only).
 func compileKernel(t *testing.T, fs bool) string {
 	return compileKernelOpts(t, fs, false)
 }

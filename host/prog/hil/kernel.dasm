@@ -6,12 +6,13 @@
 ; indirection words the C side maintains to say who is current.
 ;
 ; Tick delivery is approach B (references/design_docs/abi.md) with a single injector
-; (ABI ch3, timer TREQ, one-shot): it patches the RUNNING process's
-; dispatch word with vecSched; the process detours here at its next
-; safepoint. The C scheduler retargets the injector's WRITE_ADDR at
-; every context switch and re-arms it at kernel exit only (single-fire
-; discipline; fires that land while the kernel runs are absorbed by a
-; kernel-owned word — see kproc.c).
+; (the ABI slot — ch3 classic, ch9 compact; timer TREQ, one-shot): it
+; patches the RUNNING process's dispatch word with vecSched; the
+; process detours here at its next safepoint. The C scheduler
+; retargets the injector's WRITE_ADDR at every context switch and
+; re-arms it at kernel exit only (single-fire discipline; fires that
+; land while the kernel runs are absorbed by a kernel-owned word — see
+; kproc.c).
 ;
 ; A syscall is a voluntary CALL (prompts/014): the process's usys stub
 ; indirect-calls sys_entry, leaving its return address in its own lr.

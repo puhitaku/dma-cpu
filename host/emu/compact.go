@@ -3,10 +3,12 @@ package emu
 // Compact-machine channel map (Tier C, prompts/010-compact-isa.md).
 // An instruction is an 8-byte record (READ_ADDR, WRITE_ADDR) fetched
 // into the alias-2 tail of one exec channel per transfer mode; CTRL and
-// TRANS_COUNT are preset and persist. The size8-family banks and plain
-// must live on channels 0..3: their window addresses share the upper
-// three bytes, which is what makes a byte-wide switch-out (a size8
-// transfer of the plain-window literal's low byte) land correctly.
+// TRANS_COUNT are preset and persist. Plain and the size8 family sit on
+// channels 0..3, whose windows share the upper three bytes, so a
+// byte-wide switch-out (a size8 transfer of the plain-window literal's
+// low byte) lands correctly. Cleanup's auto-return (below) retired that
+// idiom — every switch record now runs on plain or sniff, both 32-bit —
+// leaving the placement as convention.
 //
 // The machine is the contiguous block ch0..8. Fetch carries an 8-byte
 // write ring (every window is 8-byte aligned: +0x28 within a 0x40

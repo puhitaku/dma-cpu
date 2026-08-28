@@ -21,7 +21,7 @@ type Variant struct {
 	UART0Base     uint32
 	TimerRawL     uint32 // TIMERAWL: the free-running us counter
 	SPI0Base      uint32 // PL022; DR captured into Machine.SPIOut
-	DreqSPI0TX    uint32 // level-modeled: the TX FIFO always drains
+	DreqSPI0TX    uint32 // level-modeled while SSPDMACR.TXDMAE is set
 	DreqSPI0RX    uint32 // level-modeled while the SD model holds RX bytes
 	DreqUART0TX   uint32 // level-modeled: paced by Machine.TXPace
 	DreqUART0RX   uint32 // level-modeled: asserted while ConsoleIn holds bytes
@@ -304,8 +304,10 @@ func (v *Variant) ConsWakeCtrl() uint32 {
 func (v *Variant) SniffCtrlAddr() uint32 { return DMABase + v.offSniffCtrl }
 
 // UART0 data and flag registers (PL011: DR at +0x00, FR at +0x18). The
-// emulator models DR writes as console output; FR reads back 0, so the
-// TX-full poll a real-hardware putc needs falls straight through.
+// emulator models DR writes as console output and DR reads as console
+// input; FR carries RXFE (bit 4) for the input queue and TXFF (bit 5)
+// only while Machine.TXPace throttles the transmitter, so an unpaced
+// machine's TX-full poll falls straight through.
 func (v *Variant) UARTDRAddr() uint32 { return v.UART0Base + 0x00 }
 func (v *Variant) UARTFRAddr() uint32 { return v.UART0Base + 0x18 }
 

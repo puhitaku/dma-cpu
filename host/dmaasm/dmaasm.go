@@ -1,17 +1,19 @@
 // Package dmaasm assembles DMA-machine assembly (".dasm") into DMX
 // executables. The language and its lowering are defined by ABI v0
-// (references/design_docs/abi.md); the instruction set mirrors the macro table in
+// (references/design_docs/abi.md); the machine it targets is sketched in
 // prompts/overview.md §2.
 //
 // Source is SKU-portable: MMIO names (%sniff, %pc, …), control words, and
 // GPIO encodings resolve against the target Variant at assembly time, so
 // the same .dasm produces a different (non-portable) binary per SKU.
 //
-// A program has two segments: .text (control blocks, 16 bytes per block)
-// and .data (words). Every constant operand ($imm, $label) is interned
-// into a literal pool appended to .data — this machine has no immediates,
-// only addresses. Cross-segment references carry DMX relocations, so the
-// output is placeable anywhere (Tier 2).
+// A program has .text (16-byte control blocks, or 8-byte records under
+// Options.Compact) and .data (words), plus a third segment when
+// .ramtext splits RAM-resident text off a flash-resident image. Every
+// constant operand ($imm, $label) is interned into a literal pool
+// appended to .data — this machine has no immediates, only addresses.
+// Cross-segment references carry DMX relocations, so the output is
+// placeable anywhere (Tier 2).
 package dmaasm
 
 import (
@@ -153,8 +155,9 @@ type asm struct {
 	genLabel int
 
 	// Sign-dispatch trampoline arena (jsign/jeq/jlt/jltu): each use gets a
-	// pair of jump slots 128 bytes apart; pairs are pooled 8 to a 256-byte
-	// bank appended after the last instruction, so slots pack with no gaps.
+	// pair of jump slots 128 bytes apart; pairs are pooled 8 (compact: 16)
+	// to a 256-byte bank appended after the last instruction, so slots
+	// pack with no gaps.
 	jpairs   []jpair
 	jpairIdx int // emit-pass counter (mirrors pass-1 order)
 
@@ -484,7 +487,8 @@ func (a *asm) genTextLabel(off uint32) operand {
 
 // --- Instruction set ---
 
-// instrDef describes lowering: block count may depend on flags (mulc).
+// instrSpec describes lowering: argument arity and classic block count
+// (nil = one block; compact record counts come from the planner).
 type instrSpec struct {
 	minArgs, maxArgs int
 	blocks           func(args []string) (uint32, error) // block count

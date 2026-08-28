@@ -19,8 +19,8 @@ type GPIOEvent struct {
 
 // Machine is the emulated system: SRAM, the DMA block, a generic MMIO
 // backing store for everything else in the peripheral space, and the
-// deterministic scheduler. One Step() is one bus-transfer slot ("cycle");
-// real transfers take a few system clocks each, so cycle counts are
+// deterministic scheduler. One cycle is one bus-transfer slot; real
+// transfers take a few system clocks each, so cycle counts are
 // proportional to, not equal to, hardware time.
 type Machine struct {
 	v      *Variant
@@ -35,7 +35,7 @@ type Machine struct {
 
 	Cycle      uint64
 	GPIOEvents []GPIOEvent
-	gpioLevel  [64]byte // last OUTOVER-driven level per pin (loopback)
+	gpioLevel  [64]byte // last level per pin: OUTOVER writes or SetPadIn
 
 	// ConsoleOut collects bytes written to UART0's data register — the
 	// DMA machine's stdout (see libc/, Phase 4.5).

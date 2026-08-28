@@ -11,9 +11,10 @@ package dmaasm
 // Invariants (the mode-domain rules):
 //   - every instruction starts and ends in canonical state: plain bank,
 //     all counts 1 (so labels and control-flow joins agree);
-//   - switch records out of the size8 family go via plain (their byte
-//     transfer can only retarget within channels 0..3);
-//   - switch records out of bswap use a pre-swapped window literal;
+//   - the bswap and size banks auto-return: their records chain through
+//     cleanup back to the plain window, so the planner is never on them
+//     when it emits a switch — such a record would repeat at the bank's
+//     count and, on an INCR bank, walk over memory;
 //   - a plain-bank read of SNIFF_DATA while on the sniff bank runs in
 //     place (delivered data is exact; self-accumulation hits state the
 //     macros treat as dead after a read) — and if it targets %pc it is
@@ -39,7 +40,9 @@ type cshape struct {
 	halt     bool   // all-zero HALT record
 	// cntAfter: the record itself rewrites its bank's count reload (the
 	// in-bank count-restore idiom for sniff count runs; its transfer
-	// repeats `count` times, which callers compensate in the seed).
+	// repeats `count` times, which callers compensate in the seed). No
+	// macro sets it: the idiom wedges RP2040 and mulc/jbool went to
+	// count-1 records instead (emit.go).
 	cntAfter uint32
 }
 

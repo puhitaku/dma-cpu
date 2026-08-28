@@ -1,9 +1,9 @@
 /* dma-sh: an interactive shell running on the DMA machine (Phase 5b).
  *
- * Runs as process A under prog/hil/kernel.dasm while a counter process
- * runs as B; every input-wait loop iteration crosses a safepoint, so the
- * background process keeps running while the shell sits at the prompt —
- * `stat` makes the multitasking visible.
+ * Runs as process A under host/prog/hil/kernel.dasm while a counter
+ * process runs as B; every input-wait loop iteration crosses a
+ * safepoint, so the background process keeps running while the shell
+ * sits at the prompt — `stat` makes the multitasking visible.
  *
  * Input is UART0 RX read directly by the machine (FR.RXFE poll + DR
  * pop); output is the usual picolibc printf. The two stat_* pointers

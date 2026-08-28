@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Parse parses a textual LLVM IR module (the clang -O1 subset).
+// Parse parses a textual LLVM IR module (the clang -Oz subset).
 func Parse(src string) (*Module, error) {
 	p := &parser{m: &Module{Types: map[string]*Type{}}, aliases: map[string]string{}}
 	lines := strings.Split(src, "\n")

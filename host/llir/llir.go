@@ -1,14 +1,15 @@
 // Package llir parses the subset of textual LLVM IR (".ll") that clang
-// emits for ILP32 C at -O1 with opaque pointers. It is the front half of
+// emits for ILP32 C at -Oz with opaque pointers. It is the front half of
 // the Phase 4 compiler (`dmacc`): clang lowers C to IR, dmacc lowers IR
 // to dmaasm.
 //
 // Supported: i1..i32 integers, pointers, arrays, structs (incl. named
 // types), globals with initializers, phi/select/switch, all integer
-// binary ops, icmp, load/store/alloca/getelementptr, casts, calls, and
-// the llvm.memcpy/memset/lifetime/assume intrinsic families. Anything
-// outside the subset (i64, floats, vectors, varargs, dynamic alloca) is
-// a parse or codegen error, not a miscompile.
+// binary ops, icmp, load/store/alloca/getelementptr, casts, calls
+// (incl. variadic and indirect), and the
+// llvm.memcpy/memset/lifetime/assume intrinsic families. Anything
+// outside the subset (i64, floats, vectors, dynamic alloca) is a parse
+// or codegen error, not a miscompile.
 package llir
 
 import "fmt"

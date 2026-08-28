@@ -1,9 +1,9 @@
-// Command dmacc compiles LLVM IR (.ll, the clang -O1 subset) into
+// Command dmacc compiles LLVM IR (.ll, the clang -Oz subset) into
 // dmaasm source, and optionally assembles it into a DMX executable.
 //
 // The front half is stock clang:
 //
-//	clang --target=armv6m-none-eabi -O1 -fno-unroll-loops -fsigned-char \
+//	clang --target=armv6m-none-eabi -Oz -fno-unroll-loops -fsigned-char \
 //	      -ffreestanding -S -emit-llvm prog.c -o prog.ll
 //
 // Usage:

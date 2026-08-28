@@ -190,9 +190,9 @@ func TestLibcStdio(t *testing.T) {
 	}
 }
 
-// TestRecursion: bounded recursion via depth cloning (each level owns
-// its own static frame; depth-K overflow lowers to HALT). tree(10)
-// requires depth 10 of the default 12.
+// TestRecursion: tree recursion on the software frame stack — nothing
+// here reaches fork(), so the whole cycle takes the push/pop path and
+// depth is bounded only by Options.FrameStack.
 func TestRecursion(t *testing.T) {
 	t.Parallel()
 	src, err := os.ReadFile("testdata/recurse.ll")

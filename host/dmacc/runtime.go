@@ -4,12 +4,14 @@ import "fmt"
 
 // The runtime library: hand-written dmaasm routines for the operations
 // the machine has no short block sequence for. ABI v0: arguments in
-// r0/r1/r2, result in r0. All routines are leaves except the sdiv/srem
-// wrappers, which save lr and call __rt_udivmod.
+// r0/r1/r2, result in r0. All routines are leaves except the udiv/urem/
+// sdiv/srem wrappers, which save lr and call __rt_udivmod.
 //
-// Division uses restoring long division MSB-first; shifts and multiplies
-// extract bits by repeated doubling and sign tests (the machine has no
-// right shift, so bits are consumed from the top). memcpy/memset patch a
+// Division uses restoring long division MSB-first; multiplies extract
+// bits by repeated doubling and sign tests. The machine has no right
+// shift: __rt_lshr borrows the DMA sniffer's OUT_REV bit reversal for
+// counts under 16 (reverse, left-shift, reverse back); larger counts,
+// and __rt_ashr always, consume bits from the top. memcpy/memset patch a
 // single INCR block — a DMA engine's native talent — so their cost is
 // one transfer per byte regardless of length (a zero count is the
 // silicon-verified NOP, so n=0 needs no guard).
@@ -234,7 +236,7 @@ rt_lshr_done:
 	{
 		name: "ashr",
 		data: "rt_ares: .word 0\nrt_acnt: .word 0\n",
-		text: `; like lshr, but the result starts as the sign fill.
+		text: `; like lshr's slow path, but the result starts as the sign fill.
 __rt_ashr:
     andn r1, $0xFFFFFFE0, r1
     move $31, rt_acnt
