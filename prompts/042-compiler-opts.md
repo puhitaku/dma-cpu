@@ -6,8 +6,9 @@ size and executed-record count, in that combined order. Ranked by
 leverage per effort; every item rides the existing differential-test
 and emulator harness.
 
-Status 2026-08-29: §2 (static cases), §3 and §9 are DONE; §10 is
-partly done (eqzp/ltp shipped, its (b) planner idea measured and
+Status 2026-08-29: §2 (static cases), §3, §9 and §10 (a) + (a1) are
+DONE (eqzp/ltp shipped, then the whole-program parameter/return
+bounds that feed them; §10's (b) planner idea is measured and
 CLOSED); §5 is measured and CLOSED as not worth building; the rest
 are open. The 2026-08-29 wave also measured where executed records
 actually go (comparison lowering ~65%, see §10), which reranks
@@ -291,16 +292,82 @@ a signed loop's BOUND is an i32 parameter or load (`s:load|` 22,
 sides nonneg, and LLVM's canonical rotated loop exits on `icmp eq inc,
 n`, which bounds nothing at all.
 
-The two levers that would reach those, neither taken here: (a1)
-whole-program parameter ranges — llir.Merge already gives dmacc every
-caller, so a param's bound is the meet over its call sites; (a2)
-honouring `nsw`/`nuw`, which llir currently drops in the parser. `add
-nsw a, b` with both words nonneg is nonneg, which closes every signed
-counter and the `icmp eq inc, n` loops with it — but it buys that by
-reading LLVM's poison semantics into a machine whose arithmetic wraps,
-and that is a policy decision, not a lowering one.
+### (a1) Whole-program parameter and return ranges — DONE
 
-Still on the table, in measured-value order: (a1)/(a2) above and
+The per-function lattice grew an interprocedural layer (facts.go,
+`ipBounds` + `gen.analyzeBounds`): a parameter's bound is the meet (the
+maximum) of its argument's bound at EVERY call site, a call's result is
+the meet over the callee's `ret` bounds, and the two run to a fixed
+point over the whole merged module — descending from the top, every
+commit taking the minimum of the candidate and the stored bound, so
+each bound only tightens and the local lattice's termination argument
+carries over one level up. Returns fell out of the same loop for free:
+unlike parameters they do not depend on the caller set at all, so no
+escape rule touches them.
+
+Soundness rests on counting EVERY caller. The escape enumeration, all
+in the `escapedFuncs` comment: the entry point (crt0 calls it with no
+arguments, loaders enter at `warmstart`); the recursion-overflow sink
+(expandClones calls it with Args nil); every function whose ADDRESS is
+a value anywhere — operand, phi input, or indirect-call pointer, the
+parser rendering a function-as-value as VGlobal; every function named
+by a global INITIALIZER (dispatch tables — the game's `bench_run.kf`
+is one); the functions a hand-written .dasm enters by address, i.e.
+kernel.dasm's ktickv/ksysv patched with &f_dma_ktick/&f_dma_ksyscall,
+which is the one class no IR analysis can see and so lives as a named
+list; and, implicitly, any function with no visible call site, since
+the meet over zero sites would be ZERO. A site passing fewer arguments
+than the callee has parameters tops the callee. Variadic callees keep
+their FIXED parameters bounded (the tail is read back by loads).
+The vfork double return does not need a rule: the value the kernel
+deposits into a suspended process arrives through the INDIRECT trap
+call of usys.c, which is unbounded by rule. Each of those has an
+adversarial test in facts_test.go, and the escape and partial-site
+guards were mutation-checked (removing either makes its test fail).
+
+Measured. Bounds gained: 35/291 kernel parameters bounded (33 nonneg)
+and 38 returns; 96/223 game parameters (93 nonneg) and 8 returns;
+16/89 sh parameters. Loads gained nothing and cannot — there is no
+memory analysis, and a `load i32` stays at the top.
+
+Routing, static sites (before -> after): the xsh kernel ltp 34 -> 41 of
+222 and eqzp 259 -> 321 of 590 zero-tests (43.9% -> 54.4%); the game
+ltp 26 -> 31 of 280 and eqzp 307 -> 334 of 408 (75.2% -> 81.9%); sh ltp
+2 -> 2 of 88 and eqzp 36 -> 44 of 136. eqzp is where the win is, which
+is where the executed records are (x == 0 is 52-58% of invocations).
+
+Cycles: the xsh five-command sum 11.31M -> 10.57M cold (-6.6%) and
+10.77M -> 9.98M warm (-7.3%) — `cat README` -12.6% cold / -16.7% warm,
+`ls` -11.2%, `((((echo deep))))` -7.8%, `free` -3.7%, `echo hi` -1.1%
+cold (its warm figure is scheduler-quantized and moves +3.5%, i.e.
+under one tick). vi TOTAL 177.0M -> 173.5M (-2.0%); the human-paced
+per-key figures are unchanged. Of the dmxgen feather goldens only the
+two stdio images move at all (cc_stdio -102 cycles, ccc_stdio -51):
+those programs are single-module C where the meet had nothing to add.
+All text/data/ramtext sizes are unchanged, as expected — a routed site
+is the same two/four records, only the shared helper body differs.
+
+Where the remaining compares are blocked, classified by the defining op
+of the operand that fails NONNEG (a site with two unproven operands
+counts twice), before -> after: the kernel `load` 61 -> 61, `phi` 51 ->
+50, `call` 37 -> 32, `param` 35 -> 34; the game `phi` 70 -> 68, `add`
+62 -> 62, `load` 45 -> 45, `param` 37 -> 25, `call` 26 -> 26. Loads are
+now the kernel's single largest blocker and phis the game's — and the
+phis are the signed counters of (a2) below. Worth noting for whoever
+takes that up: the assume-and-verify round removed above was priced
+when a signed loop's BOUND was unbounded; with 33 kernel and 93 game
+parameters now proven nonneg, the "both sides nonneg" requirement of
+`slt` is half satisfied at many more sites, so its price should be
+re-measured rather than inherited.
+
+The remaining lever for those: (a2), honouring `nsw`/`nuw`, which llir
+currently drops in the parser. `add nsw a, b` with both words nonneg is
+nonneg, which closes every signed counter and the `icmp eq inc, n`
+loops with it — but it buys that by reading LLVM's poison semantics
+into a machine whose arithmetic wraps, and that is a policy decision,
+not a lowering one.
+
+Still on the table, in measured-value order: (a2) above and
 (c) per-site descriptor-vs-four-move selection from the §1 profile —
 (b), the compact bank-state planner, is measured and CLOSED below.
 
@@ -354,10 +421,11 @@ the §7 encoding-v2 rebuild if it is ever wanted.
 
 ## If only two
 
-§1 (it compounds: every future heuristic becomes automatic) and
-§10 (a1), whole-program parameter ranges (comparisons remain the
-dominant executed cost; the per-function analysis is spent and the
-planner priced out, so the interprocedural bound — llir.Merge already
-hands dmacc every call site — is the one lever left that reaches the
-signed compares).
+§10 (a1), whole-program parameter ranges, was the other half of this
+pair and is DONE (see §10 above: -6.6% on the xsh five-command sum,
+-2.0% on vi, no size cost). What is left of the pair is §1 (it
+compounds: every future heuristic becomes automatic), and after it
+§10 (a2) — with parameters now bounded, the signed counters are the
+one shape still standing between the analysis and the `slt` sites,
+and its poison-semantics policy question is the only thing to settle.
 

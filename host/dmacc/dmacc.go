@@ -18,6 +18,7 @@ package dmacc
 
 import (
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -68,6 +69,12 @@ type Options struct {
 	// build keeps the four-move protocol: TestZZBenchXsh showed the
 	// descriptor form doubling whole-command cycle counts.
 	OptSize bool
+	// BoundsReport, when non-nil, receives the whole-program value-range
+	// report: the final bound of every function parameter and return,
+	// and for each parameter the call site whose argument pinned it
+	// (facts.go, ipBounds.report). That witness is the diagnosis when a
+	// meet dies at one loose site.
+	BoundsReport io.Writer
 }
 
 // Compile translates a parsed module into dmaasm source. The generated
@@ -192,7 +199,8 @@ type gen struct {
 	cmpConst map[string]string // $literal operand -> its constant word
 	stubN    int               // generated label counter
 	funcIdx  map[string]*llir.Func
-	maxVar   map[string]int // variadic callee -> max variadic arg count seen
+	maxVar   map[string]int     // variadic callee -> max variadic arg count seen
+	facts    map[string]factSet // whole-program value bounds, one set per function
 }
 
 // uartMMIO maps the compiler-known UART globals to dmaasm MMIO operands
@@ -314,6 +322,12 @@ func (g *gen) run() error {
 			return err
 		}
 	}
+	// The value-range analysis is whole-program (facts.go): parameter
+	// seeds are the meet over call sites, so it runs once here — after
+	// garbage collection has removed callers that do not exist and after
+	// the depth clones are in funcIdx with their calls rerouted — and
+	// every emitFunc reads its own function's finished factSet.
+	g.facts, _ = g.analyzeBounds()
 	for _, f := range g.m.Funcs {
 		if err := g.emitFunc(f); err != nil {
 			return err

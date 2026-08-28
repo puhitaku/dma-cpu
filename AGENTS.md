@@ -136,10 +136,15 @@ phased plan). Phase outcomes are logged in the numbered
   descriptor records at ~2x the branch cost). A value-range analysis
   (`host/dmacc/facts.go`: an upper bound per SSA word, fixed-point from
   the pessimistic top, narrowed inside the region a dominating branch
-  proves it in) routes the sites whose operands provably keep bit 31
-  clear to the shorter `__cw_eqzp`/`__cw_ltp` bodies — same site size,
-  less helper. The same comparison may lower differently in two blocks. `dmacc -size` prints block attribution — measure
-  before optimizing. dmxgen bakes relocations out
+  proves it in, and whole-program — a parameter's bound is the meet
+  over every call site, a call's result the meet over the callee's
+  returns, with an escape rule that keeps address-taken, entry and
+  loader-entered functions unbounded) routes the sites whose operands
+  provably keep bit 31 clear to the shorter `__cw_eqzp`/`__cw_ltp`
+  bodies — same site size, less helper. The same comparison may lower
+  differently in two blocks. `dmacc -size` prints block attribution and
+  `dmacc -bounds` the value ranges with the call site that pinned each
+  parameter — measure before optimizing. dmxgen bakes relocations out
   of the HIL images (they load at link addresses only). When touching
   the lowering, keep the differential suite bit-exact — it caught the
   phase's only miscompile.

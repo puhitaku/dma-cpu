@@ -14,7 +14,11 @@
 //
 // -run executes the program in the emulator and prints the exit code
 // (main's return value). -dump name[:count] prints memory after the run
-// by C symbol name; repeatable.
+// by C symbol name; repeatable. -bounds prints the whole-program
+// value-range report (host/dmacc/facts.go): every parameter's and
+// return's proven upper bound, and for each parameter the call site
+// whose argument set it — the diagnosis when one loose site keeps a
+// comparison on the full-range helper.
 package main
 
 import (
@@ -47,6 +51,7 @@ func run() error {
 	dataBase := flag.Uint64("data", 0x20030000, "data link address (192 KiB of text headroom fits either SKU)")
 	doRun := flag.Bool("run", false, "run the program in the emulator")
 	size := flag.Bool("size", false, "print a code-size report (blocks by IR construct and function)")
+	bounds := flag.Bool("bounds", false, "print the whole-program value-range report (parameter/return bounds and the call site pinning each parameter)")
 	maxCycles := flag.Uint64("maxcycles", 200_000_000, "emulator cycle budget for -run")
 	var dumps dumpFlag
 	flag.Var(&dumps, "dump", "after -run, print memory at C symbol `name[:count]` (repeatable)")
@@ -79,6 +84,9 @@ func run() error {
 	copts := dmacc.Options{Entry: *entry, NoSafepoints: *noSafepoints}
 	if *size {
 		copts.Stats = &dmacc.Stats{}
+	}
+	if *bounds {
+		copts.BoundsReport = os.Stdout
 	}
 	dasm, err := dmacc.Compile(mod, copts)
 	if err != nil {

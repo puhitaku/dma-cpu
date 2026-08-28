@@ -1,7 +1,10 @@
 package dmacc
 
 import (
+	"fmt"
+	"io"
 	"math/bits"
+	"sort"
 
 	"github.com/puhitaku/dma-cpu/host/llir"
 )
@@ -48,15 +51,31 @@ import (
 // The chain never reads i's own bound to prove i's bound: the body edge
 // bounds i out of n alone.
 //
-// A SIGNED counter does not close, and cannot here. `slt i, n` bounds
-// i's WORD only once i is already known nonneg — a negative word passes
-// it too — so the derivation would have to assume what it proves. An
-// assume-and-verify round for that shape was built and measured on the
-// kernel and the game (prompts/042 §10): it discharges the assumption
-// on 36 and 20 counters respectively and moves exactly one comparison
-// site, because a signed loop's BOUND is an i32 parameter or load that
-// nothing local bounds, and `slt a, b` needs both sides nonneg. It is
-// not here.
+// A SIGNED counter does not close from inside one function, and cannot.
+// `slt i, n` bounds i's WORD only once i is already known nonneg — a
+// negative word passes it too — so the derivation would have to assume
+// what it proves. An assume-and-verify round for that shape was built
+// and measured on the kernel and the game (prompts/042 §10): it
+// discharges the assumption on 36 and 20 counters respectively and
+// moves exactly one comparison site, because a signed loop's BOUND is
+// an i32 parameter or load that nothing local bounds, and `slt a, b`
+// needs both sides nonneg. It is not here.
+//
+// The PARAMETER half of that wall is what the whole-program layer below
+// (ipBounds, gen.analyzeBounds) removes: llir.Merge hands dmacc every
+// caller, so a parameter's bound is the meet — here the maximum — of
+// the argument bounds at every call site, and a call's RESULT is
+// likewise the maximum over the callee's `ret` bounds. The load half
+// stays: there is no memory analysis, so a `load i32` is still the top.
+//
+// A meet over call sites is only a bound if it counted EVERY caller, so
+// the parameter rule carries an escape analysis with it: the entry
+// point, the recursion sink, every function whose address is a value or
+// sits in a global initializer, and the ones a hand-written .dasm
+// enters by address all keep unbounded parameters. escapedFuncs
+// enumerates the mechanisms and says why each is exhaustive. The return
+// rule needs none of that — whoever calls f, the word in r0 is still
+// one f's own `ret` put there.
 //
 // Soundness: the fixed point starts at the TOP (0xFFFFFFFF everywhere,
 // nothing known) and only tightens. Every rule states a bound implied
@@ -97,6 +116,7 @@ func factsOfMax(m uint32) uint8 {
 type factSet struct {
 	max map[string]uint32   // per-value bound, valid wherever the value is live
 	blk []map[string]uint32 // per-block bounds proven by dominating branches
+	ip  *ipBounds           // whole-program parameter/return bounds (nil: none)
 }
 
 // typeMax is the bound a value's type alone grants: a narrow integer
@@ -618,8 +638,11 @@ func sameBounds(a, b map[string]uint32) bool {
 
 // --- The value rules ---------------------------------------------------
 
-// factsOf derives the value bounds of one function.
-func factsOf(f *llir.Func) factSet {
+// factsOf derives the value bounds of one function. ip carries the
+// whole-program bounds this run may assume — the seeds for f's own
+// parameters and the return bound of every callee; nil means "nothing
+// known beyond this function", which is what the local rules alone see.
+func factsOf(f *llir.Func, ip *ipBounds) factSet {
 	c := newFuncCFG(f)
 	defs := map[string]*llir.Instr{}
 	for _, blk := range f.Blocks {
@@ -629,7 +652,17 @@ func factsOf(f *llir.Func) factSet {
 			}
 		}
 	}
-	fs := factSet{max: map[string]uint32{}, blk: make([]map[string]uint32, len(f.Blocks))}
+	fs := factSet{max: map[string]uint32{}, blk: make([]map[string]uint32, len(f.Blocks)), ip: ip}
+	// Parameter seeds. A parameter has no defining instruction, so
+	// narrowValues never revisits the entry — the seed is simply a value
+	// bound that holds wherever the parameter is live, exactly like a
+	// derived one. It is sound because every word the parameter word can
+	// hold was moved there by a call site the meet counted (analyzeBounds).
+	for i, p := range f.Params {
+		if b := ip.paramBound(f.Name, i); b < maxUnknown {
+			fs.max[p.Name] = b
+		}
+	}
 	for pass := 0; pass < factsPasses; pass++ {
 		changed := fs.narrowEdges(f, c, defs)
 		if fs.narrowValues(f, c, defs) {
@@ -711,6 +744,16 @@ func (fs *factSet) insBound(ins *llir.Instr, opnd func(*llir.Value) uint32) uint
 		if d, ok := constShift(ins.Args[1]); ok && d > 0 {
 			k = d - 1
 		}
+	case "call":
+		// The result word is r0 as the callee left it (emitCall moves it
+		// verbatim), so it is bounded by the meet over that callee's
+		// returns. Indirect calls have Callee "" and intrinsics/libcalls
+		// are not in the map, so both stay at the top — which is also
+		// what keeps the syscall trap sound: the values the kernel
+		// deposits without running a `ret` (vfork's second return,
+		// wait's pid) all arrive through the INDIRECT call in
+		// xv6/dma/usys.c, never through a named callee.
+		k = fs.ip.retBound(ins.Callee)
 	}
 	if t := resTypeMax(ins); t < k {
 		k = t
@@ -825,4 +868,368 @@ func (fs *factSet) narrowValues(f *llir.Func, c *funcCFG, defs map[string]*llir.
 		}
 	}
 	return changed
+}
+
+// --- Whole-program bounds ----------------------------------------------
+
+// ipBounds is the interprocedural half of the lattice: one bound per
+// FUNCTION PARAMETER (seeded into that function's local analysis) and
+// one per FUNCTION RETURN (read at every call site). Both are meets —
+// maxima of uint32 upper bounds — over the whole program, which
+// llir.Merge has already put in one module.
+//
+// The rules and their invariants:
+//
+//	PARAMETER i of f <= max over every call site of f of the bound its
+//	i-th argument carries AT THAT SITE. Sound because the parameter word
+//	is written by exactly those sites (emitCall moves the argument word
+//	verbatim into r0..r3 or straight into the callee's word, and the
+//	prologue moves r0..r3 into the parameter words unchanged), and by
+//	nothing else. It therefore needs EVERY caller to be visible; see
+//	escapedFuncs for the ones that are not.
+//
+//	RETURN of f <= max over f's `ret` instructions of the bound the
+//	returned value carries in its block. Sound because the caller reads
+//	r0 as the callee left it, and a `ret` is the only thing that writes
+//	it — the one exception being the values the kernel deposits into a
+//	suspended process (vfork's second return, wait's pid), which arrive
+//	through the INDIRECT trap call of xv6/dma/usys.c and so land on the
+//	top bound by rule. Unlike parameters, returns do not depend on the
+//	caller set at all: whoever calls f, f still leaves one of its own
+//	`ret` values in r0. Escape analysis does not enter this rule.
+//
+// Termination. The iteration starts at the TOP everywhere and every
+// commit takes the MINIMUM of the new candidate and the stored bound,
+// so each of the finitely many bounds only ever decreases: the same
+// argument that terminates the local lattice, one level up. Taking the
+// minimum is sound because both operands are sound — every iterate is
+// sound by induction from the top, since each rule states a bound
+// implied by the current (sound) bounds of its inputs — so their
+// conjunction holds too. Recursion needs no special case: a self-call
+// is just another site, read from the caller's CURRENT facts, which are
+// never optimistic, so a cycle can only re-derive what the previous,
+// looser iterate already justified. ipPasses caps the walk, and
+// stopping early can only leave a LOOSER bound, never a wrong one.
+type ipBounds struct {
+	param   map[string][]uint32    // function -> per-parameter bound
+	ret     map[string]uint32      // function -> bound on the word it returns
+	witness map[string][]ipWitness // per parameter: the site that pinned it
+	esc     map[string]bool        // functions whose callers are not all visible
+}
+
+// ipWitness names the call site that set a parameter's current maximum
+// — "which site killed it", for Options.BoundsReport.
+type ipWitness struct {
+	caller string
+	line   int
+	bound  uint32
+}
+
+// ipPasses caps the whole-program iteration. Convergence is fast (call
+// depth, not program size: a bound crosses one call edge per pass); the
+// cap only bounds pathological input.
+const ipPasses = 6
+
+// paramBound is the bound of f's i-th parameter; the top when nothing
+// is known, when the analysis did not run, or when f is not indexed.
+func (ip *ipBounds) paramBound(fn string, i int) uint32 {
+	if ip == nil {
+		return maxUnknown
+	}
+	ps, ok := ip.param[fn]
+	if !ok || i < 0 || i >= len(ps) {
+		return maxUnknown
+	}
+	return ps[i]
+}
+
+// retBound is the bound on the word a named callee returns.
+func (ip *ipBounds) retBound(fn string) uint32 {
+	if ip == nil || fn == "" {
+		return maxUnknown
+	}
+	if b, ok := ip.ret[fn]; ok {
+		return b
+	}
+	return maxUnknown
+}
+
+// loaderEntryFuncs are compiled functions that a hand-written .dasm
+// image enters BY ADDRESS, invisibly to the IR: host/prog/hil/
+// kernel.dasm keeps the words ktickv and ksysv, which dmxgen patches
+// with &f_dma_ktick and &f_dma_ksyscall (host/cmd/dmxgen/main.go). A
+// call through them is a call the module cannot show. Both are
+// void(void) today, so the entry has no parameter to get wrong — the
+// list exists so that a future entry WITH parameters is not seeded from
+// its C call sites alone.
+var loaderEntryFuncs = []string{"dma_ktick", "dma_ksyscall"}
+
+// escapedFuncs lists the functions whose PARAMETERS must stay at the
+// top because a caller exists that the per-site meet cannot count.
+// Every way a call can reach a function without a named `call` to it,
+// enumerated:
+//
+//  1. The entry point. crt0 calls it with no arguments at all
+//     (dmacc.go: `call f_<entry>`), and loaders enter the image at
+//     `warmstart`, which does the same.
+//  2. The recursion-overflow sink. expandClones rewrites depth-K calls
+//     to it with Args nil — it takes over an activation rather than
+//     receiving one — and collectGarbage keeps it as a root.
+//  3. Any function whose ADDRESS is a value anywhere: an operand, a phi
+//     input, or the pointer of an indirect call. The parser renders a
+//     function used as a value as VGlobal (VFunc is accepted too), so
+//     both kinds are checked against funcIdx — the same test
+//     collectGarbage uses to keep indirect targets alive. This covers
+//     function-pointer arguments, function pointers stored to memory,
+//     and every indirect call, whose target must have had its address
+//     taken somewhere to become a value at all.
+//  4. Any function named by a GLOBAL INITIALIZER: dispatch tables
+//     (xv6's syscall array) are const globals of function addresses,
+//     which no instruction mentions.
+//  5. loaderEntryFuncs above — the .dasm/loader entries.
+//  6. Implicitly, any function with no visible call site at all:
+//     analyzeBounds commits a meet only where it counted at least one
+//     site, so "no sites" keeps the top instead of the empty maximum,
+//     which would be zero — the one shape that could mint a bound out
+//     of nothing.
+//
+// Not on the list, deliberately: variadic callees, whose FIXED
+// parameters are passed positionally by every site like any other (the
+// tail lands in the static va area and is read back by loads, which are
+// unbounded anyway); and recursive functions, which are ordinary sites
+// under the fixed point.
+//
+// Aliases do not appear because Module.ResolveAliases has already
+// rewritten every in-module reference to the target and cleared the
+// map; an alias name surviving as an external entry is case 5.
+//
+// Assumed: a function address enters the program only through a symbol
+// reference — an operand or an initializer. Nothing synthesizes one
+// from an integer literal, which on this machine would need the link
+// address of a function the compiler placed.
+func (g *gen) escapedFuncs() map[string]bool {
+	esc := map[string]bool{}
+	mark := func(name string) {
+		if _, ok := g.funcIdx[name]; ok {
+			esc[name] = true
+		}
+	}
+	mark(g.opts.Entry)
+	mark(recOverflowName)
+	for _, n := range loaderEntryFuncs {
+		mark(n)
+	}
+	seeVal := func(v *llir.Value) {
+		if v != nil && (v.Kind == llir.VGlobal || v.Kind == llir.VFunc) {
+			mark(v.Name)
+		}
+	}
+	for _, f := range g.m.Funcs {
+		for _, b := range f.Blocks {
+			for _, ins := range b.Instrs {
+				for _, a := range ins.Args {
+					seeVal(a)
+				}
+				for _, e := range ins.Phi {
+					seeVal(e.Val)
+				}
+				seeVal(ins.CalleeVal)
+			}
+		}
+	}
+	var walk func(*llir.Init)
+	walk = func(in *llir.Init) {
+		if in == nil {
+			return
+		}
+		if in.Sym != "" {
+			mark(in.Sym)
+		}
+		for _, e := range in.Elems {
+			walk(e)
+		}
+	}
+	for _, gl := range g.m.Globals {
+		walk(gl.Init)
+	}
+	return esc
+}
+
+// analyzeBounds runs the whole-program fixed point and returns the
+// final per-function facts — one factSet per name in funcIdx — and the
+// interprocedural bounds they were derived under. It must run after
+// collectGarbage (dead callers would widen live meets) and after
+// computeRecursion (depth clones are separate functions with their own
+// call sites).
+func (g *gen) analyzeBounds() (map[string]factSet, *ipBounds) {
+	names := make([]string, 0, len(g.funcIdx))
+	for n := range g.funcIdx {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	ip := &ipBounds{param: map[string][]uint32{}, ret: map[string]uint32{},
+		witness: map[string][]ipWitness{}, esc: g.escapedFuncs()}
+	callers := map[string]map[string]bool{} // callee -> the functions that call it
+	for _, n := range names {
+		f := g.funcIdx[n]
+		ps := make([]uint32, len(f.Params))
+		ws := make([]ipWitness, len(f.Params))
+		for i := range ps {
+			ps[i], ws[i].bound = maxUnknown, maxUnknown
+		}
+		ip.param[n], ip.ret[n], ip.witness[n] = ps, maxUnknown, ws
+		for _, b := range f.Blocks {
+			for _, ins := range b.Instrs {
+				if ins.Op != "call" || ins.CalleeVal != nil {
+					continue
+				}
+				if _, ok := g.funcIdx[ins.Callee]; !ok {
+					continue
+				}
+				if callers[ins.Callee] == nil {
+					callers[ins.Callee] = map[string]bool{}
+				}
+				callers[ins.Callee][n] = true
+			}
+		}
+	}
+	facts := make(map[string]factSet, len(names))
+	dirty := make(map[string]bool, len(names))
+	for _, n := range names {
+		dirty[n] = true
+	}
+	for pass := 0; ; pass++ {
+		for _, n := range names {
+			if dirty[n] {
+				facts[n] = factsOf(g.funcIdx[n], ip)
+			}
+		}
+		if pass+1 >= ipPasses {
+			break
+		}
+		// Derive fresh candidates from the current facts. cand is a
+		// maximum built up from zero, so it is committed only for a
+		// callee that is not escaped and was seen at a site passing all
+		// of its parameters.
+		cand := map[string][]uint32{}
+		sites := map[string]int{}
+		partial := map[string]bool{} // a site that does not pass every parameter
+		rcand := map[string]uint32{}
+		rseen := map[string]bool{}
+		for _, n := range names {
+			f, fs := g.funcIdx[n], facts[n]
+			for bi, b := range f.Blocks {
+				for _, ins := range b.Instrs {
+					switch ins.Op {
+					case "ret":
+						if len(ins.Args) == 0 {
+							continue
+						}
+						rseen[n] = true
+						if bnd := fs.boundAt(bi, ins.Args[0]); bnd > rcand[n] {
+							rcand[n] = bnd
+						}
+					case "call":
+						if ins.CalleeVal != nil {
+							continue // indirect: its targets are escaped by rule 3
+						}
+						cf, ok := g.funcIdx[ins.Callee]
+						if !ok || len(cf.Params) == 0 {
+							continue
+						}
+						if len(ins.Args) < len(cf.Params) {
+							// The depth-K sink call (Args nil), or a
+							// prototype the site disagrees with: this
+							// site writes no argument word, so no meet
+							// over sites describes the parameter.
+							partial[cf.Name] = true
+							continue
+						}
+						sites[cf.Name]++
+						cs, ok := cand[cf.Name]
+						if !ok {
+							cs = make([]uint32, len(cf.Params))
+							cand[cf.Name] = cs
+						}
+						for i := range cf.Params {
+							if bnd := fs.boundAt(bi, ins.Args[i]); bnd > cs[i] {
+								cs[i] = bnd
+								ip.witness[cf.Name][i] = ipWitness{n, ins.Line, bnd}
+							}
+						}
+					}
+				}
+			}
+		}
+		changed := map[string]bool{}
+		for _, n := range names {
+			if ip.esc[n] || partial[n] || sites[n] == 0 {
+				continue
+			}
+			for i, b := range cand[n] {
+				if b < ip.param[n][i] {
+					ip.param[n][i] = b
+					changed[n] = true
+				}
+			}
+		}
+		for _, n := range names {
+			if !rseen[n] || rcand[n] >= ip.ret[n] {
+				continue
+			}
+			ip.ret[n] = rcand[n]
+			for c := range callers[n] {
+				changed[c] = true
+			}
+		}
+		if len(changed) == 0 {
+			break
+		}
+		dirty = changed
+	}
+	if w := g.opts.BoundsReport; w != nil {
+		ip.report(w, names, g.funcIdx)
+	}
+	return facts, ip
+}
+
+// report prints the whole-program bounds and, per parameter, the call
+// site that pinned it — the diagnosis for "the meet died at one site".
+func (ip *ipBounds) report(w io.Writer, names []string, idx map[string]*llir.Func) {
+	nonneg, bounded, total := 0, 0, 0
+	for _, n := range names {
+		for i, p := range idx[n].Params {
+			b := ip.param[n][i]
+			total++
+			if b < maxUnknown {
+				bounded++
+			}
+			if b <= maxNonNeg {
+				nonneg++
+			}
+			why := "escaped: no per-site meet"
+			if !ip.esc[n] {
+				if wit := ip.witness[n][i]; wit.caller == "" {
+					why = "no visible call site"
+				} else {
+					why = fmt.Sprintf("max at %s:%d = 0x%x", wit.caller, wit.line, wit.bound)
+				}
+			}
+			fmt.Fprintf(w, "param %s#%d %%%s <= 0x%x (%s)\n", n, i, p.Name, b, why)
+		}
+	}
+	rets, rnonneg := 0, 0
+	for _, n := range names {
+		b := ip.ret[n]
+		if b >= maxUnknown {
+			continue
+		}
+		rets++
+		if b <= maxNonNeg {
+			rnonneg++
+		}
+		fmt.Fprintf(w, "ret   %s <= 0x%x\n", n, b)
+	}
+	fmt.Fprintf(w, "bounds: %d/%d parameters bounded, %d nonneg; %d returns bounded, %d nonneg\n",
+		bounded, total, nonneg, rets, rnonneg)
 }

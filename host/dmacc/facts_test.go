@@ -13,7 +13,7 @@ func parseFacts(t *testing.T, body string) factSet {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	return factsOf(m.Funcs[0])
+	return factsOf(m.Funcs[0], nil)
 }
 
 func wantFact(t *testing.T, fs factSet, name string, want uint8) {
@@ -142,7 +142,7 @@ func parseFunc(t *testing.T, body string) (*llir.Func, factSet) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	return m.Funcs[0], factsOf(m.Funcs[0])
+	return m.Funcs[0], factsOf(m.Funcs[0], nil)
 }
 
 // An unsigned guard bounds its subject on the true edge; a SIGNED one
@@ -333,7 +333,7 @@ entry:
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	fs := factsOf(m.Funcs[0])
+	fs := factsOf(m.Funcs[0], nil)
 	wantFact(t, fs, "b", factNonNeg)
 	wantFact(t, fs, "z", factNonNeg)
 	if got := fs.max["b"]; got != 255 {
@@ -375,6 +375,323 @@ f:
 }
 
 // compileOne compiles a single-function module and returns its dasm.
+// --- Whole-program bounds ----------------------------------------------
+
+// analyzeIP runs the interprocedural fixed point over a whole module,
+// skipping garbage collection so that a function with no caller at all
+// still reaches the analysis (the adversarial shape).
+func analyzeIP(t *testing.T, src string) *ipBounds {
+	t.Helper()
+	m, err := llir.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	m.ResolveAliases()
+	g := &gen{m: m, opts: Options{Entry: "main"}, funcIdx: map[string]*llir.Func{}}
+	for _, f := range m.Funcs {
+		g.funcIdx[f.Name] = f
+	}
+	_, ip := g.analyzeBounds()
+	return ip
+}
+
+func wantParam(t *testing.T, ip *ipBounds, fn string, i int, want uint32) {
+	t.Helper()
+	if got := ip.paramBound(fn, i); got != want {
+		t.Errorf("param %s#%d bound %#x, want %#x", fn, i, got, want)
+	}
+}
+
+func wantRet(t *testing.T, ip *ipBounds, fn string, want uint32) {
+	t.Helper()
+	if got := ip.retBound(fn); got != want {
+		t.Errorf("ret %s bound %#x, want %#x", fn, got, want)
+	}
+}
+
+// The meet is the MAXIMUM over the call sites, and it closes what no
+// per-function analysis can: an i32 parameter every caller keeps small.
+func TestIPParamMeetOverSites(t *testing.T) {
+	ip := analyzeIP(t, `
+define i32 @cb(i32 %n, i32 %m) {
+entry:
+  ret i32 %n
+}
+define i32 @main() {
+entry:
+  %a = call i32 @cb(i32 5, i32 -1)
+  %b = call i32 @cb(i32 7, i32 3)
+  ret i32 %a
+}
+`)
+	wantParam(t, ip, "cb", 0, 7)
+	// -1 renders as the full word: one loose site sets the meet.
+	wantParam(t, ip, "cb", 1, maxUnknown)
+	wantRet(t, ip, "cb", 7)
+	wantRet(t, ip, "main", 7)
+}
+
+// A parameter fed by a constant at one site and an unbounded load at
+// another must stay at the top: the meet is the maximum, not a vote.
+func TestIPOneUnboundedSiteKillsTheMeet(t *testing.T) {
+	ip := analyzeIP(t, `
+@gv = global i32 0
+define i32 @cb(i32 %n) {
+entry:
+  ret i32 0
+}
+define i32 @main() {
+entry:
+  %v = load i32, ptr @gv, align 4
+  %a = call i32 @cb(i32 5)
+  %b = call i32 @cb(i32 %v)
+  ret i32 %a
+}
+`)
+	wantParam(t, ip, "cb", 0, maxUnknown)
+	wantRet(t, ip, "cb", 0)
+}
+
+// An ADDRESS-TAKEN function keeps unbounded parameters however tight
+// its visible direct call sites are: the indirect call through the
+// stored pointer is a site the meet cannot count. Both escape
+// mechanisms are exercised — a pointer stored to memory, and a callee
+// reachable only through a constant dispatch table (the vector-page
+// shape: no `call @tab` names it anywhere).
+func TestIPAddressTakenStaysUnbounded(t *testing.T) {
+	ip := analyzeIP(t, `
+@fp = global ptr null
+@tab = internal constant [2 x ptr] [ptr @tabbed, ptr null]
+define i32 @stored(i32 %n) {
+entry:
+  ret i32 %n
+}
+define i32 @tabbed(i32 %n) {
+entry:
+  ret i32 %n
+}
+define i32 @plain(i32 %n) {
+entry:
+  ret i32 %n
+}
+define i32 @main() {
+entry:
+  store ptr @stored, ptr @fp, align 4
+  %a = call i32 @stored(i32 5)
+  %b = call i32 @plain(i32 5)
+  %t = call i32 @tabbed(i32 5)
+  %f = load ptr, ptr @fp, align 4
+  %c = call i32 %f(i32 9)
+  ret i32 %a
+}
+`)
+	wantParam(t, ip, "stored", 0, maxUnknown)
+	wantParam(t, ip, "tabbed", 0, maxUnknown)
+	// The control: an ordinary callee beside them does get the bound.
+	wantParam(t, ip, "plain", 0, 5)
+	// The indirect call's own result is unbounded — it is how a value
+	// the kernel deposits without running a `ret` re-enters the program.
+	wantRet(t, ip, "main", maxUnknown)
+}
+
+// The entry point is entered by crt0 and by loaders (at warmstart) with
+// no arguments at all: its parameters stay unbounded even when the
+// module also calls it with a constant. A function with no call site at
+// all keeps the top too — the empty maximum would be ZERO, the one
+// shape that could mint a bound out of nothing.
+func TestIPEntryAndUncalledStayUnbounded(t *testing.T) {
+	ip := analyzeIP(t, `
+define i32 @orphan(i32 %n) {
+entry:
+  ret i32 %n
+}
+define i32 @main(i32 %argc) {
+entry:
+  %a = call i32 @main(i32 3)
+  ret i32 %a
+}
+`)
+	wantParam(t, ip, "main", 0, maxUnknown)
+	wantParam(t, ip, "orphan", 0, maxUnknown)
+}
+
+// Mutual recursion. The cycle may not bootstrap a bound out of itself:
+// with no site outside the cycle, both parameters stay at the top,
+// because the descending iteration reads each site from the CURRENT
+// facts, which start pessimistic. (The same descent is why a value
+// merely passed around a cycle never tightens even when every entry
+// into the cycle is a constant — accepted imprecision, not a hole.)
+func TestIPMutualRecursionStaysUnbounded(t *testing.T) {
+	ip := analyzeIP(t, `
+define i32 @a(i32 %x) {
+entry:
+  %r = call i32 @b(i32 %x)
+  ret i32 %r
+}
+define i32 @b(i32 %x) {
+entry:
+  %r = call i32 @a(i32 %x)
+  ret i32 %r
+}
+define i32 @main() {
+entry:
+  %r = call i32 @a(i32 4)
+  ret i32 %r
+}
+`)
+	wantParam(t, ip, "a", 0, maxUnknown)
+	wantParam(t, ip, "b", 0, maxUnknown)
+	wantRet(t, ip, "a", maxUnknown)
+	wantRet(t, ip, "b", maxUnknown)
+}
+
+// A self-call is an ordinary site, and one whose argument the analysis
+// can bound outright does not stop the meet: `f(n & 255)` recursing on
+// a masked value keeps the parameter bounded, while the plain pass-
+// through of the test above does not.
+func TestIPSelfCallIsJustAnotherSite(t *testing.T) {
+	ip := analyzeIP(t, `
+define i32 @f(i32 %n) {
+entry:
+  %m = and i32 %n, 255
+  %r = call i32 @f(i32 %m)
+  ret i32 %r
+}
+define i32 @main() {
+entry:
+  %r = call i32 @f(i32 6)
+  ret i32 %r
+}
+`)
+	wantParam(t, ip, "f", 0, 255)
+}
+
+// The return meet: a callee that only ever returns 0 or 1 hands its
+// call sites a BOOL, and one that returns an unknown load hands them
+// nothing. A function with no value-returning `ret` keeps the top —
+// max over zero returns would be zero.
+func TestIPReturnMeet(t *testing.T) {
+	ip := analyzeIP(t, `
+@gv = global i32 0
+define i32 @flag(i32 %n) {
+entry:
+  %c = icmp eq i32 %n, 0
+  br i1 %c, label %t, label %f
+t:
+  ret i32 1
+f:
+  ret i32 0
+}
+define i32 @opaque() {
+entry:
+  %v = load i32, ptr @gv, align 4
+  ret i32 %v
+}
+define void @novalue() {
+entry:
+  ret void
+}
+define i32 @main() {
+entry:
+  %a = call i32 @flag(i32 2)
+  %b = call i32 @opaque()
+  call void @novalue()
+  %s = add i32 %a, %b
+  ret i32 %s
+}
+`)
+	wantRet(t, ip, "flag", 1)
+	wantRet(t, ip, "opaque", maxUnknown)
+	wantRet(t, ip, "novalue", maxUnknown)
+}
+
+// A variadic callee's FIXED parameters are passed positionally by every
+// site like any other; the tail lands in the static va area and is read
+// back by loads, which nothing here bounds. And a site that passes
+// FEWER arguments than the callee has parameters — the depth-K sink
+// rewrite (expandClones nils Args), or a prototype the site disagrees
+// with — writes no argument word, so it tops the whole callee.
+func TestIPVariadicAndPartialSites(t *testing.T) {
+	ip := analyzeIP(t, `
+declare i32 @printf(ptr, ...)
+define i32 @vf(i32 %n, ...) {
+entry:
+  ret i32 %n
+}
+define i32 @sink(i32 %n) {
+entry:
+  ret i32 %n
+}
+define i32 @main() {
+entry:
+  %a = call i32 (i32, ...) @vf(i32 4, i32 -1)
+  %b = call i32 (i32, ...) @vf(i32 9)
+  %c = call i32 @sink(i32 3)
+  %d = call i32 @sink()
+  ret i32 %a
+}
+`)
+	wantParam(t, ip, "vf", 0, 9)
+	wantParam(t, ip, "sink", 0, maxUnknown)
+}
+
+// End to end: a parameter every caller keeps nonneg routes its signed
+// compare to __cw_ltp — the site the per-function analysis could not
+// reach (prompts/042 §10, `s:param`).
+func TestIPParamRoutesSignedCompare(t *testing.T) {
+	out := compileOne(t, `
+@gv = global i32 0
+define i32 @lim(i32 %n, i32 %k) {
+entry:
+  %c = icmp slt i32 %k, %n
+  br i1 %c, label %t, label %f
+t:
+  ret i32 1
+f:
+  ret i32 0
+}
+define i32 @main() {
+entry:
+  %a = call i32 @lim(i32 100, i32 3)
+  %b = call i32 @lim(i32 7, i32 5)
+  ret i32 %a
+}
+`, Options{})
+	if !strings.Contains(out, "jump __cw_ltp\n") {
+		t.Errorf("bounded parameters did not route the signed compare to ltp:\n%s", out)
+	}
+	if strings.Contains(out, "jump __cw_lt\n") {
+		t.Errorf("the full-range helper survived a fully bounded compare:\n%s", out)
+	}
+}
+
+// The same shape with ONE loose caller keeps the full-range helper: the
+// bound must not survive a site that cannot prove it.
+func TestIPLooseCallerKeepsFullRangeCompare(t *testing.T) {
+	out := compileOne(t, `
+@gv = global i32 0
+define i32 @lim(i32 %n, i32 %k) {
+entry:
+  %c = icmp slt i32 %k, %n
+  br i1 %c, label %t, label %f
+t:
+  ret i32 1
+f:
+  ret i32 0
+}
+define i32 @main() {
+entry:
+  %v = load i32, ptr @gv, align 4
+  %a = call i32 @lim(i32 100, i32 3)
+  %b = call i32 @lim(i32 %v, i32 5)
+  ret i32 %a
+}
+`, Options{})
+	if !strings.Contains(out, "jump __cw_lt\n") {
+		t.Errorf("a loose call site did not keep the full-range helper:\n%s", out)
+	}
+}
+
 func compileOne(t *testing.T, src string, opts Options) string {
 	t.Helper()
 	m, err := llir.Parse(src)

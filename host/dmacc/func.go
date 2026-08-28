@@ -38,7 +38,7 @@ type funcCtx struct {
 	poolSym   map[string]string           // current block: value -> assigned pool slot
 	poolFree  []string                    // recycled slots (freed at block boundaries)
 	poolN     int                         // slots minted for this function
-	facts     factSet                     // per-value BOOL/NONNEG facts (facts.go)
+	facts     factSet                     // this function's value bounds (facts.go)
 
 	hasCalls   bool
 	inRAM      bool // whole function emitted into .ramtext (RAMTextFuncs)
@@ -68,7 +68,7 @@ func (g *gen) emitFunc(f *llir.Func) error {
 		poolable:  map[string]bool{},
 		slotOf:    map[string]string{},
 		poolSym:   map[string]string{},
-		facts:     factsOf(f),
+		facts:     g.facts[f.Name],
 	}
 	if fc.rec {
 		// The whole frame must be contiguous for push/pop: label it and
