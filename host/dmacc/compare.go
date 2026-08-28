@@ -80,13 +80,14 @@ __cw_ltu_f:
 // (park the descriptor address, jump). The descriptor is a constant
 // data block — [&b][t][f][&a] for two-operand kinds, [t][f][&a] for
 // eqz — that the helper copies onto the contiguous cw_pb..cw_pa cells
-// with one count=N move, then dereferences into cw_a/cw_b and falls
-// into the plain helper.
+// with one wcount=N move (both ends are word cells, so the classic
+// encoding moves whole words), then dereferences into cw_a/cw_b and
+// falls into the plain helper.
 var cmpDescHelpers = map[string]string{
 	"eqz": `__cw_eqz_d:
     move cw_d, CWDz.read
 CWDz:
-    move @0, cw_t, count=12, size8, incrr, incrw
+    move @0, cw_t, incrr, incrw, wcount=3
     move cw_pa, CWDza.read
 CWDza:
     move @0, cw_a
@@ -95,7 +96,7 @@ CWDza:
 	"eq": `__cw_eq_d:
     move cw_d, CWDq.read
 CWDq:
-    move @0, cw_pb, count=16, size8, incrr, incrw
+    move @0, cw_pb, incrr, incrw, wcount=4
     move cw_pa, CWDqa.read
 CWDqa:
     move @0, cw_a
@@ -107,7 +108,7 @@ CWDqb:
 	"lt": `__cw_lt_d:
     move cw_d, CWDl.read
 CWDl:
-    move @0, cw_pb, count=16, size8, incrr, incrw
+    move @0, cw_pb, incrr, incrw, wcount=4
     move cw_pa, CWDla.read
 CWDla:
     move @0, cw_a
@@ -119,7 +120,7 @@ CWDlb:
 	"ltu": `__cw_ltu_d:
     move cw_d, CWDu.read
 CWDu:
-    move @0, cw_pb, count=16, size8, incrr, incrw
+    move @0, cw_pb, incrr, incrw, wcount=4
     move cw_pa, CWDua.read
 CWDua:
     move @0, cw_a

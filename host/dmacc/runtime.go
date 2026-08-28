@@ -12,9 +12,12 @@ import "fmt"
 // shift: __rt_lshr borrows the DMA sniffer's OUT_REV bit reversal for
 // counts under 16 (reverse, left-shift, reverse back); larger counts,
 // and __rt_ashr always, consume bits from the top. memcpy/memset patch a
-// single INCR block — a DMA engine's native talent — so their cost is
-// one transfer per byte regardless of length (a zero count is the
-// silicon-verified NOP, so n=0 needs no guard).
+// single INCR block — a DMA engine's native talent. They take a byte
+// count from an arbitrary address, so they burst size8: one transfer per
+// byte, whatever the length (a zero count is the silicon-verified NOP,
+// so n=0 needs no guard). Calls whose length is a compile-time constant
+// never come here — those lower to an inline record with a static
+// wcount, one transfer per WORD in the classic encoding (func.go).
 
 type rtRoutine struct {
 	name    string

@@ -534,11 +534,13 @@ type moveFlags struct {
 	ctrlExtra uint32
 	size      uint32 // CtrlSize*
 	count     uint32
-	dyn       bool // compact: TRANS_COUNT is patched at runtime
+	dyn       bool   // compact: TRANS_COUNT is patched at runtime
+	words     uint32 // wcount=N: N words at the encoding's widest step
 }
 
 func (a *asm) parseMoveFlags(args []string, line int) (moveFlags, error) {
 	f := moveFlags{size: emu.CtrlSize32, count: 1}
+	sized := false
 	for _, s := range args {
 		switch {
 		case s == "sniff":
@@ -550,9 +552,9 @@ func (a *asm) parseMoveFlags(args []string, line int) (moveFlags, error) {
 		case s == "incrw":
 			f.ctrlExtra |= a.v.CtrlIncrWrite
 		case s == "size8":
-			f.size = emu.CtrlSize8
+			f.size, sized = emu.CtrlSize8, true
 		case s == "size16":
-			f.size = emu.CtrlSize16
+			f.size, sized = emu.CtrlSize16, true
 		case s == "dyncount":
 			if !a.opts.Compact {
 				return f, fmt.Errorf("line %d: dyncount is compact-only (classic code patches .count)", line)
@@ -564,8 +566,30 @@ func (a *asm) parseMoveFlags(args []string, line int) (moveFlags, error) {
 				return f, fmt.Errorf("line %d: bad count in %q", line, s)
 			}
 			f.count = v
+		case strings.HasPrefix(s, "wcount="):
+			v, err := parseNum(strings.TrimPrefix(s, "wcount="))
+			if err != nil || v == 0 {
+				return f, fmt.Errorf("line %d: bad word count in %q", line, s)
+			}
+			f.words = v
 		default:
 			return f, fmt.Errorf("line %d: unknown move flag %q", line, s)
+		}
+	}
+	// wcount=N moves N whole words with the widest transfer the target
+	// encoding has for this record: one size32 transfer per word in
+	// classic, four size8 transfers per word in compact, whose bank map
+	// has no incrementing 32-bit channel (emu/compact.go). Both forms
+	// move the same bytes, so a source read non-incrementing must hold
+	// the datum in all four lanes (the memset splat).
+	if f.words != 0 {
+		if sized || f.count != 1 || f.dyn {
+			return f, fmt.Errorf("line %d: wcount= excludes size8/size16, count= and dyncount", line)
+		}
+		if a.opts.Compact {
+			f.size, f.count = emu.CtrlSize8, 4*f.words
+		} else {
+			f.size, f.count = emu.CtrlSize32, f.words
 		}
 	}
 	return f, nil

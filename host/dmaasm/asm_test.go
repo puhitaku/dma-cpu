@@ -225,6 +225,71 @@ tgt:
 	})
 }
 
+// TestWordBurst pins the wcount= flag: the same source must move the
+// same bytes under both encodings — one size32 transfer per word in
+// classic, four size8 transfers per word in compact — and must not
+// touch the guard word past the block.
+func TestWordBurst(t *testing.T) {
+	src := `
+.data
+.regs
+s0: .word 0x11223344, 0x55667788, 0x99AABBCC
+tb: .word 0xA5A5A5A5
+d0: .word 0, 0, 0
+dg: .word 0xFEEDFACE
+f0: .word 0, 0
+fg: .word 0xFEEDFACE
+done: .word 0
+.text
+.entry start
+start:
+    move s0, d0, incrr, incrw, wcount=3
+    move $0x5a5a5a5a, f0, incrw, wcount=2
+    move tb, d0, size8, incrr, incrw, count=2
+    move $1, done
+    halt
+`
+	want := map[string]uint32{
+		"d0": 0x1122A5A5, "dg": 0xFEEDFACE,
+		"f0": 0x5A5A5A5A, "fg": 0xFEEDFACE,
+	}
+	forEachVariant(t, func(t *testing.T, v *emu.Variant) {
+		for _, compact := range []bool{false, true} {
+			name := "classic"
+			opts := dmaasm.Options{Variant: v}
+			cfg := img.DefaultMachine()
+			if compact {
+				name, opts.Compact, cfg = "compact", true, img.CompactMachine()
+			}
+			t.Run(name, func(t *testing.T) {
+				res, err := dmaasm.Assemble(src, opts)
+				if err != nil {
+					t.Fatal(err)
+				}
+				m := emu.NewMachine(v)
+				if err := res.Image.LoadAndStart(m, nil, cfg); err != nil {
+					t.Fatal(err)
+				}
+				done, _ := res.Symbol("done")
+				if _, err := m.Run(emu.RunConfig{MaxCycles: 100_000, WatchWrites: []uint32{done}}); err != nil {
+					t.Fatal(err)
+				}
+				for sym, w := range want {
+					if got := peekSym(t, m, res, sym); got != w {
+						t.Errorf("%s = %#x, want %#x", sym, got, w)
+					}
+				}
+				for i, w := range []uint32{0x55667788, 0x99AABBCC} {
+					addr, _ := res.Symbol("d0")
+					if got := m.Peek32(addr + uint32(4*(i+1))); got != w {
+						t.Errorf("d0[%d] = %#x, want %#x", i+1, got, w)
+					}
+				}
+			})
+		}
+	})
+}
+
 // TestSKUPortability: identical source must assemble for both SKUs, run
 // identically, and produce different binaries.
 func TestSKUPortability(t *testing.T) {
@@ -278,6 +343,8 @@ func TestErrors(t *testing.T) {
 		"bad field":           ".data\n.regs\n.text\n.entry s\ns: move $1, s.bogus\nhalt\n",
 		"entry not in text":   ".data\nx: .word 1\n.text\n.entry x\ns: halt\n",
 		"instr in data":       ".data\nhalt\n.text\n.entry s\ns: halt\n",
+		"wcount with size8":   ".data\n.regs\nx: .word 1\ny: .word 0\n.text\n.entry s\ns: move x, y, size8, wcount=2\nhalt\n",
+		"wcount with count":   ".data\n.regs\nx: .word 1\ny: .word 0\n.text\n.entry s\ns: move x, y, count=2, wcount=2\nhalt\n",
 	}
 	for name, src := range cases {
 		t.Run(name, func(t *testing.T) {

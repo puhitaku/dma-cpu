@@ -90,6 +90,77 @@ func TestDifferential(t *testing.T) {
 	}
 }
 
+// TestDifferentialOptSize runs the same goldens compiled with
+// Options.OptSize, whose descriptor-form comparison sites take a
+// different path through the millicode (a block copy onto the shared
+// cells, then two indirect jumps). The deployed images that set OptSize
+// are all compact, so without this the classic descriptor helpers were
+// assembled by TestZZAllSizes but never executed.
+func TestDifferentialOptSize(t *testing.T) {
+	t.Parallel()
+	exp, err := os.ReadFile("testdata/expected.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc := bufio.NewScanner(strings.NewReader(string(exp)))
+	for sc.Scan() {
+		fields := strings.Fields(sc.Text())
+		if len(fields) != 2 {
+			continue
+		}
+		name := fields[0]
+		want64, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil {
+			t.Fatalf("%s: bad expected value %q", name, fields[1])
+		}
+		want := uint32(int32(want64))
+		t.Run(name, func(t *testing.T) {
+			src, err := os.ReadFile("testdata/" + name + ".ll")
+			if err != nil {
+				t.Fatal(err)
+			}
+			mod, err := llir.Parse(string(src))
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			dasm, err := dmacc.Compile(mod, dmacc.Options{OptSize: true})
+			if err != nil {
+				t.Fatalf("compile: %v", err)
+			}
+			for _, compact := range []bool{false, true} {
+				v := emu.RP2350
+				res, err := dmaasm.Assemble(dasm, dmaasm.Options{Variant: v, Compact: compact})
+				if err != nil {
+					t.Fatalf("assemble: %v", err)
+				}
+				cfg := img.DefaultMachine()
+				if compact {
+					cfg = img.CompactMachine()
+				}
+				m := emu.NewMachine(v)
+				if err := res.Image.LoadAndStart(m, nil, cfg); err != nil {
+					t.Fatal(err)
+				}
+				rr, err := m.Run(emu.RunConfig{MaxCycles: 80_000_000})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if rr.Reason != emu.StopIdle {
+					t.Fatalf("compact=%v did not halt: %+v", compact, rr)
+				}
+				ec, err := res.Symbol("exitcode")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := m.Peek32(ec); got != want {
+					t.Errorf("compact=%v exitcode = %d (%#x), host says %d",
+						compact, int32(got), got, int32(want))
+				}
+			}
+		})
+	}
+}
+
 // loadLibc parses the committed picolibc IR goldens (libc/ll, built by
 // `make libc`).
 func loadLibc(t *testing.T) []*llir.Module {

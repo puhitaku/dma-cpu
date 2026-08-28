@@ -27,13 +27,38 @@ committed settings:
 
 All the mechanisms exist; only the trace→settings harness is missing.
 
-## 2. Alignment-aware memcpy/memset (cheapest big cycle win)
+## 2. Alignment-aware memcpy/memset — DONE for the static cases
 
-__rt_memcpy bursts size8 — one transfer per byte, always. The IR
-memcpy intrinsic carries alignment: when src/dst are 4-aligned, emit
-a size32 variant (head/tail split), 4x fewer transfers on the
-machine's most native operation. FS block copies, pipe transfers, and
-emitFramePush's whole-frame saves all hit it.
+__rt_memcpy bursts size8 — one transfer per byte, always — and still
+does, because its length and addresses are runtime values. What
+changed: calls whose length is a compile-time constant no longer go
+there at all. dmaasm grew the `wcount=N` move flag (N whole words at
+the encoding's widest incrementing step), and dmacc emits an inline
+record for every memcpy/memset with a constant length and link-time
+addresses, plus emitFramePush/Pop's whole-frame saves (@FRW_, a
+static word count on a patched record). Word alignment comes from the
+symbol+offset, not from the IR attribute: every dmacc data label is
+word-aligned, so only a folded byte offset can misalign one; unaligned
+or partial lengths take a size8 tail record.
+
+Two findings for whoever picks up the rest:
+
+- the COMPACT encoding cannot do this at all. Its bank map has one
+  incrementing channel and it is size8 (emu/compact.go); a 32-bit
+  incrementing bank would be a tenth machine channel, i.e. an ABI and
+  loader change. Compact keeps byte transfers and wins only the call
+  overhead. Since every deployed image is compact, the cycle win lands
+  in the classic-encoding builds (and in the descriptor-compare
+  millicode, 3-5% on the cc_* goldens).
+- FS block copies and pipe transfers do NOT hit the runtime: xv6
+  defines memmove/memset itself, as C byte loops (kernel/string.c,
+  usr/ulib.c), and a size8RW transfer counter over the xsh benchmark
+  shows single-digit burst transfers per command. Speeding those up
+  means recognizing the loops, not the calls.
+
+Still open: constant length with RUNTIME addresses (needs the IR
+`align` attribute, which host/llir drops, plus a self-patching record —
+RAM-resident under XIPText); variable lengths.
 
 ## 3. Byte-lane constant shifts (complements the sniffer path)
 

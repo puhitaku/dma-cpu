@@ -324,10 +324,17 @@ func (g *gen) run() error {
 	if len(g.recSet) > 0 {
 		text, ram := g.text.String(), g.ram.String()
 		for name, sz := range g.frameSz {
+			// The push/pop burst moves whole words: every frame
+			// contributor (declWord, alloca, va area) rounds to 4, and
+			// data labels are word-aligned, so @FRW_ is exact.
+			if sz <= 0 || sz%4 != 0 {
+				return fmt.Errorf("dmacc: frame of %q is %d bytes, not a positive word multiple", name, sz)
+			}
 			for _, ph := range []struct {
 				key, val string
 			}{
 				{"@FR_" + sanitize(name) + "@", fmt.Sprintf("0x%x", sz)},
+				{"@FRW_" + sanitize(name) + "@", fmt.Sprintf("0x%x", sz/4)},
 				{"@FRH_" + sanitize(name) + "@", fmt.Sprintf("0x%x", sz+8)},
 			} {
 				text = strings.ReplaceAll(text, ph.key, ph.val)
@@ -342,7 +349,6 @@ func (g *gen) run() error {
 		fmt.Fprintf(&g.data, "\n; recursion frame stack (push/pop per recSet function)\n")
 		fmt.Fprintf(&g.data, "g___dmacc_fsp: .word g___dmacc_fstack\n")
 		fmt.Fprintf(&g.data, "fs_lr: .word 0\nfs_r0: .word 0\n")
-		fmt.Fprintf(&g.data, "fs_a0: .word 0\nfs_a1: .word 0\nfs_a2: .word 0\nfs_a3: .word 0\n")
 		fmt.Fprintf(&g.data, "g___dmacc_fstack: .space %d\n", stack)
 		// The overflow sink: a program-defined handler dies as a
 		// process; otherwise HALT at a well-defined point.

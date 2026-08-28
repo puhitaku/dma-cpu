@@ -3,6 +3,7 @@ package dmacc
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/puhitaku/dma-cpu/host/llir"
@@ -1574,7 +1575,103 @@ func (fc *funcCtx) emitIntrinsic(ins *llir.Instr) error {
 	return fmt.Errorf("unsupported intrinsic %q", name)
 }
 
+// staticAddr resolves a pointer to a link-time address operand and
+// reports its alignment: every dmacc data label is word-aligned (words,
+// .space multiples of 4 and word-rounded globals), so only the folded
+// byte offset can misalign one. MMIO names and absolute addresses are
+// not offsettable and never qualify.
+func (fc *funcCtx) staticAddr(p *llir.Value) (sym string, off uint32, ok bool) {
+	a, ok := fc.directAddr(p)
+	if !ok || a == "" || a[0] == '%' || a[0] == '@' {
+		return "", 0, false
+	}
+	if i := strings.IndexByte(a, '+'); i >= 0 {
+		v, err := strconv.ParseUint(a[i+1:], 0, 32)
+		if err != nil {
+			return "", 0, false
+		}
+		return a[:i], uint32(v), true
+	}
+	return a, 0, true
+}
+
+// atOff renders "sym+off", dropping a zero offset.
+func atOff(sym string, off uint32) string {
+	if off == 0 {
+		return sym
+	}
+	return fmt.Sprintf("%s+%d", sym, off)
+}
+
+// emitMemInline lowers a memcpy/memset whose length is a compile-time
+// constant and whose addresses are link-time known into INCR records at
+// the call site: no argument moves, no call, and — when both ends are
+// word-aligned — one transfer per WORD plus a byte tail. Nothing is
+// patched, so the records are as happy in flash text as in RAM.
+// Reports whether it handled the call.
+func (fc *funcCtx) emitMemInline(rt string, dst, src, n *llir.Value) (bool, error) {
+	// A count wide enough to reach TRANS_COUNT's MODE field (RP2350's
+	// top nibble) is not a length any real call has; leave it to the
+	// runtime rather than encode a mode by accident.
+	if n.Kind != llir.VConst || n.Int < 0 || n.Int >= 1<<28 {
+		return false, nil
+	}
+	nb := uint32(n.Int)
+	dsym, doff, ok := fc.staticAddr(dst)
+	if !ok {
+		return false, nil
+	}
+	var ssym string
+	var soff uint32
+	value := ""
+	if rt == "memcpy" {
+		if ssym, soff, ok = fc.staticAddr(src); !ok {
+			return false, nil
+		}
+	} else if src.Kind == llir.VConst {
+		// A constant fill byte splats into a word: the read address
+		// stays put, so all four lanes must carry it.
+		b := uint32(src.Int) & 0xFF
+		value = fmt.Sprintf("$0x%x", b*0x01010101)
+	}
+	if nb == 0 {
+		return true, nil // silicon NOPs a zero count; skip the record too
+	}
+	words := uint32(0)
+	if doff%4 == 0 && (rt == "memset" && value != "" || rt == "memcpy" && soff%4 == 0) {
+		words = nb / 4
+	}
+	if words > 0 {
+		if rt == "memcpy" {
+			fc.ins("move %s, %s, incrr, incrw, wcount=%d", atOff(ssym, soff), atOff(dsym, doff), words)
+		} else {
+			fc.ins("move %s, %s, incrw, wcount=%d", value, atOff(dsym, doff), words)
+		}
+	}
+	if tail := nb - 4*words; tail > 0 {
+		to := doff + 4*words
+		if rt == "memcpy" {
+			fc.ins("move %s, %s, size8, incrr, incrw, count=%d",
+				atOff(ssym, soff+4*words), atOff(dsym, to), tail)
+		} else {
+			v := value
+			if v == "" {
+				sv, err := fc.op(src)
+				if err != nil {
+					return false, err
+				}
+				v = sv // a value word: size8 reads its low byte
+			}
+			fc.ins("move %s, %s, size8, incrw, count=%d", v, atOff(dsym, to), tail)
+		}
+	}
+	return true, nil
+}
+
 func (fc *funcCtx) emitMemRT(rt string, dst, src, n *llir.Value) error {
+	if done, err := fc.emitMemInline(rt, dst, src, n); done || err != nil {
+		return err
+	}
 	dv, err := fc.op(dst)
 	if err != nil {
 		return err
@@ -1603,20 +1700,20 @@ func (fc *funcCtx) emitMemRT(rt string, dst, src, n *llir.Value) error {
 // with g___dmacc_fsp past the record — the trailing header lets
 // usys's __dmacc_funwind unwind pushes truncated by a vfork child's
 // exec. Entry runs BEFORE lr/args are stored: they arrive in the
-// machine cells (lr, r0..r3), get parked in the fs_* globals across
-// the memcpy (which clobbers r0-r2 and lr), and land in the fresh
-// frame afterwards.
+// machine cells (lr, r0..r3) and land in the fresh frame once the save
+// is out of the way. Nothing in between touches them — the overflow
+// compare works out of the cw_* cells and at/at2, and the save is an
+// inline burst rather than a call — so they need no parking.
+//
+// The frame move itself is an inline patched burst: its length is a
+// link-time constant, so the record carries a static word count
+// (@FRW_) and moves the frame a word at a time wherever the encoding
+// has an incrementing 32-bit channel.
 func (fc *funcCtx) emitFramePush() {
 	f := fc.f
 	sz := "$@FR_" + sanitize(f.Name) + "@"
 	rec := "$@FRH_" + sanitize(f.Name) + "@" // size + 8-byte header
 	frame := "$fr_" + sanitize(f.Name)
-	fc.ins("move lr, fs_lr")
-	for i := range f.Params {
-		if i < 4 {
-			fc.ins("move r%d, fs_a%d", i, i)
-		}
-	}
 	// Overflow: new sp past the stack end diverts to the sink.
 	ok := fc.stub("Fok")
 	fc.ins("add g___dmacc_fsp, %s, sc2", rec)
@@ -1628,10 +1725,7 @@ func (fc *funcCtx) emitFramePush() {
 	fc.label(ok)
 	fc.g.cmpUsed["ltu"] = true
 	// Save the live frame.
-	fc.ins("move g___dmacc_fsp, %s", fc.rtReg("r0"))
-	fc.ins("move %s, %s", frame, fc.rtReg("r1"))
-	fc.ins("move %s, %s", sz, fc.rtReg("r2"))
-	fc.rtCall("memcpy")
+	fc.frameBurst("Fsv", "g___dmacc_fsp", frame)
 	// Trailing header for the unwinder, then commit the new sp.
 	hs := fc.stub("Fha")
 	fc.ins("add g___dmacc_fsp, %s, sc2", sz)
@@ -1643,18 +1737,29 @@ func (fc *funcCtx) emitFramePush() {
 	fc.stubBody(hs2, "move %s, @0", sz)
 	fc.ins("add sc2, $4, sc2")
 	fc.ins("move sc2, g___dmacc_fsp")
-	// The fresh activation: linkage and parameters.
-	fc.ins("move fs_lr, %s", fc.lrsWord())
+	// The fresh activation: linkage and parameters, still in their
+	// machine cells.
+	fc.ins("move lr, %s", fc.lrsWord())
 	for i, p := range f.Params {
 		if i < 4 {
-			fc.ins("move fs_a%d, %s", i, fc.word(p.Name))
+			fc.ins("move r%d, %s", i, fc.word(p.Name))
 		}
 	}
 }
 
+// frameBurst emits one whole-frame move: patch the record's addresses
+// (dst and src read as addresses — a word or an address literal), then
+// run it at this function's static word count. The record patches
+// itself, so it goes through stubBody: RAM-resident under XIPText.
+func (fc *funcCtx) frameBurst(prefix, dst, src string) {
+	blk := fc.stub(prefix)
+	fc.ins("move %s, %s.write", dst, blk)
+	fc.ins("move %s, %s.read", src, blk)
+	fc.stubBody(blk, "move @0, @0, incrr, incrw, wcount=@FRW_%s@", sanitize(fc.f.Name))
+}
+
 func (fc *funcCtx) emitFramePop(ins *llir.Instr) error {
 	f := fc.f
-	sz := "$@FR_" + sanitize(f.Name) + "@"
 	rec := "$@FRH_" + sanitize(f.Name) + "@"
 	frame := "$fr_" + sanitize(f.Name)
 	// The result and this activation's lr must survive the restore
@@ -1669,10 +1774,7 @@ func (fc *funcCtx) emitFramePop(ins *llir.Instr) error {
 	fc.ins("move %s, fs_lr", fc.lrsWord())
 	fc.ins("sub g___dmacc_fsp, %s, sc2", rec)
 	fc.ins("move sc2, g___dmacc_fsp")
-	fc.ins("move %s, %s", frame, fc.rtReg("r0"))
-	fc.ins("move sc2, %s", fc.rtReg("r1"))
-	fc.ins("move %s, %s", sz, fc.rtReg("r2"))
-	fc.rtCall("memcpy")
+	fc.frameBurst("Frs", frame, "sc2")
 	if len(ins.Args) > 0 {
 		fc.ins("move fs_r0, r0")
 	}
