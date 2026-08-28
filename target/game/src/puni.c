@@ -109,6 +109,7 @@ pair_spawn(void)
     PS->over = 1;
     gfx_text2(48, 104, "GAME OVER", C_OVER, C_FBG);
     gfx_text(48, 128, "Press to try again", C_TEXT, C_FBG);
+    gfx_text(48, 140, "Down: back to menu", C_TEXT, C_FBG);
     uputs("puni: game over\n");
     led_blink(LED_BRIGHT(0xFF2020), 6);
     snd_play(110, 70, 20);
@@ -237,6 +238,11 @@ restart:
         uputs("puni: again\n");
         goto restart;
       }
+      if (in_edge & BTN_DOWN) {
+        uputs("puni: quit\n");
+        snd_off();
+        return;
+      }
       continue;
     }
     int sx = PS->px + sdx[PS->rot], sy = PS->py + sdy[PS->rot];
@@ -291,6 +297,7 @@ restart:
       PS->over = 1;
       gfx_text2(48, 104, "GAME OVER", C_OVER, C_FBG);
       gfx_text(48, 128, "Press to try again", C_TEXT, C_FBG);
+      gfx_text(48, 140, "Down: back to menu", C_TEXT, C_FBG);
       uputs("puni: game over\n");
       continue;
     }

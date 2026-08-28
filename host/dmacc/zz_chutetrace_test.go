@@ -36,7 +36,7 @@ func TestZZChuteTrace(t *testing.T) {
 		offHY  = 112
 		offDX  = 296 // dx_[12]
 		offDY  = 344
-		offFrame = 588
+		offFrame = 684 // after dfx/dfy/dtl/dht joined the struct
 	)
 	rd := func(off, i int) int32 {
 		return int32(m.Peek32(arena + uint32(off+4*i)))

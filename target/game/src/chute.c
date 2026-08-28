@@ -176,11 +176,13 @@ struct cst {
    * read on this machine — rt_lshr once ate 75% of a frame. */
   int bx[NB], by[NB], bvx[NB], bvy[NB]; /* bx == -999: free */
   int bfx[NB], bfy[NB];                 /* subpixel accumulators */
-  int hx[NH], hy[NH], hvx[NH], hdrop[NH];
+  int hx[NH], hy[NH], hvx[NH], hdrop[NH]; /* hdrop: drop x; -1 done */
   int tx[NT], ty[NT], tst[NT], ttm[NT]; /* ttm: freefall / grenade timer */
   int gx[NG], gy[NG], gvx[NG], gvy[NG]; /* gx == -999: free */
   int dx_[ND], dy_[ND], dvx[ND], dvy[ND]; /* debris; dx_ == -999: free */
   int dfx[ND], dfy[ND]; /* subpixel accumulators */
+  int dtl[ND];          /* frames to live; 0 = until the ground */
+  int dht[ND];          /* 1 = lethal to troopers (heli wreckage) */
   uint spawn, frame;
 };
 #define CS_ ((struct cst *)g_arena)
@@ -325,9 +327,10 @@ subpx(int *p, int *f, int v)
 }
 
 /* spawn one debris rect (silently drops when the pool is full).
- * x/y in pixels; vx/vy in 16ths of a pixel per frame. */
+ * x/y in pixels; vx/vy in 16ths of a pixel per frame; ttl in frames
+ * (0 = lives until the ground); hurt = lethal to troopers. */
 static void
-debris_spawn(int x, int y, int vx, int vy)
+debris_spawn(int x, int y, int vx, int vy, int ttl, int hurt)
 {
   for (int i = 0; i < ND; i++)
     if (CS_->dx_[i] == -999) {
@@ -337,6 +340,8 @@ debris_spawn(int x, int y, int vx, int vy)
       CS_->dvy[i] = vy;
       CS_->dfx[i] = 0;
       CS_->dfy[i] = 0;
+      CS_->dtl[i] = ttl;
+      CS_->dht[i] = hurt;
       return;
     }
 }
@@ -348,10 +353,11 @@ heli_kill(int i)
   int x = CS_->hx[i], y = CS_->hy[i];
   heli_draw(i, 1);
   CS_->hx[i] = -999;
-  debris_spawn(x - 8, y + 2, -12, 4); /* wreckage rains DOWN, gently */
-  debris_spawn(x - 2, y + 4, -5, 9);
-  debris_spawn(x + 2, y + 2, 5, 7);
-  debris_spawn(x + 8, y + 4, 12, 2);
+  /* wreckage rains DOWN, gently, lethal, and burns out in 1 s */
+  debris_spawn(x - 8, y + 2, -12, 4, 30, 1);
+  debris_spawn(x - 2, y + 4, -5, 9, 30, 1);
+  debris_spawn(x + 2, y + 2, 5, 7, 30, 1);
+  debris_spawn(x + 8, y + 4, 12, 2, 30, 1);
   CS_->score += 20;
   snd_play(220, 70, 5);
   led_blink(LED_BRIGHT(0xFF6000), 2);
@@ -367,13 +373,14 @@ gun_destroy(void)
   CS_->gunfx = 45; /* the remains tumble, then the over screen */
   turret_erase();
   sky(TUR_X - 14, GUN_Y, 28, 12);
-  debris_spawn(TUR_X - 10, GUN_Y + 2, -64, -96); /* the old arcs, x16 */
-  debris_spawn(TUR_X - 4, GUN_Y, -32, -128);
-  debris_spawn(TUR_X + 2, GUN_Y, 32, -112);
-  debris_spawn(TUR_X + 8, GUN_Y + 2, 64, -80);
-  debris_spawn(TUR_X, GUN_Y + 4, 96, -64);
+  /* the gun's own remains: energetic arcs, harmless to troopers */
+  debris_spawn(TUR_X - 10, GUN_Y + 2, -64, -96, 0, 0);
+  debris_spawn(TUR_X - 4, GUN_Y, -32, -128, 0, 0);
+  debris_spawn(TUR_X + 2, GUN_Y, 32, -112, 0, 0);
+  debris_spawn(TUR_X + 8, GUN_Y + 2, 64, -80, 0, 0);
+  debris_spawn(TUR_X, GUN_Y + 4, 96, -64, 0, 0);
   uputs("chute: gun destroyed\n");
-  snd_play(90, 80, 20);
+  snd_noise(70, 24); /* the low crunch of the last stand */
   led_blink(LED_BRIGHT(0xFF2020), 6);
 }
 
@@ -455,10 +462,16 @@ restart: /* no recursion on this machine: dmacc frames are static */
       snd_off();
       return;
     }
-    if (CS_->over) { /* frozen field; press restarts the sortie */
+    if (CS_->over) { /* frozen field; press restarts, down leaves */
       if (in_edge & BTN_A) {
         uputs("chute: again\n");
         goto restart;
+      }
+      if (in_edge & BTN_DOWN) {
+        uputs("chute: quit\n");
+        snd_off();
+        led(0, 0);
+        return;
       }
       continue;
     }
@@ -509,7 +522,7 @@ restart: /* no recursion on this machine: dmacc frames are static */
             CS_->bvy[i] = (int)ady[CS_->aim] * 9;
             CS_->bfx[i] = 0;
             CS_->bfy[i] = 0;
-            snd_play(900, 40, 2);
+            snd_sweep(260, 45, 5, 45); /* short low pew, diving fast */
             break;
           }
       }
@@ -532,7 +545,9 @@ restart: /* no recursion on this machine: dmacc frames are static */
           CS_->hx[i] = fromleft ? -14 : 254;
           CS_->hvx[i] = fromleft ? 2 : -2;
           CS_->hy[i] = 18 + (int)rng_below(2) * 16;
-          CS_->hdrop[i] = 20 + (int)rng_below(60);
+          /* pick the drop X uniformly across the field — the old
+           * countdown timer bunched landings near the entry side */
+          CS_->hdrop[i] = 34 + (int)rng_below(172);
           break;
         }
     }
@@ -544,7 +559,10 @@ restart: /* no recursion on this machine: dmacc frames are static */
         CS_->hx[i] = -999;
         continue;
       }
-      if (--CS_->hdrop[i] == 0 && CS_->hx[i] > 30 && CS_->hx[i] < 210) {
+      if (CS_->hdrop[i] >= 0 &&
+          ((CS_->hvx[i] > 0 && CS_->hx[i] >= CS_->hdrop[i]) ||
+           (CS_->hvx[i] < 0 && CS_->hx[i] <= CS_->hdrop[i]))) {
+        CS_->hdrop[i] = -1;
         int t = tfree();
         if (t >= 0) {
           CS_->tst[t] = T_FALL;
@@ -570,7 +588,7 @@ restart: /* no recursion on this machine: dmacc frames are static */
               if (CS_->gvx[g] == 0)
                 CS_->gvx[g] = CS_->tx[i] < TUR_X ? 1 : -1;
               CS_->gvy[g] = -6;
-              snd_play(400, 35, 2);
+              snd_sweep(700, 35, 5, 110); /* the gun's pew, pitched up */
               break;
             }
         }
@@ -640,6 +658,10 @@ restart: /* no recursion on this machine: dmacc frames are static */
       CS_->dvy[i] += 8; /* gravity, 0.5 px/frame^2 */
       if (CS_->dvy[i] > 32)
         CS_->dvy[i] = 32; /* terminal: 2 px/frame */
+      if (CS_->dtl[i] && --CS_->dtl[i] == 0) {
+        CS_->dx_[i] = -999; /* wreckage burns out mid-air */
+        continue;
+      }
       int px = CS_->dx_[i], py = CS_->dy_[i];
       if (py >= GROUND_Y - 2 || py < 4 || px < 2 || px > 236) {
         CS_->dx_[i] = -999;
@@ -653,8 +675,8 @@ restart: /* no recursion on this machine: dmacc frames are static */
           CS_->dx_[i] = -999;
           break;
         }
-      if (CS_->dx_[i] == -999)
-        continue;
+      if (CS_->dx_[i] == -999 || !CS_->dht[i])
+        continue; /* the gun's own remains never hurt troopers */
       for (int t = 0; t < NT; t++) {
         int st = CS_->tst[t];
         if (st == T_FREE)
@@ -711,8 +733,6 @@ restart: /* no recursion on this machine: dmacc frames are static */
     /* the gun's last stand played out: raise the over screen */
     if (!CS_->gunon && CS_->gunfx > 0 && --CS_->gunfx == 0) {
       CS_->over = 1;
-      gfx_text2(40, 104, "Destroyed!", C_OVER, C_SKY);
-      gfx_text(48, 128, "Press to try again", C_TEXT, C_SKY);
       uputs("chute: game over\n");
     }
 
@@ -747,6 +767,13 @@ restart: /* no recursion on this machine: dmacc frames are static */
      * ~27 ms of SPI per frame, the whole budget on the wire */
     if (hudtouch || CS_->score != CS_->drawn_score)
       draw_score();
+    if (CS_->over) {
+      /* raised THIS frame (later frames skip the phases): painted
+       * after every sprite, so a drifting chute can't cover it */
+      gfx_text2(40, 104, "Destroyed!", C_OVER, C_SKY);
+      gfx_text(48, 128, "Press to try again", C_TEXT, C_SKY);
+      gfx_text(48, 140, "Down: back to menu", C_TEXT, C_SKY);
+    }
     gfx_present();
   }
 }

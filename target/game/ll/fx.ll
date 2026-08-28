@@ -5,7 +5,10 @@ target triple = "thumbv6m-unknown-none-eabi"
 
 @pioprog = internal unnamed_addr constant [12 x i16] [i16 28673, i16 6208, i16 24577, i16 -6098, i16 24577, i16 2116, i16 28673, i16 -2002, i16 25121, i16 4395, i16 5128, i16 -23486], align 2
 @sndctrl = dso_local local_unnamed_addr global i32 0, align 4
+@sw_step = internal unnamed_addr global i32 0, align 4
 @snd_frames = internal unnamed_addr global i32 0, align 4
+@sw_hz = internal unnamed_addr global i32 0, align 4
+@sw_vol = internal unnamed_addr global i32 0, align 4
 @spictrl = external dso_local local_unnamed_addr global i32, align 4
 @pcm_active = internal unnamed_addr global i1 false, align 4
 @led_base0 = internal unnamed_addr global i32 0, align 4
@@ -89,88 +92,169 @@ declare dso_local void @gdma_fill(i32 noundef, i32 noundef, i32 noundef) local_u
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @snd_play(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #1 {
-  %4 = icmp ult i32 %0, 217
-  br i1 %4, label %15, label %5
-
-5:                                                ; preds = %3
-  %6 = icmp ult i32 %0, 433
-  br i1 %6, label %15, label %7
-
-7:                                                ; preds = %5
-  %8 = icmp ult i32 %0, 865
-  br i1 %8, label %15, label %9
-
-9:                                                ; preds = %7
-  %10 = icmp ult i32 %0, 1728
-  br i1 %10, label %15, label %11
-
-11:                                               ; preds = %9
-  %12 = icmp ult i32 %0, 3455
-  %13 = select i1 %12, i32 4, i32 3
-  %14 = select i1 %12, i32 8, i32 4
-  br label %15
-
-15:                                               ; preds = %11, %9, %7, %5, %3
-  %16 = phi i32 [ 8, %3 ], [ 7, %5 ], [ 6, %7 ], [ 5, %9 ], [ %13, %11 ]
-  %17 = phi i32 [ 128, %3 ], [ 64, %5 ], [ 32, %7 ], [ 16, %9 ], [ %14, %11 ]
-  %18 = lshr i32 1000000000, %16
-  %19 = udiv i32 %18, %0
-  %20 = tail call i32 @llvm.umax.i32(i32 %19, i32 19875)
-  %21 = tail call i32 @llvm.umin.i32(i32 %20, i32 32875)
-  %22 = shl nuw nsw i32 %21, 8
-  store volatile i32 %22, ptr inttoptr (i32 1344274632 to ptr), align 8, !tbaa !3
-  %23 = shl i32 %1, 6
-  %24 = and i32 %23, 65472
-  %25 = mul nuw i32 %24, 65537
-  br label %26
-
-26:                                               ; preds = %34, %15
-  %27 = phi i32 [ 0, %15 ], [ %36, %34 ]
-  %28 = icmp eq i32 %27, %17
-  br i1 %28, label %29, label %34
-
-29:                                               ; preds = %26
-  %30 = sub i32 0, %23
-  %31 = and i32 %30, 65472
-  %32 = mul nuw i32 %31, 65537
-  %33 = shl nuw nsw i32 %17, 1
-  br label %37
-
-34:                                               ; preds = %26
-  %35 = getelementptr inbounds nuw i32, ptr inttoptr (i32 537100288 to ptr), i32 %27
-  store volatile i32 %25, ptr %35, align 4, !tbaa !3
-  %36 = add nuw nsw i32 %27, 1
-  br label %26, !llvm.loop !13
-
-37:                                               ; preds = %29, %42
-  %38 = phi i32 [ %44, %42 ], [ %17, %29 ]
-  %39 = icmp samesign ult i32 %38, %33
-  br i1 %39, label %42, label %40
-
-40:                                               ; preds = %37
-  %41 = shl nuw nsw i32 %17, 3
-  br label %45
-
-42:                                               ; preds = %37
-  %43 = getelementptr inbounds nuw i32, ptr inttoptr (i32 537100288 to ptr), i32 %38
-  store volatile i32 %32, ptr %43, align 4, !tbaa !3
-  %44 = add nuw nsw i32 %38, 1
-  br label %37, !llvm.loop !14
-
-45:                                               ; preds = %49, %40
-  %46 = phi i32 [ %41, %40 ], [ %51, %49 ]
-  %47 = icmp ult i32 %46, 16384
-  br i1 %47, label %49, label %48
-
-48:                                               ; preds = %45
+  store i32 0, ptr @sw_step, align 4, !tbaa !3
+  tail call fastcc void @tone_set(i32 noundef %0, i32 noundef %1) #8
   store i32 %2, ptr @snd_frames, align 4, !tbaa !3
   ret void
+}
 
-49:                                               ; preds = %45
-  %50 = or disjoint i32 %46, 537100288
-  tail call void @gdma_copy(i32 noundef %50, i32 noundef 537100288, i32 noundef %46) #7
-  %51 = shl nuw nsw i32 %46, 1
-  br label %45, !llvm.loop !15
+; Function Attrs: minsize nounwind optsize
+define internal fastcc void @tone_set(i32 noundef %0, i32 noundef %1) unnamed_addr #1 {
+  %3 = icmp ult i32 %0, 217
+  br i1 %3, label %14, label %4
+
+4:                                                ; preds = %2
+  %5 = icmp ult i32 %0, 433
+  br i1 %5, label %14, label %6
+
+6:                                                ; preds = %4
+  %7 = icmp ult i32 %0, 865
+  br i1 %7, label %14, label %8
+
+8:                                                ; preds = %6
+  %9 = icmp ult i32 %0, 1728
+  br i1 %9, label %14, label %10
+
+10:                                               ; preds = %8
+  %11 = icmp ult i32 %0, 3455
+  %12 = select i1 %11, i32 4, i32 3
+  %13 = select i1 %11, i32 8, i32 4
+  br label %14
+
+14:                                               ; preds = %10, %8, %6, %4, %2
+  %15 = phi i32 [ 8, %2 ], [ 7, %4 ], [ 6, %6 ], [ 5, %8 ], [ %12, %10 ]
+  %16 = phi i32 [ 128, %2 ], [ 64, %4 ], [ 32, %6 ], [ 16, %8 ], [ %13, %10 ]
+  %17 = lshr i32 1000000000, %15
+  %18 = udiv i32 %17, %0
+  %19 = tail call i32 @llvm.umax.i32(i32 %18, i32 19875)
+  %20 = tail call i32 @llvm.umin.i32(i32 %19, i32 32875)
+  %21 = shl nuw nsw i32 %20, 8
+  store volatile i32 %21, ptr inttoptr (i32 1344274632 to ptr), align 8, !tbaa !3
+  %22 = shl i32 %1, 6
+  %23 = and i32 %22, 65472
+  %24 = mul nuw i32 %23, 65537
+  br label %25
+
+25:                                               ; preds = %33, %14
+  %26 = phi i32 [ 0, %14 ], [ %35, %33 ]
+  %27 = icmp eq i32 %26, %16
+  br i1 %27, label %28, label %33
+
+28:                                               ; preds = %25
+  %29 = sub i32 0, %22
+  %30 = and i32 %29, 65472
+  %31 = mul nuw i32 %30, 65537
+  %32 = shl nuw nsw i32 %16, 1
+  br label %36
+
+33:                                               ; preds = %25
+  %34 = getelementptr inbounds nuw i32, ptr inttoptr (i32 537100288 to ptr), i32 %26
+  store volatile i32 %24, ptr %34, align 4, !tbaa !3
+  %35 = add nuw nsw i32 %26, 1
+  br label %25, !llvm.loop !13
+
+36:                                               ; preds = %28, %41
+  %37 = phi i32 [ %43, %41 ], [ %16, %28 ]
+  %38 = icmp samesign ult i32 %37, %32
+  br i1 %38, label %41, label %39
+
+39:                                               ; preds = %36
+  %40 = shl nuw nsw i32 %16, 3
+  br label %44
+
+41:                                               ; preds = %36
+  %42 = getelementptr inbounds nuw i32, ptr inttoptr (i32 537100288 to ptr), i32 %37
+  store volatile i32 %31, ptr %42, align 4, !tbaa !3
+  %43 = add nuw nsw i32 %37, 1
+  br label %36, !llvm.loop !14
+
+44:                                               ; preds = %48, %39
+  %45 = phi i32 [ %40, %39 ], [ %50, %48 ]
+  %46 = icmp ult i32 %45, 16384
+  br i1 %46, label %48, label %47
+
+47:                                               ; preds = %44
+  ret void
+
+48:                                               ; preds = %44
+  %49 = or disjoint i32 %45, 537100288
+  tail call void @gdma_copy(i32 noundef %49, i32 noundef 537100288, i32 noundef %45) #7
+  %50 = shl nuw nsw i32 %45, 1
+  br label %44, !llvm.loop !15
+}
+
+; Function Attrs: minsize nounwind optsize
+define dso_local void @snd_sweep(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3) local_unnamed_addr #1 {
+  store i32 %0, ptr @sw_hz, align 4, !tbaa !3
+  store i32 %1, ptr @sw_vol, align 4, !tbaa !3
+  store i32 %3, ptr @sw_step, align 4, !tbaa !3
+  tail call fastcc void @tone_set(i32 noundef %0, i32 noundef %1) #8
+  store i32 %2, ptr @snd_frames, align 4, !tbaa !3
+  ret void
+}
+
+; Function Attrs: minsize nounwind optsize
+define dso_local void @snd_noise(i32 noundef %0, i32 noundef %1) local_unnamed_addr #1 {
+  store i32 0, ptr @sw_step, align 4, !tbaa !3
+  store volatile i32 8416000, ptr inttoptr (i32 1344274632 to ptr), align 8, !tbaa !3
+  %3 = shl i32 %0, 6
+  %4 = sub i32 0, %3
+  br label %5
+
+5:                                                ; preds = %18, %2
+  %6 = phi i32 [ 0, %2 ], [ %30, %18 ]
+  %7 = phi i32 [ 48879, %2 ], [ %29, %18 ]
+  %8 = icmp samesign ult i32 %6, 1024
+  br i1 %8, label %9, label %34
+
+9:                                                ; preds = %5
+  %10 = icmp samesign ult i32 %7, 32768
+  %11 = select i1 %10, i32 %4, i32 %3
+  %12 = and i32 %11, 65472
+  %13 = mul nuw i32 %12, 65537
+  %14 = getelementptr inbounds nuw i32, ptr inttoptr (i32 537100288 to ptr), i32 %6
+  br label %15
+
+15:                                               ; preds = %31, %9
+  %16 = phi i32 [ 0, %9 ], [ %33, %31 ]
+  %17 = icmp eq i32 %16, 16
+  br i1 %17, label %18, label %31
+
+18:                                               ; preds = %15
+  %19 = shl nuw nsw i32 %7, 2
+  %20 = shl nuw nsw i32 %7, 3
+  %21 = shl nuw nsw i32 %7, 5
+  %22 = xor i32 %20, %19
+  %23 = xor i32 %22, %21
+  %24 = xor i32 %23, %7
+  %25 = shl nuw nsw i32 %7, 1
+  %26 = lshr i32 %24, 15
+  %27 = and i32 %26, 1
+  %28 = and i32 %25, 65534
+  %29 = or disjoint i32 %27, %28
+  %30 = add nuw nsw i32 %6, 16
+  br label %5, !llvm.loop !16
+
+31:                                               ; preds = %15
+  %32 = getelementptr inbounds nuw i32, ptr %14, i32 %16
+  store volatile i32 %13, ptr %32, align 4, !tbaa !3
+  %33 = add nuw nsw i32 %16, 1
+  br label %15, !llvm.loop !17
+
+34:                                               ; preds = %5, %38
+  %35 = phi i32 [ %40, %38 ], [ 4096, %5 ]
+  %36 = icmp ult i32 %35, 16384
+  br i1 %36, label %38, label %37
+
+37:                                               ; preds = %34
+  store i32 %1, ptr @snd_frames, align 4, !tbaa !3
+  ret void
+
+38:                                               ; preds = %34
+  %39 = or disjoint i32 %35, 537100288
+  tail call void @gdma_copy(i32 noundef %39, i32 noundef 537100288, i32 noundef %35) #7
+  %40 = shl nuw nsw i32 %35, 1
+  br label %34, !llvm.loop !18
 }
 
 ; Function Attrs: minsize optsize
@@ -200,6 +284,7 @@ declare dso_local void @gd_wait() local_unnamed_addr #3
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @snd_off() local_unnamed_addr #1 {
   store i32 0, ptr @snd_frames, align 4, !tbaa !3
+  store i32 0, ptr @sw_step, align 4, !tbaa !3
   tail call void @gdma_fill(i32 noundef 537100288, i32 noundef 0, i32 noundef 16384) #7
   ret void
 }
@@ -218,7 +303,7 @@ define dso_local void @pcm_stop() local_unnamed_addr #0 {
   %4 = load volatile i32, ptr inttoptr (i32 1342178372 to ptr), align 4, !tbaa !3
   %5 = and i32 %4, 2048
   %6 = icmp eq i32 %5, 0
-  br i1 %6, label %7, label %3, !llvm.loop !16
+  br i1 %6, label %7, label %3, !llvm.loop !19
 
 7:                                                ; preds = %3
   %8 = load i32, ptr @sndctrl, align 4, !tbaa !3
@@ -252,7 +337,7 @@ define dso_local void @pcm_tick() local_unnamed_addr #0 {
 define dso_local void @snd_tick() local_unnamed_addr #1 {
   %1 = load i32, ptr @snd_frames, align 4, !tbaa !3
   %2 = icmp eq i32 %1, 0
-  br i1 %2, label %7, label %3
+  br i1 %2, label %17, label %3
 
 3:                                                ; preds = %0
   %4 = add i32 %1, -1
@@ -261,10 +346,27 @@ define dso_local void @snd_tick() local_unnamed_addr #1 {
   br i1 %5, label %6, label %7
 
 6:                                                ; preds = %3
+  store i32 0, ptr @sw_step, align 4, !tbaa !3
   tail call void @gdma_fill(i32 noundef 537100288, i32 noundef 0, i32 noundef 16384) #7
-  br label %7
+  br label %17
 
-7:                                                ; preds = %6, %3, %0
+7:                                                ; preds = %3
+  %8 = load i32, ptr @sw_step, align 4, !tbaa !3
+  %9 = icmp eq i32 %8, 0
+  br i1 %9, label %17, label %10
+
+10:                                               ; preds = %7
+  %11 = load i32, ptr @sw_hz, align 4, !tbaa !3
+  %12 = add i32 %8, 60
+  %13 = icmp ugt i32 %11, %12
+  %14 = sub i32 %11, %8
+  %15 = select i1 %13, i32 %14, i32 60
+  store i32 %15, ptr @sw_hz, align 4, !tbaa !3
+  %16 = load i32, ptr @sw_vol, align 4, !tbaa !3
+  tail call fastcc void @tone_set(i32 noundef %15, i32 noundef %16) #8
+  br label %17
+
+17:                                               ; preds = %7, %10, %0, %6
   ret void
 }
 
@@ -313,7 +415,7 @@ define internal fastcc void @led_raw(i32 noundef %0, i32 noundef %1) unnamed_add
   %15 = load volatile i32, ptr inttoptr (i32 1344274436 to ptr), align 4, !tbaa !3
   %16 = and i32 %15, 131072
   %17 = icmp eq i32 %16, 0
-  br i1 %17, label %18, label %14, !llvm.loop !17
+  br i1 %17, label %18, label %14, !llvm.loop !20
 
 18:                                               ; preds = %14
   %19 = shl i32 %13, 8
@@ -326,7 +428,7 @@ define internal fastcc void @led_raw(i32 noundef %0, i32 noundef %1) unnamed_add
   %26 = shl nuw i32 %25, 8
   store volatile i32 %26, ptr inttoptr (i32 1344274452 to ptr), align 4, !tbaa !3
   %27 = add nuw nsw i32 %8, 1
-  br label %7, !llvm.loop !18
+  br label %7, !llvm.loop !21
 }
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(write, argmem: none, inaccessiblemem: none)
@@ -514,3 +616,6 @@ attributes #9 = { nounwind }
 !16 = distinct !{!16, !8, !9}
 !17 = distinct !{!17, !8, !9}
 !18 = distinct !{!18, !8, !9}
+!19 = distinct !{!19, !8, !9}
+!20 = distinct !{!20, !8, !9}
+!21 = distinct !{!21, !8, !9}

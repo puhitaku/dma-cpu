@@ -110,8 +110,10 @@ fx_init(void)
  * in a gap lands on the nearest band edge — bleep-grade tuning.
  * (The ring is 4096 frames now; the doubling loop just runs two more
  * rounds.) */
-void
-snd_play(uint hz, uint vol, uint frames)
+static uint sw_hz, sw_vol, sw_step; /* live sweep: Hz falls per tick */
+
+static void
+tone_set(uint hz, uint vol)
 {
   uint half, shift; /* half period in frames; shift = log2(P) */
   if (hz <= 216) {
@@ -149,6 +151,53 @@ snd_play(uint hz, uint vol, uint frames)
     r[i] = lo;
   for (uint sz = 8u * half; sz < AURING_BYTES; sz <<= 1)
     gdma_copy(AURING + sz, AURING, sz); /* double out to the full ring */
+}
+
+void
+snd_play(uint hz, uint vol, uint frames)
+{
+  sw_step = 0;
+  tone_set(hz, vol);
+  snd_frames = frames;
+}
+
+/* snd_sweep: a square that GLIDES down `step` Hz every frame — the
+ * pew of a shot. Rides the tone engine; snd_tick re-pitches it. */
+void
+snd_sweep(uint hz, uint vol, uint frames, uint step)
+{
+  sw_hz = hz;
+  sw_vol = vol;
+  sw_step = step;
+  tone_set(hz, vol);
+  snd_frames = frames;
+}
+
+/* snd_noise: a low crunchy noise burst, NES-style — a 16-bit LFSR
+ * picks the level, HELD 16 samples so the energy sits low, and the
+ * 1024-frame pattern doubles out to the ring (the short period IS
+ * the classic metallic character). The LFSR shifts LEFT — feedback
+ * read off the top bit — because a >> on this machine is a runtime
+ * loop. One-shot cost only: nothing here runs per frame. */
+void
+snd_noise(uint vol, uint frames)
+{
+  sw_step = 0;
+  snd_rate(32875); /* fs floor 30.4 kHz: the growliest band */
+  int s = (int)(vol << 6);
+  uint hi = ((uint)(ushort)s << 16) | (ushort)s;
+  uint lo = ((uint)(ushort)-s << 16) | (ushort)-s;
+  volatile uint *r = (volatile uint *)AURING;
+  uint lfsr = 0xBEEFu;
+  for (uint i = 0; i < 1024u; i += 16) {
+    uint w = (lfsr & 0x8000u) ? hi : lo;
+    for (uint k = 0; k < 16u; k++)
+      r[i + k] = w;
+    uint b = lfsr ^ (lfsr << 2) ^ (lfsr << 3) ^ (lfsr << 5);
+    lfsr = ((lfsr << 1) | ((b & 0x8000u) ? 1u : 0u)) & 0xFFFFu;
+  }
+  for (uint sz = 4096u; sz < AURING_BYTES; sz <<= 1)
+    gdma_copy(AURING + sz, AURING, sz);
   snd_frames = frames;
 }
 
@@ -217,16 +266,25 @@ void
 snd_off(void)
 {
   snd_frames = 0;
+  sw_step = 0;
   gdma_fill(AURING, 0, AURING_BYTES);
 }
 
 /* snd_tick: frame_sync calls this once per frame; the tone decays to
- * silence (a zeroed ring) when its budget runs out. */
+ * silence (a zeroed ring) when its budget runs out, and a live sweep
+ * re-pitches on the way down. */
 void
 snd_tick(void)
 {
-  if (snd_frames && --snd_frames == 0)
+  if (!snd_frames)
+    return;
+  if (--snd_frames == 0) {
+    sw_step = 0;
     gdma_fill(AURING, 0, AURING_BYTES);
+  } else if (sw_step) {
+    sw_hz = sw_hz > sw_step + 60u ? sw_hz - sw_step : 60u;
+    tone_set(sw_hz, sw_vol);
+  }
 }
 
 /* --- LEDs: both WS2811s, colors as 0xRRGGBB. Wire order is GRB (the

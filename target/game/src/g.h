@@ -126,6 +126,8 @@ void frame_sync(uint us); /* pace the caller's loop to one tick per us */
 #define AURING_BYTES 16384u
 void fx_init(void);
 void snd_play(uint hz, uint vol, uint frames); /* vol 0..255 */
+void snd_sweep(uint hz, uint vol, uint frames, uint step); /* -step Hz/frame */
+void snd_noise(uint vol, uint frames); /* low LFSR noise burst */
 void snd_rate(uint div_fp8); /* SM0 CLKDIV, keep 15900..26300 in-band */
 void snd_off(void); /* silence immediately */
 extern uint sfx_tab[4]; /* {addr,samples} x {dino_fail, lanwalk_success} */
