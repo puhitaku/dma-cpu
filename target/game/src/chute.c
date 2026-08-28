@@ -155,9 +155,21 @@ static const uint art_gun[12] = {
 #define NG 4  /* grenades */
 #define ND 12 /* debris rects */
 
-/* nine aim steps: bullet velocity per step, no trig */
-static const signed char adx[9] = {-6, -5, -4, -2, 0, 2, 4, 5, 6};
-static const signed char ady[9] = {-4, -5, -6, -7, -7, -7, -6, -5, -4};
+/* thirteen aim steps, -78..+78 degrees off vertical in 13-degree
+ * notches — sin/cos baked at build time, no trig, no division.
+ * avx/avy: bullet velocity in 16ths of a pixel per frame (a constant
+ * 3.75 px/frame at every angle); mdx/mdy: the muzzle tip, 15 px from
+ * the pivot along the SAME angle, so the drawn barrel and the flying
+ * bullet can never disagree. */
+#define NA 13
+static const signed char avx[NA] = {-59, -54, -47, -38, -26, -13, 0,
+                                    13,  26,  38,  47,  54,  59};
+static const signed char avy[NA] = {-12, -25, -37, -47, -54, -58, -60,
+                                    -58, -54, -47, -37, -25, -12};
+static const signed char mdx[NA] = {-15, -14, -12, -9, -7, -3, 0,
+                                    3,   7,   9,   12, 14, 15};
+static const signed char mdy[NA] = {3,  6,  9,  12, 13, 15, 15,
+                                    15, 13, 12, 9,  6,  3};
 
 /* trooper states */
 #define T_FREE 0
@@ -226,12 +238,38 @@ sky(int x, int y, int w, int h)
     gfx_fill(x, y, w, h, C_SKY);
 }
 
-/* gun: dome cell + a stub barrel of three fills along the aim */
+/* gun: dome cell + a barrel drawn as a REAL line along the aim */
 static void
 turret_erase(void)
 {
-  gfx_fill(TUR_X - 14, GUN_Y - 14, 28, 14, C_SKY);
-  gfx_damage(TUR_X - 14, GUN_Y - 14, TUR_X + 13, GUN_Y - 1);
+  /* the whole reachable barrel fan: muzzle +-15 px, 3 px thick */
+  gfx_fill(TUR_X - 17, GUN_Y - 19, 34, 18, C_SKY);
+  gfx_damage(TUR_X - 17, GUN_Y - 19, TUR_X + 16, GUN_Y - 2);
+}
+
+/* line3: Bresenham with a 3x3 pen — pure adds and compares, the
+ * machine's kind of line. At most 16 steps for the barrel. */
+static void
+line3(int x0, int y0, int x1, int y1)
+{
+  int dx = x1 > x0 ? x1 - x0 : x0 - x1;
+  int dy = y1 > y0 ? y1 - y0 : y0 - y1;
+  int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  int err = dx - dy;
+  for (;;) {
+    gfx_fill(x0 - 1, y0 - 1, 3, 3, C_INK);
+    if (x0 == x1 && y0 == y1)
+      break;
+    int e2 = err + err;
+    if (e2 > -dy) {
+      err -= dy;
+      x0 += sx;
+    }
+    if (e2 < dx) {
+      err += dx;
+      y0 += sy;
+    }
+  }
 }
 
 static void
@@ -239,10 +277,8 @@ draw_gun(void)
 {
   gfx_blit_runs(TUR_X - 14, GUN_Y, cell_gun, 26, 12, rt_gun);
   int a = CS_->aim;
-  for (int i = 1; i <= 3; i++)
-    gfx_fill(TUR_X - 2 + (int)adx[a] * i / 3, GUN_Y - 2 - 3 * i, 4, 4,
-             C_INK);
-  gfx_damage(TUR_X - 14, GUN_Y - 14, TUR_X + 13, GUN_Y + 11);
+  line3(TUR_X, GUN_Y - 2, TUR_X + (int)mdx[a], GUN_Y - 2 - (int)mdy[a]);
+  gfx_damage(TUR_X - 17, GUN_Y - 19, TUR_X + 16, GUN_Y + 11);
 }
 
 static void
@@ -434,7 +470,7 @@ restart: /* no recursion on this machine: dmacc frames are static */
     CS_->gx[i] = -999;
   for (int i = 0; i < ND; i++)
     CS_->dx_[i] = -999;
-  CS_->aim = 4;
+  CS_->aim = NA / 2; /* straight up */
   CS_->score = 0;
   CS_->landed = 0;
   CS_->over = 0;
@@ -507,19 +543,18 @@ restart: /* no recursion on this machine: dmacc frames are static */
         CS_->aim--;
         turret_erase();
       }
-      if ((in_edge & BTN_RIGHT) && CS_->aim < 8) {
+      if ((in_edge & BTN_RIGHT) && CS_->aim < NA - 1) {
         CS_->aim++;
         turret_erase();
       }
       if (in_edge & (BTN_A | BTN_UP)) {
         for (int i = 0; i < NB; i++)
           if (CS_->bx[i] == -999) {
-            CS_->bx[i] = TUR_X + (int)adx[CS_->aim];
-            CS_->by[i] = GUN_Y - 14;
-            /* 9/16 of the aim step: the full-pixel march was ultra
-             * fast once everything around it slowed down */
-            CS_->bvx[i] = (int)adx[CS_->aim] * 9;
-            CS_->bvy[i] = (int)ady[CS_->aim] * 9;
+            /* born at the muzzle tip, flying the muzzle's angle */
+            CS_->bx[i] = TUR_X + (int)mdx[CS_->aim];
+            CS_->by[i] = GUN_Y - 2 - (int)mdy[CS_->aim];
+            CS_->bvx[i] = (int)avx[CS_->aim];
+            CS_->bvy[i] = (int)avy[CS_->aim];
             CS_->bfx[i] = 0;
             CS_->bfy[i] = 0;
             snd_sweep(260, 45, 5, 25); /* short low pew, easing down */
