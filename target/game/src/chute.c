@@ -380,7 +380,7 @@ gun_destroy(void)
   debris_spawn(TUR_X + 8, GUN_Y + 2, 64, -80, 0, 0);
   debris_spawn(TUR_X, GUN_Y + 4, 96, -64, 0, 0);
   uputs("chute: gun destroyed\n");
-  snd_noise(70, 24); /* the low crunch of the last stand */
+  snd_noise(70, 30); /* the low crunch, fading over the second */
   led_blink(LED_BRIGHT(0xFF2020), 6);
 }
 
@@ -522,7 +522,7 @@ restart: /* no recursion on this machine: dmacc frames are static */
             CS_->bvy[i] = (int)ady[CS_->aim] * 9;
             CS_->bfx[i] = 0;
             CS_->bfy[i] = 0;
-            snd_sweep(260, 45, 5, 45); /* short low pew, diving fast */
+            snd_sweep(260, 45, 5, 25); /* short low pew, easing down */
             break;
           }
       }
@@ -588,7 +588,7 @@ restart: /* no recursion on this machine: dmacc frames are static */
               if (CS_->gvx[g] == 0)
                 CS_->gvx[g] = CS_->tx[i] < TUR_X ? 1 : -1;
               CS_->gvy[g] = -6;
-              snd_sweep(700, 35, 5, 110); /* the gun's pew, pitched up */
+              snd_sweep(700, 35, 5, 60); /* the gun's pew, pitched up */
               break;
             }
         }

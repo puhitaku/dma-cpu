@@ -402,7 +402,7 @@ define dso_local void @chute_run() local_unnamed_addr #0 {
   store i32 0, ptr %202, align 4, !tbaa !6
   %203 = getelementptr inbounds nuw [3 x i32], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 92), i32 0, i32 %182
   store i32 0, ptr %203, align 4, !tbaa !6
-  tail call void @snd_sweep(i32 noundef 260, i32 noundef 45, i32 noundef 5, i32 noundef 45) #6
+  tail call void @snd_sweep(i32 noundef 260, i32 noundef 45, i32 noundef 5, i32 noundef 25) #6
   br label %144
 
 204:                                              ; preds = %184
@@ -666,7 +666,7 @@ define dso_local void @chute_run() local_unnamed_addr #0 {
 355:                                              ; preds = %351, %341
   %356 = getelementptr inbounds nuw [4 x i32], ptr getelementptr inbounds nuw (i8, ptr @arena_w, i32 280), i32 0, i32 %335
   store i32 -6, ptr %356, align 4, !tbaa !6
-  tail call void @snd_sweep(i32 noundef 700, i32 noundef 35, i32 noundef 5, i32 noundef 110) #6
+  tail call void @snd_sweep(i32 noundef 700, i32 noundef 35, i32 noundef 5, i32 noundef 60) #6
   br label %412
 
 357:                                              ; preds = %337
@@ -1665,7 +1665,7 @@ define internal fastcc void @gun_destroy() unnamed_addr #0 {
   tail call fastcc void @debris_spawn(i32 noundef 128, i32 noundef 216, i32 noundef 64, i32 noundef -80, i32 noundef 0, i32 noundef 0) #7
   tail call fastcc void @debris_spawn(i32 noundef 120, i32 noundef 218, i32 noundef 96, i32 noundef -64, i32 noundef 0, i32 noundef 0) #7
   tail call void @uputs(ptr noundef nonnull @.str.9) #6
-  tail call void @snd_noise(i32 noundef 70, i32 noundef 24) #6
+  tail call void @snd_noise(i32 noundef 70, i32 noundef 30) #6
   tail call void @led_blink(i32 noundef 4130824, i32 noundef 6) #6
   br label %4
 

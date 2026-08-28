@@ -111,6 +111,7 @@ fx_init(void)
  * (The ring is 4096 frames now; the doubling loop just runs two more
  * rounds.) */
 static uint sw_hz, sw_vol, sw_step; /* live sweep: Hz falls per tick */
+static int nz_vol; /* noise voice level, fading per tick; 0 = off */
 
 static void
 tone_set(uint hz, uint vol)
@@ -157,6 +158,7 @@ void
 snd_play(uint hz, uint vol, uint frames)
 {
   sw_step = 0;
+  nz_vol = 0;
   tone_set(hz, vol);
   snd_frames = frames;
 }
@@ -169,21 +171,22 @@ snd_sweep(uint hz, uint vol, uint frames, uint step)
   sw_hz = hz;
   sw_vol = vol;
   sw_step = step;
+  nz_vol = 0;
   tone_set(hz, vol);
   snd_frames = frames;
 }
 
-/* snd_noise: a low crunchy noise burst, NES-style — a 16-bit LFSR
- * picks the level, HELD 16 samples so the energy sits low, and the
+/* Noise voice: a low crunchy burst, NES-style — a 16-bit LFSR picks
+ * the level, HELD 16 samples so the energy sits low, and the
  * 1024-frame pattern doubles out to the ring (the short period IS
  * the classic metallic character). The LFSR shifts LEFT — feedback
  * read off the top bit — because a >> on this machine is a runtime
- * loop. One-shot cost only: nothing here runs per frame. */
-void
-snd_noise(uint vol, uint frames)
+ * loop. snd_tick refills the SAME pattern at a decaying volume
+ * (nz_vol, declared with the sweep state), so the crunch fades
+ * instead of cutting. */
+static void
+noise_fill(uint vol)
 {
-  sw_step = 0;
-  snd_rate(32875); /* fs floor 30.4 kHz: the growliest band */
   int s = (int)(vol << 6);
   uint hi = ((uint)(ushort)s << 16) | (ushort)s;
   uint lo = ((uint)(ushort)-s << 16) | (ushort)-s;
@@ -198,6 +201,15 @@ snd_noise(uint vol, uint frames)
   }
   for (uint sz = 4096u; sz < AURING_BYTES; sz <<= 1)
     gdma_copy(AURING + sz, AURING, sz);
+}
+
+void
+snd_noise(uint vol, uint frames)
+{
+  sw_step = 0;
+  nz_vol = (int)vol;
+  snd_rate(32875); /* fs floor 30.4 kHz: the growliest band */
+  noise_fill(vol);
   snd_frames = frames;
 }
 
@@ -267,6 +279,7 @@ snd_off(void)
 {
   snd_frames = 0;
   sw_step = 0;
+  nz_vol = 0;
   gdma_fill(AURING, 0, AURING_BYTES);
 }
 
@@ -280,10 +293,18 @@ snd_tick(void)
     return;
   if (--snd_frames == 0) {
     sw_step = 0;
+    nz_vol = 0;
     gdma_fill(AURING, 0, AURING_BYTES);
   } else if (sw_step) {
     sw_hz = sw_hz > sw_step + 60u ? sw_hz - sw_step : 60u;
     tone_set(sw_hz, sw_vol);
+  } else if (nz_vol > 0) {
+    /* the crunch fades: ~-12%/frame reaches near-silence in a
+     * second, and the final frame's hard cut lands inaudible */
+    nz_vol -= nz_vol / 8 + 1;
+    if (nz_vol < 0)
+      nz_vol = 0;
+    noise_fill((uint)nz_vol);
   }
 }
 
