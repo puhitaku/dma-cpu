@@ -1,7 +1,9 @@
 /* No-display stand-in for kfb.c/kfbcon.c, the kfsstub of the video
  * stack: lean bundles and non-XIP kernels link this instead of the
  * real driver (~25 KiB of machine text), keeping their narrow SRAM
- * layouts. Every entry point reports "no framebuffer". */
+ * layouts. The syscall face reports -ENODEV: fbtest/show install on
+ * every board and print the miss themselves (PORT.md, "Device
+ * absence"). */
 
 #include "kernel/types.h"
 
@@ -64,7 +66,7 @@ kfb_syscall(uint op, uint a1, uint pid, int badinfo)
   (void)a1;
   (void)pid;
   (void)badinfo;
-  return -1;
+  return -ENODEV;
 }
 
 void

@@ -1,7 +1,8 @@
 /* fbtest: the framebuffer test card as its own binary (split from
  * fbtools: exec copies text+data into the arena, and the 480p map
  * leaves ~50 KB — show and fbtest each fit alone where the combined
- * blob did not). Installed only on boards with FbBuf. */
+ * blob did not). Installed on every board: without a display the
+ * fb syscalls return -ENODEV and this prints "no fb". */
 #include "kernel/types.h"
 #include "kernel/stat.h"
 #include "kernel/fs.h"

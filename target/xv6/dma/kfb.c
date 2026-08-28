@@ -105,7 +105,7 @@ int
 kfb_syscall(uint op, uint a1, uint pid, int badinfo)
 {
   if (!fb_on)
-    return -1;
+    return -ENODEV; /* linked but dark: same face as the stub */
   if (op == 0) {
     if (badinfo)
       return -1;

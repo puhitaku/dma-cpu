@@ -135,7 +135,12 @@ func (b *Board) HasBundle(name string) bool {
 	return false
 }
 
-var stdApps = []string{"echo", "cat", "ls", "toolbox", "hwtools"}
+// stdApps is THE app set — identical on every xv6 board. A command
+// is portable as an executable even where its hardware isn't: fbtest
+// and show run everywhere and print "no fb" on displayless boards
+// (the kernel's fb stub answers -ENODEV; PORT.md, "Device absence").
+var stdApps = []string{"echo", "cat", "ls", "toolbox", "hwtools",
+	"fbtest", "show"}
 
 // SizeApps compile with dmacc's OptSize (outlined comparison sites).
 // Exec copies a disk app's text+data whole into the arena, so every
@@ -160,8 +165,6 @@ var SizeApps = map[string]bool{"toolbox": true, "hwtools": true}
 // stay load-anywhere by design. vi is always pre-relocated where
 // installed (Board.ViHome).
 var XIPApps = map[string]bool{}
-
-var fbApps = append(append([]string{}, stdApps...), "fbtest", "show")
 
 // spin/trap (signal demos), wc, and help left the toolbox: help is an
 // sh builtin now (it streams /dev/apps) and the rest earned no keep.
@@ -346,7 +349,7 @@ var Feather = &Board{
 	DiskBlocks: 10,
 	DiskInodes: 8, /* one inode block; frees data blocks for the
 	 * write showcase + the SD mount point */
-	DiskApps:     fbApps,
+	DiskApps:     stdApps,
 	ToolboxLinks: stdLinks,
 	Bundles:      []string{"shell", "syscall", "exec", "xsh"},
 }

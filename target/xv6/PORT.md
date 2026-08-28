@@ -1,14 +1,48 @@
 # Porting xv6 to the DMA machine
 
-This tree was vendored pristine at the commit recorded in `UPSTREAM`;
-every DMA-specific change lives in commits after that one, so
-`git diff <vendor-commit> -- xv6/` is always the complete port.
+This tree was vendored at the commit recorded in `UPSTREAM` and is
+patched in place from there. Two early rules are RETIRED and must not
+come back:
+
+- **The pristine rule is dead.** The tree no longer promises that
+  `git diff <vendor-commit>` isolates the port, and upstream files
+  are not kept verbatim (the no-verbatim decision, prompts/029:
+  printf's ~20 KB tax bought nothing a small write() helper didn't).
+  Patch upstream sources wherever it pays — in upstream's own style,
+  with changes a reviewer of the file would accept.
+- **Provenance is not the sorting key.** Files live where their ROLE
+  puts them, following upstream xv6's own layout culture — that
+  convention is the first thing to respect when working inside an
+  existing OSS tree. xv6's license is permissive and this project's
+  additions are distributed under it, so there is no licensing reason
+  (and no other reason) to quarantine "our" files apart from theirs.
+
+## Layout
+
+- `kernel/` — the kernel: upstream sources, patched in place.
+- `user/` — user space: the library (ulib/umalloc/printf) and EVERY
+  user command, upstream or DMA-native alike (`show`, `fbtest`,
+  `toolbox`, `hwtools`, the signal demos). A user program never
+  lives in `dma/`.
+- `dma/` — the machine layer only: kernel-side replacements and
+  drivers (`k*.c`), the syscall veneer (`usys.c`, this machine's
+  "ecall"), the `shim/` headers, and bare-metal probe images that
+  are not xv6 programs at all (`calflash.c`).
+
+## Device absence
+
+Every board builds and installs the SAME user command set. A command
+must be portable **as an executable**: it always loads and runs, no
+matter whether the hardware it drives exists on the board. Missing
+hardware is the KERNEL's problem — the driver or its stub answers
+`-ENODEV` (`kernel/types.h`) and the command reports the miss (`show`
+on a displayless board prints "no fb" and exits). Never solve a
+missing device by dropping a binary from a board's app set.
 
 ## Rules
 
-- Upstream files are modified **in place, minimally** — no
-  reformatting, no gratuitous renames. New DMA-machine code goes in
-  `xv6/dma/` (clearly ours) or replaces a machine-dependent file
+- New machine-layer code goes in `xv6/dma/`; new user commands go in
+  `xv6/user/`; a machine-dependent upstream file may be replaced
   outright (noted in the table below).
 - Types: the DMA machine is ILP32 with no i64. `uint64` in
   machine-dependent code becomes `uint`; the on-disk fs format is
@@ -41,7 +75,8 @@ every DMA-specific change lives in commits after that one, so
 | riscv.h, memlayout.h, plic.c, uart.c, virtio_disk.c | REPLACE (DMA-machine equivalents in `xv6/dma/`) |
 
 user/: KEEP where portable (umalloc.c, ulib.c, sh.c, the utilities);
-usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs.
+usys.pl's ecall stubs REPLACED by dispatch-patch syscall stubs
+(`dma/usys.c`). DMA-native commands live here too (see Layout).
 
 ## Progress
 

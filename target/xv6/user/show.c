@@ -1,7 +1,8 @@
 /* show: the full-screen slide viewer as its own binary (split from
  * fbtools: exec copies text+data into the arena, and the 480p map
  * leaves ~50 KB — the viewer is the one binary that must run DURING
- * a presentation). Installed only on boards with FbBuf. */
+ * a presentation). Installed on every board: without a display the
+ * fb syscalls return -ENODEV and this prints "no fb". */
 #include "kernel/types.h"
 #include "kernel/stat.h"
 #include "kernel/fs.h"

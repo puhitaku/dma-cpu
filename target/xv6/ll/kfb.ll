@@ -69,7 +69,7 @@ define dso_local void @kfb_resume() local_unnamed_addr #1 {
 }
 
 ; Function Attrs: minsize nounwind optsize
-define dso_local range(i32 -1, 1) i32 @kfb_syscall(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3) local_unnamed_addr #4 {
+define dso_local range(i32 -19, 1) i32 @kfb_syscall(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3) local_unnamed_addr #4 {
   %5 = load i1, ptr @fb_on, align 4
   br i1 %5, label %6, label %26
 
@@ -123,7 +123,7 @@ define dso_local range(i32 -1, 1) i32 @kfb_syscall(i32 noundef %0, i32 noundef %
   br label %26
 
 26:                                               ; preds = %6, %22, %19, %7, %4, %25, %21, %9
-  %27 = phi i32 [ 0, %9 ], [ 0, %21 ], [ 0, %25 ], [ -1, %4 ], [ -1, %7 ], [ -1, %19 ], [ -1, %22 ], [ -1, %6 ]
+  %27 = phi i32 [ 0, %9 ], [ 0, %21 ], [ 0, %25 ], [ -19, %4 ], [ -1, %7 ], [ -1, %19 ], [ -1, %22 ], [ -1, %6 ]
   ret i32 %27
 }
 

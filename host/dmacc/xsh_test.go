@@ -710,7 +710,8 @@ func TestXv6ShPico(t *testing.T) {
 	t.Parallel()
 	m, _ := bootXshBoard(t, nil, boards.Pico)
 	m.FeedConsole("ls\rcat README\recho pico > note\rcat note\r" +
-		"echo pipeflow | cat\rgpio write 5 1\rgpio read 5\rls /dev\rhelp\rfree\r")
+		"echo pipeflow | cat\rgpio write 5 1\rgpio read 5\rls /dev\rhelp\rfree\r" +
+		"fbtest\r") /* installed even with no display: kfbstub ENODEV */
 	runScript(t, m, 1_500_000_000)
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
 	t.Logf("console:\n%s", out)
@@ -723,6 +724,7 @@ func TestXv6ShPico(t *testing.T) {
 		"builtin: cd help",                   // help is an sh builtin now
 		"blink",                              // help lists the registry
 		"arena: total",                       // free
+		"fbtest: no fb",                      // portable executable, -ENODEV kernel
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("pico session missing %q", want)

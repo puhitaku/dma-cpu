@@ -50,7 +50,7 @@ define dso_local void @kfb_resume() local_unnamed_addr #0 {
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none)
 define dso_local noundef i32 @kfb_syscall(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3) local_unnamed_addr #0 {
-  ret i32 -1
+  ret i32 -19
 }
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(none)
