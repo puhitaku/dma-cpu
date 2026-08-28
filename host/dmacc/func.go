@@ -687,6 +687,11 @@ func (fc *funcCtx) directAddr(v *llir.Value) (string, bool) {
 func (fc *funcCtx) emit() error {
 	f := fc.f
 	fmt.Fprintf(&fc.g.text, "\n; --- %s ---\n", f.Name)
+	// ICF (outline.go): the folded-away functions of this group keep
+	// their own entry labels, stacked on this one body.
+	for _, n := range fc.g.icfAlias[f.Name] {
+		fc.label(funcSym(n))
+	}
 	fc.label(funcSym(f.Name))
 	fc.cat = "prologue"
 	if fc.rec {
@@ -700,6 +705,11 @@ func (fc *funcCtx) emit() error {
 				fc.ins("move r%d, %s", i, fc.word(p.Name))
 			}
 		}
+	}
+	// The outliner's hot gate reads this: loop bodies keep their code
+	// inline (outline.go).
+	for name := range loopBlocks(f) {
+		fc.g.loopLabels[fc.blockLabel(name)] = true
 	}
 	for bi, b := range f.Blocks {
 		fc.curBlock = bi

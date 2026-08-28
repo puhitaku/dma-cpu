@@ -13,6 +13,12 @@ type Stats struct {
 	ByFunc     map[string]int // function -> blocks
 	Total      int            // total emitted blocks (text only)
 	Runtime    []string       // runtime modules linked
+
+	// The two size passes of outline.go run AFTER this attribution is
+	// collected — it counts instructions as codegen emitted them — so
+	// what they took back out is reported separately.
+	Folded   int // functions whose body was ICF'd onto another's
+	Outlined int // bytes the outliner priced its helpers at saving
 }
 
 // blockCost prices one emitted dmaasm instruction in 16-byte blocks,
@@ -58,6 +64,10 @@ func (s *Stats) Report() string {
 	fmt.Fprintf(&b, "text: %d blocks (%d bytes)\n", s.Total, s.Total*16)
 	if len(s.Runtime) > 0 {
 		fmt.Fprintf(&b, "runtime modules: %s\n", strings.Join(s.Runtime, " "))
+	}
+	if s.Folded > 0 || s.Outlined > 0 {
+		fmt.Fprintf(&b, "outline.go: %d functions folded, ~%d bytes outlined "+
+			"(both after the attribution below)\n", s.Folded, s.Outlined)
 	}
 	type row struct {
 		name   string

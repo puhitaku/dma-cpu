@@ -142,9 +142,16 @@ phased plan). Phase outcomes are logged in the numbered
   loader-entered functions unbounded) routes the sites whose operands
   provably keep bit 31 clear to the shorter `__cw_eqzp`/`__cw_ltp`
   bodies — same site size, less helper. The same comparison may lower
-  differently in two blocks. `dmacc -size` prints block attribution and
-  `dmacc -bounds` the value ranges with the call site that pinned each
-  parameter — measure before optimizing. dmxgen bakes relocations out
+  differently in two blocks. A record-level outliner and an ICF fold
+  run last (`host/dmacc/outline.go`, prompts/042 §4): repeated
+  instruction sequences move into shared helpers entered by a jump and
+  left by a `jumpr` through one shared cell, ~5% of kernel text. Both
+  are gated to cold code — blocks off every CFG cycle, and never
+  Options.HotFuncs or ResidentFuncs — because an outlined site pays a
+  record or two every time it runs; Options.NoOutline turns them off.
+  `dmacc -size` prints block attribution and `dmacc -bounds` the value
+  ranges with the call site that pinned each parameter — measure
+  before optimizing. dmxgen bakes relocations out
   of the HIL images (they load at link addresses only). When touching
   the lowering, keep the differential suite bit-exact — it caught the
   phase's only miscompile.

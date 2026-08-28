@@ -6,13 +6,13 @@ size and executed-record count, in that combined order. Ranked by
 leverage per effort; every item rides the existing differential-test
 and emulator harness.
 
-Status 2026-08-29: §1 (the PGO loop), §2 (static cases), §3, §9 and
-§10 (a) + (a1) are DONE (eqzp/ltp shipped, then the whole-program
+Status 2026-08-29: §1 (the PGO loop), §2 (static cases), §3, §4, §9
+and §10 (a) + (a1) are DONE (eqzp/ltp shipped, then the whole-program
 parameter/return bounds that feed them; §10's (b) planner idea is
 measured and CLOSED); §5 is measured and CLOSED as not worth
-building; the rest are open. The 2026-08-29 wave also measured where
-executed records actually go (comparison lowering ~65%, see §10),
-which reranks
+building; §6 and §7 remain open. The 2026-08-29 wave also measured
+where executed records actually go (comparison lowering ~65%, see
+§10), which reranks
 everything still open.
 
 ## 1. The PGO loop — DONE
@@ -99,6 +99,9 @@ size win without the speed loss. On the kernel the same policy takes
   (14.8% of kernel XIP reads, 792 B) and `kfbcon_putc` (29.1%, 8.9
   KiB) are next, and neither fits what the KernCRText window has left
   (176 B on feather). They need a window move, not a setting.
+- the outliner's hot set (§4). It gates on "block lies on a CFG
+  cycle" today, which is blunt enough to cost it 2.9 points of text;
+  Options.HotFuncs is already wired as the plug for the measured set.
 
 ## 2. Alignment-aware memcpy/memset — DONE for the static cases
 
@@ -174,16 +177,158 @@ The original sketch, for the record:
 > emitMulConst's constant path; the sniffer routine stays as the
 > variable-count fallback.
 
-## 4. Record-level outliner (biggest remaining size lever)
+## 4. Record-level outliner — DONE (host/dmacc/outline.go)
 
-The compare millicode is hand-made outlining and it's the best size
-decision in the compiler; generalize it. Post-lowering, run a suffix
-automaton over the whole program's record stream and outline repeated
-sequences with the same no-lr "the helper IS the branch"/jumpr-back
-trick where control flow allows. Phi-copy bundles, GEP chains, and
-call protocols repeat constantly at 8 B/record; comparable outliners
-take 5-15% of text. Gate by the §1 profile so only cold code pays the
-jump. Warm-up: trivial ICF (fold byte-identical function bodies).
+Shipped 2026-08-29: an exact-match outliner plus its ICF warm-up, both
+text-level passes over the finished .dasm, in the same layer as
+foldCopies and elideFallthroughJumps. On by default
+(Options.NoOutline turns both off).
+
+Outlining happens at the INSTRUCTION level, not over raw records. The
+instruction is the machine's safe boundary — the compact planner
+canonicalizes to plain bank / counts 1 at every one of them (see §10
+(b) and host/dmaasm/compact.go), so a helper entered by a jump and left
+by a jump assembles like any other code and needs nothing from the
+planner. Symbolic operands also compare cleanly, which raw records do
+not.
+
+Two site forms, neither carrying an lr:
+
+- **tail** — the candidate ends in a control transfer that is the same
+  at every occurrence, so the helper IS the branch, exactly as the
+  compare millicode is. The site is one record, `jump __ol_N`, and no
+  state is parked at all.
+- **open** — the run continues. The site parks its resume label in the
+  shared word `__ol_ret` (1 record) and jumps (1 record); the helper
+  ends `jumpr __ol_ret`. One cell is enough for the whole program
+  because candidate runs contain no `call` and no `safepoint`, so
+  nothing can re-enter or preempt between the park and the jumpr —
+  compare.go's argument for cw_t/cw_f, applied to this cell.
+
+Safety conditions, all structural and all enforced when the candidate
+runs are built: no label inside a run (the only way into the middle of
+a straight-line stretch, and also the only way to name a record as a
+patch target, so one test covers re-entry and self-modifying code); no
+`.read`/`.write`/`.count`/`.ctrl` block-field reference and no
+`@`-placeholder operand; no `call`, no `safepoint`, and only
+whitelisted mnemonics; a control transfer only as the last instruction;
+never across a section boundary, so a .ramtext site never jumps into
+flash text; and only code owned by a compiled function — the crt0, the
+rt_/__cw_ bodies and the shared-runtime vector page are entered from
+other images at frozen addresses and are left alone.
+
+Costing has to be encoding-blind: dmacc does not know whether dmaasm
+will assemble classic 16-byte blocks or compact 8-byte records. The
+model therefore uses the CLASSIC record count of each instruction,
+which is <= the compact one for every mnemonic (measured: move 1/1,
+add 3/5, sub 5/7, shl 3/5, mulc 3/9, and 6/6, or/xor/andn 3/3, jump
+jumpr ret halt 1/1), times the compact record width of 8 bytes, plus 4
+bytes per literal-pool word (an open site adds one per site; a tail
+site one in total). A candidate that pays under that model pays under
+both encodings.
+
+**The census** (baseline xsh kernel and sh, .text + .ramtext,
+eligibility as above but without the loop gate; "records" are the
+classic model):
+
+| image | instrs | records | runs | instrs in runs |
+|---|---|---|---|---|
+| xsh kernel | 19,284 | 27,374 | 6,970 | 16,067 (83%) |
+| sh (K12, xip) | 6,300 | 8,452 | 2,368 | 5,048 (80%) |
+
+Runs are short — the kernel's length histogram is 1:3628 2:1352 3:477
+4:452 5:680 6:196 7:55 8:20 9:17 10:28 >10:65 — because a comparison
+site is four moves and a jump, and every jump ends a run. Repeated
+k-grams with a positive saving, xsh kernel (distinct / occurrences /
+records saved):
+
+| k | open | tail |
+|---|---|---|
+| 2 | 27 / 556 / 1783 | 106 / 623 / 411 |
+| 3 | 39 / 490 / 2642 | 48 / 111 / 78 |
+| 4 | 38 / 408 / 3136 | 1 / 2 / 2 |
+| 5 | 35 / 329 / 3271 | — |
+| 6 | 32 / 261 / 3182 | — |
+| 8 | 26 / 133 / 2078 | — |
+| 10 | 12 / 24 / 292 | — |
+| 12 | 7 / 14 / 217 | — |
+
+Two things the census settled. First, the candidate volume is small
+enough — a few hundred repeated k-grams, not tens of thousands — that
+a suffix automaton is not needed: the implementation sorts the
+suffixes of an interned instruction stream, reads repeats off the
+adjacent common prefixes, and commits them best-first. Second, what
+repeats is NOT the roadmap's guess. Phi-copy bundles and call
+protocols barely repeat, because their operands are per-function value
+words and their labels per-site; the dominant candidates are the
+`shl sc0, sc0` chains of constant multiplies and shifts (§3), whose
+operands are the global scratch words, and short comparison-site tails
+whose parked constant happens to match. Whole-program greedy ceiling:
+145 helpers / 1,502 records / 12,016 bytes (5.5%) on the kernel,
+36 helpers / 259 records / 2,072 bytes (3.1%) on sh.
+
+**The gate is a loop filter, and it is the whole cycle story.**
+Ungated, the pass took 7.8% off the kernel's text — and cost 2.0% of
+the xsh five-command warm sum (10.77M -> 10.99M cycles) and 2.3% of
+the vi burst (177.0M -> 181.0M). The reason is the census: the bodies
+that repeat are loop bodies, so an outlined site lands where it is
+re-executed. Excluding every block that lies on a CFG cycle
+(`loopBlocks`) removes the regression completely and keeps most of the
+size. Options.HotFuncs is the second, pluggable filter — never
+outlined, unioned with Options.ResidentFuncs — and is where a
+generated hot-function set from §1 drops in.
+
+Measured, with the loop gate (text bytes, TestZZAllSizes):
+
+| image | before | after | ICF alone |
+|---|---|---|---|
+| fs-kern-xip | 208,512 | 198,232 (-4.9%) | 208,056 (-0.2%) |
+| fs-kernel | 232,448 | 221,208 (-4.8%) | 231,992 |
+| fs-xip-Os | 202,496 | 193,056 (-4.7%) | 202,048 |
+| lean | 117,152 | 114,368 (-2.4%) | 116,256 (-0.8%) |
+| sh-xip | 67,168 | 65,496 (-2.5%) | 67,168 (0) |
+| sh (K12) | 69,008 | 67,336 (-2.4%) | 69,008 (0) |
+| ls | 13,056 | 12,512 (-4.2%) | 13,056 (0) |
+
+The kernel gets 62 helpers over 414 sites, lean 13/69, sh 10/52, ls
+3/10. The gamepico bundle's game text goes 249,520 -> 244,592 (-2.0%):
+per-frame code is nearly all loop, so the gate declines most of it.
+.data grows a little (fs-kern-xip 47,676 -> 48,380) because each open
+site interns a resume-address literal; under dmxgen's PoolText those
+cold literals ride the flash text tail instead of SRAM.
+
+Cycles, with the gate: xsh five-command warm sum 10,769,988 ->
+10,080,007 (-6.4%) — smaller images make exec copy less — and the vi
+burst TOTAL 177.0M -> 177.0M with every human-paced per-key figure
+unchanged. The dmxgen feather images are byte-identical and
+cycle-identical for every cc_*/ccc_*/cal_flash program: they are small
+and loop-dominated, so the gate declines all of them.
+
+**ICF**, the warm-up, is IR-level rather than text-level: functions
+whose bodies render to the same key (locals and block labels numbered
+by first appearance, everything else spelled out) share one emitted
+body under all of their entry labels, so every symbol still resolves at
+its own name. Yield is honest and small — 0.2% of the kernel's text,
+0.8% of lean's, nothing on sh or ls — because C rarely produces exact
+duplicates. Pinned out: address-taken functions (C gives distinct
+functions distinct addresses), variadic ones (the caller fills the
+callee's static va area), anything with different recursion-frame or
+.ramtext membership, and **anything that can reach fork()**. That last
+one cost a debugging round: the fork-spanning depth clones of
+computeRecursion are byte-identical by construction, and folding them
+back together is exactly the aliasing the cloning exists to prevent —
+sh's `echo one; echo two` ran the second command twice.
+
+Deliberately not done. Parameterized outlining (operands lifted into
+the shared cells so near-matches merge) is the obvious next step and
+the census says where the value is: the comparison sites, whose four
+moves differ only in two labels and two operand words. It was not
+built because exact matching had to prove itself first. Bodies
+containing a `call` stay out: the resume cell would be live across code
+that can re-enter it, which needs a stack or a per-site cell and
+neither is free. And the loop gate is deliberately blunt — the
+2.9 percentage points of text it leaves on the table are recoverable
+the moment §1's profile can say which loops are actually hot.
 
 ## 5. Copy coalescing — MEASURED, CLOSED (don't build)
 

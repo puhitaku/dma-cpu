@@ -76,12 +76,16 @@ type Options struct {
 	// meet dies at one loose site.
 	BoundsReport io.Writer
 
-	// HotFuncs carves the OptSize decision per FUNCTION: a function
-	// named here keeps the four-move protocol even under OptSize, so
-	// the whole image pays descriptor compares except on the measured
-	// hot paths. The set is generated from emulator traces (host/pgo,
-	// regenerate with `make pgo`); OptSize alone still means
-	// descriptors everywhere.
+	// NoOutline disables the record-level outliner and its ICF warm-up
+	// (outline.go). Both are on by default: text size is what they buy.
+	NoOutline bool
+	// HotFuncs is the measured hot-function set (host/pgo, regenerate
+	// with `make pgo`), consumed twice: under OptSize a hot function
+	// keeps the four-move compare protocol while everything else pays
+	// descriptor sites, and the outliner never outlines a hot function
+	// (an outlined site pays one or two extra executed records for the
+	// jump). ResidentFuncs, the hand-picked hot list, is unioned in on
+	// the outliner side.
 	HotFuncs map[string]bool
 }
 
@@ -94,11 +98,41 @@ func Compile(m *llir.Module, opts Options) (string, error) {
 	}
 	m.ResolveAliases()
 	g := &gen{m: m, opts: opts, rt: map[string]bool{},
-		cmpUsed: map[string]bool{}, cmpUsedD: map[string]bool{}, cmpConst: map[string]string{}}
+		cmpUsed: map[string]bool{}, cmpUsedD: map[string]bool{}, cmpConst: map[string]string{},
+		loopLabels: map[string]bool{}}
 	if err := g.run(); err != nil {
 		return "", err
 	}
-	return foldCopies(g.out.String()), nil
+	src := foldCopies(g.out.String())
+	saved := 0
+	if !opts.NoOutline {
+		src, saved = olOutline(src, g.outlinable(), g.loopLabels)
+	}
+	if s := opts.Stats; s != nil {
+		s.Folded, s.Outlined = g.icfN, saved
+	}
+	return src, nil
+}
+
+// outlinable names the function entry labels whose code the outliner
+// may relocate: every compiled function except the hot set. The gate is
+// Options.HotFuncs (the plug for the prompts/042 §1 profile driver)
+// unioned with Options.ResidentFuncs, today's hand-picked hot list.
+func (g *gen) outlinable() map[string]bool {
+	hot := map[string]bool{}
+	for _, n := range g.opts.ResidentFuncs {
+		hot[n] = true
+	}
+	for n := range g.opts.HotFuncs {
+		hot[n] = true
+	}
+	out := map[string]bool{}
+	for name := range g.funcIdx {
+		if !hot[name] {
+			out[funcSym(name)] = true
+		}
+	}
+	return out
 }
 
 // foldCopies is a text-level peephole over the finished program:
@@ -209,6 +243,13 @@ type gen struct {
 	funcIdx  map[string]*llir.Func
 	maxVar   map[string]int     // variadic callee -> max variadic arg count seen
 	facts    map[string]factSet // whole-program value bounds, one set per function
+
+	icfAlias map[string][]string // ICF: representative -> folded-away names
+	icfOf    map[string]bool     // ICF: names whose body is not emitted
+	icfN     int                 // ICF: functions folded away
+
+	// loopLabels: block labels on a CFG cycle — the outliner's hot gate.
+	loopLabels map[string]bool
 }
 
 // uartMMIO maps the compiler-known UART globals to dmaasm MMIO operands
@@ -267,6 +308,22 @@ func (g *gen) run() error {
 				return fmt.Errorf("dmacc: ResidentFuncs: %q is not defined", name)
 			}
 			g.ramSet[name] = true
+		}
+	}
+	// ICF: group functions that lower identically, so the group emits one
+	// body under all of its entry labels (outline.go). It runs here —
+	// after computeRecursion and the .ramtext split — because both are
+	// per-NAME properties the fold has to respect, and because the
+	// recursion clones only exist once computeRecursion has made them.
+	g.icfAlias = map[string][]string{}
+	g.icfOf = map[string]bool{}
+	if !g.opts.NoOutline {
+		g.icfAlias = g.foldIdentical()
+		for _, names := range g.icfAlias {
+			for _, n := range names {
+				g.icfOf[n] = true
+				g.icfN++
+			}
 		}
 	}
 	if g.opts.RuntimeHost {
@@ -337,6 +394,9 @@ func (g *gen) run() error {
 	// every emitFunc reads its own function's finished factSet.
 	g.facts, _ = g.analyzeBounds()
 	for _, f := range g.m.Funcs {
+		if g.icfOf[f.Name] {
+			continue // folded: its entry label rides the representative
+		}
 		if err := g.emitFunc(f); err != nil {
 			return err
 		}
