@@ -22,6 +22,34 @@ package dmaasm
 //   - macros never leave the sniff bank while the accumulator is live
 //     except through such a read (the jeq/jlt/jltu compact variants in
 //     emit.go are restructured to honor this).
+//
+// Canonical state is not a tax, and cross-macro elision was measured
+// and rejected (2026-08-29, prompts/042 §10 (b)). A record carries no
+// CTRL word, so the transfer mode IS the fetch window and every change
+// of mode costs exactly one switch record; switchTo already emits one
+// per transition and never more. planSync's trailing switch is not an
+// extra transition — it is the SAME transition the next macro would
+// emit itself, because every sniffer macro ends on the sniff bank
+// (through its deferred read) and every macro begins with a plain-bank
+// record. Carrying state across label-free, control-transfer-free runs
+// therefore just relocates the switch: it removes 66 of 33574 records
+// from the xsh kernel (0.20%), 98 of 34861 from the game (0.28%), and
+// 0.58% of executed records on the five-command xsh workload — against
+// a 23.0% executed bank-state share (host/dmacc/zz_banktax_test.go).
+// Count reloads are 0.02% of executed records, so there is nothing
+// there either. Reclaiming the switches needs a different record
+// stream (running a macro's plain records on the sniff bank while the
+// accumulator is dead), which turns on the silicon order of a
+// transfer's write versus its sniff accumulation — an unvalidated
+// fact, and a macro rewrite in emit.go, not a planner change.
+//
+// The canonical boundary is also load-bearing beyond one image: the
+// current window lives in fetch's WRITE_ADDR register, which every
+// image on the machine shares. Guests jump into a host kernel's vector
+// page by absolute address, the scheduler swaps processes at
+// safepoints, and loaders arm fetch alone — all of which assume the
+// banks are plain with counts 1 at every instruction boundary, not
+// merely at the labels one image's assembler can see.
 
 import (
 	"fmt"

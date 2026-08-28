@@ -6,11 +6,12 @@ size and executed-record count, in that combined order. Ranked by
 leverage per effort; every item rides the existing differential-test
 and emulator harness.
 
-Status 2026-08-29: §2 (static cases), §3, §9 and §10 are DONE; §5 is
-measured and CLOSED as not worth building; the rest are open. The
-2026-08-29 wave also measured where executed records actually go
-(comparison lowering ~65%, see §10), which reranks everything still
-open.
+Status 2026-08-29: §2 (static cases), §3 and §9 are DONE; §10 is
+partly done (eqzp/ltp shipped, its (b) planner idea measured and
+CLOSED); §5 is measured and CLOSED as not worth building; the rest
+are open. The 2026-08-29 wave also measured where executed records
+actually go (comparison lowering ~65%, see §10), which reranks
+everything still open.
 
 ## 1. Close the PGO loop (highest leverage)
 
@@ -239,9 +240,8 @@ descriptor site + 19-record __cw_eqz). Nothing else in the program is
 within an order of magnitude. Two findings frame the design space:
 whole-image InlineCompares is a dead end (+69% text, overflows the
 board RAM windows — measured, not estimated), and the compact
-encoding's per-macro bank canonicalization adds ~2 records to every
-sniffer macro, ~20% of all executed records on its own (a dmaasm
-planner project, unexplored).
+encoding's bank state is 23.0% of all executed records — which looked
+like a dmaasm planner project until it was measured (see (b) below).
 
 Shipped (host/dmacc/facts.go + compare.go): a per-function BOOL/NONNEG
 fact lattice, fixed-point from the pessimistic bottom, routes sites to
@@ -254,12 +254,61 @@ game's. Measured: cc_collatz -7.9%, cal_flash -3.9%, cc_control -2.8%.
 Still on the table, in measured-value order: (a) a range analysis (or
 interval narrowing from the dominating branch) — __cw_ltp fires on
 only 0.5% of lt/ltu sites because loop bounds arrive as parameters or
-i32 loads with no fact; (b) the compact bank-state planner above;
-(c) per-site descriptor-vs-four-move selection from the §1 profile.
+i32 loads with no fact; (c) per-site descriptor-vs-four-move selection
+from the §1 profile.
+
+### (b) The compact bank-state planner — MEASURED, CLOSED (don't build)
+
+The tax is real and was priced twice (2026-08-29). Statically it is
+16.5% of the xsh kernel's 33,574 records and 18.7% of the game's
+34,861; at runtime, classifying every fetched record of a booted
+feather xsh over five commands by its write address
+(`host/dmacc/zz_banktax_test.go`) gives 1,501,534 switch records and
+1,300 count reloads against 5,021,334 payload records — **23.0% of
+executed records**, and 99.9% of that is window switches.
+
+None of it is canonicalization slack. A record has no CTRL word, so
+the transfer mode IS the fetch window, and changing mode costs exactly
+one record; `cstate.switchTo` already emits one per transition and
+never more. `planSync`'s trailing switch is not a second transition —
+it is the one the next macro would emit anyway, because every sniffer
+macro ends on the sniff bank (its deferred read runs there) and every
+macro, sniffer or not, starts with a plain-bank record. Carrying bank
+state across runs that contain no label, no control transfer and no
+segment break therefore *relocates* switches rather than removing
+them: instrumenting the planner with exactly that scheme saved **66 of
+33,574 records in the xsh kernel (0.20%)**, 98 of 34,861 in the game
+(0.28%), and — weighting each site by its execution count — **0.58% of
+executed records**, i.e. 2.5% of the 23% tax. Per macro the ledger is
+visibly conservative: `add` sites gave up 1,074 records and the `move`
+sites that follow them took back 1,243.
+
+What that would have cost: cross-instruction state in both passes,
+`planPayloadDelta`/`planPrefix` becoming incoming-state dependent, and
+the per-instruction canonical invariant — the thing that makes the
+planner auditable, and the thing the two-pass size cross-check
+verifies — downgraded to a dataflow property. Worse, the invariant is
+not local to one image: the current window is fetch's WRITE_ADDR
+register, shared by every image on the machine. Guests jump into a
+host kernel's vector page by absolute address, the scheduler swaps
+processes at safepoints, and loaders arm fetch alone — all of them
+assume plain-bank/counts-1 at every instruction boundary, not merely
+at the labels one assembly can see.
+
+The switches are only reclaimable by changing the record stream: run a
+macro's plain records on the sniff bank where the accumulator is dead,
+so back-to-back sniffer macros stay in one window. Every candidate
+(seeding SNIFF_DATA, clearing it through the CLR alias) depends on the
+silicon order of a transfer's write versus its sniff accumulation,
+which is not a calibrated fact — the emulator writes then accumulates,
+and nothing has checked the hardware. That is a macro rewrite in
+emit.go behind a HIL run, not a planner change, and it belongs with
+the §7 encoding-v2 rebuild if it is ever wanted.
 
 ## If only two
 
 §1 (it compounds: every future heuristic becomes automatic) and the
 rest of §10 (comparisons remain the dominant executed cost even after
-eqzp; the range analysis and the compact planner are the two biggest
-unclaimed cycle levers on the books).
+eqzp). The range analysis, §10 (a), is now the biggest unclaimed cycle
+lever on the books on its own: the compact planner beside it priced
+out at 2.5% of its own tax and is closed.

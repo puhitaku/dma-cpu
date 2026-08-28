@@ -18,6 +18,18 @@ type Stats struct {
 // blockCost prices one emitted dmaasm instruction in 16-byte blocks,
 // mirroring dmaasm's instruction table. Sign-dispatch macros include
 // their two pooled arena slots so the report reflects real bytes.
+//
+// This is the CLASSIC encoding, and every shipped image is compact, so
+// the report ranks constructs rather than predicting bytes: a compact
+// record is 8 bytes but a macro that visits more than one channel bank
+// pays a window-switch record per transition, and the ratio is not
+// uniform. Measured compact records vs the blocks below: move 1/1 (4
+// on an incr byte bank: count set, switch, record, count restore),
+// or/xor/andn 3/3, and 6/6, add 5/3, shl 5/3, sub 7/5, mulc k-dependent
+// (7 for 3, 9 for 10, 13 for 100) /3, call 2/2, safepoint 2/2, jneg
+// 10/6, jbool 12/6, jsign 8/4, jeq 24/12, jlt and jltu 25/16 (all four
+// plus the same two arena slots). The switch share is structural, not
+// planner slack — host/dmaasm/compact.go states why.
 var blockCost = map[string]int{
 	"move": 1, "add": 3, "sub": 5, "or": 3, "xor": 3, "andn": 3,
 	"and": 6, "shl": 3, "mulc": 3,
