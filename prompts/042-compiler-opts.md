@@ -14,8 +14,12 @@ site in the game and nothing anywhere else, and say so; then (c), which
 moved the OptSize carve-out from whole functions down to individual
 compare SITES: -1.1% on the xsh cold sum and -104 bytes of kernel text,
 -0.5% on the game's Benchmark scene for +1.1 KiB; §10's (b) planner
-idea is measured and CLOSED); §5 is measured and CLOSED as not worth
-building; §7 remains open. §6 is the biggest single size win of the
+idea is measured and CLOSED); §5 and §7 are measured and CLOSED as not
+worth building — §7's full accounting is prompts/043-encoding-v2.md,
+which prices three 4-byte encodings against every deployable image and
+lands on -3.4…-11.6% of text for +8…+16% of cycles, three DMA channels
+the RP2040 boards do not have, and an ABI bump. §8 is now the only open
+item with leverage. §6 is the biggest single size win of the
 wave — sh's text is down 32.8% — and it also lifted sh's recursion
 bound from a clone count to a byte budget. The 2026-08-29 wave also
 measured where executed records actually go (comparison lowering ~65%,
@@ -522,16 +526,48 @@ change the xsh benchmark by literally zero cycles (sh's pool reads are
 99296 over the whole workload, against 100K+ text reads per command),
 so the committed host/pgo inputs stay as they are.
 
-## 7. Deep rebuild candidate — compact encoding v2 (and a non-goal)
+## 7. Compact encoding v2 — MEASURED, CLOSED (don't build)
 
-If another step-change in text size is wanted: per-page or
-per-function template dictionaries so common record shapes pay 4 B,
-not 8. Touches dmaasm + emulator + the silicon executor at once; only
-behind the differential harness, and only after §1/§4 take the cheap
-wins. NON-goal: a smarter mid-end — stock clang -Oz plus a curated
-opt pipeline (suppress switch-to-lookup-table where our jump tables
-are cheaper; tune the inliner threshold) captures nearly all IR-level
-value without owning any of it.
+The sketch was: per-page or per-function template dictionaries so
+common record shapes pay 4 B, not 8. Measured and designed out in
+**prompts/043-encoding-v2.md** (2026-08-29), which carries the shape
+histograms, three candidate encodings with their exact layouts, and
+the executor analysis.
+
+Summary of the verdict there. A record is two 32-bit absolute
+addresses and nothing else, so there is no field to pack; the only
+4-byte encodings the machine can execute are (A) sticky-operand half
+records, where the template is a DMA channel's persisted register, and
+(B/C) pointer records naming an 8-byte dictionary entry that a DMA
+expander channel unpacks. All three were priced against every
+deployable image:
+
+- **A: -0.06% to -0.23%.** Free decode — a half record is 2 bus
+  transfers against 3 — but only ~1% of records sit in runs long enough
+  to pay for entering the mode.
+- **B (all records pointers): -0.41% to -10.68%,** for a flat +33.3% of
+  cycles. Two fifths of every image is records whose exact pair occurs
+  once, and a pooled singleton costs 12 B against 8.
+- **C (the hybrid, the real proposal): -3.4% to -11.6%** of record
+  bytes for an estimated +8% to +16% of executed cycles — 1.4 to 2.4
+  percent of cycles per percent of text, against §6 declining a byte
+  win over +1.25%. It also needs three DMA channels RP2040 boards do
+  not have (gamepico, where the win is biggest, has one free), and an
+  ABI v1 bump because the mode is fetch-register state every image on
+  the machine shares.
+
+Two findings worth keeping regardless. The §7 sketch's *localization*
+is refuted, not merely outvoted: per-function dictionaries need 19%
+more entries than a global one and per-page 39–65% more. And the
+pointer machine is not a paper design — host/dmaasm/zz_reccycles_test.go
+builds it out of real channels, runs records through it and prices it
+at 4.000 cycles against 3.000, which is what closes the question.
+Shape histograms: host/dmacc/zz_shapes_test.go.
+
+NON-goal (unchanged): a smarter mid-end — stock clang -Oz plus a
+curated opt pipeline (suppress switch-to-lookup-table where our jump
+tables are cheaper; tune the inliner threshold) captures nearly all
+IR-level value without owning any of it.
 
 ## 8. Make the trace a product
 
@@ -939,8 +975,9 @@ so back-to-back sniffer macros stay in one window. Every candidate
 silicon order of a transfer's write versus its sniff accumulation,
 which is not a calibrated fact — the emulator writes then accumulates,
 and nothing has checked the hardware. That is a macro rewrite in
-emit.go behind a HIL run, not a planner change, and it belongs with
-the §7 encoding-v2 rebuild if it is ever wanted.
+emit.go behind a HIL run, not a planner change, and it belonged with
+the §7 encoding-v2 rebuild — which is now closed (prompts/043), so
+this would have to justify a HIL calibration on its own.
 
 ## If only two
 
