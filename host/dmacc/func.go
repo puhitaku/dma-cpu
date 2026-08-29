@@ -46,7 +46,8 @@ type funcCtx struct {
 	rec        bool // uses the recursion frame stack (push/pop)
 	frameBytes int  // data bytes emitted for this function's frame
 	curBlock   int
-	cat        string // size-report attribution for emitted code
+	blockOut   *strings.Builder // current block's own text (emit)
+	cat        string           // size-report attribution for emitted code
 }
 
 func (g *gen) emitFunc(f *llir.Func) error {
@@ -172,9 +173,13 @@ func (fc *funcCtx) label(l string) {
 	fmt.Fprintf(fc.outBuf(), "%s:\n", l)
 }
 
-// outBuf is where this function's records land: .ramtext for the
-// RAMTextFuncs closure, the main text otherwise.
+// outBuf is where this function's records land: the block buffer while
+// emit is lowering one (block layout, see emit), then .ramtext for the
+// RAMTextFuncs closure or the main text.
 func (fc *funcCtx) outBuf() *strings.Builder {
+	if fc.blockOut != nil {
+		return fc.blockOut
+	}
 	if fc.inRAM {
 		return &fc.g.ram
 	}
@@ -706,6 +711,43 @@ func (fc *funcCtx) directAddr(v *llir.Value) (string, bool) {
 
 // --- Emission ---
 
+// layoutOrder returns this function's blocks as IR indices in the order
+// their finished text is PLACED: the entry block, then every block the
+// profile did not call cold, then the cold ones — a stable partition,
+// so both halves keep their IR order (prompts/042 §1,
+// Options.ColdBlocks). Lowering order is separate, and is always IR
+// order; see emit.
+//
+// Sinking never-executed code out from between hot blocks is worth two
+// things on this machine. The prefetch path shortens (text is XIP
+// flash: a taken jump into an unprefetched record parks the shared read
+// master), and the hot edges the cold block used to separate become
+// adjacent, so elideFallthroughJumps drops their jumps outright.
+//
+// Deliberately NOT hot-path chaining: no successor ordering, no edge
+// weights, no block duplication. The simple partition is the thing
+// being measured.
+func (fc *funcCtx) layoutOrder() []int {
+	n := len(fc.f.Blocks)
+	order := make([]int, 0, n)
+	for i := range fc.f.Blocks {
+		order = append(order, i)
+	}
+	if len(fc.g.opts.ColdBlocks) == 0 || n < 3 {
+		return order
+	}
+	// The entry block is pinned: the prologue falls through into it.
+	hot, cold := []int{0}, []int(nil)
+	for i, b := range fc.f.Blocks[1:] {
+		if fc.g.opts.ColdBlocks[fc.blockLabel(b.Name)] {
+			cold = append(cold, i+1)
+		} else {
+			hot = append(hot, i+1)
+		}
+	}
+	return append(hot, cold...)
+}
+
 func (fc *funcCtx) emit() error {
 	f := fc.f
 	fmt.Fprintf(&fc.g.text, "\n; --- %s ---\n", f.Name)
@@ -733,8 +775,21 @@ func (fc *funcCtx) emit() error {
 	for name := range loopBlocks(f) {
 		fc.g.loopLabels[fc.blockLabel(name)] = true
 	}
+	// Blocks are LOWERED in IR order and PLACED in layout order: each
+	// one lands in its own buffer, and the buffers are concatenated
+	// below. Lowering is full of order-carried state — a folded GEP
+	// registers a link-time address (constAddr) and a pure copy
+	// registers an alias (fwd), both emitting no code and both read at
+	// every later use site; the block's pool slots are handed out at its
+	// head; stub labels are numbered as they are minted. Lowering out of
+	// order silently loses those: a use emitted before its own folded
+	// definition reads a value word nothing ever writes (found as a
+	// 4-byte write to address 0xa in the game's dino scene). Placement
+	// moves finished text, which nothing else can observe.
+	bufs := make([]strings.Builder, len(f.Blocks))
 	for bi, b := range f.Blocks {
 		fc.curBlock = bi
+		fc.blockOut = &bufs[bi]
 		fc.poolRelease()
 		fc.label(fc.blockLabel(b.Name))
 		// Phi heads: latch shadows into value words (shadow-mode blocks
@@ -756,6 +811,10 @@ func (fc *funcCtx) emit() error {
 				return fmt.Errorf("%s (IR line %d): %v", f.Name, ins.Line, err)
 			}
 		}
+	}
+	fc.blockOut = nil
+	for _, bi := range fc.layoutOrder() {
+		fc.outBuf().WriteString(bufs[bi].String())
 	}
 	return nil
 }
@@ -2378,6 +2437,16 @@ func (fc *funcCtx) flushEdgeStubs(p *edgePlan) error {
 	return nil
 }
 
+// backward reports whether any target is a backedge: a branch to a
+// block at or before this one in the function's IR block order.
+//
+// IR order, never placed order. blockIdx and curBlock are both IR
+// indices, and emit runs this decision inside its IR-order lowering
+// pass, so the safepoint set a function carries is the same whatever
+// Options.ColdBlocks says about its blocks. Deciding it on placed
+// position instead would let a sunk loop header turn its backedge
+// lexically forward and silently drop the safepoint — unbounded
+// interrupt latency, and nothing but TestColdBlockSafepoint to notice.
 func (fc *funcCtx) backward(targets ...string) bool {
 	for _, t := range targets {
 		if idx, ok := fc.blockIdx[t]; ok && idx <= fc.curBlock {

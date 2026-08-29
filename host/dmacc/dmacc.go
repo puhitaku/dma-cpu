@@ -94,6 +94,21 @@ type Options struct {
 	// jump). ResidentFuncs, the hand-picked hot list, is unioned in on
 	// the outliner side.
 	HotFuncs map[string]bool
+	// ColdBlocks is the measured cold-block set (host/pgo, regenerate
+	// with `make pgo`), keyed by emitted block label (`B_<func>_<blk>`,
+	// funcCtx.blockLabel). A function's listed blocks sink to the end of
+	// its body; everything else keeps its IR order, entry block first.
+	// The point is layout, not size: a taken jump into unprefetched XIP
+	// parks the shared read master, so pulling never-executed code out
+	// from between hot blocks both shortens the prefetch path and turns
+	// the hot edges it separated into free fallthroughs
+	// (elideFallthroughJumps).
+	//
+	// Unlisted means hot, so an empty or stale map is safe: it only
+	// costs the layout win. Nothing about it can move a safepoint —
+	// backedges are decided on IR order, not on emission order (see
+	// funcCtx.backward).
+	ColdBlocks map[string]bool
 }
 
 // Compile translates a parsed module into dmaasm source. The generated

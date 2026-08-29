@@ -24,6 +24,10 @@ package dmacc_test
 //	    that ranks ResidentFuncs.
 //	(c) the same over the kernel's .ramtext, which prices what the
 //	    current ResidentFuncs list is buying.
+//	(d) per-BLOCK text reads, the same window resolved one level
+//	    finer (blockHeat). A block nobody fetched a word of, inside a
+//	    function that did run, is cold and sinks to the end of its
+//	    function under dmacc's Options.ColdBlocks.
 //
 // Attribution note (prompts/042 §8): dmaasm drops every `__`-prefixed
 // symbol from Result.Symbols, so a nearest-preceding-symbol scan over
@@ -65,6 +69,7 @@ type imgProfile struct {
 	litN    int               // pool size (keys)
 	funcs   map[string]uint64 // C function name -> text-word reads
 	funcTot uint64
+	blocks  *blkHeat // per-BLOCK reads over the same window
 }
 
 // poolWindowIn is the profile window over the pool literals an image
@@ -170,6 +175,131 @@ func funcCounts(res *dmaasm.Result, w window, skip map[uint32]bool) (map[string]
 	return out, tot
 }
 
+// blkHeat is one image's per-BLOCK text heat: the same histogram
+// funcCounts folds onto functions, resolved one level finer.
+type blkHeat struct {
+	reads map[string]uint64 // B_ label -> text-word reads (0 = never fetched)
+	fn    map[string]string // B_ label -> the f_ label that owns it
+	fnRd  map[string]uint64 // f_ label -> reads over its whole body
+}
+
+func (h *blkHeat) add(o *blkHeat) {
+	for l, n := range o.reads {
+		h.reads[l] += n
+		h.fn[l] = o.fn[l]
+	}
+	for f, n := range o.fnRd {
+		h.fnRd[f] += n
+	}
+}
+
+// blockHeat folds a text window's per-word counts onto the owning BLOCK
+// the way funcCounts folds them onto the owning function — dmacc emits
+// each block contiguously behind its `B_` label, so the nearest
+// preceding one is the owner.
+//
+// The scan tracks `f_` labels too, and NOT just to know which function
+// a block belongs to: without them a function's prologue words (emitted
+// between its f_ label and its first block label) would be credited to
+// the last block of the function ahead of it, and a never-executed
+// block would look warm because its neighbour got called.
+func blockHeat(res *dmaasm.Result, w window, skip map[uint32]bool) *blkHeat {
+	type ent struct {
+		name string
+		addr uint32
+		blk  bool
+	}
+	var syms []ent
+	for n, a := range res.Symbols {
+		if a < w.w[0] || a >= w.w[1] {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(n, "f_"):
+			syms = append(syms, ent{n, a, false})
+		case strings.HasPrefix(n, "B_"):
+			syms = append(syms, ent{n, a, true})
+		}
+	}
+	sort.Slice(syms, func(i, j int) bool {
+		if syms[i].addr != syms[j].addr {
+			return syms[i].addr < syms[j].addr
+		}
+		// A leaf function with no prologue puts its f_ label on the same
+		// word as its entry block's: the block owns the code.
+		if syms[i].blk != syms[j].blk {
+			return !syms[i].blk
+		}
+		return syms[i].name < syms[j].name
+	})
+	h := &blkHeat{reads: map[string]uint64{}, fn: map[string]string{},
+		fnRd: map[string]uint64{}}
+	// Per symbol, the function and (for block symbols) the block that
+	// owns the words from it to the next symbol.
+	ownFn := make([]string, len(syms))
+	cur := ""
+	for i, s := range syms {
+		if !s.blk {
+			cur = s.name
+		} else {
+			h.reads[s.name] = 0
+			h.fn[s.name] = cur
+		}
+		ownFn[i] = cur
+	}
+	si := 0
+	for i, c := range w.counts {
+		a := w.w[0] + uint32(i)*4
+		if c == 0 || skip[a] {
+			continue
+		}
+		for si+1 < len(syms) && syms[si+1].addr <= a {
+			si++
+		}
+		if si >= len(syms) || syms[si].addr > a {
+			continue // ahead of the first function: the crt0 and friends
+		}
+		if syms[si].blk {
+			h.reads[syms[si].name] += uint64(c)
+		}
+		h.fnRd[ownFn[si]] += uint64(c)
+	}
+	return h
+}
+
+// coldBlocks names the blocks the workload never fetched a single word
+// of, inside functions it did execute. Two deliberate exclusions:
+//
+//   - a block of a function that never ran at all. Sinking it moves
+//     cold code past cold code, so it buys nothing and would multiply
+//     the table by the size of the whole unused half of libc.
+//   - anything in .ramtext (ResidentFuncs, RAMTextFuncs): those bodies
+//     are outside the profiled text window, so their functions read
+//     zero here and drop out with the rule above. Layout there is SRAM
+//     layout — no XIP prefetch to shorten.
+func coldBlocks(h *blkHeat) []string {
+	var out []string
+	for lbl, n := range h.reads {
+		if n == 0 && h.fnRd[h.fn[lbl]] > 0 {
+			out = append(out, lbl)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// blockCand counts the blocks a cold set is chosen from: every block of
+// every function the workload executed.
+func blockCand(h *blkHeat) int {
+	n := 0
+	for _, f := range h.fn {
+		if h.fnRd[f] > 0 {
+			n++
+		}
+	}
+	return n
+}
+
 // rankLits returns the pool keys that cleared the loop-rate bar, most
 // read first.
 func rankLits(lits map[string]uint64) []string {
@@ -227,7 +357,7 @@ func largestFit(ranked []string, fits func(n int) bool) int {
 	return lo
 }
 
-// TestGenPGO regenerates host/pgo/lits_gen.go and host/pgo/funcs_gen.go.
+// TestGenPGO regenerates host/pgo/{lits,funcs,blocks}_gen.go.
 //
 //	GEN_PGO=1 go test -count=1 -timeout 3h -run TestGenPGO ./host/dmacc/
 func TestGenPGO(t *testing.T) {
@@ -440,6 +570,54 @@ func TestGenPGO(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// --- cold blocks: the layout the workload asks for ---
+	b.Reset()
+	genHeader(&b)
+	wrapComment(&b, "The cold-block sets, consumed by dmacc's "+
+		"Options.ColdBlocks. A block named here sinks to the end of its "+
+		"function; the rest keep their IR order behind the entry block, so "+
+		"the code that runs sits back to back and the jumps between the "+
+		"blocks a cold one used to separate fall away "+
+		"(elideFallthroughJumps). Text is XIP flash, where a taken jump "+
+		"into an unprefetched record parks the shared read master, so the "+
+		"layout is worth cycles as well as bytes.")
+	b.WriteString("//\n")
+	wrapComment(&b, "Each set is the blocks the workload below fetched ZERO "+
+		"words of, inside functions it did execute. Cold-set rather than "+
+		"hot-set on purpose: an unlisted block is treated as hot and is "+
+		"never moved, so a stale or truncated set costs layout, never "+
+		"correctness. Blocks of functions that never ran are left out (the "+
+		"whole function is already off the hot path), and so is everything "+
+		"in .ramtext, which is SRAM and has no prefetch to shorten.")
+	b.WriteString("//\n")
+	wrapComment(&b, "Keys are dmacc block labels (`B_<function>_<block>`, "+
+		"funcCtx.blockLabel) and are NOT validated: a board linking a "+
+		"different module set simply has no block by some of these names.")
+	for _, x := range []struct {
+		v   string
+		img string
+		p   *imgProfile
+	}{{"KernelColdBlocks", "kernel", kern}, {"ShColdBlocks", "sh", sh},
+		{"ViColdBlocks", "vi", vi}, {"GameColdBlocks", "game", game}} {
+		cold := coldBlocks(x.p.blocks)
+		b.WriteString("\n")
+		wrapComment(&b, fmt.Sprintf("%s: %d of the %d blocks in the %d "+
+			"functions the workload executed (%d blocks in the image).",
+			x.v, len(cold), blockCand(x.p.blocks), len(x.p.funcs),
+			len(x.p.blocks.reads)))
+		wrapComment(&b, "Workload: "+workloadOf(x.img)+".")
+		fmt.Fprintf(&b, "var %s = map[string]bool{\n", x.v)
+		for _, n := range cold {
+			fmt.Fprintf(&b, "\t%q: true,\n", n)
+		}
+		b.WriteString("}\n")
+		fmt.Printf("PGO %-7s blocks %5d cold of %5d in executed functions (%d total)\n",
+			x.img, len(cold), blockCand(x.p.blocks), len(x.p.blocks.reads))
+	}
+	if err := os.WriteFile("../pgo/blocks_gen.go", []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	for _, name := range []string{"kernel", "sh", "vi", "game"} {
 		o := outs[name]
 		fmt.Printf("PGO %-7s lits %4d/%-5d hot (%5d B SRAM) %5.1f%% of %10d reads\n",
@@ -581,7 +759,8 @@ func profileXsh(t *testing.T) (*imgProfile, *imgProfile, *imgProfile) {
 		lits, ltot := litCounts(res, lwin, twin)
 		fns, ftot := funcCounts(res, twin, litSet(res))
 		return &imgProfile{name: name, lits: lits, litTot: ltot,
-			litN: len(res.LitAddrs), funcs: fns, funcTot: ftot}
+			litN: len(res.LitAddrs), funcs: fns, funcTot: ftot,
+			blocks: blockHeat(res, twin, litSet(res))}
 	}
 	// The kernel's .ramtext heat prices what ResidentFuncs already
 	// buys; report it beside the XIP text it was pulled out of.
@@ -671,6 +850,8 @@ func profileGame(t *testing.T) *imgProfile {
 	var fns map[string]uint64
 	var litTot, funcTot uint64
 	var litN int
+	blks := &blkHeat{reads: map[string]uint64{}, fn: map[string]string{},
+		fnRd: map[string]uint64{}}
 
 	run := func(drive func(m *emu.Machine, prog *dmaasm.Result, at int)) {
 		m, prog := bootGame(t)
@@ -683,6 +864,7 @@ func profileGame(t *testing.T) *imgProfile {
 		lwin, twin := window{lw, m.ProfileCountsAt(0)}, window{tw, m.ProfileCountsAt(1)}
 		l, lt := litCounts(prog, lwin, twin)
 		f, ft := funcCounts(prog, twin, litSet(prog))
+		blks.add(blockHeat(prog, twin, litSet(prog)))
 		if lits == nil {
 			lits, fns, litN = map[string]uint64{}, map[string]uint64{}, len(prog.LitAddrs)
 		}
@@ -749,5 +931,5 @@ func profileGame(t *testing.T) *imgProfile {
 	})
 	reportHeat("game XIP text", fns, funcTot)
 	return &imgProfile{name: "game", lits: lits, litTot: litTot, litN: litN,
-		funcs: fns, funcTot: funcTot}
+		funcs: fns, funcTot: funcTot, blocks: blks}
 }

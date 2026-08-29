@@ -230,7 +230,8 @@ func compileShDasm(t *testing.T, bd *boards.Board) string {
 		t.Fatal(err)
 	}
 	dasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 2, XIPText: true,
-		RuntimeExtern: &dmacc.ExternRT{Vec: bd.KernCRText, Regs: bd.KernCData}})
+		RuntimeExtern: &dmacc.ExternRT{Vec: bd.KernCRText, Regs: bd.KernCData},
+		ColdBlocks:    pgo.ShColdBlocks})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -582,7 +583,8 @@ func compileUserResident(t *testing.T, bd *boards.Board, name string, extra ...s
 		t.Fatal(err)
 	}
 	dasm, err := dmacc.Compile(mod, dmacc.Options{OptSize: boards.SizeApps[name], XIPText: true,
-		RuntimeExtern: &dmacc.ExternRT{Vec: bd.KernCRText, Regs: bd.KernCData}})
+		RuntimeExtern: &dmacc.ExternRT{Vec: bd.KernCRText, Regs: bd.KernCData},
+		ColdBlocks:    pgo.ColdBlocksFor(name)})
 	if err != nil {
 		t.Fatal(err)
 	}

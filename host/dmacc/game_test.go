@@ -54,7 +54,8 @@ func compileGameDasm(t *testing.T) string {
 		Entry: "gmain", NoSafepoints: true, XIPText: true,
 		ResidentFuncs: []string{"shoot", "clearance", "in_box",
 			"normal_of"},
-		OptSize: true, HotFuncs: pgo.GameHotFuncs})
+		OptSize: true, HotFuncs: pgo.GameHotFuncs,
+		ColdBlocks: pgo.GameColdBlocks})
 	if err != nil {
 		t.Fatal(err)
 	}

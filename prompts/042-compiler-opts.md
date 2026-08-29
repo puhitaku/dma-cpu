@@ -17,7 +17,11 @@ single size win of the wave — sh's text is down 32.8% — and it also
 lifted sh's recursion bound from a clone count to a byte budget. The
 2026-08-29 wave also measured where executed records actually go
 (comparison lowering ~65%, see §10), which reranks everything still
-open.
+open. The wave's last item is §1's block layout: `Options.ColdBlocks`
+sinks never-executed blocks to the end of their function, worth a
+uniform ~0.3% of cycles (xsh, vi, fbcon) and a few hundred bytes, and
+zero on the game — small, but it costs nothing when the map is empty
+and it closes the last knob the profile driver already measured.
 
 ## 1. The PGO loop — DONE
 
@@ -83,6 +87,64 @@ size win without the speed loss. On the kernel the same policy takes
 204296 bytes of text against 208512 balanced and 202496 all-Os, i.e.
 73% of the descriptor saving, and the xsh bench did not regress.
 
+### Block layout: cold blocks out of line — DONE, and worth ~0.3%
+
+The third knob off the same measurement. `blockHeat` folds the text
+histogram onto `B_<func>_<block>` labels instead of `f_` ones (both
+kinds are in `Result.Symbols`, and the scan tracks the `f_` labels too
+so a function's prologue is not credited to the last block of its
+neighbour), and `host/pgo/blocks_gen.go` names, per image, the blocks
+the workload fetched ZERO words of inside functions it did execute.
+`dmacc.Options.ColdBlocks` sinks those to the end of their function:
+entry block first, the rest in IR order, cold ones last — a stable
+partition, no hot-path chaining. The blocks that run end up adjacent,
+so `elideFallthroughJumps` drops the jumps that used to step over the
+cold ones. Cold-set rather than hot-set: an unlisted block is left
+where it is, which makes a stale table a lost optimization instead of
+a wrong image. Sets: kernel 310 of 935 blocks in executed functions,
+sh 181/347, vi 529/1007, game 76/708.
+
+**LOWERED in IR order, PLACED in layout order.** Each block goes to
+its own buffer and the buffers are concatenated at the end of
+`funcCtx.emit`. This is not a style choice. Lowering carries state
+between blocks: a fully-static GEP registers a link-time address
+(`constAddr`) and a pure copy registers an alias (`fwd`), both
+emitting NO code and both read at every later use site. Lowering out
+of order silently rewrites the code inside a block — a use reached
+before its own folded definition falls back to a value word nothing
+ever writes. It did: sinking `B_dino_run_48`, whose three folded GEPs
+the loop below it used, turned four constant stores into
+self-modified indirect ones, and the game wrote 4 bytes to address
+0xa. Placement moves finished text, which nothing downstream can
+observe. It also makes the safepoint guarantee structural — backedges
+are decided during the IR-order lowering pass (`funcCtx.backward`
+compares IR block indices), so no cold set can move a safepoint;
+`TestColdBlockSafepoint` sinks a loop header and demands one anyway,
+and `TestColdBlockSameCode` demands that every non-jump instruction
+survive an arbitrary cold set unchanged.
+
+**Measured, feather.** The xsh five-command cold sum 9320894 ->
+9290885 (-0.32%), warm 8683796 -> 8668787 (-0.17%); with
+`((((echo deep))))` the cold sum is 10788457 -> 10743330 (-0.42%).
+vi's editing session 174.0M -> 173.5M (-0.29%). The fbcon workload
+sum 114.82M -> 114.33M (-0.42%), its 12x scroll 103.90M -> 103.31M
+(-0.57%). Deployed text: kernel 231996 -> 231976, sh 47928 -> 47568,
+vi 161220 -> 161180, game 255928 -> 256016. The game is the honest
+zero: its Benchmark scene runs 46173272 -> 46173086 cycles, because
+76 cold blocks in 708 is nothing to move and the compute kernels have
+no cold arms at all. So: real, uniform, and small — the shipped
+mechanism costs nothing when the map is empty (byte-identical output,
+`TestColdBlockLayoutOff`) and about a third of a percent when it is
+not. The wave's precedent stands: this is the a2-sized result, not a
+§6-sized one.
+
+Regenerating also refreshed the pool and hot-function tables, which
+had drifted: they predate §6's recursion work, and sh's pool is a
+different shape now (155 resident keys of 1433, against 68 of 1867).
+That refresh alone moves no cycles — measured, the xsh bench is
+identical with it and without — but it accounts for sh's +372 bytes
+of SRAM data and most of its -360 bytes of text.
+
 **Still open**, with what the driver already provides toward it:
 
 - per-site compare inlining (InlineCompares is all-or-nothing today).
@@ -91,14 +153,6 @@ size win without the speed loss. On the kernel the same policy takes
   the profile, which means labelling compare sites in the .dasm and
   attributing reads to them; the text histogram resolves to words
   already, so only the labelling is missing.
-- hot-edge fallthrough + cold-block out-of-line layout (a taken jump
-  into unprefetched XIP parks the shared read master, so layout counts
-  double here). The driver gives per-word text read counts, which is
-  per-BLOCK heat for free — dmacc's block labels (`B_<func>_<n>`) are
-  in `Result.Symbols`, so switching `funcCounts`' owner predicate from
-  `f_` to the block labels yields an edge-weight profile without any
-  new measurement. What is missing is the emission side: dmacc lays
-  blocks out in IR order today.
 - ResidentFuncs past `cursor_xor`: the ranking says `cell_addr`
   (14.8% of kernel XIP reads, 792 B) and `kfbcon_putc` (29.1%, 8.9
   KiB) are next, and neither fits what the KernCRText window has left

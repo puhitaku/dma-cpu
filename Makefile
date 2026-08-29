@@ -115,7 +115,7 @@ game-ll:
 
 # --- Profile-guided settings (prompts/042 §1) ---
 # Boots every deployable payload in the emulator, drives its
-# representative workload, and rewrites host/pgo/{lits,funcs}_gen.go
+# representative workload, and rewrites host/pgo/{lits,funcs,blocks}_gen.go
 # from the measured literal-pool and per-function heat. These are build
 # INPUTS, not test goldens: regenerating changes image layout and cycle
 # counts, so report the before/after instead of refreshing on a failure.

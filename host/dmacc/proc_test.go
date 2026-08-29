@@ -108,6 +108,10 @@ func compileKernelFull(t *testing.T, key kernKey) string {
 		RuntimeHost: xip}
 	if key.cmp == "pgo" {
 		opts.HotFuncs = pgo.KernelHotFuncs
+		// The measured layout rides with the measured compare policy:
+		// "pgo" is the shape dmxgen ships, and the size comparison
+		// against "" and "os" stays a comparison of one build.
+		opts.ColdBlocks = pgo.KernelColdBlocks
 	}
 	if xip && fs {
 		// The whole sync path must execute from SRAM: its QMI session

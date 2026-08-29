@@ -793,7 +793,10 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			ResidentFuncs: []string{"shoot", "clearance", "in_box",
 				"normal_of"},
 			/* size everywhere, speed on the measured hot paths (host/pgo) */
-			OptSize: true, HotFuncs: pgo.GameHotFuncs})
+			OptSize: true, HotFuncs: pgo.GameHotFuncs,
+			/* and the blocks the profile never reached sink out of the
+			 * prefetch path, per function (host/pgo) */
+			ColdBlocks: pgo.GameColdBlocks})
 	if err != nil {
 		return nil, err
 	}
@@ -1053,7 +1056,10 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			/* size everywhere, speed on the measured hot paths: the
 			 * compare sites of every function outside pgo.KernelHotFuncs
 			 * take the two-record descriptor form (host/pgo) */
-			OptSize: true, HotFuncs: pgo.KernelHotFuncs})
+			OptSize: true, HotFuncs: pgo.KernelHotFuncs,
+			/* never-executed blocks sink to the end of their function,
+			 * so the hot ones lie back to back in the XIP window */
+			ColdBlocks: pgo.KernelColdBlocks})
 	if err != nil {
 		return nil, err
 	}
@@ -1064,7 +1070,8 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	shDasm, err := compileLL([]string{"target/xv6/ll/sh.ll", "target/xv6/ll/ulib.ll",
 		"target/xv6/ll/umalloc.ll", "target/xv6/ll/usys.ll"},
 		dmacc.Options{RecursionDepth: 2, XIPText: true,
-			RuntimeExtern: &dmacc.ExternRT{Vec: cRText, Regs: cData}})
+			RuntimeExtern: &dmacc.ExternRT{Vec: cRText, Regs: cData},
+			ColdBlocks:    pgo.ShColdBlocks})
 	if err != nil {
 		return nil, err
 	}
@@ -1173,7 +1180,8 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		viDasm, err := compileLL([]string{"target/xv6/ll/vi.ll", "target/xv6/ll/ulib.ll",
 			"target/xv6/ll/umalloc.ll", "target/xv6/ll/usys.ll"},
 			dmacc.Options{XIPText: true, /* pre-relocated: text runs from flash */
-				RuntimeExtern: &dmacc.ExternRT{Vec: cRText, Regs: cData}}) /* balanced: editor latency over bytes */
+				RuntimeExtern: &dmacc.ExternRT{Vec: cRText, Regs: cData},
+				ColdBlocks:    pgo.ViColdBlocks}) /* balanced: editor latency over bytes */
 		if err != nil {
 			return nil, fmt.Errorf("vi: %w", err)
 		}
@@ -1358,7 +1366,8 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 				udasm, err := compileLL([]string{"target/xv6/ll/" + name + ".ll",
 					"target/xv6/ll/ulib.ll", "target/xv6/ll/usys.ll"},
 					dmacc.Options{OptSize: boards.SizeApps[name], XIPText: true,
-						RuntimeExtern: &dmacc.ExternRT{Vec: cRText, Regs: cData}})
+						RuntimeExtern: &dmacc.ExternRT{Vec: cRText, Regs: cData},
+						ColdBlocks:    pgo.ColdBlocksFor(name)})
 				if err != nil {
 					return nil, err
 				}
