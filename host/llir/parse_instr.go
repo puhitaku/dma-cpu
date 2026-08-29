@@ -44,8 +44,16 @@ func (p *parser) instrLine(lx *lexer) error {
 
 	switch {
 	case binOps[op]:
+		// The two wrap flags are KEPT (Instr.NSW/NUW) — the value-range
+		// analysis reads them. The rest are still dropped: nothing asks
+		// what `exact`, `disjoint` or `nneg` promise.
 		for binFlags[lx.peek()] {
-			lx.next()
+			switch lx.next() {
+			case "nsw":
+				ins.NSW = true
+			case "nuw":
+				ins.NUW = true
+			}
 		}
 		ty, err := p.parseType(lx)
 		if err != nil {

@@ -7,10 +7,12 @@ leverage per effort; every item rides the existing differential-test
 and emulator harness.
 
 Status 2026-08-29: §1 (the PGO loop), §2 (static cases), §3, §4, §9
-and §10 (a) + (a1) are DONE (eqzp/ltp shipped, then the whole-program
-parameter/return bounds that feed them; §10's (b) planner idea is
-measured and CLOSED); §5 is measured and CLOSED as not worth
-building; §6 and §7 remain open. The 2026-08-29 wave also measured
+and §10 (a) + (a1) + (a2) are DONE (eqzp/ltp shipped, then the
+whole-program parameter/return bounds that feed them, then the
+`nsw`/`nuw` wrap flags — which are sound, tested and worth one routed
+site in the game and nothing anywhere else, and say so; §10's (b)
+planner idea is measured and CLOSED); §5 is measured and CLOSED as not
+worth building; §6 and §7 remain open. The 2026-08-29 wave also measured
 where executed records actually go (comparison lowering ~65%, see
 §10), which reranks
 everything still open.
@@ -568,18 +570,90 @@ takes that up: the assume-and-verify round removed above was priced
 when a signed loop's BOUND was unbounded; with 33 kernel and 93 game
 parameters now proven nonneg, the "both sides nonneg" requirement of
 `slt` is half satisfied at many more sites, so its price should be
-re-measured rather than inherited.
+re-measured rather than inherited. It was — see (a2) below: still one
+site.
 
-The remaining lever for those: (a2), honouring `nsw`/`nuw`, which llir
-currently drops in the parser. `add nsw a, b` with both words nonneg is
-nonneg, which closes every signed counter and the `icmp eq inc, n`
-loops with it — but it buys that by reading LLVM's poison semantics
-into a machine whose arithmetic wraps, and that is a policy decision,
-not a lowering one.
+The remaining lever for those was (a2), honouring `nsw`/`nuw` — built,
+measured and DONE below. It is worth ~nothing, and the section says
+why.
 
-Still on the table, in measured-value order: (a2) above and
+Still on the table, in measured-value order:
 (c) per-site descriptor-vs-four-move selection from the §1 profile —
 (b), the compact bank-state planner, is measured and CLOSED below.
+
+### (a2) The `nsw`/`nuw` wrap flags — DONE, and worth ~nothing
+
+Shipped (host/llir + host/dmacc/facts.go): `llir.Instr` keeps the two
+wrap flags the parser used to drop (`NSW`/`NUW`; `exact`/`disjoint`/
+`nneg` are still dropped, nothing asks what they promise), and
+`insBound` reads them in four rules, each a pure function of the
+instruction and its operand bounds so `edgeBound` re-derives with them
+too:
+
+- `add nsw a, b`, both words nonneg: the operands ARE their own int32
+  values, so a sum that does not overflow int32 is a nonnegative int32
+  — bound `min(A+B, 2^31-1)`.
+- `mul nsw a, b`, both words nonneg: the same argument on the product.
+- `sub nuw a, b`: no borrow means a >= b, so the difference never
+  exceeds the minuend — bound A. (Before this, only `sub x, 0` had a
+  rule at all.)
+- `add nuw a, b`: nothing. `addMax` already saturates to the top
+  exactly when the sum does not fit a word, which is the case `nuw`
+  promises away, so the flag adds nothing the unsigned rule did not
+  already say. Recorded as a rule so the next reader does not re-derive
+  it.
+
+No flag is read on an i64 op: that value is a word PAIR, and its low
+half wraps whatever the 64-bit arithmetic does (`wrapFlagWord`, with
+an adversarial test that fails if the guard is removed).
+
+**The policy decision, and it is on the record in facts.go's header.**
+LLVM defines an overflowing `nsw`/`nuw` op as producing poison; this
+machine has no poison, its adds wrap, always. Honouring the flags means
+taking clang's promise that the SOURCE program never overflows those
+ops — the same contract every optimizing C compiler applies to the same
+flags — and deriving bounds the wrapped word would violate if it did.
+The blast radius is bounded and small: the only consumer of these
+bounds is the comparison lowering, so a program that does overflow a
+flagged op gets one comparison routed to a restricted-range helper
+whose answer for a negative word is wrong. A WRONG BRANCH, in a program
+that was already undefined. Nothing here feeds an address, a length or
+a bank plan, so no bound of ours can become memory unsafety.
+
+**Measured, and this is the point of the section.** Bounds gained:
+the kernel not one parameter or return (35/297 bounded, 33 nonneg; 35
+returns, 29 nonneg — identical); the game one parameter (96 -> 97 of
+223, 93 -> 94 nonneg) and no return. Routing, static sites: the xsh
+kernel ltp 43 of 227 lt/ltu and eqzp 323 of 594 zero-tests, both
+UNCHANGED; the game ltp 32 -> **33** of 283 and eqzp 335 of 410
+unchanged; sh unchanged at ltp 2 of 73 and eqzp 44 of 136. Cycles: the
+xsh five-command sum, `vi` TOTAL (174.0M) and the fbcon workloads are
+bit-identical to the pre-change run; every size in TestZZAllSizes is
+byte-identical.
+
+Why the rules fire (14 `add`, 38 `sub`, 0 `mul` tightenings in one
+kernel compile; 10/16/2 in the game) and still move one site: the flags
+can only rescue a bound that SATURATED — two nonneg words whose sum ran
+past bit 31. They cannot lift an operand that is at the top, and the
+blockers counted in (a1) are exactly that: loads (61 kernel, 45 game)
+and phis (50 / 68) with no bound at all. A signed counter phi is
+likewise unreachable: `phi [0, entry], [add nsw i, 1, loop]` needs i
+nonneg to apply the nsw rule and the phi's own bound to get it, and the
+lattice descends from the top, so the cycle never starts. Only the
+shape whose guard already bounds the counter and whose STEP overflows
+the nonneg threshold closes (facts_test.go:
+TestFactsNSWClosesSaturatedCounter, with its unflagged twin as the
+mutation guard).
+
+**And that answers (a1)'s closing question about re-pricing `slt`.** It
+was re-measured with parameters bounded, not inherited: one more `slt`
+site in the game routes to `__cw_ltp`, none in the kernel or sh — the
+same order as the assume-and-verify round that was priced and removed
+in (a) ("moves ONE comparison site"). The two independent routes to the
+signed counters now agree on the price, so the `slt` lowering needs no
+redesign and the signed-counter shape is closed as a lever. The rules
+stay: they are cheap, sound, tested, and the `sub nuw` one gives `sub`
+a bound rule it never had.
 
 ### (b) The compact bank-state planner — MEASURED, CLOSED (don't build)
 
@@ -633,9 +707,12 @@ the §7 encoding-v2 rebuild if it is ever wanted.
 
 §10 (a1), whole-program parameter ranges, was the other half of this
 pair and is DONE (see §10 above: -6.6% on the xsh five-command sum,
--2.0% on vi, no size cost). What is left of the pair is §1 (it
-compounds: every future heuristic becomes automatic), and after it
-§10 (a2) — with parameters now bounded, the signed counters are the
-one shape still standing between the analysis and the `slt` sites,
-and its poison-semantics policy question is the only thing to settle.
+-2.0% on vi, no size cost). §10 (a2), the `nsw`/`nuw` flags that were
+to follow it, is DONE too — the poison-semantics policy is settled and
+recorded in facts.go's header, and the payoff is one routed site in the
+game and zero cycles anywhere, because the operands that block the
+compares are loads and phis at the top, which no wrap flag can lift.
+What is left of the pair is §1 (it compounds: every future heuristic
+becomes automatic), and after it §10 (c), per-site
+descriptor-vs-four-move selection from the §1 profile.
 

@@ -188,6 +188,15 @@ type Instr struct {
 	CalleeVal *Value       // call: function-pointer value for indirect calls
 	FixedArgs int          // call: fixed params of a variadic callee (-1: not variadic)
 	AllocN    int          // alloca: constant element count
+
+	// Wrap flags of an integer binary op, as clang wrote them: "this
+	// operand pair does not overflow, and the result is poison if it
+	// does". Nothing in the lowering reads them — the machine wraps —
+	// but the value-range analysis does (host/dmacc/facts.go). Only the
+	// two that analysis uses are kept; `exact`/`disjoint`/`nneg` are
+	// still parsed and dropped.
+	NSW bool // no signed wrap
+	NUW bool // no unsigned wrap
 }
 
 // Block is a basic block.

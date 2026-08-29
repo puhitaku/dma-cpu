@@ -61,6 +61,14 @@ import (
 // an i32 parameter or load that nothing local bounds, and `slt a, b`
 // needs both sides nonneg. It is not here.
 //
+// The `nsw` rule below does not change that, and cannot: applying it to
+// `add nsw i, 1` needs i nonneg, which is the phi's own bound, and this
+// lattice descends from the top — so the cycle never starts. What nsw
+// rescues is the counter whose guard ALREADY bounds it and whose step
+// then saturates past bit 31. Measured at one comparison site in the
+// whole game and none in the kernel (prompts/042 §10 (a2)), which is
+// the same price the assume-and-verify round was rejected at.
+//
 // The PARAMETER half of that wall is what the whole-program layer below
 // (ipBounds, gen.analyzeBounds) removes: llir.Merge hands dmacc every
 // caller, so a parameter's bound is the meet — here the maximum — of
@@ -76,6 +84,33 @@ import (
 // enumerates the mechanisms and says why each is exhaustive. The return
 // rule needs none of that — whoever calls f, the word in r0 is still
 // one f's own `ret` put there.
+//
+// Every rule here is derived from the MACHINE's arithmetic — the words
+// the lowering actually writes — with one deliberate exception, the
+// `nsw`/`nuw` wrap flags (insBound's add/sub/mul cases). Those are
+// source-language facts, and reading them is a POLICY DECISION, on
+// record here:
+//
+//	LLVM defines an overflowing nsw/nuw op as producing POISON, so a
+//	program that overflows one has no defined behaviour to preserve.
+//	This machine has no poison — its adds wrap, always. Honouring the
+//	flags therefore means trusting clang's promise that the SOURCE
+//	program never overflows THOSE ops, and deriving bounds that the
+//	wrapped word would violate if it did.
+//
+//	The stance: take the promise, which is the same contract every
+//	optimizing C compiler applies to the same flags. The blast radius
+//	is bounded and small. The only consumer of these bounds is the
+//	comparison lowering, so a program that does overflow a flagged op
+//	gets a comparison routed to a restricted-range helper whose answer
+//	for a negative word is wrong — a WRONG BRANCH, in a program that
+//	was already undefined. Nothing here feeds an address, a length or a
+//	bank plan, so no bound of ours can turn into memory unsafety.
+//
+//	Where the promise says nothing the flags are ignored: nsw alone
+//	proves nothing about the sign of a sum whose operands may be
+//	negative, and no flag on an i64 op says anything about the low word
+//	the bound describes (wrapFlagWord).
 //
 // Soundness: the fixed point starts at the TOP (0xFFFFFFFF everywhere,
 // nothing known) and only tightens. Every rule states a bound implied
@@ -149,6 +184,19 @@ func resTypeMax(ins *llir.Instr) uint32 {
 		return maxUnknown
 	}
 	return typeMax(ins.Typ)
+}
+
+// wrapFlagWord reports whether an op's `nsw`/`nuw` flag says anything
+// about the WORD the bound describes. The flags constrain the op's own
+// integer type, and only a type that fits one machine word is that
+// word: an i64 add is a word PAIR, whose low half is a wrapping
+// 32-bit add however the 64-bit sum behaves, so the flags say nothing
+// there and the rules below skip it. Sub-word types are covered (the
+// word is the value, zero-extended) and simply gain nothing, since
+// their type already bounds them tighter than any flag rule.
+func wrapFlagWord(ins *llir.Instr) bool {
+	t := ins.Typ
+	return t != nil && t.Kind == llir.TInt && t.Bits >= 1 && t.Bits <= 32
 }
 
 // constMax is the word a constant operand renders to. Constants render
@@ -696,13 +744,37 @@ func (fs *factSet) insBound(ins *llir.Instr, opnd func(*llir.Value) uint32) uint
 	case "or", "xor":
 		k = maskUp(b | opnd(ins.Args[1]))
 	case "add":
-		k = addMax(b, opnd(ins.Args[1]))
+		c := opnd(ins.Args[1])
+		// addMax already saturates to the top exactly when the sum does
+		// not fit a word, which is the case `nuw` promises away — so nuw
+		// adds nothing to this line that it does not already say.
+		k = addMax(b, c)
+		// nsw with both words nonneg: the operands ARE their own int32
+		// values, so the sum clang promises not to overflow is a
+		// nonnegative int32 and bit 31 stays clear. Without this the
+		// sum of two nonneg words saturates past bit 31 and the fact is
+		// lost.
+		if wrapFlagWord(ins) && ins.NSW && b <= maxNonNeg && c <= maxNonNeg {
+			k = min(k, maxNonNeg)
+		}
 	case "mul":
-		k = mulMax(b, opnd(ins.Args[1]))
+		c := opnd(ins.Args[1])
+		k = mulMax(b, c)
+		// nsw with both words nonneg: same argument as add — a product
+		// of two nonnegative int32s that does not overflow int32 is a
+		// nonnegative int32.
+		if wrapFlagWord(ins) && ins.NSW && b <= maxNonNeg && c <= maxNonNeg {
+			k = min(k, maxNonNeg)
+		}
 	case "sub":
 		// Only a subtraction of zero cannot borrow.
 		if s, ok := constShift(ins.Args[1]); ok && s == 0 {
 			k = b
+		}
+		// nuw: the subtraction does not borrow, i.e. a >= b unsigned,
+		// so a - b is a real difference and never exceeds a.
+		if wrapFlagWord(ins) && ins.NUW {
+			k = min(k, b)
 		}
 	case "select":
 		k = max(opnd(ins.Args[1]), opnd(ins.Args[2]))

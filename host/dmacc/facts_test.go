@@ -281,6 +281,121 @@ out:
 	wantFact(t, fs, "next", 0)
 }
 
+// --- The wrap flags ----------------------------------------------------
+
+// The counter loop the flags exist for. It is case (c) of
+// TestFactsCountersThatCanWrap with `nsw` on the step: the guard bounds
+// %i by 0x7FFFFFFE in the body, the step adds another 0x7FFFFFFF, and
+// the SUM is what runs past bit 31 — so the phi meets a nonneg seed
+// with an add saturated to the top and proves nothing. `add nsw` says
+// that sum does not overflow int32, which with both operands nonneg
+// makes it a nonnegative int32 and closes the phi.
+//
+// The unflagged twin is (c) itself, and it must keep proving nothing:
+// the two together are the mutation guard on the flag plumbing.
+func TestFactsNSWClosesSaturatedCounter(t *testing.T) {
+	const shape = `
+entry:
+  br label %loop
+loop:
+  %i = phi i32 [ 0, %entry ], [ %next, %step ]
+  %c = icmp ult i32 %i, 2147483647
+  br i1 %c, label %step, label %out
+step:
+  %next = add %FLAGS%i32 %i, 2147483647
+  br label %loop
+out:
+  ret i32 %i
+`
+	_, fs := parseFunc(t, strings.Replace(shape, "%FLAGS%", "nsw ", 1))
+	wantFact(t, fs, "i", factNonNeg)
+	wantFact(t, fs, "next", factNonNeg)
+
+	_, fs = parseFunc(t, strings.Replace(shape, "%FLAGS%", "", 1))
+	wantFact(t, fs, "i", 0)
+	wantFact(t, fs, "next", 0)
+}
+
+// What the flags may NOT be read to say. Every one of these carries a
+// flag and must still come out factless.
+func TestFactsWrapFlagsProveNothingMore(t *testing.T) {
+	fs := parseFacts(t, `
+entry:
+  %h = lshr i32 %n, 1
+  %half = add nsw i32 %h, %h
+  %open = add nsw i32 %h, %n
+  %opens = mul nsw i32 %h, %n
+  %wrap = mul i32 %h, %h
+  %nuwsum = add nuw i32 %h, %h
+  ret i32 %half
+`)
+	// The rule itself: two nonneg words whose sum saturates past bit 31.
+	wantFact(t, fs, "half", factNonNeg)
+	// %n is unbounded, so it may be negative — and nsw says only that
+	// the sum does not overflow int32, which a negative sum satisfies.
+	wantFact(t, fs, "open", 0)
+	wantFact(t, fs, "opens", 0)
+	// The adversarial unflagged product: 0x7FFFFFFF squared wraps, and
+	// without nsw nothing rules the wrapped word out.
+	wantFact(t, fs, "wrap", 0)
+	// nuw on an add says exactly what the unsigned rule already said:
+	// 0x7FFFFFFF + 0x7FFFFFFF is 0xFFFFFFFE, which keeps bit 31.
+	wantFact(t, fs, "nuwsum", 0)
+}
+
+// `mul nsw` with both operands nonneg is nonneg, on the same argument
+// as add; `sub nuw` cannot borrow, so it never exceeds its minuend.
+func TestFactsWrapFlagsMulAndSub(t *testing.T) {
+	fs := parseFacts(t, `
+entry:
+  %h = lshr i32 %n, 1
+  %m = and i32 %n, 65535
+  %b = and i32 %n, 255
+  %sq = mul nsw i32 %h, %h
+  %small = mul nsw i32 %b, %b
+  %d = sub nuw i32 %m, %n
+  %d2 = sub i32 %m, %n
+  %dopen = sub nuw i32 %n, %m
+  ret i32 %sq
+`)
+	wantFact(t, fs, "sq", factNonNeg)
+	// Already bounded without the flag: 255*255 needs no help, and the
+	// flag must not LOOSEN the exact bound to the nonneg threshold.
+	wantFact(t, fs, "small", factNonNeg)
+	if got := fs.max["small"]; got != 65025 {
+		t.Errorf("%%small: bound %#x, want 0xfe01", got)
+	}
+	// sub nuw takes the minuend's bound, unflagged sub takes nothing.
+	wantFact(t, fs, "d", factNonNeg)
+	wantFact(t, fs, "d2", 0)
+	// A nuw sub of an UNBOUNDED minuend still proves nothing.
+	wantFact(t, fs, "dopen", 0)
+	if got := fs.max["d"]; got != 65535 {
+		t.Errorf("%%d: bound %#x, want the minuend's 0xffff", got)
+	}
+}
+
+// The flags describe the op's own integer type, and only a type that
+// fits one machine word IS the word these bounds describe. An i64 add
+// is a word pair whose low half wraps whatever the 64-bit sum does, so
+// no flag on it may be read (facts.go: wrapFlagWord). Dropping that
+// guard makes %w nonneg, which is exactly the unsound claim.
+func TestFactsWrapFlagsIgnoreWidePairs(t *testing.T) {
+	fs := parseFacts(t, `
+entry:
+  %h = lshr i32 %n, 1
+  %z = zext i32 %h to i64
+  %w = add nsw i64 %z, %z
+  %p = mul nsw i64 %z, %z
+  %s = sub nuw i64 %z, %z
+  ret i32 %h
+`)
+	wantFact(t, fs, "z", factNonNeg)
+	wantFact(t, fs, "w", 0)
+	wantFact(t, fs, "p", 0)
+	wantFact(t, fs, "s", 0)
+}
+
 // The narrowing rides only edges that every path to the block must take.
 // A join reached from both arms of a branch keeps nothing.
 func TestFactsNarrowingNeedsSolePredecessor(t *testing.T) {
