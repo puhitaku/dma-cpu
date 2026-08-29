@@ -52,6 +52,19 @@ package dmacc_test
 // Left as it is on purpose: re-deriving the settings from the exact
 // attribution is a regeneration, i.e. a measurement to report, not a
 // silent edit to a build input.
+//
+// The loop is a fixed-point ITERATION, not a function: the driver
+// profiles an image built with the very settings it is about to
+// replace, so a run on an UNCHANGED tree still moves a few keys and
+// blocks, and the run after that moves a few back. Two consequences
+// worth knowing before regenerating. Report the diff for every image
+// the run rewrote, not only the one the change was about. And the
+// game's tables move the game's timing: TestGameChute and its
+// neighbours take a screenshot at a fixed cycle, so a scene that
+// simply runs a little faster is photographed a frame earlier and the
+// assertion fails on a game that is perfectly fine. A change with no
+// game in it (a kernel residency move, say) has no business
+// re-deriving the game's settings; carry them over and say so.
 
 import (
 	"fmt"
@@ -597,7 +610,7 @@ func TestGenPGO(t *testing.T) {
 
 	// vi: a registry image whose [ramtext][data] claim comes out of the
 	// arena, which also has to hold sh's heap and vi's own 40 KiB heap
-	// ask — the feather map budgets those three against 82.2 KiB with
+	// ask — the feather map budgets those three against 68.75 KiB with
 	// little to spare. So vi's hot pool must be FREE: the claim with it
 	// may not exceed the all-cold claim, which means the set lives in
 	// the slack of kalloc's 256-byte rounding.

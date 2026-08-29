@@ -127,9 +127,12 @@ func compileKernelFull(t *testing.T, key kernKey) string {
 			"fire_income", "tick_income", "kcons_aim", "kcons_kick",
 			"kcons_on", "kcons_rx", "kcons_tx", "kcons_pending"}
 		if fb {
-			// dmxgen's kernResident: the fb console's cursor redraw is
-			// the kernel's densest XIP-text read source.
-			opts.ResidentFuncs = append(opts.ResidentFuncs, "cursor_xor")
+			// dmxgen's kernResident: the display half of the console
+			// tee — the cursor redraw and the putc every console byte
+			// runs through — is the kernel's densest XIP-text read
+			// source, and the one the scanout must never wait on.
+			opts.ResidentFuncs = append(opts.ResidentFuncs,
+				"cursor_xor", "kfbcon_putc")
 		}
 	}
 	dasm, err := dmacc.Compile(merged, opts)

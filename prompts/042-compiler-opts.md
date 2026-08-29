@@ -313,10 +313,6 @@ state-driven sample point instead of a cycle-driven one.
   four-move protocol. That is a much bigger byte bet per site than
   (c)'s three records, so it wants its own measurement, on the top few
   dozen sites rather than all 377.
-- ResidentFuncs past `cursor_xor`: the ranking says `cell_addr`
-  (14.8% of kernel XIP reads, 792 B) and `kfbcon_putc` (29.1%, 8.9
-  KiB) are next, and neither fits what the KernCRText window has left
-  (176 B on feather). They need a window move, not a setting.
 - a never-executed-FUNCTION set, the other half of the outliner's hot
   set (§4; the ColdBlocks half is DONE and written up above). The
   block-level cold signal covers only functions the workload ran, so
@@ -333,6 +329,72 @@ state-driven sample point instead of a cycle-driven one.
   which the workload DOES play). Either those scenes get cycle
   figures in the ratchet, or the game's workload grows to visit them,
   or the game opts out of the set and it ships for the kernel alone.
+
+### ResidentFuncs past `cursor_xor` — DONE, and it is `kfbcon_putc` alone
+
+The old note here named `cell_addr` (14.8%, 792 B) and `kfbcon_putc`
+(29.1%, 8.9 KiB) as next. Re-ranked on the current tree with
+`host/trace` over the fbcon workload (`cat README` + 12x `ls /dev`),
+`cell_addr` is GONE — `-Oz` inlined it into `kfbcon_putc`, which is
+why that body is 10496 bytes now rather than 8.9 KiB. What is left of
+the kernel's XIP text, as reads by owner:
+
+| function | share | bytes | reads/byte |
+| --- | --- | --- | --- |
+| `dma_ksyscall` | 26.6% | 35480 | 117 |
+| `kfbcon_putc` | 22.7% | 10496 | 337 |
+| `kdmacpy` | 11.0% | 2416 | 713 |
+| `memmove` | 5.0% | 2576 | 303 |
+| `bread` | 4.3% | 1496 | 444 |
+| `kconswrite` | 1.2% | 336 | 581 |
+
+Reads per byte is the wrong ranking, and measuring said so. Residency
+buys cycles as well as flash reads — a resident body keeps its
+self-modifying records instead of reaching for the `.ramtext` stub
+XIPText splits out — and the two do not order the same way. Four sets,
+priced on the feather fbcon bench against the 2a22fe0 baseline
+(cat README / echo40 / ls /dev / 12x scroll):
+
+| resident set | SRAM | deltas |
+| --- | --- | --- |
+| `kfbcon_putc` | +10.7K | -2.0% / -1.7% / -3.6% / -1.0% |
+| + `kdmacpy` | +12.6K | -1.0% / -1.7% / -3.6% / -0.8% |
+| + six cheap names | +17.1K | -1.0% / -1.6% / -1.8% / -0.8% |
+| the six cheap names ALONE | +6.4K | +1.0% / +0.4% / -0.6% / -0.6% |
+
+Every addition past `kfbcon_putc` measured NEGATIVE against it, and
+the cheap tier alone REGRESSES two of the four workloads. The
+mechanism is the pool: a literal a `.ramtext` record reads is resident
+by force (`dmaasm`'s `ramLits`), so each new resident body drags its
+own pool words into the window and the profiled hot keys they displace
+cost more than the parking they save. So the shipped set adds exactly
+one name, and the honest-zero precedent covers the rest.
+
+The window move it needed: feather `KernCData` +11 KiB for the
+`.ramtext` body, and `ShRText` and everything above it another 2.5 KiB
+so the forced literals do not evict the hot pool — 13.5 KiB out of the
+arena, which goes 84224 -> 70400 bytes. The vi bench's measured peak
+is 64512 bytes of arena in both maps, so the spare goes 19712 -> 5888;
+vi's second 40 KiB heap chunk did not fit before the move either,
+which is what made the arena the right thing to spend. pico and pico2
+are untouched: they have no display to protect and their windows keep
+the slack they had.
+
+Measured after `make pgo` (which the changed `.ramtext` required).
+fbcon feather: `cat README` 1440007 -> 1424970, `echo`x40 2777722 ->
+2729480, `ls /dev` 6705002 -> 6465015, 12x scroll 102391669 ->
+101475515; the four-workload sum is -1.08%. Kernel XIP-text reads over
+the PGO driver's own workload: 17.2M -> 5.55M, and the resident pool
+now covers 100.0% of pool reads with 1040 keys against 708 at 99.9%.
+Deployed feather kernel: flash text 231792 -> 219308 (-12484), SRAM
+data 32768 -> 35328, `.ramtext` 45096 -> 55792 — +13256 bytes of SRAM
+for -12484 bytes of flash, which is the trade stated plainly. The xsh
+and vi benches run on pico2 and moved only by the PGO tables' own
+drift (cold sum 10606932 -> 10607256, +0.003%; vi TOTAL unchanged).
+Those deployed figures are ratcheted now (`deploy/` keys,
+TestDeploySizes): `size/` measures the kernel with no display, so
+before this the whole cost of fb-board residency moved no figure at
+all.
 
 ## 2. Alignment-aware memcpy/memset — DONE for the static cases
 

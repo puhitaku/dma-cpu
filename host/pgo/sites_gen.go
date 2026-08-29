@@ -24,8 +24,8 @@ package pgo
 // profiled. Names are not validated by dmacc — a board linking a
 // different module set simply never asks about some of them.
 
-// KernelHotSites: 377 of the image's 1822 comparison sites; 429 of them
-// were executed at all, and the set covers 99.95% of the 403023
+// KernelHotSites: 343 of the image's 1733 comparison sites; 390 of them
+// were executed at all, and the set covers 99.95% of the 313464
 // comparisons the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
@@ -225,40 +225,6 @@ var KernelHotSites = map[string]bool{
 	"cws_kdmaset_2":        true,
 	"cws_kdmaset_3":        true,
 	"cws_kdmaset_5":        true,
-	"cws_kfbcon_putc_1":    true,
-	"cws_kfbcon_putc_10":   true,
-	"cws_kfbcon_putc_11":   true,
-	"cws_kfbcon_putc_12":   true,
-	"cws_kfbcon_putc_13":   true,
-	"cws_kfbcon_putc_17":   true,
-	"cws_kfbcon_putc_18":   true,
-	"cws_kfbcon_putc_19":   true,
-	"cws_kfbcon_putc_2":    true,
-	"cws_kfbcon_putc_20":   true,
-	"cws_kfbcon_putc_21":   true,
-	"cws_kfbcon_putc_22":   true,
-	"cws_kfbcon_putc_23":   true,
-	"cws_kfbcon_putc_24":   true,
-	"cws_kfbcon_putc_26":   true,
-	"cws_kfbcon_putc_27":   true,
-	"cws_kfbcon_putc_28":   true,
-	"cws_kfbcon_putc_29":   true,
-	"cws_kfbcon_putc_3":    true,
-	"cws_kfbcon_putc_33":   true,
-	"cws_kfbcon_putc_34":   true,
-	"cws_kfbcon_putc_35":   true,
-	"cws_kfbcon_putc_4":    true,
-	"cws_kfbcon_putc_47":   true,
-	"cws_kfbcon_putc_48":   true,
-	"cws_kfbcon_putc_49":   true,
-	"cws_kfbcon_putc_5":    true,
-	"cws_kfbcon_putc_50":   true,
-	"cws_kfbcon_putc_51":   true,
-	"cws_kfbcon_putc_52":   true,
-	"cws_kfbcon_putc_6":    true,
-	"cws_kfbcon_putc_7":    true,
-	"cws_kfbcon_putc_8":    true,
-	"cws_kfbcon_putc_9":    true,
 	"cws_kfind_sleeper_1":  true,
 	"cws_kfind_sleeper_2":  true,
 	"cws_kfind_sleeper_3":  true,

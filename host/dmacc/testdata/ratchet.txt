@@ -2,6 +2,7 @@
 # `make ratchet`; verified exactly by the tests named in the keys.
 #
 #   size/<image>/<segment>       TestZZAllSizes, bytes
+#   deploy/<image>/<segment>     TestDeploySizes, bytes (as shipped)
 #   xsh/<command>/<cold|warm>    TestZZBenchXsh, machine cycles
 #   vi/<phase>                   TestZZBenchVi, machine cycles      [DMACC_BENCH]
 #   fbcon/<board>/<workload>     TestZZBenchFbcon, machine cycles   [DMACC_BENCH]
@@ -10,14 +11,27 @@
 # Every entry is exact: the emulator is deterministic, so any drift —
 # regression OR unrecorded improvement — fails the build. Regenerating
 # is a measurement to report, not a golden to refresh.
-fbcon/feather/cat README	1439988
-fbcon/feather/echo 0123456789012345678901234567890123456789	2777727
-fbcon/feather/ls /dev	6719990
-fbcon/feather/scroll (12x ls /dev)	102706187
-fbcon/pico2/cat README	1199993
-fbcon/pico2/echo 0123456789012345678901234567890123456789	2354975
-fbcon/pico2/ls /dev	5414993
-fbcon/pico2/scroll (12x ls /dev)	65118055
+deploy/feather-kernel/data	35328
+deploy/feather-kernel/ramtext	55792
+deploy/feather-kernel/text	219300
+deploy/feather-sh/data	8960
+deploy/feather-sh/ramtext	3952
+deploy/feather-sh/text	47072
+deploy/feather-vi/arenaclaim	26624
+deploy/feather-vi/data	11880
+deploy/feather-vi/ramtext	14488
+deploy/feather-vi/text	160840
+deploy/gamepico-game/data	142036
+deploy/gamepico-game/ramtext	35920
+deploy/gamepico-game/text	256772
+fbcon/feather/cat README	1424984
+fbcon/feather/echo 0123456789012345678901234567890123456789	2729487
+fbcon/feather/ls /dev	6495032
+fbcon/feather/scroll (12x ls /dev)	101280508
+fbcon/pico2/cat README	1200002
+fbcon/pico2/echo 0123456789012345678901234567890123456789	2354987
+fbcon/pico2/ls /dev	5415008
+fbcon/pico2/scroll (12x ls /dev)	65129676
 game/us/bogo	2080846336
 game/us/div	3115336960
 game/us/mem	7693056
@@ -34,9 +48,9 @@ size/fs-kernel/text	221248
 size/fs-xip-Os/data	44520
 size/fs-xip-Os/ramtext	44040
 size/fs-xip-Os/text	193056
-size/fs-xip-pgo/data	45464
+size/fs-xip-pgo/data	45428
 size/fs-xip-pgo/ramtext	44040
-size/fs-xip-pgo/text	196936
+size/fs-xip-pgo/text	197656
 size/lean/data	10116
 size/lean/text	114400
 size/ls/data	2752
@@ -62,15 +76,15 @@ vi/phase/replace char (rX)	3500000
 vi/phase/subst %s/a/A/g	3500000
 vi/phase/yank aaa (yy)	2500000
 vi/phase/yank line (yy)	1000000
-xsh/((((echo deep))))/cold	1468426
-xsh/((((echo deep))))/warm	1470018
-xsh/cat README | wc/cold	1904004
-xsh/cat README | wc/warm	1889987
-xsh/cat README/cold	1202811
-xsh/cat README/warm	1200191
-xsh/echo hi/cold	1457858
-xsh/echo hi/warm	840004
-xsh/free/cold	1858340
-xsh/free/warm	1830507
-xsh/ls/cold	2714665
-xsh/ls/warm	2699994
+xsh/((((echo deep))))/cold	1468810
+xsh/((((echo deep))))/warm	1469973
+xsh/cat README | wc/cold	1904136
+xsh/cat README | wc/warm	1890020
+xsh/cat README/cold	1202853
+xsh/cat README/warm	1199969
+xsh/echo hi/cold	1457849
+xsh/echo hi/warm	840016
+xsh/free/cold	1858358
+xsh/free/warm	1829997
+xsh/ls/cold	2714491
+xsh/ls/warm	2715155

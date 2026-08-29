@@ -883,7 +883,7 @@ func TestXv6Fbcon(t *testing.T) {
 	}
 }
 
-// TestXv6ViFeather: the pre-relocated vi inside the feather's 82K
+// TestXv6ViFeather: the pre-relocated vi inside the feather's 68.75K
 // arena — text from flash, [ramtext][data] at the arena bottom, the
 // shell's heap up top. Launch, insert a line, quit without saving
 // (the feather ships read-only).

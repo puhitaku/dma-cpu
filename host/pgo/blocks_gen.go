@@ -23,8 +23,8 @@ package pgo
 // funcCtx.blockLabel) and are NOT validated: a board linking a
 // different module set simply has no block by some of these names.
 
-// KernelColdBlocks: 310 of the 935 blocks in the 85 functions the
-// workload executed (1702 blocks in the image).
+// KernelColdBlocks: 273 of the 859 blocks in the 84 functions the
+// workload executed (1626 blocks in the image).
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
 var KernelColdBlocks = map[string]bool{
@@ -230,43 +230,6 @@ var KernelColdBlocks = map[string]bool{
 	"B_kdmaset_12":        true,
 	"B_kdmaset_14":        true,
 	"B_kdmaset_17":        true,
-	"B_kfbcon_putc_111":   true,
-	"B_kfbcon_putc_113":   true,
-	"B_kfbcon_putc_121":   true,
-	"B_kfbcon_putc_124":   true,
-	"B_kfbcon_putc_125":   true,
-	"B_kfbcon_putc_129":   true,
-	"B_kfbcon_putc_134":   true,
-	"B_kfbcon_putc_137":   true,
-	"B_kfbcon_putc_138":   true,
-	"B_kfbcon_putc_140":   true,
-	"B_kfbcon_putc_141":   true,
-	"B_kfbcon_putc_144":   true,
-	"B_kfbcon_putc_147":   true,
-	"B_kfbcon_putc_150":   true,
-	"B_kfbcon_putc_152":   true,
-	"B_kfbcon_putc_155":   true,
-	"B_kfbcon_putc_157":   true,
-	"B_kfbcon_putc_16":    true,
-	"B_kfbcon_putc_160":   true,
-	"B_kfbcon_putc_162":   true,
-	"B_kfbcon_putc_163":   true,
-	"B_kfbcon_putc_164":   true,
-	"B_kfbcon_putc_165":   true,
-	"B_kfbcon_putc_169":   true,
-	"B_kfbcon_putc_206":   true,
-	"B_kfbcon_putc_214":   true,
-	"B_kfbcon_putc_215":   true,
-	"B_kfbcon_putc_218":   true,
-	"B_kfbcon_putc_220":   true,
-	"B_kfbcon_putc_51":    true,
-	"B_kfbcon_putc_58":    true,
-	"B_kfbcon_putc_65":    true,
-	"B_kfbcon_putc_69":    true,
-	"B_kfbcon_putc_90":    true,
-	"B_kfbcon_putc_91":    true,
-	"B_kfbcon_putc_95":    true,
-	"B_kfbcon_putc_98":    true,
 	"B_kfs_iopen_34":      true,
 	"B_kfs_iopen_39":      true,
 	"B_kfs_iopen_40":      true,
@@ -311,7 +274,7 @@ var KernelColdBlocks = map[string]bool{
 	"B_strncpy_10":        true,
 	"B_strncpy_15":        true,
 	"B_strncpy_17":        true,
-	"B_strncpy_21":        true,
+	"B_strncpy_24":        true,
 	"B_strncpy_3":         true,
 	"B_strncpy_4":         true,
 	"B_terminate_12":      true,
@@ -340,7 +303,7 @@ var KernelColdBlocks = map[string]bool{
 	"B_vfs_stati_5":       true,
 }
 
-// ShColdBlocks: 182 of the 347 blocks in the 41 functions the workload
+// ShColdBlocks: 181 of the 347 blocks in the 41 functions the workload
 // executed (355 blocks in the image).
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
@@ -406,7 +369,6 @@ var ShColdBlocks = map[string]bool{
 	"B_parseredirs_21":  true,
 	"B_parseredirs_23":  true,
 	"B_parseredirs_27":  true,
-	"B_parseredirs_6":   true,
 	"B_peek_12":         true,
 	"B_readline_101":    true,
 	"B_readline_108":    true,
@@ -525,8 +487,8 @@ var ShColdBlocks = map[string]bool{
 	"B_runcmd__rt_76":   true,
 	"B_runcmd__rt_8":    true,
 	"B_runcmd__rt_84":   true,
-	"B_runcmd__rt_87":   true,
 	"B_runcmd__rt_9":    true,
+	"B_runcmd__rt_90":   true,
 }
 
 // ViColdBlocks: 529 of the 1007 blocks in the 75 functions the workload

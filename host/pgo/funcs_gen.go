@@ -14,18 +14,22 @@ package pgo
 // that links a different module set (the displayless kernels take the
 // fb stub) simply has no function by some of these names.
 
-// KernelHotFuncs: 25 of 85 executed functions, covering 97.2% of the
-// 10795200 text reads the workload made.
+// KernelHotFuncs: 32 of 84 executed functions, covering 97.1% of the
+// 5555295 text reads the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
 var KernelHotFuncs = map[string]bool{
 	"badbuf":        true,
+	"bmap":          true,
 	"bread":         true,
 	"clear_cells":   true,
 	"cons_poll":     true,
 	"cputc":         true,
 	"cputc_wire":    true,
+	"dirlookup":     true,
 	"dma_ksyscall":  true,
+	"fdalloc":       true,
+	"filealloc":     true,
 	"fileread":      true,
 	"filewrite":     true,
 	"iget":          true,
@@ -34,13 +38,16 @@ var KernelHotFuncs = map[string]bool{
 	"kdmacpy":       true,
 	"kdmaset":       true,
 	"kfb_condark":   true,
-	"kfbcon_putc":   true,
+	"kfree_exec":    true,
+	"kfs_exit":      true,
 	"kfs_forkcopy":  true,
 	"kfs_read":      true,
+	"kfs_selready":  true,
 	"kfs_write":     true,
 	"memmove":       true,
 	"namex":         true,
 	"readi":         true,
+	"strncmp":       true,
 	"strncpy":       true,
 	"terminate":     true,
 	"vfork_release": true,

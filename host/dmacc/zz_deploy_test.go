@@ -7,6 +7,7 @@ import (
 	"github.com/puhitaku/dma-cpu/host/boards"
 	"github.com/puhitaku/dma-cpu/host/dmaasm"
 	"github.com/puhitaku/dma-cpu/host/emu"
+	"github.com/puhitaku/dma-cpu/host/img"
 	"github.com/puhitaku/dma-cpu/host/pgo"
 )
 
@@ -14,9 +15,21 @@ import (
 // kernel, shell and vi, plus the gamepico image — each with the
 // profiled pool split (host/pgo) it ships with, and the SRAM window it
 // has to fit. This is the table the PGO settings move.
+//
+// The figures are ratcheted (ratchet_test.go) under `deploy/`, which
+// is where a residency change shows up as what it costs: TestZZAllSizes
+// measures the kernel WITHOUT a display, so the .ramtext a framebuffer
+// board carries — cursor_xor, kfbcon_putc — moves no figure there at
+// all. Here it does, beside the flash text it came out of.
 func TestDeploySizes(t *testing.T) {
 	bd := boards.Feather
 	v, _ := emu.VariantByName(bd.SKU)
+	sizes := map[string]uint64{}
+	rec := func(name string, segs []img.Segment) {
+		sizes["deploy/"+name+"/text"] = uint64(len(segs[0].Data))
+		sizes["deploy/"+name+"/data"] = uint64(len(segs[1].Data))
+		sizes["deploy/"+name+"/ramtext"] = uint64(len(segs[2].Data))
+	}
 	kc := compileKernelXsh(t, true)
 	kern, err := dmaasm.Assemble(kc, dmaasm.Options{Variant: v, Compact: true,
 		TextBase: bd.KernTextXIP, DataBase: bd.KernCData, RAMTextBase: bd.KernCRText,
@@ -24,6 +37,7 @@ func TestDeploySizes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rec("feather-kernel", kern.Image.Segments)
 	fmt.Printf("DEP kernel: text=%d data=%d rtext=%d  (data window %d)\n",
 		len(kern.Image.Segments[0].Data), len(kern.Image.Segments[1].Data),
 		len(kern.Image.Segments[2].Data), bd.ShRText-bd.KernCData)
@@ -32,12 +46,17 @@ func TestDeploySizes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rec("feather-sh", sh.Image.Segments)
 	fmt.Printf("DEP sh:     text=%d data=%d rtext=%d  (data window %d)\n",
 		len(sh.Image.Segments[0].Data), len(sh.Image.Segments[1].Data),
 		len(sh.Image.Segments[2].Data), bd.IdleText-bd.ShData)
 	res, text, rt, data, _ := buildUserResident(t, v, bd, bd.ViHome, "vi", "umalloc")
 	_ = res
 	claim := ((len(rt)+len(data))+255)&^255 + 0x100
+	sizes["deploy/feather-vi/text"] = uint64(len(text))
+	sizes["deploy/feather-vi/data"] = uint64(len(data))
+	sizes["deploy/feather-vi/ramtext"] = uint64(len(rt))
+	sizes["deploy/feather-vi/arenaclaim"] = uint64(claim)
 	fmt.Printf("DEP vi:     text=%d data=%d rtext=%d  (arena claim %d of %d)\n",
 		len(text), len(data), len(rt), claim, bd.ArenaEnd-bd.Arena)
 	// The game: bare metal on the gamepico, data growing toward fx.c's
@@ -51,7 +70,9 @@ func TestDeploySizes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rec("gamepico-game", game.Image.Segments)
 	fmt.Printf("DEP game:   text=%d data=%d rtext=%d  (data window %d)\n",
 		len(game.Image.Segments[0].Data), len(game.Image.Segments[1].Data),
 		len(game.Image.Segments[2].Data), 0x20038000-gb.GameData)
+	pinSet(t, "deploy/", sizes)
 }

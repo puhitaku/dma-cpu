@@ -266,24 +266,31 @@ var Feather = &Board{
 	// page + force-included bodies grew ramtext to ~31.6K, and the
 	// slot-colored data side had the slack to give.
 	KernText: 0x20002000, KernData: 0x20002400,
-	KernCRText: 0x20002600, KernCData: 0x2000D700, /* ramtext grows +11.25K:
+	KernCRText: 0x20002600, KernCData: 0x20010300, /* ramtext grows +22.25K:
 	// the resident tick/console path (dmacc ResidentFuncs) joins the shared
 	// runtime so the idle machine never reads flash while the display
 	// scans, plus the reciprocal divide-by-ten (__rt_udivmod10) and the
-	// fact-directed compare bodies (__cw_eqzp/__cw_ltp). The PGO driver
-	// added the fb console's cursor_xor to that list (376 B, 17% of all
-	// kernel XIP-text reads), which leaves ~176 B of this window: the
-	// next resident candidate needs the window moved, not just naming. */
+	// fact-directed compare bodies (__cw_eqzp/__cw_ltp). The fb console's
+	// cursor_xor joined next, and then kfbcon_putc itself (dmxgen's
+	// kernResident, prompts/042 §1): +11 KiB of window here, and +2.5 KiB
+	// on the data side below, because a pool word a .ramtext record reads
+	// is resident by force (dmaasm.Options.PoolText) — kfbcon_putc's own
+	// literals arrive with it and would otherwise evict the profiled hot
+	// pool. 13.5 KiB total, and the arena is what pays. */
 	// Repacked after the flash literal-pool split + const-global
 	// rodata (measured: kernel data 32.5K with the profiled hot pool
-	// resident, sh data 8.6K all-cold). The arena covers sh's heap
-	// (16.6K) + resident vi's [ramtext][data] claim (24.8K) + argv +
-	// vi's full 40K heap ask with ~15K to spare.
-	ShRText: 0x20015800, ShData: 0x20016A00,
-	IdleText: 0x20018E00, IdleData: 0x20019000,
-	DiskHome: 0x20019200, DiskMax: 0x2800, // 10 KiB: room for a demo's
+	// resident, sh data 8.6K all-cold). The arena covers sh's heap and
+	// resident vi's [ramtext][data] claim + argv + vi's first heap
+	// chunk: 63 KiB, the peak measured by walking kproc.c's free list
+	// through a whole editing session here, leaving ~5.7 KiB spare.
+	// vi's chunk ask is 40K and a SECOND one has never fit in this
+	// arena — not before the window move either — which is why the
+	// arena was the right thing to spend.
+	ShRText: 0x20018E00, ShData: 0x2001A000,
+	IdleText: 0x2001C400, IdleData: 0x2001C600,
+	DiskHome: 0x2001C800, DiskMax: 0x2800, // 10 KiB: room for a demo's
 	// simultaneous files (a text file + a mount point + slack)
-	Arena: 0x2001BA00, ArenaEnd: 0x20030300, // 82.2 KiB up to the table
+	Arena: 0x2001F000, ArenaEnd: 0x20030300, // 68.75 KiB up to the table
 	ConsRings: 0x20034400, // UART rings; FbBuf follows at 0x20034C00
 	Scratch:   0x2007FE00,
 
@@ -298,8 +305,8 @@ var Feather = &Board{
 	ShTextXIP:   0x104A0000,
 	AppsHome:    0x104C0000, AppsEnd: 0x10540000,
 	// vi returns via pre-relocation: text executes in place from
-	// flash, so its arena claim is only [ramtext][data] (24.8K) plus
-	// a small heap — inside the 82K arena the fb once priced it out
+	// flash, so its arena claim is only [ramtext][data] (26K) plus a
+	// small heap — inside the 68.75K arena the fb once priced it out
 	// of. Section sits above the scanout staging blob (DTab + ~17K).
 	ViHome: 0x10560000, ViEnd: 0x105E0000,
 	// Apps are flash-resident registry rows (the pico pattern): the

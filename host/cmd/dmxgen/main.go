@@ -968,18 +968,45 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 // driver's .ramtext histogram still puts them at 100M+ reads over a
 // shell + vi session.
 //
-// cursor_xor joins on framebuffer boards, where the same driver
-// measured it at 17.1% of ALL kernel XIP-text reads (2.98M of 17.2M)
-// for 376 bytes — by far the best reads-per-byte in the kernel. The
-// next candidates by that ranking are cell_addr (14.8%, 792 B) and
-// kfbcon_putc (29.1%, 8.9 KiB); neither fits what the KernCRText
-// window has left.
+// cursor_xor and kfbcon_putc join on framebuffer boards — the display
+// half of the console tee, which every console byte runs through. The
+// ranking behind that pair is host/trace's, re-taken on the current
+// tree over the fbcon workload (`cat README` + 12x `ls /dev`, the
+// shapes TestZZBenchFbcon prices), as XIP-text reads by owner:
+//
+//	dma_ksyscall  26.6%  35480 B   117 reads/B   (does not fit, ever)
+//	kfbcon_putc   22.7%  10496 B   337 reads/B   <- resident
+//	kdmacpy       11.0%   2416 B   713 reads/B
+//	memmove        5.0%   2576 B   303 reads/B
+//	bread          4.3%   1496 B   444 reads/B
+//	kconswrite     1.2%    336 B   581 reads/B
+//
+// The reads-per-byte column is NOT the decision. Residency is worth
+// cycles as well as flash reads — a resident body keeps its
+// self-modifying records instead of reaching for the .ramtext stub
+// XIPText splits out — and those two do not rank the same way. On the
+// feather fbcon bench, against the 2a22fe0 baseline:
+//
+//	kfbcon_putc alone       (+10.7K)  -2.0/-1.7/-3.6/-1.0%
+//	+ kdmacpy               (+12.6K)  -1.0/-1.7/-3.6/-0.8%
+//	+ the six cheap names   (+17.1K)  -1.0/-1.6/-1.8/-0.8%
+//	the six cheap names ALONE (+6.4K) +1.0/+0.4/-0.6/-0.6%
+//
+// So kfbcon_putc is the whole win and every further name measured
+// NEGATIVE against it: each one drags its literal references into the
+// resident pool half, and the profiled hot keys they displace cost
+// more than the parking they save. The honest reading is that the
+// window has one tenant left worth having, and it is in it.
+//
+// cell_addr, the other candidate the old ranking named, no longer
+// exists: -Oz inlined it into kfbcon_putc, which is why that body is
+// 10.5 KiB now rather than 8.9.
 func kernResident(bd *boards.Board) []string {
 	fs := []string{"dma_ktick", "kenter", "kexit", "swtch",
 		"fire_income", "tick_income", "kcons_aim", "kcons_kick",
 		"kcons_on", "kcons_rx", "kcons_tx", "kcons_pending"}
 	if bd.FbBuf != 0 {
-		fs = append(fs, "cursor_xor")
+		fs = append(fs, "cursor_xor", "kfbcon_putc")
 	}
 	return fs
 }

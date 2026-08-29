@@ -39,6 +39,7 @@ const ratchetHead = `# The size and cycle ratchet (prompts/042 §8). Generated b
 # ` + "`make ratchet`" + `; verified exactly by the tests named in the keys.
 #
 #   size/<image>/<segment>       TestZZAllSizes, bytes
+#   deploy/<image>/<segment>     TestDeploySizes, bytes (as shipped)
 #   xsh/<command>/<cold|warm>    TestZZBenchXsh, machine cycles
 #   vi/<phase>                   TestZZBenchVi, machine cycles      [DMACC_BENCH]
 #   fbcon/<board>/<workload>     TestZZBenchFbcon, machine cycles   [DMACC_BENCH]

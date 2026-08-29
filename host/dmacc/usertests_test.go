@@ -100,6 +100,11 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 		return res
 	}
 	kern := casm(ksrc, 0x20002000, 0x20003000)
+	// The exam's own map, not a board's: usertests wants a 72-block
+	// disk and a roomy arena, so the images below sit where nothing
+	// else does. The kernel's three bases DO track boards.Pico2
+	// (KernTextXIP / KernCData / KernCRText) so the shape under test is
+	// a shipped one — move that board's windows and these follow.
 	kernC, err := dmaasm.Assemble(kcDasm, dmaasm.Options{
 		Variant: v, Compact: true,
 		TextBase: 0x10260000, DataBase: 0x2000EE00, RAMTextBase: 0x20004000,
