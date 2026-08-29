@@ -169,9 +169,14 @@ phased plan). Phase outcomes are logged in the numbered
   master", not stall time. Ownership comes from the .dasm label stream
   plus `dmaasm.Options.InternalSyms`: attributing over plain
   `Result.Symbols` drops every `__`-prefixed label and credits the
-  runtime, the compare millicode and the outliner's return stubs to
-  whatever compiled function precedes them (1.0% of the kernel's text
-  reads, 8.5% of sh's).
+  runtime, the compare millicode and the outliner's helper bodies to
+  whatever compiled function precedes them (0.5% of the kernel's XIP
+  text reads, 7.4% of sh's, nearly all of it on one function per
+  image). The PGO driver takes its per-function heat from here, so
+  those settings are derived from the exact map. A `__` prefix is not
+  by itself a claim of ownership: `__olr_<n>` is an outlining site's
+  RESUME label and its span belongs to the function it returns into,
+  which is why `helperKind` matches `__ol_` and not `__olr_`.
 
 - The HDMI display (prompts/036, Feather board): two board-pool
   channels (`boards.ScanoutTable`, walker ch14 + executor ch15) stream

@@ -63,6 +63,14 @@
 // function whose `f_` and first `B_` label share a word resolves the
 // way it was emitted.
 //
+// A `__` prefix is not by itself a claim of ownership, either. The
+// outliner's open sites park a resume label (`__olr_<n>`) at the point
+// the helper jumps back to, which is INSIDE the function that was
+// outlined and is followed by that function's own records; only the
+// helper bodies (`__ol_<n>`) are shared code. helperKind draws that
+// line, and it is the one distinction the levels below cannot recover
+// on their own.
+//
 // # Attribution levels
 //
 // Labels carry dmacc's naming scheme, so one profile answers several
@@ -109,7 +117,7 @@ const (
 	KindStub                  // <Tag><n>_<func>: one of dmacc's emission categories
 	KindMillicode             // __cw_*: the comparison millicode
 	KindRuntime               // __rt_*: the shared runtime helpers
-	KindOutline               // __ol_*, __olr_*: the record outliner's helpers
+	KindOutline               // __ol_*: the record outliner's helpers
 	KindStartup               // __start, warmstart, crtthunk: the crt
 	KindCell                  // pl_/vs_/v_/lrs_/cw*: a compiler-owned data cell
 )
@@ -391,14 +399,23 @@ func splitFunc(s string, funcs map[string]bool) (string, string) {
 }
 
 // helperKind classifies a shared-helper label by dmacc's naming.
+//
+// `__olr_<n>` is deliberately NOT one of them, close as the name sits
+// to `__ol_<n>`. An open outlining site parks a resume label, jumps to
+// the helper, and the helper jumps back — so `__olr_<n>` marks the
+// point control RETURNS to, inside the function that was outlined, and
+// the records behind it are that function's own (outline.go, "site:
+// park + jump"). Reading it as a helper would cut a function's body in
+// half at every open site and file the tail under a stub that owns no
+// code at all.
 func helperKind(name string) Kind {
 	switch {
 	case strings.HasPrefix(name, "__cw_"):
 		return KindMillicode
 	case strings.HasPrefix(name, "__rt_"):
 		return KindRuntime
-	case strings.HasPrefix(name, "__ol"):
-		return KindOutline
+	case strings.HasPrefix(name, "__ol_"):
+		return KindOutline // the helper bodies and the shared __ol_ret cell
 	}
 	return KindOther
 }

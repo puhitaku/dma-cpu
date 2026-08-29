@@ -65,6 +65,9 @@ func TestCellOrStub(t *testing.T) {
 		{"Ct1_nosuchfunc", KindOther, "", ""},
 		{"warmstart", KindOther, "", ""},
 		{"rt_mul_loop", KindOther, "", ""},
+		// An outliner resume label names no owner of its own: it falls
+		// through to the chain, which is the function it sits inside.
+		{"__olr_7", KindOther, "", ""},
 	} {
 		k, tag, fn := cellOrStub(c.name, funcs)
 		if k != c.kind || tag != c.tag || fn != c.fn {
@@ -74,12 +77,35 @@ func TestCellOrStub(t *testing.T) {
 	}
 }
 
+// TestHelperKind: which `__` names are shared helpers that own their
+// own reads. The one that bites is the outliner pair — `__ol_<n>` is a
+// helper BODY, `__olr_<n>` is the resume label of an open site and
+// belongs to the function it sits inside (host/trace helperKind).
+func TestHelperKind(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		kind Kind
+	}{
+		{"__cw_lt", KindMillicode},
+		{"__rt_mul", KindRuntime},
+		{"__ol_1", KindOutline},
+		{"__ol_ret", KindOutline},
+		{"__olr_1", KindOther},
+		{"__olr_21", KindOther},
+		{"f_main", KindOther},
+	} {
+		if got := helperKind(c.name); got != c.kind {
+			t.Errorf("helperKind(%q) = %v, want %v", c.name, got, c.kind)
+		}
+	}
+}
+
 // TestAncestorHelper: a helper's continuation labels fold into it, and
 // helpers whose names merely share a prefix do not.
 func TestAncestorHelper(t *testing.T) {
 	helpers := map[string]Kind{}
 	for _, n := range []string{"__cw_eq", "__cw_eqz", "__cw_eqzp", "__cw_eq_e",
-		"__cw_eqz_n", "__cw_eqzp_d", "__rt_udiv", "__rt_udivmod", "__ol_1", "__olr_1"} {
+		"__cw_eqz_n", "__cw_eqzp_d", "__rt_udiv", "__rt_udivmod", "__ol_1"} {
 		helpers[n] = helperKind(n)
 	}
 	for _, c := range []struct{ name, want string }{
@@ -90,7 +116,6 @@ func TestAncestorHelper(t *testing.T) {
 		{"__cw_eqzp", "__cw_eqzp"}, // nor of __cw_eqz
 		{"__rt_udivmod", "__rt_udivmod"},
 		{"__ol_1", "__ol_1"},
-		{"__olr_1", "__olr_1"},
 	} {
 		if got := ancestorHelper(c.name, helpers); got != c.want {
 			t.Errorf("%s folds into %q, want %q", c.name, got, c.want)

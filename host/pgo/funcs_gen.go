@@ -14,8 +14,8 @@ package pgo
 // that links a different module set (the displayless kernels take the
 // fb stub) simply has no function by some of these names.
 
-// KernelHotFuncs: 24 of 84 executed functions, covering 97.1% of the
-// 10533075 text reads the workload made.
+// KernelHotFuncs: 23 of 84 executed functions, covering 97.1% of the
+// 10510033 text reads the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
 var KernelHotFuncs = map[string]bool{
@@ -39,14 +39,13 @@ var KernelHotFuncs = map[string]bool{
 	"kfs_selready":  true,
 	"kfs_write":     true,
 	"memmove":       true,
-	"namex":         true,
 	"readi":         true,
 	"terminate":     true,
 	"vfork_release": true,
 }
 
-// GameHotFuncs: 27 of 83 executed functions, covering 97.2% of the
-// 81677076 text reads the workload made.
+// GameHotFuncs: 27 of 82 executed functions, covering 97.2% of the
+// 81659927 text reads the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
 // Benchmark run to completion.

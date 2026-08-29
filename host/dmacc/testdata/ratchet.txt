@@ -13,7 +13,7 @@
 # is a measurement to report, not a golden to refresh.
 deploy/feather-kernel/data	35328
 deploy/feather-kernel/ramtext	56304
-deploy/feather-kernel/text	224608
+deploy/feather-kernel/text	224596
 deploy/feather-sh/data	8960
 deploy/feather-sh/ramtext	3952
 deploy/feather-sh/text	47072
@@ -24,14 +24,14 @@ deploy/feather-vi/text	160840
 deploy/gamepico-game/data	141188
 deploy/gamepico-game/ramtext	36432
 deploy/gamepico-game/text	261848
-fbcon/feather/cat README	1349992
-fbcon/feather/echo 0123456789012345678901234567890123456789	2677929
-fbcon/feather/ls /dev	6209979
-fbcon/feather/scroll (12x ls /dev)	97786351
-fbcon/pico2/cat README	1125006
-fbcon/pico2/echo 0123456789012345678901234567890123456789	2321485
-fbcon/pico2/ls /dev	5238787
-fbcon/pico2/scroll (12x ls /dev)	62767053
+fbcon/feather/cat README	1350001
+fbcon/feather/echo 0123456789012345678901234567890123456789	2669488
+fbcon/feather/ls /dev	6209982
+fbcon/feather/scroll (12x ls /dev)	97921352
+fbcon/pico2/cat README	1169974
+fbcon/pico2/echo 0123456789012345678901234567890123456789	2321458
+fbcon/pico2/ls /dev	5189996
+fbcon/pico2/scroll (12x ls /dev)	62707079
 game/us/bogo	2131189248
 game/us/div	3115336960
 game/us/mem	7705344
@@ -48,9 +48,9 @@ size/fs-kernel/text	221248
 size/fs-xip-Os/data	44520
 size/fs-xip-Os/ramtext	44040
 size/fs-xip-Os/text	193056
-size/fs-xip-pgo/data	45580
+size/fs-xip-pgo/data	45584
 size/fs-xip-pgo/ramtext	44296
-size/fs-xip-pgo/text	202064
+size/fs-xip-pgo/text	202048
 size/lean/data	10116
 size/lean/text	114400
 size/ls/data	2752
@@ -76,15 +76,15 @@ vi/phase/replace char (rX)	3500000
 vi/phase/subst %s/a/A/g	3500000
 vi/phase/yank aaa (yy)	2500000
 vi/phase/yank line (yy)	1000000
-xsh/((((echo deep))))/cold	1381331
-xsh/((((echo deep))))/warm	1410000
-xsh/cat README | wc/cold	1832971
-xsh/cat README | wc/warm	1844998
-xsh/cat README/cold	1169238
-xsh/cat README/warm	1169998
-xsh/echo hi/cold	1276400
-xsh/echo hi/warm	769297
-xsh/free/cold	1694372
-xsh/free/warm	1649999
-xsh/ls/cold	2621346
-xsh/ls/warm	2624982
+xsh/((((echo deep))))/cold	1381337
+xsh/((((echo deep))))/warm	1410006
+xsh/cat README | wc/cold	1832953
+xsh/cat README | wc/warm	1845013
+xsh/cat README/cold	1169214
+xsh/cat README/warm	1125015
+xsh/echo hi/cold	1276373
+xsh/echo hi/warm	769336
+xsh/free/cold	1694378
+xsh/free/warm	1649972
+xsh/ls/cold	2621331
+xsh/ls/warm	2625003

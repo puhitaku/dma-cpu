@@ -303,7 +303,7 @@ var KernelColdBlocks = map[string]bool{
 	"B_vfs_stati_5":       true,
 }
 
-// ShColdBlocks: 181 of the 347 blocks in the 41 functions the workload
+// ShColdBlocks: 181 of the 347 blocks in the 40 functions the workload
 // executed (355 blocks in the image).
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
@@ -491,7 +491,7 @@ var ShColdBlocks = map[string]bool{
 	"B_runcmd__rt_90":   true,
 }
 
-// ViColdBlocks: 529 of the 1007 blocks in the 75 functions the workload
+// ViColdBlocks: 529 of the 1007 blocks in the 74 functions the workload
 // executed (1092 blocks in the image).
 // Workload: an editing session on the feather (open, insert, yank,
 // paste x10, delete, replace, substitute, quit).
@@ -1027,7 +1027,7 @@ var ViColdBlocks = map[string]bool{
 	"B_yank_delete_9":        true,
 }
 
-// GameColdBlocks: 75 of the 708 blocks in the 83 functions the workload
+// GameColdBlocks: 75 of the 708 blocks in the 82 functions the workload
 // executed (1338 blocks in the image).
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the

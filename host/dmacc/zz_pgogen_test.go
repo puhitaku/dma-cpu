@@ -38,24 +38,30 @@ package dmacc_test
 //	    the inline macro; that set ends up bounded by the board's
 //	    windows rather than by the bar (inlineFit).
 //
-// Attribution note (prompts/042 §8): dmaasm drops every `__`-prefixed
-// symbol from Result.Symbols, so a nearest-preceding-symbol scan over
-// ALL symbols silently credits the runtime and compare millicode to
-// whatever compiled function precedes them. Under XIPText the runtime
-// and the millicode live in .ramtext, not in the XIP text this
-// attributes, so ownership here comes from the `f_` function labels
-// alone. The site scan reads the same table, which is why the site
-// labels may be neither `__`- nor `f_`-prefixed.
+// Attribution (prompts/042 §8). The per-FUNCTION heat comes from
+// host/trace (funcHeat, symTable): every span in the window is resolved
+// by its own label name, so a span belonging to no compiled function
+// keeps its reads instead of landing on whichever function precedes it.
+// Three such spans sit inside XIP text and are not small — the record
+// outliner's shared helper bodies (`__ol_*`), the crt, and the
+// comparison descriptors (`cwc_*`/`cwd_*`), which are data the
+// millicode loads rather than instructions anyone fetched. The
+// outliner's RESUME labels (`__olr_*`) look like a fourth and are not:
+// they mark where an open site returns, inside the function that was
+// outlined, and fold back into it. Measured on this tree, the
+// difference from a nearest-preceding-`f_` scan is 0.5% of the kernel's
+// text reads and 7.4% of sh's, and it concentrates — the helper bodies
+// land together at the end of a section, so one function per image was
+// carrying nearly the whole bill (TestTraceXshFunctionHeat pins both
+// the size and the shape).
 //
-// That is ALMOST exact and host/trace says by how much it is not: the
-// record outliner's return stubs (`__olr_*`) do sit inline in the XIP
-// text, and this scan credits their reads to the function ahead of
-// them — 1.0% of the kernel's text reads and 8.5% of sh's, measured by
-// TestTraceXshFunctionHeat. It moves the hot-function COVER slightly
-// and nothing else (the blocks and sites are named labels either way).
-// Left as it is on purpose: re-deriving the settings from the exact
-// attribution is a regeneration, i.e. a measurement to report, not a
-// silent edit to a build input.
+// The BLOCK and SITE scans (blockHeat, siteCounts) still read
+// Result.Symbols directly, and by nearest preceding label. Both are
+// keyed on labels dmacc names — `B_*` and `cws_*` — so an unnamed span
+// between two of them can only make a block look warmer than it was or
+// stretch a site's span, which cmpSiteMaxBytes already bounds; neither
+// can invent or lose a key. Their inputs are deliberately the same
+// symbol table the deployed build has, not the InternalSyms one.
 //
 // The loop is a fixed-point ITERATION, not a function: the driver
 // profiles an image built with the very settings it is about to
@@ -81,6 +87,8 @@ import (
 	"github.com/puhitaku/dma-cpu/host/dmaasm"
 	"github.com/puhitaku/dma-cpu/host/dmacc"
 	"github.com/puhitaku/dma-cpu/host/emu"
+	"github.com/puhitaku/dma-cpu/host/pgo"
+	"github.com/puhitaku/dma-cpu/host/trace"
 )
 
 // shipOpt is the Options tweak the inline-site trim hands the shared
@@ -288,38 +296,56 @@ func litSet(res *dmaasm.Result) map[uint32]bool {
 	return m
 }
 
-// funcCounts folds a text window's per-word counts onto the owning
-// function: dmacc lays each function out contiguously behind its `f_`
-// label, so the nearest preceding one is the owner.
-func funcCounts(res *dmaasm.Result, w window, skip map[uint32]bool) (map[string]uint64, uint64) {
-	type ent struct {
-		name string
-		addr uint32
+// symTable is one profiled image's ownership map. host/trace
+// re-assembles the SAME .dasm with dmaasm.Options.InternalSyms — which
+// a deployment build has no reason to set — reads the .dasm label
+// stream to tell the labels dmacc wrote from the ones dmaasm minted
+// during layout, and checks the result byte for byte against the image
+// that actually ran, so a table can never describe a different build
+// from the one being profiled.
+//
+// Every window this driver profiles is one of the image's own
+// segments, so the link addresses in the Result are the bases to
+// re-assemble at.
+func symTable(t *testing.T, dasm string, v *emu.Variant, res *dmaasm.Result,
+	hot map[string]bool) *trace.Table {
+	t.Helper()
+	seg := func(i int) uint32 { return res.Image.Segments[i].LinkAddr }
+	tbl, err := trace.Symbolize(dasm, dmaasm.Options{
+		Variant: v, Compact: true, TextBase: seg(0), DataBase: seg(1),
+		RAMTextBase: seg(2), PoolText: true, HotLits: hot}, res)
+	if err != nil {
+		t.Fatal(err)
 	}
-	var fs []ent
-	for n, a := range res.Symbols {
-		if strings.HasPrefix(n, "f_") && a >= w.w[0] && a < w.w[1] {
-			fs = append(fs, ent{n[2:], a})
-		}
-	}
-	sort.Slice(fs, func(i, j int) bool { return fs[i].addr < fs[j].addr })
+	return tbl
+}
+
+// funcHeat folds a profile window's per-word counts onto the owning
+// compiled function, exactly (prompts/042 §8).
+//
+// Ownership comes from each label's own NAME, so the spans that belong
+// to no compiled function keep their own reads instead of landing on
+// whichever function precedes them in the image. Three of them sit
+// inside the XIP text this profiles and are not small: the outliner's
+// shared helper bodies (`__ol_<n>`), the crt (`crtthunk`), and the
+// comparison descriptors (`cwc_*`/`cwd_*`), which are DATA the
+// millicode loads rather than instructions anyone fetched. The
+// outliner's resume labels (`__olr_<n>`) are the opposite case and are
+// folded back in: they mark the point an open site returns to, in the
+// middle of the function that was outlined.
+//
+// Pool words are skipped by the table itself — under PoolText the cold
+// half of the pool rides the text segment's tail, inside this window.
+func funcHeat(tbl *trace.Table, w window) (map[string]uint64, uint64) {
+	h := tbl.Attribute(trace.Region{Lo: w.w[0], Counts: w.counts})
 	out := map[string]uint64{}
 	var tot uint64
-	si := 0
-	for i, c := range w.counts {
-		a := w.w[0] + uint32(i)*4
-		if c == 0 || skip[a] {
+	for _, e := range h.By(trace.ByFunction) {
+		if e.Kind != trace.KindFunc {
 			continue
 		}
-		for si+1 < len(fs) && fs[si+1].addr <= a {
-			si++
-		}
-		if si < len(fs) && fs[si].addr <= a {
-			out[fs[si].name] += uint64(c)
-		} else {
-			out["(pre-first-function)"] += uint64(c)
-		}
-		tot += uint64(c)
+		out[e.Name] = e.Reads
+		tot += e.Reads
 	}
 	return out, tot
 }
@@ -1187,6 +1213,13 @@ func profileXsh(t *testing.T) (*imgProfile, *imgProfile, *imgProfile) {
 	m, kernC := buildXshBoard(t, flash, bd)
 	viRes := registerVi(t, m, kernC, bd)
 	shRes := buildShXsh(t, m.Variant(), bd)
+	// The exact ownership map of each image about to run, checked byte
+	// for byte against it (symTable).
+	kTbl := symTable(t, compileKernelXsh(t, bd.FbBuf != 0), m.Variant(), kernC,
+		pgo.KernelLits)
+	sTbl := symTable(t, compileShDasm(t, bd), m.Variant(), shRes, pgo.ShLits)
+	vTbl := symTable(t, compileUserResident(t, bd, "vi", "umalloc"), m.Variant(),
+		viRes, pgo.LitsFor("vi"))
 
 	// Boot to the prompt (mailbox pump, golden-boot style).
 	booted := false
@@ -1227,11 +1260,12 @@ func profileXsh(t *testing.T) (*imgProfile, *imgProfile, *imgProfile) {
 		t.Fatalf("vi did not exit to the prompt; tail %q", tail(m.ConsoleOut, 200))
 	}
 
-	mk := func(name string, res *dmaasm.Result, lw, tw [2]uint32, li, ti int) *imgProfile {
+	mk := func(name string, res *dmaasm.Result, tbl *trace.Table,
+		lw, tw [2]uint32, li, ti int) *imgProfile {
 		lwin := window{lw, m.ProfileCountsAt(li)}
 		twin := window{tw, m.ProfileCountsAt(ti)}
 		lits, ltot := litCounts(res, lwin, twin)
-		fns, ftot := funcCounts(res, twin, litSet(res))
+		fns, ftot := funcHeat(tbl, twin)
 		sites, stot, sn := siteCounts(res, twin, litSet(res))
 		return &imgProfile{name: name, lits: lits, litTot: ltot,
 			litN: len(res.LitAddrs), funcs: fns, funcTot: ftot,
@@ -1240,13 +1274,13 @@ func profileXsh(t *testing.T) (*imgProfile, *imgProfile, *imgProfile) {
 	}
 	// The kernel's .ramtext heat prices what ResidentFuncs already
 	// buys; report it beside the XIP text it was pulled out of.
-	rfns, rtot := funcCounts(kernC, window{kRam, m.ProfileCountsAt(6)}, litSet(kernC))
+	rfns, rtot := funcHeat(kTbl, window{kRam, m.ProfileCountsAt(6)})
 	reportHeat("kernel .ramtext (resident today)", rfns, rtot)
-	kp := mk("kernel", kernC, kLit, kTxt, 0, 3)
+	kp := mk("kernel", kernC, kTbl, kLit, kTxt, 0, 3)
 	reportHeat("kernel XIP text (flash reads = parking)", kp.funcs, kp.funcTot)
-	sp := mk("sh", shRes, sLit, sTxt, 1, 4)
+	sp := mk("sh", shRes, sTbl, sLit, sTxt, 1, 4)
 	reportHeat("sh XIP text", sp.funcs, sp.funcTot)
-	vp := mk("vi", viRes, vLit, vTxt, 2, 5)
+	vp := mk("vi", viRes, vTbl, vLit, vTxt, 2, 5)
 	reportHeat("vi XIP text", vp.funcs, vp.funcTot)
 	fmt.Printf("PGO vi pool reads %d vs vi text reads %d (%.1f%% of vi flash reads are pool)\n",
 		vp.litTot, vp.funcTot, 100*float64(vp.litTot)/float64(vp.litTot+vp.funcTot))
@@ -1319,7 +1353,9 @@ func reportHeat(tag string, fns map[string]uint64, tot uint64) {
 
 // profileGame runs the gamepico workload with its pool unsplit: boot to
 // the menu, walk the menu, then play three scenes. Each scene starts
-// from its own boot because the scenes do not all have an exit path.
+// from its own boot because the scenes do not all have an exit path —
+// from the same assembled image, so the four runs share one compile
+// and one ownership map.
 func profileGame(t *testing.T) *imgProfile {
 	t.Helper()
 	var lits map[string]uint64
@@ -1330,9 +1366,23 @@ func profileGame(t *testing.T) *imgProfile {
 	blks := &blkHeat{reads: map[string]uint64{}, fn: map[string]string{},
 		fnRd: map[string]uint64{}}
 
+	gb := boards.GamePico
+	gv, err := emu.VariantByName(gb.SKU)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gdasm := compileGameDasm(t)
+	prog, err := dmaasm.Assemble(gdasm, dmaasm.Options{
+		Variant: gv, Compact: true, TextBase: gb.GameTextXIP,
+		DataBase: gb.GameData, RAMTextBase: gb.GameRAMText,
+		PoolText: true, HotLits: pgo.GameLits})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gTbl := symTable(t, gdasm, gv, prog, pgo.GameLits)
+
 	run := func(drive func(m *emu.Machine, prog *dmaasm.Result, at int)) {
-		m, prog := bootGame(t)
-		gb := boards.GamePico
+		m := bootGameImage(t, prog)
 		lw := poolWindowIn(prog, gb.GameData, gameAudioBase)
 		tw := textWindow(prog, gb.GameTextXIP)
 		m.ProfileWindows([][2]uint32{lw, tw})
@@ -1340,7 +1390,7 @@ func profileGame(t *testing.T) *imgProfile {
 		drive(m, prog, at)
 		lwin, twin := window{lw, m.ProfileCountsAt(0)}, window{tw, m.ProfileCountsAt(1)}
 		l, lt := litCounts(prog, lwin, twin)
-		f, ft := funcCounts(prog, twin, litSet(prog))
+		f, ft := funcHeat(gTbl, twin)
 		blks.add(blockHeat(prog, twin, litSet(prog)))
 		s, st, sn := siteCounts(prog, twin, litSet(prog))
 		if lits == nil {

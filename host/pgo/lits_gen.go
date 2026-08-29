@@ -10,10 +10,10 @@ package pgo
 // count and trimmed until the resident half fits every board that ships
 // the image, with 256 bytes of the window left over.
 
-// KernelLits: 1034 of 6269 pool words resident (4136 bytes of SRAM),
-// covering 100.0% of the 118789595 pool reads the workload made.
+// KernelLits: 1033 of 6270 pool words resident (4132 bytes of SRAM),
+// covering 100.0% of the 118727864 pool reads the workload made.
 // Trimmed from 1324 loop-rate keys by the KernCData window (100.0%
-// coverage untrimmed): the 290 coldest of them pay flash instead.
+// coverage untrimmed): the 291 coldest of them pay flash instead.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
 var KernelLits = map[string]bool{
@@ -488,7 +488,6 @@ var KernelLits = map[string]bool{
 	"&Ld1537_kdmacpy":       true,
 	"&Ld1547_kdmacpy":       true,
 	"&Ld1560_kdmaset":       true,
-	"&Ld1714_bg_word":       true,
 	"&Ld1744_iget":          true,
 	"&Ld1804_ilock":         true,
 	"&Ld1806_ilock":         true,
@@ -729,7 +728,6 @@ var KernelLits = map[string]bool{
 	"&Xr1557_kdmaset":       true,
 	"&Xr1559_kdmaset":       true,
 	"&Xr1561_kdmaset":       true,
-	"&Xr1715_bg_word":       true,
 	"&Xr1745_iget":          true,
 	"&Xr1805_ilock":         true,
 	"&Xr1807_ilock":         true,
@@ -948,8 +946,9 @@ var KernelLits = map[string]bool{
 	"&__cw_ltu_f":           true,
 	"&__cw_ltu_t":           true,
 	"&__ol_1":               true,
-	"&__ol_13":              true,
+	"&__ol_11":              true,
 	"&__ol_14":              true,
+	"&__ol_15":              true,
 	"&__ol_2":               true,
 	"&__ol_3":               true,
 	"&__rt_mul":             true,

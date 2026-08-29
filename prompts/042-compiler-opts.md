@@ -45,6 +45,17 @@ so a hot ranking can never produce an image that does not link, and
 `TestDeploySizes` now checks those windows under `make test` instead of
 leaving them to dmxgen. See the subsection in §1.
 
+Status 2026-08-29 (last): the wave's final open item — deriving §1's
+settings from §8's EXACT ownership instead of a nearest-preceding-`f_`
+scan — is closed. The driver reads `host/trace` for its per-function
+heat, and the regeneration is small and reported in §8: -12 bytes of
+kernel text, -72 cycles on the xsh cold sum, -0.47% on the warm one,
+and a game image that does not move at all. The exercise also found a
+bug in the engine rather than in the driver: `__olr_<n>` is an
+outlining site's resume label, not a helper, and the 1.0%/8.5%
+"residual" §8 first reported was partly that mistake. Both are pinned
+now.
+
 ## 1. The PGO loop — DONE
 
 Every optimization up to here was profile-DISCOVERED but hand-APPLIED.
@@ -76,12 +87,18 @@ run prices everything:
   §10 (c)). dmacc labels every outlined compare site `cws_<func>_<n>`,
   so the word histogram resolves to sites as well as functions.
 
-Ownership comes from the `f_` function labels alone, which sidesteps
-the §8 attribution trap: under XIPText the runtime and compare
-millicode live in `.ramtext`, so the XIP text a histogram attributes
-holds nothing but dmacc's own labels. The site scan reads the same
-symbol table, which is why the site labels are neither `__`-prefixed
-(dmaasm drops those) nor `f_`-prefixed.
+Per-FUNCTION ownership comes from `host/trace` (§8), which resolves
+every span in the window by its own label name; the driver's `funcHeat`
+keeps the `f_` rows. Under XIPText the runtime and the compare
+millicode are already out of the way in `.ramtext`, but three things
+that own no compiled function do sit in the XIP text: the outliner's
+shared helper bodies (`__ol_*`), the crt, and the comparison
+descriptors (`cwc_*`/`cwd_*`), which are data the millicode loads
+rather than instructions anyone fetched. The BLOCK and SITE scans still
+read `Result.Symbols` by nearest preceding label, which is why the site
+labels are neither `__`-prefixed (dmaasm drops those) nor `f_`-prefixed;
+both are keyed on labels dmacc names, so an unnamed span between two of
+them can shade a figure but can neither invent nor lose a key.
 
 **Workloads.** kernel/sh: a feather boot to the prompt plus
 TestZZBenchXsh's command set run cold and warm; vi: TestZZBenchVi's
@@ -979,20 +996,35 @@ label's own — a stub relocated to .ramtext under XIPText sits among
 strangers and only its name still knows whose it is.
 
 **What the old attribution was getting wrong**, measured by the proof
-query (`TestTraceXshFunctionHeat`, host/dmacc/trace_test.go): the PGO
-driver's whole per-function map is REBUILT from the trace table — each
-unnamed span pushed onto the last `f_` label ahead of it, which is
-what a nearest-preceding-symbol scan does — and the reconstruction is
-exact, key for key, so the engine explains every number the tree has
-reported. The gap it closes is the spans that scan cannot name —
-chiefly the record outliner's return stubs (`__olr_*`), which sit
-INLINE between the functions that jump to them: the kernel's text
-holds 979 such unnamed spans, 82 of them executed, and they carry 1.0%
-of its XIP text reads; in sh 33 executed spans carry 8.5%. Every one
-of those reads was credited to the function ahead of it before, and a
-function whose own body went cold could be left holding a four-figure
-bill for the stub behind it (`release` in the kernel: 1,200 reads,
-none of them its). The .ramtext half was invisible outright — under
+query (`TestTraceXshFunctionHeat`, host/dmacc/trace_test.go): the old
+nearest-preceding-`f_` map is REBUILT from the trace table — each span
+with no owning function pushed onto the last `f_` label ahead of it,
+which is what that scan does — and the reconstruction is exact, key for
+key, so the engine explains every number the tree reported before it.
+The gap it closes is the spans that scan cannot name, and they are of
+three kinds: the record outliner's shared helper BODIES (`__ol_<n>`),
+which the pass appends after the last function of the section it came
+from; the crt (`crtthunk`); and the comparison descriptors
+(`cwc_*`/`cwd_*`), which are data the millicode loads rather than
+instructions anyone fetched. On the short shell workload that is 46
+spans carrying 0.47% of the kernel's XIP text reads and 13 spans
+carrying 7.36% of sh's — and it concentrates, because the helper bodies
+land together at the end of a section: `strncpy` in the kernel was
+billed all 8,231 of those reads, none of them its, and `runcmd__rt` in
+sh 3,462 of the 4,934.
+
+One name that looks like a fourth kind and is not: `__olr_<n>`. It is
+an outlining site's RESUME label, so it marks where the helper jumps
+BACK — in the middle of the function that was outlined, with that
+function's own records behind it. The engine classified it as a helper
+at first and this document reported its reads (0.18% of the kernel's
+text, 1.20% of sh's) as misattribution; they were not. `helperKind`
+now matches `__ol_` and not `__olr_`, the resume span folds into its
+function, and `TestHelperKind` plus the proof query pin both halves.
+Worth stating plainly: the `__` prefix is a naming convention, not a
+claim of ownership, and this was the one place the two came apart.
+
+The .ramtext half was invisible outright — under
 XIPText the runtime and the millicode live there, every label is
 `__`-prefixed, and the old scan found no owner at all; the engine ranks it
 (of the kernel's resident-text HELPER reads: `__cw_eq` 57%,
@@ -1000,9 +1032,35 @@ XIPText the runtime and the millicode live there, every label is
 twelve helpers together — §10's ~65% seen from the other side).
 One residual wart, worth knowing but not worth fixing: two functions
 can share an address (an empty one in front of the next), and which of
-them a nearest-preceding scan credits is undefined — the PGO driver's
-`sort.Slice` is unstable over the tie. The engine breaks it in source
-order; the proof query compares such pairs as one bucket.
+them a nearest-preceding scan credits is undefined. The engine breaks
+it in source order; the proof query compares such pairs as one bucket.
+
+**The driver now uses it.** `funcHeat`/`symTable` in the PGO driver
+take the per-function heat from a `trace.Table` — one extra assembly
+per profiled image, with `InternalSyms` set and checked byte for byte
+against the image that ran — so the settings are derived from the
+exact map rather than from the scan this section measured. What that
+moved, regenerated over the whole wave: the kernel drops `namex` from
+`KernelHotFuncs` (24 -> 23) and one word from `KernelLits`
+(1034 -> 1033), for -12 bytes of deployed kernel text; the game's sets
+do not move at all and its image is byte-identical; sh, vi and the game
+each lose one function from their "executed" count, those being
+functions whose only reads were the span behind them. Cycles: the xsh
+cold sum 9,975,658 -> 9,975,586 and the warm sum 9,469,274 ->
+9,424,345, the latter almost entirely one `cat README` phase boundary.
+Which is the honest outcome §8 predicted for an image whose helpers
+sit at the end of a section: the attribution was wrong about WHO paid,
+not about how much, and correcting it re-ranks a handful of functions
+near the 97% knee rather than rewriting the sets.
+
+The PGO loop is a fixed-point ITERATION and this regeneration showed
+its shape clearly: the kernel converged to a true fixed point, the game
+entered a period-4 limit cycle (its inline-site set orbiting 33, 34,
+28, 28) whose swing is the game's own frame pacing — a faster image
+spins longer in `frame_sync`, which moves the read totals the next
+round is ranked against. The committed tables are the point of that
+orbit where two consecutive runs agree on both the hot-function and the
+inline-site sets.
 
 The engine's own tests (host/trace) run over a compiled module with
 known structure — function, loop, comparison site, runtime call — and
