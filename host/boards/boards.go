@@ -258,9 +258,10 @@ var Feather = &Board{
 	// Repacked tight (measured sizes + ~0x200-0x400 margins): the
 	// firmware's staging buffer now borrows the arena, so the family
 	// floor (0x20002000) is back; the param.h shim trimmed the fs
-	// tables; sh runs RecursionDepth 8. Every byte reclaimed here is
-	// arena — the window that decides whether `show` fits beside the
-	// scanout table.
+	// tables; sh runs 2 recursion clones plus the frame-stack tail
+	// (prompts/042 §6 — the windows still have its 4 KB of slack in
+	// them). Every byte reclaimed here is arena — the window that
+	// decides whether `show` fits beside the scanout table.
 	// KernCData moved up 1 KiB for the shared-runtime host: the vector
 	// page + force-included bodies grew ramtext to ~31.6K, and the
 	// slot-colored data side had the slack to give.

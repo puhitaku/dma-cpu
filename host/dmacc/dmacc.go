@@ -7,11 +7,11 @@
 // this machine a spill slot costs exactly as much as a register (words
 // whose live ranges never overlap are shared afterwards). Frames are
 // static (one per function), so recursion needs a mechanism of its own:
-// a software frame stack, or depth cloning where an activation can span
-// a fork (computeRecursion). Calls follow ABI v0 (args r0–r3, result
-// r0, lr saved to a frame word by non-leaf callees). Interruptibility:
-// a safepoint is emitted at every backward branch unless
-// Options.NoSafepoints.
+// a software frame stack, plus shallow depth clones and a fork-site
+// barrier where an activation can span a fork (computeRecursion). Calls
+// follow ABI v0 (args r0–r3, result r0, lr saved to a frame word by
+// non-leaf callees). Interruptibility: a safepoint is emitted at every
+// backward branch unless Options.NoSafepoints.
 //
 // The output is SKU-portable .dasm; per-SKU encoding happens in dmaasm.
 package dmacc
@@ -31,8 +31,15 @@ type Options struct {
 	NoSafepoints   bool   // omit safepoints at backward branches
 	InlineCompares bool   // inline comparison sequences (faster, much larger)
 	Stats          *Stats // when non-nil, collect size attribution
-	RecursionDepth int    // max recursion-frame depth (routes intra-set calls d -> d+1)
-	FrameStack     int    // frame-stack bytes for recursive calls; default 4096
+	// RecursionDepth is K, the number of depth CLONES a fork-spanning
+	// recursive cycle keeps (default 2: the original plus __r2).
+	// Intra-set calls at depth d < K route to depth d+1; at depth K
+	// they route into the frame-stack tail copies, which are bounded by
+	// FrameStack instead of by K. Where no tail is possible (fork's
+	// address is taken — see computeRecursion) K stays a hard bound and
+	// depth-K calls reach the overflow sink.
+	RecursionDepth int
+	FrameStack     int // frame-stack bytes for recursive calls; default 4096
 	// XIPText emits flash-immutable text: every self-modified record
 	// (block-field patch target) is placed in a trailing .ramtext region
 	// instead of inline, so the main text can execute from the XIP window.
@@ -235,7 +242,9 @@ type gen struct {
 	ramSet   map[string]bool   // functions emitted into .ramtext (XIPText)
 	recSet   map[string]bool   // functions using the recursion frame stack
 	forkSet  map[string]bool   // functions that can reach fork() (no slot coloring)
-	frameSz  map[string]int    // measured frame bytes per recSet function
+	tailSet  map[string]bool   // the fork-spanning frame-stack tail copies (subset of recSet)
+	saveSet  map[string]bool   // functions carrying a direct fork call site (vfork barrier)
+	frameSz  map[string]int    // measured frame bytes per framed (recSet | saveSet) function
 	cmpUsed  map[string]bool   // comparison millicode helpers needed
 	cmpUsedD map[string]bool   // descriptor-form helpers needed
 	cmpConst map[string]string // $literal operand -> its constant word
@@ -247,6 +256,12 @@ type gen struct {
 	icfAlias map[string][]string // ICF: representative -> folded-away names
 	icfOf    map[string]bool     // ICF: names whose body is not emitted
 	icfN     int                 // ICF: functions folded away
+
+	// The tail block: every tail copy's frame, emitted back to back so
+	// one burst saves the lot at a fork site (emitForkPush). ftailN
+	// counts the tail frames emitted so far — the contiguity check.
+	ftailN     int
+	ftailBytes int
 
 	// loopLabels: block labels on a CFG cycle — the outliner's hot gate.
 	loopLabels map[string]bool
@@ -380,9 +395,6 @@ func (g *gen) run() error {
 		if uartMMIO(gl.Name) != "" {
 			continue // hardware register, not storage
 		}
-		if gl.Name == "__dmacc_fsp" || gl.Name == "__dmacc_fstack" {
-			continue // the frame-stack cells are compiler-emitted
-		}
 		if err := g.emitGlobal(gl, g.opts.XIPText && gl.Const && !ramGlob[gl.Name]); err != nil {
 			return err
 		}
@@ -404,7 +416,15 @@ func (g *gen) run() error {
 	// Frame sizes are known only after emission: patch the prologue/
 	// epilogue placeholders, then emit the frame stack itself.
 	if len(g.recSet) > 0 {
+		if n := len(g.tailSet); g.ftailN != n {
+			return fmt.Errorf("dmacc: %d of %d recursion tail frames emitted", g.ftailN, n)
+		}
 		text, ram := g.text.String(), g.ram.String()
+		patch := func(key string, val int) {
+			v := fmt.Sprintf("0x%x", val)
+			text = strings.ReplaceAll(text, key, v)
+			ram = strings.ReplaceAll(ram, key, v)
+		}
 		for name, sz := range g.frameSz {
 			// The push/pop burst moves whole words: every frame
 			// contributor (declWord, alloca, va area) rounds to 4, and
@@ -412,17 +432,15 @@ func (g *gen) run() error {
 			if sz <= 0 || sz%4 != 0 {
 				return fmt.Errorf("dmacc: frame of %q is %d bytes, not a positive word multiple", name, sz)
 			}
-			for _, ph := range []struct {
-				key, val string
-			}{
-				{"@FR_" + sanitize(name) + "@", fmt.Sprintf("0x%x", sz)},
-				{"@FRW_" + sanitize(name) + "@", fmt.Sprintf("0x%x", sz/4)},
-				{"@FRH_" + sanitize(name) + "@", fmt.Sprintf("0x%x", sz+8)},
-			} {
-				text = strings.ReplaceAll(text, ph.key, ph.val)
-				ram = strings.ReplaceAll(ram, ph.key, ph.val)
-			}
+			patch("@FR_"+sanitize(name)+"@", sz)
+			patch("@FRW_"+sanitize(name)+"@", sz/4)
+			patch("@FRH_"+sanitize(name)+"@", sz+8)
+			// The barrier's own push: this fork caller's frame plus the
+			// whole tail block, in that order (emitForkPush).
+			patch("@FRV_"+sanitize(name)+"@", sz+g.ftailBytes)
 		}
+		patch("@FRT@", g.ftailBytes)
+		patch("@FRTW@", g.ftailBytes/4)
 		g.text.Reset()
 		g.text.WriteString(text)
 		g.ram.Reset()
@@ -432,21 +450,30 @@ func (g *gen) run() error {
 		fmt.Fprintf(&g.data, "g___dmacc_fsp: .word g___dmacc_fstack\n")
 		fmt.Fprintf(&g.data, "fs_lr: .word 0\nfs_r0: .word 0\n")
 		fmt.Fprintf(&g.data, "g___dmacc_fstack: .space %d\n", stack)
+		if len(g.tailSet) > 0 {
+			// The fork-site shadow: one word of the parent's fsp per
+			// outstanding vfork (computeRecursion, invariant (ii)).
+			// Depth here is process nesting, not recursion depth, so a
+			// handful of words is generous — but overflow still diverts
+			// to the sink rather than wrapping.
+			fmt.Fprintf(&g.data, "\n; vfork fsp shadow (one word per outstanding fork)\n")
+			fmt.Fprintf(&g.data, "g___dmacc_fshp: .word g___dmacc_fshadow\n")
+			fmt.Fprintf(&g.data, "g___dmacc_fshadow: .space %d\n", 4*forkShadowWords)
+		}
 		// The overflow sink: a program-defined handler dies as a
 		// process; otherwise HALT at a well-defined point.
 		fmt.Fprintf(&g.text, "\n__fovf:\n")
 		// Reclaim the whole stack before the sink runs: the dying
-		// process owns every live push (see computeRecursion).
+		// process owns every live push (see computeRecursion). The
+		// SHADOW pointer is deliberately left alone — a dying vfork
+		// child's suspended parent still owns the slot beneath it, and
+		// restoring fsp from that slot is how the parent survives.
 		fmt.Fprintf(&g.text, "    move $g___dmacc_fstack, g___dmacc_fsp\n")
 		if _, ok := g.funcIdx[recOverflowName]; ok {
 			fmt.Fprintf(&g.text, "    jump %s\n", funcSym(recOverflowName))
 		} else {
 			fmt.Fprintf(&g.text, "    halt\n")
 		}
-	} else {
-		// usys links the stack cells unconditionally (fork's reset):
-		// give non-recursive images inert ones.
-		fmt.Fprintf(&g.data, "g___dmacc_fsp: .word 0\ng___dmacc_fstack: .word 0\n")
 	}
 
 	// Assemble the file: header, data, crt0, functions, runtime.
@@ -557,8 +584,9 @@ func (g *gen) collectGarbage(entry *llir.Func) {
 		}
 	}
 	visitFunc(entry)
-	// A program-defined recursion-overflow sink is called only by the
-	// depth-K rewrite, which runs after this pass: keep it as a root.
+	// A program-defined recursion-overflow sink has no caller yet — the
+	// frame-stack overflow stub and the depth-K rewrite that reach it
+	// both come after this pass — so keep it as a root.
 	if f, ok := g.funcIdx[recOverflowName]; ok {
 		visitFunc(f)
 	}
@@ -580,25 +608,66 @@ func (g *gen) collectGarbage(entry *llir.Func) {
 	g.m.Globals = globals
 }
 
-// computeRecursion splits recursive code between two mechanisms:
+// computeRecursion splits recursive code three ways (prompts/042 §6).
+// Frames are static, so every mechanism here exists to give a second
+// activation of the same function somewhere else to keep its words.
 //
-//   - THE FRAME STACK (g.recSet): call-graph cycle members that cannot
-//     reach fork(). One copy of the code; each activation saves its
-//     whole frame to a software stack on entry and restores on return
-//     (emitFramePush/Pop). Depth is bounded only by Options.FrameStack.
-//     sh's entire parser lands here.
-//   - DEPTH CLONES (the old scheme) for everything that CAN span a
-//     fork: cycle members reaching fork(), plus the vfork-reentrancy
-//     extras (non-cyclic fork-reachers reachable from a cycle). A
-//     vfork child RETURNS THROUGH the suspended parent's activations;
-//     with a stateful stack those returns would pop frames the parent
-//     still owns and the child's next pushes would destroy the saved
-//     content — clones have no such state. The split is safe by
-//     construction: an activation live across a fork has fork beneath
-//     it, i.e. reaches fork, i.e. is in the clone set — so the frame
-//     stack only ever holds activations wholly owned by one process.
-//     (A child killed mid-parse can leak its pushes into the shared
-//     image's stack — bounded by one parse depth, accepted.)
+//   - THE FRAME STACK (g.recSet, the cheap-in-size mechanism): cycle
+//     members that cannot reach fork(). One copy of the code; each
+//     activation bursts its whole frame to a software stack on entry
+//     and restores it on return (emitFramePush/Pop). Depth is bounded
+//     only by Options.FrameStack. sh's whole parser lands here.
+//   - DEPTH CLONES (the cheap-in-cycles mechanism) for the SHALLOW
+//     part of everything that can span a fork: cycle members reaching
+//     fork(), plus the vfork-reentrancy extras (non-cyclic
+//     fork-reachers reachable from a cycle). Each of the first K
+//     depths (Options.RecursionDepth) gets its own copy with its own
+//     frame words, so no activation on those depths shares state with
+//     any other.
+//   - THE TAIL (g.tailSet): one extra copy of each fork-spanning
+//     member — minus the members that call fork() directly — compiled
+//     in frame-stack mode. Depth-K intra-set calls and every intra-set
+//     call inside a tail copy land here, so nesting past K costs
+//     FrameStack bytes instead of a whole extra copy of the code, and
+//     survives far past the old depth-K sink.
+//
+// SAFETY. fork() is vfork (target/xv6/PORT.md): the child runs in the
+// parent's image, on the parent's frames, until it execs or exits, and
+// the parent is suspended inside fork() meanwhile. Three invariants
+// make a frame-stacked fork-spanner safe:
+//
+//	(i) A VFORK CHILD NEVER WRITES BELOW THE SUSPENDED PARENT'S fsp.
+//	The child re-emerges from fork() inside fork's direct caller, and
+//	direct fork callers are excluded from recSet AND from the tail —
+//	they stay depth clones — so the child's return out of that caller
+//	moves no frame pointer. Past that point the program's vfork
+//	discipline (the same one the pure-clone scheme always relied on)
+//	says the child recurses DEEPER and then execs or exits; it never
+//	returns out of an activation the parent still owns. So every write
+//	the child makes to the frame stack is at or above the parent's fsp,
+//	and the parent's saved frames are untouched.
+//
+//	(ii) THE FORK-SITE BARRIER RESTORES fsp AND THE LIVE TAIL FRAMES
+//	REGARDLESS OF WHAT THE CHILD DID. fsp itself is the one piece of
+//	hidden compiler state a child can leak upward (it pushes and then
+//	execs without popping), and the tail copies' STATIC cells hold the
+//	parent's innermost activation of each of them. emitForkPush and
+//	emitForkPop bracket every direct fork call with an inline save of
+//	both — the fork caller's own frame and the whole tail block onto
+//	the frame stack, fsp onto a small shadow stack — restored on the
+//	nonzero (parent resume, or fork failure) return and deliberately
+//	NOT on the zero (child) return. Nesting works out because a child's
+//	own fork sites push and pop above the parent's slot.
+//
+//	(iii) THE CURRENT ACTIVATION'S CELLS ARE THE PROGRAM'S PROBLEM.
+//	Between fork() returning 0 and the child's exec/exit the child runs
+//	forward through the callers' live activations, writing their words.
+//	That is the vfork contract as written, unchanged by this scheme and
+//	identical under pure depth clones.
+//
+// A child killed mid-flight (SIGINT, the recursion sink) leaks its
+// barrier slots on the shadow stack — the same accepted-leak class as
+// the parse-depth leak the frame stack has always had.
 func (g *gen) computeRecursion() error {
 	callees := func(f *llir.Func) []string {
 		var out []string
@@ -694,26 +763,65 @@ func (g *gen) computeRecursion() error {
 			}
 		}
 	}
+	// Direct fork callers: the functions a vfork child re-emerges
+	// inside. Invariant (i) keeps them off both stateful mechanisms —
+	// the child returns out of them, and a frame pop there would drop
+	// fsp below the suspended parent's and hand the parent a restored
+	// lr belonging to the child. They are the barrier sites instead.
+	g.saveSet = map[string]bool{}
+	if hasFork {
+		for _, n := range names {
+			for _, c := range callees(g.funcIdx[n]) {
+				if c == "fork" {
+					g.saveSet[n] = true
+				}
+			}
+		}
+		for n := range g.saveSet {
+			if g.recSet[n] {
+				return fmt.Errorf("dmacc: %q both calls fork() and is frame-stacked "+
+					"(a vfork child would pop below the parent's frame pointer)", n)
+			}
+		}
+	}
 	g.frameSz = map[string]int{}
+	g.tailSet = map[string]bool{}
 	if len(clone) == 0 {
+		g.saveSet = map[string]bool{} // no fork-spanning frame stack: nothing to protect
 		return nil
 	}
-	return g.expandClones(clone)
+	return g.expandClones(clone, cyclic)
 }
 
-// expandClones is the depth-cloning mechanism, now applied only to the
-// fork-spanning set (see computeRecursion): each member is copied
-// RecursionDepth times, intra-set calls at depth d route to depth d+1,
-// and depth-K calls go to the overflow sink.
-func (g *gen) expandClones(clone map[string]bool) error {
+// expandClones builds the shallow clones and the frame-stack tail for
+// the fork-spanning set (see computeRecursion): each member is copied
+// to depth K = Options.RecursionDepth, intra-set calls at depth d < K
+// route to depth d+1, and depth-K calls route into the tail copies
+// (suffix __rt), which are compiled in frame-stack mode and route
+// intra-set calls to each other. Members that call fork() directly get
+// no tail copy — invariant (i) — so a depth-K call to one of them stays
+// on the depth-K clone, which the fork-site barrier makes reentrant.
+//
+// Without a tail — fork's address is taken somewhere, so an indirect
+// call could reach it from code the barrier was never emitted into —
+// the whole image falls back to pure depth clones with K as a hard
+// bound and depth-K calls lowered to the overflow sink.
+func (g *gen) expandClones(clone, cyclic map[string]bool) error {
 	depth := g.opts.RecursionDepth
 	if depth <= 0 {
-		depth = 12
+		depth = 2
 	}
 	taken := map[string]bool{}
+	forkTaken := false
 	seeVal := func(v *llir.Value) {
-		if v != nil && (v.Kind == llir.VFunc || v.Kind == llir.VGlobal) && clone[v.Name] {
+		if v == nil || v.Kind != llir.VFunc && v.Kind != llir.VGlobal {
+			return
+		}
+		if clone[v.Name] {
 			taken[v.Name] = true
+		}
+		if v.Name == "fork" {
+			forkTaken = true
 		}
 	}
 	for _, f := range g.m.Funcs {
@@ -732,61 +840,117 @@ func (g *gen) expandClones(clone map[string]bool) error {
 	for n := range taken {
 		return fmt.Errorf("dmacc: fork-spanning recursive function %q has its address taken (depth cloning cannot route it)", n)
 	}
-	rewrite := func(f *llir.Func, d int) {
-		for _, b := range f.Blocks {
-			for i, ins := range b.Instrs {
-				if ins.Op == "call" && clone[strings.TrimSuffix(ins.Callee, recSuffix(d))] {
-					base := ins.Callee
-					ni := *ins
-					if d >= depth {
-						ni.Callee = recOverflowName
-						ni.Args = nil // the sink takes no params (and never returns)
-					} else {
-						ni.Callee = base + recSuffix(d+1)
-					}
-					b.Instrs[i] = &ni
-				}
-			}
-		}
-	}
 	cloneNames := make([]string, 0, len(clone))
 	for n := range clone {
 		cloneNames = append(cloneNames, n)
 	}
 	sort.Strings(cloneNames)
-	for _, n := range cloneNames {
-		orig := g.funcIdx[n]
-		for d := 2; d <= depth; d++ {
-			nf := &llir.Func{
-				Name:     n + recSuffix(d),
-				Ret:      orig.Ret,
-				Params:   orig.Params,
-				Variadic: orig.Variadic,
-				Internal: orig.Internal,
-			}
-			for _, b := range orig.Blocks {
-				nb := &llir.Block{Name: b.Name}
-				for _, ins := range b.Instrs {
-					ni := *ins
-					nb.Instrs = append(nb.Instrs, &ni)
+	// The tail set: fork-spanning members that do not call fork
+	// themselves. A member that both calls fork and recurses would need
+	// a barrier around a call site whose own frame the barrier is
+	// saving, so it disqualifies the tail for the whole image.
+	var tailNames []string
+	if !forkTaken {
+		for _, n := range cloneNames {
+			if g.saveSet[n] {
+				if cyclic[n] {
+					tailNames = nil
+					break
 				}
-				nf.Blocks = append(nf.Blocks, nb)
+				continue
 			}
-			g.m.Funcs = append(g.m.Funcs, nf)
-			g.funcIdx[nf.Name] = nf
-			g.forkSet[nf.Name] = true // clones span forks by construction
+			tailNames = append(tailNames, n)
 		}
 	}
+	if len(tailNames) == 0 {
+		g.saveSet = map[string]bool{} // nothing frame-stacked spans a fork
+	}
+	for _, n := range tailNames {
+		g.tailSet[n+recTailSuffix] = true
+	}
+	// route names the copy an intra-set call to base takes from a copy
+	// at depth d (d == depth for the tail copies themselves).
+	route := func(base string, d int) string {
+		if d < depth {
+			return base + recSuffix(d+1)
+		}
+		if g.tailSet[base+recTailSuffix] {
+			return base + recTailSuffix
+		}
+		if len(g.tailSet) == 0 {
+			return "" // no tail: the sink
+		}
+		return base + recSuffix(depth) // a barrier site, reentrant by save
+	}
+	rewrite := func(f *llir.Func, d int) {
+		for _, b := range f.Blocks {
+			for i, ins := range b.Instrs {
+				if ins.Op != "call" || !clone[ins.Callee] {
+					continue
+				}
+				ni := *ins
+				if to := route(ins.Callee, d); to != "" {
+					ni.Callee = to
+				} else {
+					ni.Callee = recOverflowName
+					ni.Args = nil // the sink takes no params (and never returns)
+				}
+				b.Instrs[i] = &ni
+			}
+		}
+	}
+	copyOf := func(orig *llir.Func, name string) *llir.Func {
+		nf := &llir.Func{
+			Name:     name,
+			Ret:      orig.Ret,
+			Params:   orig.Params,
+			Variadic: orig.Variadic,
+			Internal: orig.Internal,
+		}
+		for _, b := range orig.Blocks {
+			nb := &llir.Block{Name: b.Name}
+			for _, ins := range b.Instrs {
+				ni := *ins
+				nb.Instrs = append(nb.Instrs, &ni)
+			}
+			nf.Blocks = append(nf.Blocks, nb)
+		}
+		g.m.Funcs = append(g.m.Funcs, nf)
+		g.funcIdx[name] = nf
+		g.forkSet[name] = true // every copy spans forks by construction
+		if g.saveSet[orig.Name] {
+			g.saveSet[name] = true // it copied the fork call site too
+		}
+		return nf
+	}
 	for _, n := range cloneNames {
-		rewrite(g.funcIdx[n], 1)
 		for d := 2; d <= depth; d++ {
+			copyOf(g.funcIdx[n], n+recSuffix(d))
+		}
+	}
+	// The tail copies go last and together: their frames must land back
+	// to back in .data so one burst saves the whole block (emitFunc
+	// checks the contiguity it depends on).
+	for _, n := range tailNames {
+		tf := copyOf(g.funcIdx[n], n+recTailSuffix)
+		g.recSet[tf.Name] = true // frame stack: push on entry, pop on return
+	}
+	for _, n := range cloneNames {
+		for d := 1; d <= depth; d++ {
 			rewrite(g.funcIdx[n+recSuffix(d)], d)
 		}
+	}
+	for _, n := range tailNames {
+		rewrite(g.funcIdx[n+recTailSuffix], depth)
 	}
 	return nil
 }
 
 const recOverflowName = "__dmacc_recursion_overflow"
+
+// recTailSuffix names the frame-stack tail copy of a fork-spanning
+// recursive function (computeRecursion's third mechanism).
+const recTailSuffix = "__rt"
 
 func recSuffix(d int) string {
 	if d <= 1 {
@@ -818,6 +982,12 @@ func (g *gen) frameStackSize() int {
 	}
 	return 4096
 }
+
+// forkShadowWords sizes the fork-site fsp shadow: one word per vfork
+// outstanding in this image, which is process nesting depth, bounded in
+// practice by the kernel's process table.
+const forkShadowWords = 64
+
 func globalSym(name string) string { return "g_" + sanitize(name) }
 
 // --- Globals ---

@@ -42,6 +42,14 @@ works only because of this.)
 
 ## 3. Recursion by depth cloning (dmacc)
 
+*Superseded in shape, not in principle: prompts/042 §6 keeps clones
+only for the first K depths (K=2) and collapses the deep tail onto the
+frame stack, and it protects fork1 with an inline fork-site barrier
+instead of a clone per depth. The vfork rule the criterion below was
+derived from — a child recurses deeper and then execs, it never returns
+out of an activation the parent still owns — is unchanged, and is what
+the new scheme's invariant (i) rests on.*
+
 v0's "static frames, recursion rejected" becomes "static frames,
 bounded recursion": every function on a call-graph cycle is cloned
 RecursionDepth (default 12) times, intra-cycle calls at depth d route

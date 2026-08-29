@@ -55,7 +55,7 @@ func TestExternSizes(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		o := dmacc.Options{RecursionDepth: 8, XIPText: true}
+		o := dmacc.Options{RecursionDepth: 2, XIPText: true}
 		if ext {
 			o.RuntimeExtern = &dmacc.ExternRT{Vec: bd.KernCRText, Regs: bd.KernCData}
 		}

@@ -23,6 +23,11 @@ in the vfork child. Single-level parens already fit the K=8 clone
 budget from Phase 8; two levels did not — and worse, blowing the
 budget hit dmacc's recursion-overflow HALT, which stops THE MACHINE.
 
+*Superseded by prompts/042 §6: the clone budget is K=2 now and the
+deep tail rides the frame stack, so nesting is bounded by FrameStack
+bytes rather than by K — `(a; (b; c))` and triple-plus parens work,
+and the ~26 KB below comes back.*
+
 - sh's RecursionDepth goes 8 -> 12 (~6.5 KB text + 1.2 KB data per
   level; 97.7 KB text total). An xsh RAM rebalance pays for it: the
   kernel windows tighten to measured sizes, the arena keeps 71.5 KB

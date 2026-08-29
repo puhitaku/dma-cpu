@@ -325,10 +325,11 @@ read_nb(int fd, void *buf, int n)
   return dma_trap();
 }
 
-/* dmacc's bounded-recursion sink (depth-K clones exhausted): die as a
- * process instead of halting the whole machine — deeply nested sh
- * subshells overflow in the vfork child and the shell survives. Must
- * not return. */
+/* dmacc's recursion sink: the frame stack (or, where no frame-stack
+ * tail is possible, the depth-K clones) ran out. Die as a process
+ * instead of halting the whole machine — deeply nested sh subshells
+ * overflow in the vfork child and the shell survives. Must not
+ * return. */
 void
 __dmacc_recursion_overflow(void)
 {

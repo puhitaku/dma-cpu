@@ -22,7 +22,7 @@ func TestOutlineInvariants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 12, XIPText: true})
+	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 2, XIPText: true})
 	if err != nil {
 		t.Fatal(err)
 	}

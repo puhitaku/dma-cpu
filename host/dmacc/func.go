@@ -72,9 +72,25 @@ func (g *gen) emitFunc(f *llir.Func) error {
 		poolSym:   map[string]string{},
 		facts:     g.facts[f.Name],
 	}
-	if fc.rec {
-		// The whole frame must be contiguous for push/pop: label it and
-		// measure every data byte emitted while this function compiles.
+	if g.tailSet[f.Name] {
+		// Tail frames form ONE block, so the fork barrier saves them all
+		// with a single burst. expandClones appends the tail copies last
+		// and together; anything emitted between them would put a
+		// stranger's words inside the block.
+		if g.ftailN == 0 {
+			fmt.Fprintf(&g.data, "g___dmacc_ftail:\n")
+		}
+		g.ftailN++
+	} else if g.ftailN != 0 && g.ftailN < len(g.tailSet) {
+		return fmt.Errorf("dmacc: %q splits the recursion tail frame block", f.Name)
+	}
+	// Framed: recSet needs the region for push/pop, saveSet for the
+	// fork barrier's save of its own activation.
+	framed := fc.rec || g.saveSet[f.Name]
+	if framed {
+		// The whole frame must be contiguous for the push/pop and
+		// fork-barrier bursts: label it and measure every data byte
+		// emitted while this function compiles.
 		fmt.Fprintf(&g.data, "fr_%s:\n", sanitize(f.Name))
 	}
 	if err := fc.prepass(); err != nil {
@@ -83,8 +99,11 @@ func (g *gen) emitFunc(f *llir.Func) error {
 	if err := fc.emit(); err != nil {
 		return err
 	}
-	if fc.rec {
+	if framed {
 		g.frameSz[f.Name] = fc.frameBytes
+		if g.tailSet[f.Name] {
+			g.ftailBytes += fc.frameBytes
+		}
 	}
 	return nil
 }
@@ -449,6 +468,9 @@ func (fc *funcCtx) prepass() error {
 			}
 			if isNopIntrinsic(ins.Callee) || strings.HasPrefix(ins.Callee, "llvm.") {
 				continue
+			}
+			if ins.Callee == "fork" && fc.g.saveSet[f.Name] {
+				continue // the vfork barrier needs a return to land on
 			}
 			if ins.CalleeVal == nil {
 				if _, ok := fc.g.funcIdx[ins.Callee]; !ok {
@@ -1663,10 +1685,12 @@ func (fc *funcCtx) emitCall(ins *llir.Instr) error {
 		return fc.emitIndirectCall(ins)
 	}
 	if name == recOverflowName {
-		// Depth-K intra-cycle call: bounded recursion exhausted. If the
-		// program defines the sink itself (usys.c does: report and
-		// exit, dying as a process), route there — it must not return.
-		// Otherwise HALT stops the machine at a well-defined point.
+		// Depth-K intra-cycle call in an image with no frame-stack tail
+		// to fall into (computeRecursion): bounded recursion exhausted.
+		// If the program defines the sink itself (usys.c does: report
+		// and exit, dying as a process), route there — it must not
+		// return. Otherwise HALT stops the machine at a well-defined
+		// point.
 		if _, ok := fc.g.funcIdx[name]; !ok {
 			fc.ins("halt")
 			return nil
@@ -1726,11 +1750,90 @@ func (fc *funcCtx) emitCall(ins *llir.Instr) error {
 		fc.ins("jump %s", funcSym(name))
 		return nil
 	}
+	barrier := name == "fork" && fc.g.saveSet[fc.f.Name]
+	if barrier {
+		fc.emitForkPush()
+	}
 	fc.ins("call %s", funcSym(name))
+	if barrier {
+		fc.emitForkPop()
+	}
 	if ins.Res != "" && ins.Typ.Kind != llir.TVoid {
 		fc.ins("move r0, %s", fc.word(ins.Res))
 	}
 	return nil
+}
+
+// --- The vfork barrier (see gen.computeRecursion, invariant (ii)) ---
+//
+// Bracketing a direct fork() call: everything the suspended parent
+// still owns and the child is free to overwrite goes onto a save area
+// before the call, and comes back on the parent's return.
+//
+//	[fsp] -> the shadow stack        the frame pointer the child leaks
+//	                                 upward by pushing and then exec'ing
+//	[this activation's frame]        the child re-emerges HERE and runs
+//	                                 forward through these words
+//	[the whole tail block]           the child's deeper recursion
+//	                                 overwrites each tail copy's static
+//	                                 cells (its outer copies are safely
+//	                                 below fsp — invariant (i))
+//
+// The two frames ride the recursion frame stack itself, above the
+// parent's fsp, so nesting is automatic: a child's own barrier saves
+// land above its parent's. Only the fsp word needs a stack of its own,
+// because restoring fsp is what makes the frame stack usable again.
+//
+// It is emitted INLINE at every site. A shared helper would need a
+// static lr cell of its own, and that cell is exactly the kind of
+// hidden state a vfork child clobbers on the way past.
+func (fc *funcCtx) emitForkPush() {
+	self := sanitize(fc.f.Name)
+	// Room for this frame plus the tail block, then the shadow word.
+	fc.ins("add g___dmacc_fsp, $@FRV_%s@, sc2", self)
+	fc.emitStackCheck("sc2")
+	fc.ins("add g___dmacc_fshp, $4, sc1")
+	shOK := fc.stub("Vok")
+	fc.emitCmpSite("ltu", fmt.Sprintf("$g___dmacc_fshadow+%d", 4*forkShadowWords),
+		"sc1", "__fovf", shOK)
+	fc.label(shOK)
+	sh := fc.stub("Vsh")
+	fc.ins("move g___dmacc_fshp, %s.write", sh)
+	fc.stubBody(sh, "move g___dmacc_fsp, @0")
+	fc.ins("move sc1, g___dmacc_fshp")
+	fc.frameBurst("Vsv", "g___dmacc_fsp", "$fr_"+self)
+	fc.ins("add g___dmacc_fsp, $@FR_%s@, sc1", self)
+	fc.tailBurst("Vst", "sc1", "$g___dmacc_ftail")
+	fc.ins("move sc2, g___dmacc_fsp")
+}
+
+// emitForkPop is the other half: nonzero (a pid, or -1 for a failed
+// fork) means the PARENT is resuming and must undo the child's damage;
+// zero means this IS the child, which owns the image from here and
+// leaves the parent's save area exactly where it is.
+func (fc *funcCtx) emitForkPop() {
+	self := sanitize(fc.f.Name)
+	child, parent := fc.stub("Vch"), fc.stub("Vpa")
+	fc.emitCmpSite("eqz", "r0", "", child, parent)
+	fc.label(parent)
+	fc.ins("sub g___dmacc_fshp, $4, sc1")
+	fc.ins("move sc1, g___dmacc_fshp")
+	rs := fc.stub("Vrs")
+	fc.ins("move sc1, %s.read", rs)
+	fc.stubBody(rs, "move @0, g___dmacc_fsp")
+	fc.frameBurst("Vrf", "$fr_"+self, "g___dmacc_fsp")
+	fc.ins("add g___dmacc_fsp, $@FR_%s@, sc1", self)
+	fc.tailBurst("Vrt", "$g___dmacc_ftail", "sc1")
+	fc.label(child)
+}
+
+// tailBurst moves the whole tail frame block (every tail copy's static
+// frame, emitted back to back by emitFunc) in one patched record.
+func (fc *funcCtx) tailBurst(prefix, dst, src string) {
+	blk := fc.stub(prefix)
+	fc.ins("move %s, %s.write", dst, blk)
+	fc.ins("move %s, %s.read", src, blk)
+	fc.stubBody(blk, "move @0, @0, incrr, incrw, wcount=@FRTW@")
 }
 
 // emitIndirectCall calls through a function-pointer value: store the
@@ -2083,14 +2186,26 @@ func (fc *funcCtx) emitMemRT(rt string, dst, src, n *llir.Value) error {
 //
 // A recSet function keeps ONE copy of its code; each activation saves
 // the whole frame to the software stack on entry and restores it on
-// return. Layout per push: [frame bytes][frame base][frame size],
-// with g___dmacc_fsp past the record — the trailing header lets
-// usys's __dmacc_funwind unwind pushes truncated by a vfork child's
-// exec. Entry runs BEFORE lr/args are stored: they arrive in the
-// machine cells (lr, r0..r3) and land in the fresh frame once the save
-// is out of the way. Nothing in between touches them — the overflow
-// compare works out of the cw_* cells and at/at2, and the save is an
-// inline burst rather than a call — so they need no parking.
+// return. Layout per push: [frame bytes][frame base][frame size], with
+// g___dmacc_fsp past the record.
+//
+// NOTHING READS THE TRAILER. It was laid down for an unwinder
+// (`__dmacc_funwind`) that was never built and does not exist anywhere
+// in the tree: the stack is only ever pushed and popped in lockstep by
+// the code that owns it, and a process that dies mid-flight abandons
+// its pushes instead of unwinding them (computeRecursion's accepted
+// leak). Deleting it was tried and measured under prompts/042 §6 — it
+// gives back 7 records and 8 bytes per push, but the text it shifts
+// costs 3.4% on the warm `echo hi` bench (TestZZBenchXsh), a scheduling
+// and encoding-layout effect rather than extra work. Hot-path cycles
+// outrank those bytes, so it stays until someone re-measures it
+// deliberately; anyone deleting it owes that benchmark a re-run.
+//
+// Entry runs BEFORE lr/args are stored: they arrive in the machine
+// cells (lr, r0..r3) and land in the fresh frame once the save is out
+// of the way. Nothing in between touches them — the overflow compare
+// works out of the cw_* cells and at/at2, and the save is an inline
+// burst rather than a call — so they need no parking.
 //
 // The frame move itself is an inline patched burst: its length is a
 // link-time constant, so the record carries a static word count
@@ -2099,21 +2214,14 @@ func (fc *funcCtx) emitMemRT(rt string, dst, src, n *llir.Value) error {
 func (fc *funcCtx) emitFramePush() {
 	f := fc.f
 	sz := "$@FR_" + sanitize(f.Name) + "@"
-	rec := "$@FRH_" + sanitize(f.Name) + "@" // size + 8-byte header
+	rec := "$@FRH_" + sanitize(f.Name) + "@" // size + 8-byte trailer
 	frame := "$fr_" + sanitize(f.Name)
 	// Overflow: new sp past the stack end diverts to the sink.
-	ok := fc.stub("Fok")
 	fc.ins("add g___dmacc_fsp, %s, sc2", rec)
-	fc.ins("move $__fovf, %s", fc.cw("cw_t"))
-	fc.ins("move $%s, %s", ok, fc.cw("cw_f"))
-	fc.ins("move $g___dmacc_fstack+%d, %s", fc.g.frameStackSize(), fc.cw("cw_a"))
-	fc.ins("move sc2, %s", fc.cw("cw_b"))
-	fc.cwJump("ltu")
-	fc.label(ok)
-	fc.g.cmpUsed["ltu"] = true
+	fc.emitStackCheck("sc2")
 	// Save the live frame.
 	fc.frameBurst("Fsv", "g___dmacc_fsp", frame)
-	// Trailing header for the unwinder, then commit the new sp.
+	// The trailer (see above), then commit the new sp.
 	hs := fc.stub("Fha")
 	fc.ins("add g___dmacc_fsp, %s, sc2", sz)
 	fc.ins("move sc2, %s.write", hs)
@@ -2132,6 +2240,15 @@ func (fc *funcCtx) emitFramePush() {
 			fc.ins("move r%d, %s", i, fc.word(p.Name))
 		}
 	}
+}
+
+// emitStackCheck diverts to the overflow sink when the prospective new
+// frame-stack pointer in `sp` has run past the stack's end.
+func (fc *funcCtx) emitStackCheck(sp string) {
+	ok := fc.stub("Fok")
+	fc.emitCmpSite("ltu", fmt.Sprintf("$g___dmacc_fstack+%d", fc.g.frameStackSize()),
+		sp, "__fovf", ok)
+	fc.label(ok)
 }
 
 // frameBurst emits one whole-frame move: patch the record's addresses

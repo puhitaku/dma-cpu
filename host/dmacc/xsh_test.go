@@ -229,7 +229,7 @@ func compileShDasm(t *testing.T, bd *boards.Board) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 8, XIPText: true,
+	dasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 2, XIPText: true,
 		RuntimeExtern: &dmacc.ExternRT{Vec: bd.KernCRText, Regs: bd.KernCData}})
 	if err != nil {
 		t.Fatal(err)
@@ -1399,6 +1399,57 @@ func TestXv6Sh(t *testing.T) {
 		"booom",                              // cat note (redirected write)
 		"one\n", "two\n",                     // the ; list still works
 		"\npipeflow\n", // the pipe: echo's stdout through cat
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("console missing %q", want)
+		}
+	}
+}
+
+// TestXv6ShDeepRecursion drives sh past the depth clones and into the
+// frame-stack recursion tail (prompts/042 §6), under real vfork
+// nesting. Every line here is a mutation guard on the fork-site
+// barrier (dmacc's emitForkPush/Pop):
+//
+//   - the twelve-command `;` chain recurses runcmd twelve deep, i.e.
+//     ten levels in tail copies, and each level's parent must find
+//     lcmd->right intact after its child exec'd from deeper down.
+//     Dropping the barrier's fsp restore or its tail-frame restore
+//     derails this line inside three commands.
+//   - `(a;b);c` puts TWO processes in the same fork1 copy at once (the
+//     outer list's parent is suspended in it while the subshell's own
+//     list re-enters it), so the barrier's save of the fork caller's
+//     OWN frame is what keeps the outer parent's return address. Drop
+//     it and `c` comes out as `b`. `(a; (b; c))` is the same shape one
+//     level further in — the case prompts/027 recorded as out of reach
+//     of the K=12 clone budget.
+//   - the pipelines hold two vfork children outstanding per level, one
+//     of them at tail depth.
+//   - forty nested parens overrun the frame stack; the sink kills the
+//     child that was parsing and the shell reaches the next prompt.
+func TestXv6ShDeepRecursion(t *testing.T) {
+	t.Parallel()
+	m, _ := bootXsh(t)
+	m.FeedConsole("((((((echo deep6))))))\r" +
+		"echo 1;echo 2;echo 3;echo 4;echo 5;echo 6;echo 7;echo 8;echo 9;echo x;echo y;echo z\r" +
+		"(echo a;echo b);echo c\r" +
+		"(echo n1; (echo n2; echo n3))\r" +
+		"echo pipe1 | cat\r" +
+		"echo one;echo pipe2 | cat;echo three\r" +
+		"((((((((((((((((((((((((((((((((((((((((echo x))))))))))))))))))))))))))))))))))))))))\r" +
+		"echo alive\r")
+	runScript(t, m, 2_000_000_000)
+	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
+	t.Logf("console:\n%s", out)
+	for _, want := range []string{
+		"\ndeep6\n",
+		"\n1\n2\n3\n4\n5\n6\n7\n8\n9\nx\ny\nz\n", // twelve runcmd activations deep
+		"\na\nb\nc\n",                            // nested lists: two processes in one fork1 copy
+		"\nn1\nn2\nn3\n",                         // `(a; (b; c))`, which the K=12 clone budget could not reach
+		"\npipe1\n",
+		"\none\npipe2\nthree\n",
+		"\nrecursion too deep\n", // frame-stack overflow dies as a process
+		"\nalive\n",              // ... and the shell is still at its prompt
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("console missing %q", want)

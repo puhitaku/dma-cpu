@@ -131,6 +131,17 @@ a different screen.
   frames); the kernel completes syscalls into the caller's r0. sh.c
   runs byte-for-byte upstream: exec with argv, `;` lists over nested
   vfork, error paths. Silicon-validated. Pipes/redirection await fs.
+  Reshaped by prompts/042 §6: only the first two depths are clones now
+  and the deep tail rides the frame stack, so runcmd nesting is bounded
+  by dmacc's FrameStack rather than by K. The vfork discipline the
+  scheme rests on is UNCHANGED and is now load-bearing in one more
+  place: the child must recurse deeper and then exec or exit — it must
+  never return out of an activation the suspended parent still owns.
+  Returning out of the fork CALLER (sh's fork1 does exactly that) is
+  still fine: fork callers are excluded from the frame stack, and every
+  direct fork site carries an inline barrier that saves the parent's
+  frame pointer and live frames and restores them on the nonzero
+  return.
 - [x] SYS_read + argv (prompts/017): cooked console input (the
   consoleintr slice of console.c in kproc.c: echo, backspace, CR→NL),
   blocking read() via tick-retry, argv passed through the exec'd
@@ -217,9 +228,10 @@ a different screen.
   Silicon-validated: ^C kills a foreground cat, the `trap` demo
   catches it and exits politely, and a background spin outlives a
   prompt-time ^C.
-- [x] Parenthesized sh commands (prompts/027): sh's clone budget goes
-  to K=12 (an xsh RAM rebalance pays the ~26 KB of parse-cycle
-  clones) — `((x))`, `(a; (b))`, `(a) ; (b)`, and redirected subshell
+- [x] Parenthesized sh commands (prompts/027): sh's clone budget went
+  to K=12 (an xsh RAM rebalance paid the ~26 KB of parse-cycle clones;
+  prompts/042 §6 took it back down to K=2 plus a frame-stack tail)
+  — `((x))`, `(a; (b))`, `(a) ; (b)`, and redirected subshell
   pipelines `(ls | wc) > n` all work. Deeper nesting no longer halts
   the machine: dmacc's recursion-overflow sink is routable to a
   program-defined `__dmacc_recursion_overflow` (usys reports

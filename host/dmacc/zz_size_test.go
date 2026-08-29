@@ -42,12 +42,12 @@ func TestZZAllSizes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 12})
+	shDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	meas("sh(K12)", shDasm, true)
-	shXDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 12, XIPText: true})
+	meas("sh(K2)", shDasm, true)
+	shXDasm, err := dmacc.Compile(shMod, dmacc.Options{RecursionDepth: 2, XIPText: true})
 	if err != nil {
 		t.Fatal(err)
 	}

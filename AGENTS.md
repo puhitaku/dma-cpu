@@ -74,8 +74,9 @@ phased plan). Phase outcomes are logged in the numbered
   then `llir` (parser) + `dmacc` (codegen) emit SKU-portable .dasm. No
   register allocator by design: every SSA value is an SRAM word.
   Frames are static, so recursion buys its depth: a software frame
-  stack (Options.FrameStack) for ordinary cycles, depth clones
-  (Options.RecursionDepth) for cycles that can span a fork. Values
+  stack (Options.FrameStack) for ordinary cycles; cycles that can span
+  a fork get Options.RecursionDepth shallow clones and then fall into
+  frame-stacked tail copies behind an inline fork-site barrier. Values
   wider than a word (i64) and floats are rejected outright.
   Differential tests (`host/dmacc/testdata/`) pin dmacc against host
   clang execution; regenerate goldens with `make llgen` (host clang

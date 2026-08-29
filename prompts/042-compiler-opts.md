@@ -6,16 +6,18 @@ size and executed-record count, in that combined order. Ranked by
 leverage per effort; every item rides the existing differential-test
 and emulator harness.
 
-Status 2026-08-29: §1 (the PGO loop), §2 (static cases), §3, §4, §9
-and §10 (a) + (a1) + (a2) are DONE (eqzp/ltp shipped, then the
+Status 2026-08-29: §1 (the PGO loop), §2 (static cases), §3, §4, §6,
+§9 and §10 (a) + (a1) + (a2) are DONE (eqzp/ltp shipped, then the
 whole-program parameter/return bounds that feed them, then the
 `nsw`/`nuw` wrap flags — which are sound, tested and worth one routed
 site in the game and nothing anywhere else, and say so; §10's (b)
 planner idea is measured and CLOSED); §5 is measured and CLOSED as not
-worth building; §6 and §7 remain open. The 2026-08-29 wave also measured
-where executed records actually go (comparison lowering ~65%, see
-§10), which reranks
-everything still open.
+worth building; §7 remains open. §6 shipped last and is the biggest
+single size win of the wave — sh's text is down 32.8% — and it also
+lifted sh's recursion bound from a clone count to a byte budget. The
+2026-08-29 wave also measured where executed records actually go
+(comparison lowering ~65%, see §10), which reranks everything still
+open.
 
 ## 1. The PGO loop — DONE
 
@@ -347,12 +349,111 @@ but only ~9% of records. foldCopies already harvests the free cases.
 Not worth whole-function liveness + interference + a parallel-copy
 sequencer; measured with the record-labelling probes described in §8.
 
-## 6. PGO-shaped recursion clones
+## 6. PGO-shaped recursion clones — DONE
 
-sh pays ~26 KB for depth-12 clones, but depth >= 3 is cold by nature.
-Both mechanisms already exist: keep clones for depths 0-2 (hot,
-fast), collapse the deep tail into the frame-stack push/pop mode.
-Most of the 26 KB back for near-zero observed cycles.
+sh paid ~26 KB for depth-12 clones (~23 KB at the deployed K=8), but
+depth >= 3 is cold by nature. Both mechanisms already existed, so the
+job was to make them meet: keep clones for the hot shallow depths,
+collapse the deep tail into the frame-stack push/pop mode.
+
+**The three-way split** (`computeRecursion`, host/dmacc/dmacc.go).
+Cycle members that cannot reach fork() ride the frame stack as before
+(sh's whole parser). Fork-spanning members keep K depth clones —
+`Options.RecursionDepth`, now K=2 by default and at every deployed
+call site — and then fall into ONE extra copy per member, suffix
+`__rt`, compiled in frame-stack mode by the same `rec=true` machinery
+recSet uses. Depth-K intra-set calls and every intra-set call inside a
+tail copy route to the tail copies, which are in `g.forkSet` (slot
+coloring stays off) and in `funcIdx` before `analyzeBounds` runs.
+
+**The safety obligation.** Until now no frame-stacked function could
+reach fork(), which is why the frame stack could be stateful at all.
+Breaking that invariant costs one new mechanism and one new exclusion:
+
+- Direct fork CALLERS are excluded from the tail (and from recSet).
+  A vfork child re-emerges from fork() inside them and RETURNS out of
+  them (sh's `fork1` does exactly that); a frame pop there would drop
+  fsp below the suspended parent's and hand the parent a restored lr
+  belonging to the child. Left as clones, that return moves nothing.
+  Past that point the program's vfork discipline — unchanged, and the
+  same one the pure-clone scheme always relied on — says the child
+  recurses deeper and then execs or exits. So every write the child
+  makes to the frame stack is at or above the parent's fsp.
+- Every direct fork call site gets an INLINE barrier
+  (`emitForkPush`/`emitForkPop`, host/dmacc/func.go). Before the call
+  it pushes the parent's `g___dmacc_fsp` onto a small shadow stack (64
+  words, emitted only when a tail exists) and bursts the fork caller's
+  own frame plus the whole tail-frame block onto the frame stack above
+  fsp; after the call it branches on the result word and restores all
+  three on the nonzero return (parent resume, or a failed fork),
+  leaving them untouched on the zero return (the child). Nesting works
+  out because a child's own fork sites push and pop above its parent's
+  slot. Inline and not a helper: a shared helper's static lr cell is
+  itself vfork-clobberable. Shadow overflow diverts to `__fovf` like a
+  frame-stack overflow; `__fovf` deliberately does NOT reset the shadow
+  pointer, because a dying child's suspended parent still owns the slot
+  beneath it. A child killed mid-flight leaks its slots — the same
+  accepted-leak class as the existing parse-depth leak.
+- Fallback: if fork's address is ever taken, an indirect call could
+  reach it from code no barrier was emitted into, so the image drops to
+  pure depth clones with K as a hard bound (`expandClones`).
+
+The tail-frame block is saved with ONE burst because the tail copies'
+frames are emitted back to back in .data; `emitFunc` fails the build if
+anything lands between them.
+
+**Behavior improvement, not just size.** Deep nesting is now bounded by
+`Options.FrameStack` bytes (4096) rather than by K, so `(a; (b; c))`
+and triple-plus parens — which prompts/027 recorded as beyond the K=12
+budget — work, and `echo 1;...;echo z` runs twelve runcmd activations
+deep. Overflow still reaches the same program-defined sink
+(`__dmacc_recursion_overflow`, usys prints "recursion too deep" and
+exits), so it kills the vfork child and the shell survives; forty
+nested parens still do exactly that.
+
+**Sizes** (TestZZAllSizes, sh at K=12 before / K=2 + tail after):
+
+| image | text before | text after | data before | data after |
+| --- | --- | --- | --- | --- |
+| sh | 67336 | 45216 (-22120, -32.8%) | 15288 | 12396 (-2892) |
+| sh-xip | 65496 | 48560 (-16936, -25.9%) | 17180 | 14464 (-2716) |
+
+sh-xip's ramtext also drops 6664 -> 5856, taking its deployed SRAM
+share from 23 KB to 19 KB. The other images move by exactly 8 bytes of
+data (lean kernel 10124 -> 10116, fs-kernel 40752 -> 40744, fs-kern-xip
+48368 -> 48360, fs-xip-Os 44528 -> 44520, fs-xip-pgo 45284 -> 45276, ls
+2760 -> 2752): the inert `g___dmacc_fsp`/`g___dmacc_fstack` pair
+non-recursive images used to carry is gone, because the comment that
+justified it ("usys links the stack cells unconditionally") was stale —
+usys.c never referenced them. Text is unchanged on all of those.
+
+**Cycles** (TestZZBenchXsh, cold / warm; TestZZBenchVi total):
+
+| command | before | after |
+| --- | --- | --- |
+| echo hi | 1415970 / 808716 | 1416217 / 808795 (+0.02% / +0.01%) |
+| ls | 2808907 / 2820021 | 2838596 / 2820004 (+1.06% / 0.00%) |
+| cat README | 1227566 / 1200001 | 1227813 / 1214999 (+0.02% / +1.25%) |
+| cat README \| wc | 2006347 / 1980009 | 1976599 / 1950011 (-1.48% / -1.51%) |
+| free | 1862148 / 1890004 | 1861669 / 1889987 (-0.03% / 0.00%) |
+| ((((echo deep)))) | 1496855 / 1500023 | 1467563 / 1469988 (-1.96% / -2.00%) |
+| vi TOTAL | 174000000 | 174000000 (0.00%) |
+
+The residual +/-1-2% is layout, not mechanism: sh emits fewer records
+everywhere and the moves go both ways in one build. The barrier itself
+prices out: with it compiled out (measurement only, not a shipping
+configuration) every command lands within tens of cycles of these
+numbers.
+
+**Two things deliberately NOT taken.** The dead per-push frame trailer
+(`[frame base][frame size]`, laid down for a `__dmacc_funwind` that
+never existed) is documented as dead but kept: deleting it gives back 7
+records and 8 bytes per push, and measured +1.25% cold / +3.38% warm on
+`echo hi` from the text it shifts. Hot-path cycles outrank those bytes.
+And `make pgo` was re-run against the new sh — the regenerated pools
+change the xsh benchmark by literally zero cycles (sh's pool reads are
+99296 over the whole workload, against 100K+ text reads per command),
+so the committed host/pgo inputs stay as they are.
 
 ## 7. Deep rebuild candidate — compact encoding v2 (and a non-goal)
 

@@ -1063,7 +1063,7 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	}
 	shDasm, err := compileLL([]string{"target/xv6/ll/sh.ll", "target/xv6/ll/ulib.ll",
 		"target/xv6/ll/umalloc.ll", "target/xv6/ll/usys.ll"},
-		dmacc.Options{RecursionDepth: 8, XIPText: true,
+		dmacc.Options{RecursionDepth: 2, XIPText: true,
 			RuntimeExtern: &dmacc.ExternRT{Vec: cRText, Regs: cData}})
 	if err != nil {
 		return nil, err
