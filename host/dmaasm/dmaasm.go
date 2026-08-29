@@ -58,12 +58,26 @@ type Options struct {
 	// with a relocated data segment.
 	PoolText bool
 	HotLits  map[string]bool
+	// InternalSyms keeps the `__`-prefixed labels in Result.Symbols.
+	// They are dropped by default because most of them are noise to a
+	// linker's eye — the register file's reserved slots and the
+	// assembler's own generated names (`__L<n>`, `__JP<n>`) outnumber
+	// the interesting ones. But the interesting ones are the shared
+	// runtime and the comparison millicode (`__rt_*`, `__cw_*`,
+	// `__ol_*`), so profile attribution over the default symbol table
+	// silently credits their code to whatever compiled function
+	// precedes them (prompts/042 §8). Set by host/trace, which pairs
+	// the full table with the .dasm label stream to tell dmacc's
+	// labels from the assembler's.
+	InternalSyms bool
 }
 
 // Result is the assembled program.
 type Result struct {
 	Image *img.Image
-	// Symbols maps every label to its link-time address (data and text).
+	// Symbols maps every label to its link-time address (data and
+	// text), minus the `__`-prefixed internal ones unless
+	// Options.InternalSyms asked for them.
 	Symbols map[string]uint32
 	// LitAddrs maps every pool-literal key to its link-time address —
 	// the handle the profile-guided pool split works with (see

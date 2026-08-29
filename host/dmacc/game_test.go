@@ -848,6 +848,7 @@ func TestGameBench(t *testing.T) {
 	// printed ops/us, then the seven compute rates in k-ops/s plus
 	// the memory stream per 100k words/s.
 	var rates []uint64
+	pin := map[string]uint64{}
 	for _, name := range []string{"bogo ", "sieve", "sort ", "mul  ",
 		"div  ", "rand ", "shr1 ", "mem  "} {
 		re := regexp.MustCompile(`BENCH ` + name + `\s+ops=(\d+) us=(\d+)`)
@@ -857,6 +858,7 @@ func TestGameBench(t *testing.T) {
 		}
 		ops, _ := strconv.ParseUint(mm[1], 10, 32)
 		us, _ := strconv.ParseUint(mm[2], 10, 32)
+		pin["game/us/"+strings.TrimSpace(name)] = us
 		ms := us / 1000
 		if ms == 0 {
 			ms = 1
@@ -873,6 +875,17 @@ func TestGameBench(t *testing.T) {
 		t.Errorf("missing score line")
 	} else if got, _ := strconv.ParseUint(sm[1], 10, 32); got != wantScore {
 		t.Errorf("score=%d, want %d", got, wantScore)
+	}
+	// The per-kernel times are the game's performance ratchet: they
+	// come from the emulator's scaled cycle counter, so they are
+	// deterministic and they move when codegen does. (The score and
+	// mips100 lines are not pinned — at emulated time scale every
+	// kernel's rate rounds to zero, so both print 0 whatever the
+	// compiler does.) Checked only when DMACC_BENCH runs the other
+	// heavy benches, so an ordinary `make test` still costs what it
+	// did (prompts/042 §8).
+	if heavyRatchet() {
+		pinSet(t, "game/", pin)
 	}
 
 	// the headline score figure renders in live green, right of the

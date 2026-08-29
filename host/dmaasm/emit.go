@@ -748,7 +748,7 @@ func (a *asm) emit() (*Result, error) {
 	}
 	symbols := make(map[string]uint32, len(a.syms))
 	for name, sym := range a.syms {
-		if strings.HasPrefix(name, "__") {
+		if !a.opts.InternalSyms && strings.HasPrefix(name, "__") {
 			continue
 		}
 		seg, off := symLoc(sym, 0)

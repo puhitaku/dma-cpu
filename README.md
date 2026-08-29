@@ -34,6 +34,13 @@ else is docs, examples, and vendored dependencies.
 - `host/dmacc/` + `host/llir/` — the C toolchain: `llir` parses clang's
   LLVM IR, `dmacc` lowers it to SKU-portable `.dasm`. Differential tests
   in `host/dmacc/testdata/` pin it against host clang.
+- `host/trace/` + `host/pgo/` — the measurement side: `trace` attributes
+  the emulator's per-word read counts back to code (compiled function,
+  block, comparison site, runtime/millicode helper) through the `.dasm`
+  label stream and prints a ranked report; `pgo` holds the generated
+  profile-guided settings those measurements produce (`make pgo`).
+  `host/dmacc/testdata/ratchet.txt` pins the resulting sizes and cycle
+  counts, and `make test` fails on any drift (`make ratchet`).
 - `host/img/` — the DMX executable format (`references/design_docs/dmx.md`): builder,
   encoder/decoder, and the reference loader with Tier-2 relocation (same
   image runs at any placement). `host/fsimg/` builds xv6 filesystem images

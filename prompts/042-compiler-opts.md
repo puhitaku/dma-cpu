@@ -7,7 +7,7 @@ leverage per effort; every item rides the existing differential-test
 and emulator harness.
 
 Status 2026-08-29: §1 (the PGO loop), §2 (static cases), §3, §4, §6,
-§9 and §10 (a) + (a1) + (a2) + (c) are DONE (eqzp/ltp shipped, then the
+§8, §9 and §10 (a) + (a1) + (a2) + (c) are DONE (eqzp/ltp shipped, then the
 whole-program parameter/return bounds that feed them, then the
 `nsw`/`nuw` wrap flags — which are sound, tested and worth one routed
 site in the game and nothing anywhere else, and say so; then (c), which
@@ -28,7 +28,9 @@ closed alongside (c): `Options.ColdBlocks`
 sinks never-executed blocks to the end of their function, worth a
 uniform ~0.3% of cycles (xsh, vi, fbcon) and a few hundred bytes, and
 zero on the game — small, but it costs nothing when the map is empty
-and it closes the last knob the profile driver already measured.
+and it closes the last knob the profile driver already measured. §8
+shipped last: the trace query engine is `host/trace`, and the sizes
+and cycle tables are pinned in a ratchet `make test` checks exactly.
 
 ## 1. The PGO loop — DONE
 
@@ -569,23 +571,152 @@ curated opt pipeline (suppress switch-to-lookup-table where our jump
 tables are cheaper; tune the inliner threshold) captures nearly all
 IR-level value without owning any of it.
 
-## 8. Make the trace a product
+## 8. Make the trace a product — DONE (host/trace + the ratchet)
 
-Every past win started as "watching the trace". Build the query
-engine once: cycle AND flash-stall attribution from emulator traces
-through dmaasm symbols back to C lines, plus size/cycle ratchets in
-CI (the bench tests exist — pin them). The recurring zz_ throwaway
-probes are this tool asking to be born.
+Every past win started as "watching the trace", and every one of them
+rewrote the same probe. The query engine is now a package and the
+figures are pinned.
 
-Two hard-won methodology notes from the 2026-08-29 measurement round,
-for whoever builds it: dmaasm drops every `__`-prefixed symbol from
-Result.Symbols, so address-range attribution silently credits the
-runtime and compare millicode to whatever compiled function precedes
-them — derive ownership from the .dasm label stream instead. And the
-xsh cycle bench quantizes on the 15,000-cycle scheduler tick (blocked
-shells absorb whole idle ticks), so single commands are only good to
-~10 ticks; compare 5-command aggregates, or the deterministic cc_*
-image cycles.
+### The engine: host/trace
+
+`trace.Symbolize(dasm, opts, ref)` assembles a .dasm with the label
+table kept, checks the image byte for byte against the build that
+actually ran, and returns a `*Table`: every label with its address,
+span, kind, owning function, owning block, owning helper and emission
+tag. `Table.Attribute(regions…)` folds `emu` read counts onto it and
+returns a `*Heat`; `Heat.By(Level)` ranks it and `Heat.Report(w, …)`
+prints it. Levels: `ByFunction`, `ByBlock`, `BySite` (in EXECUTIONS,
+reads divided by the site's own words), `ByHelper`, `ByCategory`
+(dmacc's stub tags — as close to "by IR construct" as the labels get)
+and `ByLabel`. Pool literals riding a text window are skipped, and a
+`Region.Flash` flag splits the XIP reads out of the total.
+
+**What the emulator actually gives, honestly.** The only signal is
+`Machine.ProfileWindows`' per-word read counts — no per-record hook,
+no per-owner cycle counter, and none was added: the emulator was not
+touched. Over TEXT that is enough and it is EXACT, because the fetch
+channel is the only master that reads text words and it reads each
+word of a record it runs exactly once; `Entry.Execs` recovers a
+straight-line owner's trip count to the unit (pinned in the tests
+against a loop whose count the C source fixes). What it is NOT:
+
+- not cycles. A cycle here is one word MOVED, and the fetch is only
+  part of that, so a record whose exec half copies a kilobyte costs a
+  thousand cycles and one read. Read counts track cycles for ordinary
+  code and understate the bulk-move records; price the absolute figure
+  with `RunResult.Cycles` and use the engine to say where it went.
+- not flash STALLS. The emulator charges a flash read what it charges
+  SRAM — no XIP wait states, no cache. "Flash reads" therefore means
+  "reads that would park the shared read master on silicon", which is
+  the ranking signal the residency work already used; converting it to
+  time needs a hardware measurement, not a better query.
+
+**The `__` problem, fixed at the source and at the query.** Two halves
+were needed, and both are load-bearing: `dmaasm.Options.InternalSyms`
+(new — one opt-in field and one condition) keeps the `__` labels in
+`Result.Symbols` so their ADDRESSES exist at all; the .dasm label
+stream then says which of those names are real owners, because the
+assembler mints names of its own during layout (`__L<n>` inside
+compact macros, `__JP<n>` for jump pairs) that are absent from the
+source and would only fragment their neighbour's span. The stream also
+breaks address ties in emission order. Names that are neither
+`__`-prefixed nor in the stream (the `.regs` register file) are kept,
+so a data-window profile can still name its cells. Ownership of a
+BLOCK is the one thing taken from the preceding labels rather than
+from a name, and only while the chain's function agrees with the
+label's own — a stub relocated to .ramtext under XIPText sits among
+strangers and only its name still knows whose it is.
+
+**What the old attribution was getting wrong**, measured by the proof
+query (`TestTraceXshFunctionHeat`, host/dmacc/trace_test.go): the PGO
+driver's whole per-function map is REBUILT from the trace table — each
+unnamed span pushed onto the last `f_` label ahead of it, which is
+what a nearest-preceding-symbol scan does — and the reconstruction is
+exact, key for key, so the engine explains every number the tree has
+reported. The gap it closes is the spans that scan cannot name —
+chiefly the record outliner's return stubs (`__olr_*`), which sit
+INLINE between the functions that jump to them: the kernel's text
+holds 979 such unnamed spans, 82 of them executed, and they carry 1.0%
+of its XIP text reads; in sh 33 executed spans carry 8.5%. Every one
+of those reads was credited to the function ahead of it before, and a
+function whose own body went cold could be left holding a four-figure
+bill for the stub behind it (`release` in the kernel: 1,200 reads,
+none of them its). The .ramtext half was invisible outright — under
+XIPText the runtime and the millicode live there, every label is
+`__`-prefixed, and the old scan found no owner at all; the engine ranks it
+(of the kernel's resident-text HELPER reads: `__cw_eq` 57%,
+`__cw_eqzp` 16%, `__cw_eqz` 15%, and the millicode is 95% of the
+twelve helpers together — §10's ~65% seen from the other side).
+One residual wart, worth knowing but not worth fixing: two functions
+can share an address (an empty one in front of the next), and which of
+them a nearest-preceding scan credits is undefined — the PGO driver's
+`sort.Slice` is unstable over the tie. The engine breaks it in source
+order; the proof query compares such pairs as one bucket.
+
+The engine's own tests (host/trace) run over a compiled module with
+known structure — function, loop, comparison site, runtime call — and
+the mutation test attributes ONE emulator run both ways: the
+Symbols-only scan credits `main` with 15,074 reads where 506 are its
+own, the rest being `__rt_mul` and `__cw_lt` sitting behind it.
+
+### C-line attribution: NOT built, and here is the scope
+
+Skipped deliberately — it is four changes, not a modest one, and none
+of them exist today:
+
+1. the committed IR goldens carry no debug info at all (`-g` is not in
+   `LLGEN_FLAGS`), so every `.ll` in `target/` and `host/dmacc/testdata`
+   would be regenerated, with `!dbg` on nearly every instruction;
+2. `host/llir` does not parse metadata — it discards trailing metadata
+   on an instruction by design and has no notion of `!DILocation` /
+   `!DIFile` / `!DISubprogram`;
+3. `dmacc` has nowhere to put a location: it would need to carry one
+   per emitted record and write it into .dasm (a comment or a new
+   directive), for every emission path;
+4. `dmaasm` exposes no line-to-address map at all, only symbols, so the
+   comment would have to become a real side table surviving the compact
+   planner's two passes.
+
+The block level is the honest stand-in until then: `B_<func>_<block>`
+is one IR basic block, which is usually a handful of source lines.
+
+### The ratchet
+
+`host/dmacc/testdata/ratchet.txt`, one sorted `key<TAB>value` line per
+figure, regenerated by `make ratchet` (`GEN_RATCHET=1`, the `make pgo`
+pattern) and verified EXACTLY by the default `make test`:
+
+- `size/<image>/<segment>` — every `TestZZAllSizes` figure (20 rows);
+- `xsh/<command>/<cold|warm>` — the six-command cycle table. This
+  moved out from behind `DMACC_BENCH`: the golden boot is shared, so
+  the whole table costs half a second, and it is the tree's primary
+  cycle ratchet. Its printing moved to `t.Logf`, so it is quiet
+  without `-v`.
+- behind `DMACC_BENCH=1`, pinned but only checked when their benches
+  run: `vi/*` (11 phases, the TOTAL and the four human-paced groups),
+  `fbcon/<board>/*` (4 workloads x 2 boards) and `game/us/*` (the
+  eight benchmark kernels' times; the score and mips100 lines are not
+  pinned — at emulated time scale every rate rounds to zero).
+
+Both directions fail. A regression obviously, but an unrecorded
+IMPROVEMENT too: the number is what the next round measures against,
+and a wave that quietly banked 3% is a wave nobody reported. A missing
+or renamed key fails as loudly as a moved one, and the failure names
+`make ratchet`. Figures a run did not measure carry over unchanged, so
+the cheap regeneration leaves the heavy rows alone. `make test` cost
++4 s (1m57 -> 2m01).
+
+### The methodology notes, still true
+
+dmaasm drops every `__`-prefixed symbol from `Result.Symbols` unless
+`Options.InternalSyms` asks otherwise — see above for what that costs
+anyone who forgets. And the xsh cycle bench quantizes on the
+15,000-cycle scheduler tick (blocked shells absorb whole idle ticks),
+so a single command is only good to ~10 ticks; compare the
+six-command sum `TestZZBenchXsh` now prints, or the deterministic cc_*
+image cycles. The ratchet pins the exact numbers anyway — determinism
+is not the same thing as resolution, and a 15,000-cycle move in one
+command may be noise in the tick and still be a real diff to explain.
 
 ## 9. Division by a constant divisor — DONE
 

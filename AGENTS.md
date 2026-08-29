@@ -156,6 +156,22 @@ phased plan). Phase outcomes are logged in the numbered
   of the HIL images (they load at link addresses only). When touching
   the lowering, keep the differential suite bit-exact — it caught the
   phase's only miscompile.
+- Measurement is a package, not a probe (`host/trace`, prompts/042 §8).
+  `emu.Machine.ProfileWindows` counts bus reads per word;
+  `trace.Symbolize` turns a .dasm plus its assembly into a label table
+  and `Table.Attribute` folds those counts onto functions, blocks,
+  comparison sites, runtime/millicode helpers and dmacc's emission
+  tags, with a ranked `Heat.Report`. Over TEXT a word read is an
+  instruction fetch, so the counts are exact EXECUTION counts; they are
+  not cycles (a cycle is one word MOVED, so a bulk-copy record costs
+  far more than its single fetch), and the emulator models no XIP wait
+  states, so "flash reads" means "reads that would park the read
+  master", not stall time. Ownership comes from the .dasm label stream
+  plus `dmaasm.Options.InternalSyms`: attributing over plain
+  `Result.Symbols` drops every `__`-prefixed label and credits the
+  runtime, the compare millicode and the outliner's return stubs to
+  whatever compiled function precedes them (1.0% of the kernel's text
+  reads, 8.5% of sh's).
 
 - The HDMI display (prompts/036, Feather board): two board-pool
   channels (`boards.ScanoutTable`, walker ch14 + executor ch15) stream
@@ -230,6 +246,16 @@ phased plan). Phase outcomes are logged in the numbered
   a measurement to report, never a way to make a test pass. Re-run it
   after a workload-relevant C change on the kernel, sh, vi or the game;
   `make test` does not.
+- `make ratchet` rewrites `host/dmacc/testdata/ratchet.txt`, the
+  committed size and cycle figures `make test` then verifies EXACTLY —
+  every `TestZZAllSizes` size and `TestZZBenchXsh`'s six-command
+  cold/warm cycle table. The emulator is deterministic, so any drift
+  fails, including an unrecorded IMPROVEMENT: the number is what the
+  next round measures against. `make ratchet DMACC_BENCH=1` also
+  refreshes the heavy rows (vi, fbcon, the game benchmark), which the
+  cheap regeneration carries over untouched and which are only checked
+  under `DMACC_BENCH=1`. Like `make pgo`, a regeneration is a
+  measurement to report, not a way to make a red run green.
 - `make build` builds the `dmaemu`/`dmaasm`/`dmacc` CLIs; `make images` regenerates
   `target/firmware/generated/images.h` via `host/cmd/dmxgen` for the
   selected board (required whenever test programs, IR goldens or

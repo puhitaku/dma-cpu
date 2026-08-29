@@ -14,14 +14,21 @@ import (
 // end to end: from feeding the line to the prompt coming back. TXPace
 // is disabled so the numbers are pure compute (bus transfers), not
 // UART pacing — the metric that moves when codegen trades speed for
-// size. Runs only with DMACC_BENCH=1; each command runs twice so the
-// cold (first exec, disk read) and warm costs are both visible.
+// size. Each command runs twice so the cold (first exec, disk read)
+// and warm costs are both visible.
 //
-//	DMACC_BENCH=1 go test ./dmacc/ -run TestZZBenchXsh -v
+// It is NOT behind DMACC_BENCH: the golden boot is shared, so the
+// whole table costs half a second, and it is the tree's primary cycle
+// ratchet (ratchet_test.go). The heavy benches below stay gated.
+//
+// One measurement note for whoever reads a diff of these numbers: the
+// figures quantize on the scheduler's 15,000-cycle tick, because a
+// blocked shell absorbs whole idle ticks. A single command is good to
+// about ten ticks; compare the six-command sum, or the deterministic
+// cc_* image cycles, before believing a small move.
+//
+//	go test ./host/dmacc/ -run TestZZBenchXsh -v
 func TestZZBenchXsh(t *testing.T) {
-	if os.Getenv("DMACC_BENCH") == "" {
-		t.Skip("set DMACC_BENCH=1 to run the cycle benchmark")
-	}
 	m, _ := bootXsh(t)
 	m.TXPace = 0
 
@@ -67,7 +74,9 @@ func TestZZBenchXsh(t *testing.T) {
 		"free",
 		"((((echo deep))))",
 	}
-	fmt.Printf("%-24s %14s %14s\n", "command", "cold cycles", "warm cycles")
+	cycles := map[string]uint64{}
+	t.Logf("%-24s %14s %14s", "command", "cold cycles", "warm cycles")
+	var coldSum, warmSum uint64
 	for _, c := range cmds {
 		var runs [2]uint64
 		for i := 0; i < 2; i++ {
@@ -79,8 +88,12 @@ func TestZZBenchXsh(t *testing.T) {
 			}
 			runs[i] = n
 		}
-		fmt.Printf("%-24s %14d %14d\n", c, runs[0], runs[1])
+		cycles["xsh/"+c+"/cold"], cycles["xsh/"+c+"/warm"] = runs[0], runs[1]
+		coldSum, warmSum = coldSum+runs[0], warmSum+runs[1]
+		t.Logf("%-24s %14d %14d", c, runs[0], runs[1])
 	}
+	t.Logf("%-24s %14d %14d", "TOTAL", coldSum, warmSum)
+	pinSet(t, "xsh/", cycles)
 }
 
 func tail(b []byte, n int) string {
@@ -146,13 +159,16 @@ func TestZZBenchVi(t *testing.T) {
 		{"subst %s/a/A/g", ":%s/a/A/g\r"},
 		{"quit (:q!)", ":q!\r"},
 	}
+	pin := map[string]uint64{}
 	fmt.Printf("%-20s %14s\n", "vi phase", "cycles")
 	var total uint64
 	for _, s := range steps {
 		n := phase(s.feed, 20_000_000_000)
 		total += n
+		pin["vi/phase/"+s.name] = n
 		fmt.Printf("%-20s %14d\n", s.name, n)
 	}
+	pin["vi/TOTAL"] = total
 	fmt.Printf("%-20s %14d\n", "TOTAL", total)
 
 	// Human pace. The bursts above amortize the repaint — vi skips it
@@ -166,6 +182,7 @@ func TestZZBenchVi(t *testing.T) {
 		for _, k := range keys {
 			tot += phase(k, 4_000_000_000)
 		}
+		pin["vi/human/"+name] = tot
 		fmt.Printf("%-20s %6d %14d %14d\n", name, len(keys), tot, tot/uint64(len(keys)))
 	}
 	phase("vi README\r", 20_000_000_000)
@@ -180,6 +197,7 @@ func TestZZBenchVi(t *testing.T) {
 	if !strings.HasSuffix(string(m.ConsoleOut), "$ ") {
 		t.Fatalf("vi did not exit to the prompt; console tail %q", tail(m.ConsoleOut, 300))
 	}
+	pinSet(t, "vi/", pin)
 }
 
 // TestZZBenchFbcon prices the framebuffer console (prompts/036): the
@@ -251,11 +269,14 @@ func TestZZBenchFbcon(t *testing.T) {
 	}
 	feather := session(boards.Feather)
 	pico2 := session(boards.Pico2)
+	pin := map[string]uint64{}
 	fmt.Printf("%-44s %12s %12s %12s\n", "workload", "feather", "pico2", "fbcon cost")
 	for _, k := range []string{
 		"echo 0123456789012345678901234567890123456789",
 		"ls /dev", "cat README", "scroll (12x ls /dev)",
 	} {
+		pin["fbcon/feather/"+k], pin["fbcon/pico2/"+k] = feather[k], pico2[k]
 		fmt.Printf("%-44s %12d %12d %+12d\n", k, feather[k], pico2[k], int64(feather[k])-int64(pico2[k]))
 	}
+	pinSet(t, "fbcon/", pin)
 }

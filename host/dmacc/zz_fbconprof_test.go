@@ -13,10 +13,14 @@ package dmacc_test
 // function precedes them: the probe assembles a TWIN of the kernel
 // from the same .dasm with `__` textually renamed, checks the twin's
 // image is byte-identical, and attributes through the twin's symbols.
-// And the fbcon share is isolated by running the same workload on
-// Pico 2 (identical kernel, kfbstub in place of kfb/kfbcon) and
-// diffing the per-NAME totals — the addresses differ, the names do
-// not.
+// (host/trace does that properly now — dmaasm.Options.InternalSyms
+// plus the .dasm label stream, no textual rename and no per-key
+// exemption list. New probes should use it; this one keeps its own
+// machinery because the numbers it has already reported were taken
+// with it.) And the fbcon share is isolated by running the same
+// workload on Pico 2 (identical kernel, kfbstub in place of
+// kfb/kfbcon) and diffing the per-NAME totals — the addresses differ,
+// the names do not.
 //
 //	RADIO_PROBES=1 go test ./dmacc/ -run TestProfileFbcon -v
 

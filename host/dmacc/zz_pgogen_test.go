@@ -38,11 +38,20 @@ package dmacc_test
 // symbol from Result.Symbols, so a nearest-preceding-symbol scan over
 // ALL symbols silently credits the runtime and compare millicode to
 // whatever compiled function precedes them. Under XIPText the runtime
-// and millicode live in .ramtext, not in the XIP text this attributes,
-// and the only labels left there are dmacc's own — so ownership comes
-// from the `f_` function labels alone, which is exact. The site scan
-// reads the same table, which is why the site labels may be neither
-// `__`- nor `f_`-prefixed.
+// and the millicode live in .ramtext, not in the XIP text this
+// attributes, so ownership here comes from the `f_` function labels
+// alone. The site scan reads the same table, which is why the site
+// labels may be neither `__`- nor `f_`-prefixed.
+//
+// That is ALMOST exact and host/trace says by how much it is not: the
+// record outliner's return stubs (`__olr_*`) do sit inline in the XIP
+// text, and this scan credits their reads to the function ahead of
+// them — 1.0% of the kernel's text reads and 8.5% of sh's, measured by
+// TestTraceXshFunctionHeat. It moves the hot-function COVER slightly
+// and nothing else (the blocks and sites are named labels either way).
+// Left as it is on purpose: re-deriving the settings from the exact
+// attribution is a regeneration, i.e. a measurement to report, not a
+// silent edit to a build input.
 
 import (
 	"fmt"

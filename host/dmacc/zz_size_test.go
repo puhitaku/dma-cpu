@@ -9,9 +9,14 @@ import (
 	"github.com/puhitaku/dma-cpu/host/llir"
 )
 
+// TestZZAllSizes measures every image the tree deploys and pins the
+// figures against the committed ratchet (ratchet_test.go): the sizes
+// are what half of this project's optimization rounds are FOR, so a
+// byte moving without a note is a failure either way it moved.
 func TestZZAllSizes(t *testing.T) {
 	t.Parallel()
 	v, _ := emu.VariantByName("rp2350")
+	sizes := map[string]uint64{}
 	meas := func(name, dasm string, compact bool) {
 		res, err := dmaasm.Assemble(dasm, dmaasm.Options{
 			Variant: v, Compact: compact,
@@ -24,7 +29,10 @@ func TestZZAllSizes(t *testing.T) {
 		if len(res.Image.Segments) > 2 {
 			rl = len(res.Image.Segments[2].Data)
 		}
+		sizes["size/"+name+"/text"] = uint64(tl)
+		sizes["size/"+name+"/data"] = uint64(dl)
 		if rl > 0 {
+			sizes["size/"+name+"/ramtext"] = uint64(rl)
 			t.Logf("%-12s text %6d (%3d KB)  data %6d (%2d KB)  ramtext %6d (%2d KB)  [SRAM %d KB]",
 				name, tl, tl/1024, dl, dl/1024, rl, rl/1024, (dl+rl)/1024)
 		} else {
@@ -62,4 +70,5 @@ func TestZZAllSizes(t *testing.T) {
 		t.Fatal(err)
 	}
 	meas("ls", lsDasm, true)
+	pinSet(t, "size/", sizes)
 }
