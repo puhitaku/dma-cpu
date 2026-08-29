@@ -46,8 +46,9 @@ entry:
 `
 
 // siteForms reads back the form every labelled site took: "four" for
-// the four-move protocol, "desc" for the two-record descriptor. The
-// records of a site run from its label to the next label.
+// the four-move protocol, "desc" for the two-record descriptor,
+// "inline" for the full compare macro. The records of a site run from
+// its label to the next label.
 func siteForms(dasm string) map[string]string {
 	out := map[string]string{}
 	site := ""
@@ -71,6 +72,9 @@ func siteForms(dasm string) map[string]string {
 				out[site] = "desc"
 			case strings.HasSuffix(t, ", cw_t"):
 				out[site] = "four"
+			case strings.HasPrefix(t, "jeq ") || strings.HasPrefix(t, "jlt ") ||
+				strings.HasPrefix(t, "jltu ") || strings.HasPrefix(t, "jbool "):
+				out[site] = "inline"
 			}
 			site = ""
 		}
@@ -117,6 +121,8 @@ func TestCmpSiteLabels(t *testing.T) {
 		{"hotfunc", dmacc.Options{OptSize: true, HotFuncs: map[string]bool{"sites": true}}},
 		{"hotsite", dmacc.Options{OptSize: true,
 			HotSites: map[string]bool{"cws_sites_2": true}}},
+		{"inlinesite", dmacc.Options{OptSize: true,
+			InlineSites: map[string]bool{"cws_sites_2": true}}},
 	} {
 		got := siteNames(siteForms(compileSites(t, tc.opts)))
 		if strings.Join(got, ",") != strings.Join(want, ",") {
@@ -207,6 +213,101 @@ func TestCmpSiteHotSites(t *testing.T) {
 	}
 }
 
+// boolSiteIR branches on an i1 that facts.go can prove is 0 or 1 (the
+// `and` of two comparisons), which is the shape emitBoolBranch inlines
+// as jbool rather than as a full-range jeq against zero.
+const boolSiteIR = `
+define i32 @bsite(i32 %a, i32 %b) {
+entry:
+  %c0 = icmp slt i32 %a, %b
+  %c1 = icmp eq i32 %a, 7
+  %c2 = and i1 %c0, %c1
+  br i1 %c2, label %one, label %two
+one:
+  ret i32 1
+two:
+  ret i32 2
+}
+
+define i32 @main() {
+entry:
+  %r = call i32 @bsite(i32 3, i32 4)
+  ret i32 %r
+}
+`
+
+// TestCmpSiteInlineSites is the third form (prompts/042 §1): a named
+// site takes the whole inline macro, keeps its label, and leaves its
+// siblings exactly where the outlined policy put them.
+func TestCmpSiteInlineSites(t *testing.T) {
+	t.Parallel()
+	in := map[string]bool{"cws_sites_2": true}
+	for _, tc := range []struct {
+		name string
+		opts dmacc.Options
+		want map[string]string
+	}{
+		{"one site inline, the rest descriptors",
+			dmacc.Options{OptSize: true, InlineSites: in},
+			map[string]string{"cws_sites_1": "desc", "cws_sites_2": "inline",
+				"cws_sites_3": "desc", "cws_sites_4": "desc"}},
+		{"inline beats the four-move set at the same site",
+			dmacc.Options{OptSize: true, InlineSites: in,
+				HotSites: map[string]bool{"cws_sites_1": true, "cws_sites_2": true}},
+			map[string]string{"cws_sites_1": "four", "cws_sites_2": "inline",
+				"cws_sites_3": "desc", "cws_sites_4": "desc"}},
+		{"inline beats a hot function too",
+			dmacc.Options{OptSize: true, InlineSites: in,
+				HotFuncs: map[string]bool{"sites": true}},
+			map[string]string{"cws_sites_1": "four", "cws_sites_2": "inline",
+				"cws_sites_3": "four", "cws_sites_4": "four"}},
+		{"a balanced build inlines too: OptSize does not gate this one",
+			dmacc.Options{InlineSites: in},
+			map[string]string{"cws_sites_1": "four", "cws_sites_2": "inline",
+				"cws_sites_3": "four", "cws_sites_4": "four"}},
+		{".ramtext stays outlined, listed or not",
+			dmacc.Options{OptSize: true, InlineSites: in,
+				RAMTextFuncs: []string{"sites"}},
+			map[string]string{"cws_sites_1": "four", "cws_sites_2": "four",
+				"cws_sites_3": "four", "cws_sites_4": "four"}},
+	} {
+		got := siteForms(compileSites(t, tc.opts))
+		for _, n := range siteNames(tc.want) {
+			if got[n] != tc.want[n] {
+				t.Errorf("%s: %s is %q, want %q", tc.name, n, got[n], tc.want[n])
+			}
+		}
+	}
+}
+
+// TestCmpSiteInlineBool pins the one lowering that is not a plain
+// helper-to-macro mapping: a branch on a proven i1 inlines as jbool (6
+// records), and the label still lands on it.
+func TestCmpSiteInlineBool(t *testing.T) {
+	t.Parallel()
+	mod, err := llir.Parse(boolSiteIR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dasm, err := dmacc.Compile(mod, dmacc.Options{XIPText: true, OptSize: true,
+		InlineSites: map[string]bool{"cws_bsite_3": true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	forms := siteForms(dasm)
+	if forms["cws_bsite_3"] != "inline" {
+		t.Errorf("the bool branch is %q, want inline", forms["cws_bsite_3"])
+	}
+	if !strings.Contains(dasm, "cws_bsite_3:\n    jbool ") {
+		t.Error("the inline bool branch is not a jbool")
+	}
+	for _, n := range []string{"cws_bsite_1", "cws_bsite_2"} {
+		if forms[n] != "desc" {
+			t.Errorf("%s is %q, want desc", n, forms[n])
+		}
+	}
+}
+
 // TestCmpSiteEmptyProfileIsInert is the mutation test: an EMPTY HotSites
 // map must compile byte-identically to no map at all, on a whole real
 // image and under both compare policies. Without this an image built
@@ -245,6 +346,11 @@ func TestCmpSiteEmptyProfileIsInert(t *testing.T) {
 		with := build(tc.opts)
 		if base != with {
 			t.Errorf("%s: an empty HotSites map changed the output", tc.name)
+		}
+		tc.opts.HotSites = nil
+		tc.opts.InlineSites = map[string]bool{}
+		if build(tc.opts) != base {
+			t.Errorf("%s: an empty InlineSites map changed the output", tc.name)
 		}
 		if n := len(siteForms(base)); n < 100 {
 			t.Errorf("%s: only %d labelled sites; the check proves little", tc.name, n)

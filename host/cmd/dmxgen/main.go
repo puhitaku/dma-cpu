@@ -796,6 +796,9 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			 * HotSites decides the compare form one site at a time,
 			 * HotFuncs gates the outliner */
 			OptSize: true, HotFuncs: pgo.GameHotFuncs, HotSites: pgo.GameHotSites,
+			/* and the top of that same ranking skips the helpers
+			 * altogether for the inline compare macro */
+			InlineSites: pgo.GameInlineSites,
 			/* and the blocks the profile never reached sink out of the
 			 * prefetch path, per function (host/pgo) */
 			ColdBlocks: pgo.GameColdBlocks})
@@ -1087,6 +1090,9 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			 * two-record descriptor form, and pgo.KernelHotFuncs keeps
 			 * the outliner off the hot functions (host/pgo) */
 			OptSize: true, HotFuncs: pgo.KernelHotFuncs, HotSites: pgo.KernelHotSites,
+			/* and the top of that same ranking skips the helpers
+			 * altogether for the inline compare macro */
+			InlineSites: pgo.KernelInlineSites,
 			/* never-executed blocks sink to the end of their function,
 			 * so the hot ones lie back to back in the XIP window */
 			ColdBlocks: pgo.KernelColdBlocks})

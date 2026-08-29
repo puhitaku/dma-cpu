@@ -38,7 +38,7 @@ var btnBit = map[int]uint32{pinUp: 0x1, pinDown: 0x2, pinLeft: 0x4,
 // layout, or the data tail lands differently against the fixed audio
 // region (a divergence found as a PC of 0x23282328 — replayed drum
 // samples — in TestGameSeq).
-func compileGameDasm(t *testing.T) string {
+func compileGameDasm(t *testing.T, tweak ...func(*dmacc.Options)) string {
 	t.Helper()
 	var mods []*llir.Module
 	for _, p := range []string{"gmain", "menu", "dino", "lanwalk", "yacht",
@@ -50,12 +50,19 @@ func compileGameDasm(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dasm, err := dmacc.Compile(mod, dmacc.Options{
+	opts := dmacc.Options{
 		Entry: "gmain", NoSafepoints: true, XIPText: true,
 		ResidentFuncs: []string{"shoot", "clearance", "in_box",
 			"normal_of"},
 		OptSize: true, HotFuncs: pgo.GameHotFuncs, HotSites: pgo.GameHotSites,
-		ColdBlocks: pgo.GameColdBlocks})
+		InlineSites: pgo.GameInlineSites,
+		ColdBlocks:  pgo.GameColdBlocks}
+	// The PGO driver's inline-site trim compiles candidate sets through
+	// here, so the search prices the shipped image shape.
+	for _, f := range tweak {
+		f(&opts)
+	}
+	dasm, err := dmacc.Compile(mod, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -952,7 +959,14 @@ func TestGameChute(t *testing.T) {
 	press(t, m, prog, pinA) // fire
 	press(t, m, prog, pinLeft)
 	press(t, m, prog, pinA)
-	if _, err := m.Run(emu.RunConfig{MaxCycles: 60_000_000}); err != nil {
+	// Short, because the scene is CPU-paced: chute.c renders as fast as
+	// frame_sync lets it, so every codegen speedup advances the scene
+	// further per cycle. The sample has to land while the gun is still
+	// standing — a trooper that reaches it ends the round, and the
+	// screen the assertions below describe becomes "Destroyed!". At the
+	// 2026-08-29 inline-compare wave the round survived to 30M cycles
+	// here and was over by 40M; before it, to past 60M.
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 20_000_000}); err != nil {
 		t.Fatal(err)
 	}
 	p := decodeLCD(m, 16)

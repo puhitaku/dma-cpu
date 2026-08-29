@@ -32,6 +32,19 @@ and it closes the last knob the profile driver already measured. §8
 shipped last: the trace query engine is `host/trace`, and the sizes
 and cycle tables are pinned in a ratchet `make test` checks exactly.
 
+Status 2026-08-29 (later the same day): §1's leading still-open item,
+per-SITE compare INLINING, is DONE as well — `Options.InlineSites` and
+the profile tables that fill it. The measurement is the interesting
+part. The ranking is worth about -6% of the xsh command sums, and the
+board maps let two sites of it ship: -1.68% on the same sums, -0.86%
+on vi, -10.4% / -14.0% on the game's sieve and sort kernels, +2.4% on
+its bogo, and ±0.1% on the fb console. The rest is blocked by 40 bytes
+of feather SRAM, because dmaasm parks the sign-dispatch trampoline
+arena in `.ramtext`. The generated sets are trimmed to the board fit,
+so a hot ranking can never produce an image that does not link, and
+`TestDeploySizes` now checks those windows under `make test` instead of
+leaving them to dmxgen. See the subsection in §1.
+
 ## 1. The PGO loop — DONE
 
 Every optimization up to here was profile-DISCOVERED but hand-APPLIED.
@@ -84,7 +97,9 @@ kernel-only hand-run `XSHHotLits`), `pgo.KernelHotFuncs` /
 functions covering the top 97% of executed text reads) — and, since
 §10 (c), `pgo.KernelHotSites` / `GameHotSites`, which make the same
 call per compare SITE and take that job off HotFuncs (which goes on
-gating the outliner). Each literal set is
+gating the outliner), and `pgo.KernelInlineSites` / `GameInlineSites`,
+the top of that same ranking, which take neither outlined form but the
+inline compare macro (subsection below). Each literal set is
 ranked by read count and trimmed until the resident half fits every
 board that ships the image with 256 bytes of the window to spare; vi's
 is trimmed harder still, to the slack inside kalloc's 256-byte
@@ -305,14 +320,11 @@ state-driven sample point instead of a cycle-driven one.
 
 **Still open**, with what the driver already provides toward it:
 
-- per-site compare INLINING (InlineCompares is all-or-nothing today).
-  The site identity this needed is built and shipped — §10 (c) labels
-  every compare site `cws_<func>_<n>` and the driver ranks them by
-  executions — so what is left is only the third form: a site named in
-  `HotSites` could take the 14-18-block inline macro instead of the
-  four-move protocol. That is a much bigger byte bet per site than
-  (c)'s three records, so it wants its own measurement, on the top few
-  dozen sites rather than all 377.
+- the trampoline-arena split (dmaasm): inline-compare pairs used from
+  flash text do not need RAM trampolines, so a flash half of the
+  sign-dispatch arena would hand the kernel the ~42 inline sites the
+  `.ramtext` window currently refuses (the -6% ceiling measured in the
+  per-site inlining write-up above). An assembler item.
 - a never-executed-FUNCTION set, the other half of the outliner's hot
   set (§4; the ColdBlocks half is DONE and written up above). The
   block-level cold signal covers only functions the workload ran, so
@@ -395,6 +407,123 @@ Those deployed figures are ratcheted now (`deploy/` keys,
 TestDeploySizes): `size/` measures the kernel with no display, so
 before this the whole cost of fb-board residency moved no figure at
 all.
+
+### Per-site compare inlining — DONE, and the windows are the answer
+
+The third comparison form, and the last thing §10 (c)'s site identity
+was built for. `Options.InlineSites` names sites that take neither
+outlined form but the full `jeq`/`jlt`/`jltu`/`jbool` macro
+`Options.InlineCompares` gives every site — 12-18 records that buy back
+the helper jump and the four `cw_*` staging moves. Precedence: it is
+asked BEFORE `HotSites`, wins over it and over `HotFuncs` wherever they
+disagree, and is not gated on `OptSize`, because the question it
+answers ("spend bytes for speed HERE") is not one a balanced build has
+already answered everywhere. `.ramtext` sites stay outlined, for the
+reason they stay four-move. An empty map compiles byte-identically to
+no map at all (`TestCmpSiteEmptyProfileIsInert`). The macros ignore
+facts.go, as `InlineCompares` always did — there is no restricted-range
+macro to route to, so `eqzp` folds back into a full-range jeq against
+zero and `ltp` into `jlt`, which is the answer `jltu` would give under
+the very proof that selected `ltp`. They were also always
+safepoint-safe: an inline compare is ONE dmaasm statement, dmacc never
+emits a safepoint inside one, and the trampoline pair it dispatches
+through is assembler-private — the same approach-B invariant the
+outlined helpers rest on, which is why this lowering was legal before
+the helpers existed and stayed legal after.
+
+The driver already ranked sites by executions, so the new tables
+(`pgo.KernelInlineSites` / `GameInlineSites`) are that ranking above a
+much higher bar: 0.25% of everything the image compared, per site,
+against "executed 8 times at all" for the four-move set. A share and
+not a count, because the game's workload makes 5x the comparisons the
+kernel's does. The distribution is savagely concentrated — the
+generator prints the whole ladder now, and 2 sites of 429 are 28% of
+every comparison the kernel makes — and that rung is the last one whose
+candidate set is still a few dozen sites: 44 of the kernel's 429
+executed sites (85% of all comparisons made) and 58 of the game's 400
+(90%). One rung down (0.1%) the count runs into the merely-warm
+hundreds the four-move form already serves.
+
+**And then the windows take them back.** Every inline compare consumes
+a pair of slots in dmaasm's sign-dispatch trampoline arena, and the
+arena is appended after the LAST instruction — so in a split image it
+lands in `.ramtext`, in whole 256-byte banks of 16 pairs. The feather
+kernel's `.ramtext` window has 216 bytes free, less than one bank, so
+the kernel ships exactly the two candidates its current bank still has
+slots for; the third costs 256 bytes of SRAM the map does not have.
+The game is squeezed at the other end: its flash text runs at the asset
+blob's home 0x10140000 and an inline site costs ~150 bytes there, so 28
+of its 58 candidates fit. Both sets are therefore TRIMMED by board fit
+in the driver (`inlineFit`), hottest first and priced in the image the
+same run is about to emit — pricing candidates in the COMMITTED image
+is off by hundreds of bytes against a bound a few hundred bytes wide,
+which this wave learned by having dmxgen refuse a bundle a green test
+run had just produced. `TestDeploySizes` now checks those five bounds
+under `make test` instead of leaving them to dmxgen at deploy time.
+
+**Measured** (same tables, inline sets empty vs shipped, so the numbers
+are the sites and not the regeneration). xsh six-command cold sum
+10606797 -> 10429101 (-1.68%), warm 9930008 -> 9897694 (-0.33%); all of
+it is `echo hi`, cold 1457861 -> 1280345 (-12.2%) and warm 840007 ->
+807509 (-3.9%), which is `cws_dma_ksyscall_37`, one of the syscall
+entry's dispatch compares — every other command lands inside a
+scheduler tick of where it was. vi's editing session 174.0M -> 172.5M (-0.86%), all of it
+in `open README` (15.5M -> 14.0M). The game's benchmark scene: sieve
+-10.35% (1616715264 -> 1449423104), sort -14.01% (1343425024 ->
+1155173120), bogo +2.42% (2080846592 -> 2131189248), mem +0.16%,
+mul/div/rand/shr1 flat. Sizes: kernel text 196472 -> 196632 (+160 for
+the two sites), data +4, `.ramtext` unchanged; game text 257712 ->
+261880 (+4168, 149 B a site), `.ramtext` 35920 -> 36432 (+512, two
+banks), data +64; sh and vi untouched (no site table). Against the
+committed figures of the previous wave the kernel's text is DOWN
+(196952 -> 196632): regenerating every table together paid for the two
+sites and 320 bytes besides, and moved the xsh sums by 135 cycles.
+
+**Where it costs, and why.** The fb console is the honest wash: the
+kernel's other site is `cws_kfbcon_putc_48`, and on feather it pays
+`cat README` +2.00% and `echo`(40 chars) +0.42% to earn `ls /dev`
+-0.19% and the 12x scroll -0.12% — a sum of -0.08%, and +0.12% on
+pico2. Same shape as the game's bogo. The mechanism is the one thing
+worth remembering here: under XIPText the outlined helpers live in
+`.ramtext`, so a four-move site fetches five records from flash and
+finishes in SRAM, while an inline site fetches 12-18 records from XIP
+flash. Inlining trades SRAM fetches for flash ones. It wins where the
+compare dominates a path that was already paying for flash anyway
+(syscall dispatch, vi's file open, sieve's and sort's inner loops) and
+loses inside a tight loop the prefetcher was already serving (bogo,
+putc's per-character path). The regeneration measured the trade
+directly: the workload's XIP text reads go 10.80M -> 13.04M on the
+kernel and 50.45M -> 88.12M on the game.
+
+**The sweep, and what the windows cost us.** Bars were swept on the
+kernel at 1%, 0.5%, 0.25% and 0.1% of comparisons (16, 28, 44 and ~60
+sites), against the six-command sums, by hand-writing the set each bar
+would have produced onto the tables of the wave before it (whose
+empty-set sums are the first row):
+
+    bar      sites   cold sum          warm sum          kernel text
+    --       0       10606932          9929763           196952
+    1%       16      10133769 (-4.5%)  9657004 (-2.7%)   +1712
+    0.5%     28       9960996 (-6.1%)  9544197 (-3.9%)   +2792
+    0.25%    44       9975559 (-5.9%)  9424348 (-5.1%)   +4856
+    0.1%    ~60      does not link (pico2 KernCData overlap)
+
+So the ranking is worth about -6% of the xsh sums, four times what
+ships. None of those rows can be DEPLOYED: each takes one more
+256-byte trampoline bank in `.ramtext` than the maps have room for.
+Feather overruns by 40 bytes at the 16-site row already; pico2 has 504
+bytes free and swallows the first bank, which is the only reason the
+table could be measured at all (the xsh bench runs on pico2), and it
+overruns too by the 0.1% row. That is the same wall
+`ResidentFuncs` hit below, and it has the same answer: **a window move,
+not a setting** — or, better, a dmaasm change, since the arena is in
+SRAM only because it is appended after the last instruction and the
+last instructions are `.ramtext`. Pairs used from flash text do not
+need RAM trampolines; splitting the arena into a flash half (laid out
+where the cold pool tail already goes, before the `.ramtext` split) and
+a RAM half for the millicode's own `jsign` uses would hand the kernel
+its other 42 sites for flash bytes. That is the next item on this
+ranking, and it is an assembler item, not a compiler one.
 
 ## 2. Alignment-aware memcpy/memset — DONE for the static cases
 
@@ -1282,6 +1411,17 @@ speed, so paying to keep them is pure loss. HotSites therefore
 REPLACES HotFuncs in the compare decision whenever it is non-empty,
 and an empty map (no profile) leaves the per-function rule exactly as
 it was — a mutation test pins that byte for byte.
+
+The THIRD form — the inline macro, per site, off the same ranking at a
+far higher bar — is `Options.InlineSites`, and is written up in §1
+above with the board windows that bound it. The span rule here carries
+over to it unchanged: an inline site is far longer than the 5-record
+cap, but the macro is straight line (its only branch is the trailing
+dispatch through a pooled trampoline pair, which is not inside the
+span), so reads over words is still the execution count. Measured on
+a regeneration that inlined 58 game sites: `cws_gfx_text_6` came back
+at 151920 executions and `cws_k_bogo_1` at 65537, the same counts the
+outlined build reported.
 
 ### (b) The compact bank-state planner — MEASURED, CLOSED (don't build)
 

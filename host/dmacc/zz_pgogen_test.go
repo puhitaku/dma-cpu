@@ -32,7 +32,11 @@ package dmacc_test
 //	    labels every outlined compare site (`cws_<func>_<n>`), so the
 //	    word histogram resolves to sites as well as to functions, and
 //	    the four-move/descriptor choice can be made where it is paid —
-//	    per branch instead of per function (prompts/042 §10c).
+//	    per branch instead of per function (prompts/042 §10c). The top
+//	    of that same ranking feeds Options.InlineSites, where the choice
+//	    is not between the two outlined forms but between outlining and
+//	    the inline macro; that set ends up bounded by the board's
+//	    windows rather than by the bar (inlineFit).
 //
 // Attribution note (prompts/042 §8): dmaasm drops every `__`-prefixed
 // symbol from Result.Symbols, so a nearest-preceding-symbol scan over
@@ -75,8 +79,52 @@ import (
 
 	"github.com/puhitaku/dma-cpu/host/boards"
 	"github.com/puhitaku/dma-cpu/host/dmaasm"
+	"github.com/puhitaku/dma-cpu/host/dmacc"
 	"github.com/puhitaku/dma-cpu/host/emu"
 )
+
+// shipOpt is the Options tweak the inline-site trim hands the shared
+// compile helpers: every profile-guided setting this run is about to
+// EMIT, plus the candidate Options.InlineSites set, in place of the
+// committed ones. The compile helpers otherwise read host/pgo, which
+// still holds the last run's answers — and pricing a candidate in last
+// run's image measures a size that stops existing the moment this run
+// writes its output (measured: hundreds of bytes of game text, against
+// a bound a few hundred bytes wide).
+func shipOpt(funcs, sites, cold, inline map[string]bool) func(*dmacc.Options) {
+	return func(o *dmacc.Options) {
+		o.HotFuncs, o.HotSites = funcs, sites
+		o.ColdBlocks, o.InlineSites = cold, inline
+	}
+}
+
+// inlineFit is the rule that trims those candidates, and it is a
+// board-window rule, not a profile one. Every inline compare consumes
+// one pair of slots in dmaasm's sign-dispatch trampoline arena; the
+// arena is appended after the last instruction, so in a split (XIPText)
+// image it lands in .ramtext — SRAM — and grows in whole 256-byte banks
+// of 16 pairs. The kernel's .ramtext window is the tightest resource in
+// the tree: on feather it has 216 bytes free, which is less than one
+// bank, so the kernel keeps only the candidates its CURRENT bank still
+// has slots for. The game's own window has more room.
+//
+// The game is bounded at the other end instead: its .ramtext has room,
+// but its flash text runs at the asset blob's home (gameSFXHome), and
+// an inline site costs 100-250 bytes of records there.
+//
+// The .ramtext fit is exact, the flash one is not. A trampoline bank is
+// discrete, so there is no "nearly fits" in SRAM, and what shares that
+// window with the arena — compiled code — does not move under the
+// settings this run emits. The game's flash text does: it carries the
+// COLD half of the literal pool, so it moves with the split the same
+// run chooses, and the fit leaves it windowMargin to move in. (Priced
+// against the pool split this run just chose, at that: pricing it
+// against the committed one measures a text size about to change.)
+//
+// Either way it is the trim, not the bar, that decides both set
+// sizes — which is the honest shape of the result and is recorded as
+// such in the generated header.
+const inlineFit = "board fit (arena slack in .ramtext, flash text room)"
 
 // litHotReads is the "read at loop rate" bar a pool word must clear to
 // be considered for residency: below it a key is a one-shot constant
@@ -112,12 +160,51 @@ const funcHotCover = 0.97
 // this bar, and the 52 in between are 0.05% of all comparisons made.
 const siteHotExecs = 8
 
+// siteInlineShare is the bar for the INLINE candidate set (dmacc
+// Options.InlineSites): the same executions, measured the same way, but
+// as a SHARE of everything the image's workload compared rather than as
+// an absolute count. Keeping a site four-move costs 24 bytes over a
+// descriptor, so "the workload ran it at all" already pays; inlining
+// one costs 100-250 bytes of records and a trampoline pair, so it only
+// pays where the executions are concentrated — and the two workloads
+// differ by 5x in how many comparisons they make, which an absolute bar
+// would read as the game being five times hotter than the kernel.
+//
+// A quarter of one percent of an image's comparisons, per site. The
+// rung comes off the measured ladder (siteLadder, and the PGO SITE BARS
+// report a generator run prints): it is the last one at which the
+// candidates are still the few dozen sites the workload lives inside —
+// 44 of the kernel's 429 executed sites and 58 of the game's 400, for
+// 85% and 90% of all comparisons made. One rung down (0.1%) the count
+// runs away into the merely-warm hundreds the four-move form already
+// serves, and one rung up (1%) drops half the coverage.
+//
+// The candidates are then TRIMMED to what the board actually has room
+// for — see inlineFit: an inline site burns a slot in the sign-dispatch
+// trampoline arena, which for a split image lives in .ramtext.
+const siteInlineShare = 0.0025
+
+// inlineBar turns that share into the execution count a site must clear
+// in one image.
+func inlineBar(siteTot uint64) uint64 {
+	return uint64(siteInlineShare * float64(siteTot))
+}
+
 // cmpSiteMaxBytes bounds one comparison site's span when reads are
-// attributed to it: five compact records, which is the longest form
-// (four moves and the jump). The next symbol normally ends the site
-// well inside that — measured spans are 16, 32 and 40 bytes — but a
-// site whose successor label was `__`-prefixed (dmaasm drops those)
+// attributed to it: five compact records, which is the longest OUTLINED
+// form (four moves and the jump). The next symbol normally ends the
+// site well inside that — measured spans are 16, 32 and 40 bytes — but
+// a site whose successor label was `__`-prefixed (dmaasm drops those)
 // would otherwise swallow the code after it.
+//
+// An INLINE site (Options.InlineSites) is far longer than the cap, and
+// is deliberately left truncated to it. The whole macro is straight
+// line — its only branch is the trailing dispatch through the pooled
+// trampoline pair, which is not inside the span at all — so every word
+// of the prefix is fetched exactly once per execution, and reads
+// divided by words is the execution count for a truncated inline site
+// just as it is for a whole four-move one. Raising the cap to cover a
+// macro would buy nothing and would risk swallowing a neighbour.
 const cmpSiteMaxBytes = 40
 
 // imgProfile is one payload's measured heat.
@@ -492,6 +579,81 @@ func overBar(counts map[string]uint64, bar uint64) []string {
 	return out
 }
 
+// rankedOver is overBar in RANK order — hottest first — so that a set
+// trimmed to what a board can hold drops its coldest members.
+func rankedOver(counts map[string]uint64, bar uint64) []string {
+	type ent struct {
+		name string
+		n    uint64
+	}
+	var es []ent
+	for n, c := range counts {
+		if c >= bar {
+			es = append(es, ent{n, c})
+		}
+	}
+	sort.Slice(es, func(i, j int) bool {
+		if es[i].n != es[j].n {
+			return es[i].n > es[j].n
+		}
+		return es[i].name < es[j].name
+	})
+	out := make([]string, len(es))
+	for i, e := range es {
+		out[i] = e.name
+	}
+	return out
+}
+
+// siteBars is the ladder of execution bars the inline set is chosen
+// from: one rung per half-decade, which is fine enough to see the knee
+// and coarse enough to fit in a generated header line.
+var siteBars = []uint64{1000, 3000, 10000, 20000, 30000, 100000, 300000, 1000000}
+
+// siteLadder renders that ladder for one image — how many sites clear
+// each bar and what share of the workload's comparisons they are — so
+// the generated file carries the distribution the bar was read off,
+// not just the bar.
+func siteLadder(p *imgProfile) string {
+	var parts []string
+	for _, bar := range siteBars {
+		s := overBar(p.sites, bar)
+		if len(s) == 0 {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%d: %d, %.0f%%", bar, len(s),
+			coverage(p.sites, s, p.siteTot)))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// reportSiteRanks prints the site distribution a generator run
+// measured: the ladder, then the top of the ranking. The inline bar is
+// a judgement call about where the executions stop being concentrated,
+// so the numbers behind it belong on the record.
+func reportSiteRanks(tag string, p *imgProfile) {
+	type ent struct {
+		name string
+		n    uint64
+	}
+	var es []ent
+	for n, c := range p.sites {
+		es = append(es, ent{n, c})
+	}
+	sort.Slice(es, func(i, j int) bool {
+		if es[i].n != es[j].n {
+			return es[i].n > es[j].n
+		}
+		return es[i].name < es[j].name
+	})
+	fmt.Printf("PGO SITE BARS %s: %d executed sites, %d comparisons; ladder %s\n",
+		tag, len(es), p.siteTot, siteLadder(p))
+	for i := 0; i < len(es) && i < 120; i++ {
+		fmt.Printf("PGO SITE %s %3d %-34s %12d (%5.2f%%)\n", tag, i+1, es[i].name,
+			es[i].n, 100*float64(es[i].n)/float64(p.siteTot))
+	}
+}
+
 // coverage is the share of reads a prefix of a ranked key list covers.
 func coverage(lits map[string]uint64, keys []string, tot uint64) float64 {
 	if tot == 0 {
@@ -646,6 +808,52 @@ func TestGenPGO(t *testing.T) {
 		topCover(game.funcs, game.funcTot, funcHotCover)
 	kernSites, gameSites := overBar(kern.sites, siteHotExecs),
 		overBar(game.sites, siteHotExecs)
+	reportSiteRanks("kernel", kern)
+	reportSiteRanks("game", game)
+
+	// The inline candidates, trimmed to what the tightest board that
+	// ships each image can hold (inlineFit). Every candidate is priced
+	// in the image THIS run is about to ship — its pool split, its hot
+	// functions, its hot sites, its cold blocks — and not in the one on
+	// disk: those settings move a lot of bytes, and the bound being
+	// checked here is a few hundred wide.
+	kernPool, gamePool := setOf(ko.kept), setOf(go_.kept)
+	kernCold, gameCold := setOf(coldBlocks(kern.blocks)), setOf(coldBlocks(game.blocks))
+	kernCand := rankedOver(kern.sites, inlineBar(kern.siteTot))
+	kernInline := kernCand[:largestFit(kernCand, func(n int) bool {
+		for _, b := range []*boards.Board{boards.Pico2, boards.Pico, boards.Feather} {
+			bv, _ := emu.VariantByName(b.SKU)
+			res, err := dmaasm.Assemble(compileKernelXsh(t, b.FbBuf != 0,
+				shipOpt(setOf(kernHot), setOf(kernSites), kernCold, setOf(kernCand[:n]))),
+				dmaasm.Options{
+					Variant: bv, Compact: true, TextBase: b.KernTextXIP,
+					DataBase: b.KernCData, RAMTextBase: b.KernCRText,
+					PoolText: true, HotLits: kernPool})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if b.KernCRText+uint32(len(res.Image.Segments[2].Data)) > b.KernCData {
+				return false
+			}
+		}
+		return true
+	})]
+	gameCand := rankedOver(game.sites, inlineBar(game.siteTot))
+	gameInline := gameCand[:largestFit(gameCand, func(n int) bool {
+		res, err := dmaasm.Assemble(compileGameDasm(t,
+			shipOpt(setOf(gameHot), setOf(gameSites), gameCold, setOf(gameCand[:n]))),
+			dmaasm.Options{Variant: gv, Compact: true, TextBase: gb.GameTextXIP,
+				DataBase: gb.GameData, RAMTextBase: gb.GameRAMText,
+				PoolText: true, HotLits: gamePool})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return gb.GameRAMText+uint32(len(res.Image.Segments[2].Data)) <= gb.GameData &&
+			gb.GameTextXIP+uint32(len(res.Image.Segments[0].Data))+windowMargin <= gameSFXHome
+	})]
+	fmt.Printf("PGO INLINE kernel %d of %d candidates (bar %d), game %d of %d (bar %d)\n",
+		len(kernInline), len(kernCand), inlineBar(kern.siteTot),
+		len(gameInline), len(gameCand), inlineBar(game.siteTot))
 
 	// --- emit ---
 	var b strings.Builder
@@ -764,6 +972,62 @@ func TestGenPGO(t *testing.T) {
 		}
 		b.WriteString("}\n")
 	}
+
+	b.WriteString("\n")
+	wrapComment(&b, "The INLINE comparison-site sets, the top of the same "+
+		"ranking. A site named here (dmacc Options.InlineSites) takes neither "+
+		"outlined form: it gets the full jeq/jlt/jltu/jbool macro, 12-18 "+
+		"records that spend bytes to save the helper jump and the cw_* staging "+
+		"moves. InlineSites is asked before HotSites, and unlike it is not "+
+		"gated on OptSize.")
+	b.WriteString("//\n")
+	wrapComment(&b, fmt.Sprintf("Candidates are the sites carrying at least "+
+		"%.2f%% of everything their image compared, against \"executed %d times "+
+		"at all\" for the four-move set. A share, not a count: the two workloads "+
+		"differ 5x in how many comparisons they make. The rung comes off the "+
+		"measured ladder each set quotes below — one down and the count runs "+
+		"away into the merely-warm hundreds the four-move form already serves.",
+		100*siteInlineShare, siteHotExecs))
+	b.WriteString("//\n")
+	wrapComment(&b, "Those candidates are then TRIMMED, hottest first, to what "+
+		"the image's tightest board can hold — and for both images that trim, "+
+		"not the bar, is what decides the set. The kernel is bounded in SRAM: "+
+		"every inline compare burns a pair of slots in dmaasm's sign-dispatch "+
+		"trampoline arena, which is appended after the last instruction and so, "+
+		"in a split image, lands in .ramtext, growing in whole 256-byte banks of "+
+		"16 pairs — and the kernel's window has less than one bank free on "+
+		"feather, so only the candidates the current bank still has slots for "+
+		"can ship. The game is bounded in FLASH: its text runs at the asset "+
+		"blob's home. Deploying the rest of either ranking needs a window move, "+
+		"not a setting (prompts/042 §1).")
+	for _, x := range []struct {
+		v, img string
+		hot    []string
+		cand   []string
+		p      *imgProfile
+	}{{"KernelInlineSites", "kernel", kernInline, kernCand, kern},
+		{"GameInlineSites", "game", gameInline, gameCand, game}} {
+		var got uint64
+		for _, n := range x.hot {
+			got += x.p.sites[n]
+		}
+		b.WriteString("\n")
+		wrapComment(&b, fmt.Sprintf("%s: %d sites covering %.2f%% of the %d "+
+			"comparisons the workload made, trimmed by the %s from the %d "+
+			"candidates over the %d-execution bar (%.2f%% together). Ladder "+
+			"(bar: sites, coverage) — %s.", x.v, len(x.hot),
+			100*float64(got)/float64(x.p.siteTot), x.p.siteTot, inlineFit,
+			len(x.cand), inlineBar(x.p.siteTot),
+			coverage(x.p.sites, x.cand, x.p.siteTot), siteLadder(x.p)))
+		wrapComment(&b, "Workload: "+workloadOf(x.img)+".")
+		names := append([]string(nil), x.hot...)
+		sort.Strings(names)
+		fmt.Fprintf(&b, "var %s = map[string]bool{\n", x.v)
+		for _, n := range names {
+			fmt.Fprintf(&b, "\t%q: true,\n", n)
+		}
+		b.WriteString("}\n")
+	}
 	if err := os.WriteFile("../pgo/sites_gen.go", []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -842,6 +1106,14 @@ const windowMargin = 256
 // gameAudioBase is fx.c's fixed 16 KiB audio ring; the game's data
 // segment must stop short of it (dmxgen checks the same bound).
 const gameAudioBase = 0x20038000
+
+// gameSFXHome is the flash home of the PCM+asset blob, the other end
+// the game image is squeezed between: its text (cold pool literals
+// included) must stop short of it. dmxgen owns the same constant and
+// refuses to bundle an image that crosses it — which is what bounds the
+// game's inline-site set, its .ramtext window being the roomier of the
+// two.
+const gameSFXHome = 0x10140000
 
 func litVar(img string) string {
 	return map[string]string{"kernel": "KernelLits", "sh": "ShLits",

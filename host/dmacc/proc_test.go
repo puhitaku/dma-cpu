@@ -56,10 +56,14 @@ func compileKernelOpts(t *testing.T, fs, xip bool) string {
 // compileKernelXsh is the deployable XIP configuration; fb picks the
 // real display driver (PSRAM boards) or the no-op stub. cmp "pgo" is
 // what dmxgen ships: descriptor compares everywhere EXCEPT the
-// measured hot compare sites (pgo.KernelHotSites), with
+// measured hot compare sites (pgo.KernelHotSites), the top few of
+// which are inline macros instead (pgo.KernelInlineSites), with
 // pgo.KernelHotFuncs holding the outliner off the hot functions.
-func compileKernelXsh(t *testing.T, fb bool) string {
-	return compileKernelFull(t, kernKey{fs: true, xip: true, fb: fb, cmp: "pgo"})
+// tweak, where a caller passes one, overrides Options after the policy
+// is set (the PGO driver's inline-site trim searches candidate sets
+// that are not the committed one) and bypasses the cache.
+func compileKernelXsh(t *testing.T, fb bool, tweak ...func(*dmacc.Options)) string {
+	return compileKernelFull(t, kernKey{fs: true, xip: true, fb: fb, cmp: "pgo"}, tweak...)
 }
 
 // kernelCache memoizes compiled kernels per flag set: the compile is
@@ -78,10 +82,10 @@ type kernKey struct {
 	cmp         string
 }
 
-func compileKernelFull(t *testing.T, key kernKey) string {
+func compileKernelFull(t *testing.T, key kernKey, tweak ...func(*dmacc.Options)) string {
 	t.Helper()
 	fs, xip, fb := key.fs, key.xip, key.fb
-	if v, ok := kernelCache.Load(key); ok {
+	if v, ok := kernelCache.Load(key); ok && len(tweak) == 0 {
 		return v.(string)
 	}
 	// Only PSRAM boards carry the real fb driver (~25 KiB of machine
@@ -113,6 +117,7 @@ func compileKernelFull(t *testing.T, key kernKey) string {
 		// "pgo" is the shape dmxgen ships, and the size comparison
 		// against "" and "os" stays a comparison of one build.
 		opts.HotSites = pgo.KernelHotSites
+		opts.InlineSites = pgo.KernelInlineSites
 		opts.ColdBlocks = pgo.KernelColdBlocks
 	}
 	if xip && fs {
@@ -135,11 +140,16 @@ func compileKernelFull(t *testing.T, key kernKey) string {
 				"cursor_xor", "kfbcon_putc")
 		}
 	}
+	for _, f := range tweak {
+		f(&opts)
+	}
 	dasm, err := dmacc.Compile(merged, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernelCache.Store(key, dasm)
+	if len(tweak) == 0 {
+		kernelCache.Store(key, dasm)
+	}
 	return dasm
 }
 

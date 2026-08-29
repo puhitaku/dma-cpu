@@ -21,6 +21,15 @@ import (
 // measures the kernel WITHOUT a display, so the .ramtext a framebuffer
 // board carries — cursor_xor, kfbcon_putc — moves no figure there at
 // all. Here it does, beside the flash text it came out of.
+//
+// The windows are also CHECKED here, not just printed. dmxgen refuses a
+// bundle that crosses one, but dmxgen does not run under `make test`,
+// so a setting that overruns a window used to fail at deploy time
+// instead of at test time — which is a long way from the edit. Two of
+// those bounds are what limit the profile's inline-compare sets
+// (host/pgo InlineSites, prompts/042 §1): the kernel's .ramtext window,
+// where dmaasm's sign-dispatch arena lands, and the game's flash text,
+// which runs at the asset blob's home.
 func TestDeploySizes(t *testing.T) {
 	bd := boards.Feather
 	v, _ := emu.VariantByName(bd.SKU)
@@ -41,6 +50,8 @@ func TestDeploySizes(t *testing.T) {
 	fmt.Printf("DEP kernel: text=%d data=%d rtext=%d  (data window %d)\n",
 		len(kern.Image.Segments[0].Data), len(kern.Image.Segments[1].Data),
 		len(kern.Image.Segments[2].Data), bd.ShRText-bd.KernCData)
+	fits(t, "kernel .ramtext", bd.KernCRText, kern, 2, bd.KernCData)
+	fits(t, "kernel data", bd.KernCData, kern, 1, bd.ShRText)
 	sh, err := dmaasm.Assemble(compileShDasm(t, bd), dmaasm.Options{Variant: v, Compact: true,
 		TextBase: bd.ShTextXIP, DataBase: bd.ShData, RAMTextBase: bd.ShRText, PoolText: true, HotLits: pgo.ShLits})
 	if err != nil {
@@ -74,5 +85,20 @@ func TestDeploySizes(t *testing.T) {
 	fmt.Printf("DEP game:   text=%d data=%d rtext=%d  (data window %d)\n",
 		len(game.Image.Segments[0].Data), len(game.Image.Segments[1].Data),
 		len(game.Image.Segments[2].Data), 0x20038000-gb.GameData)
+	fits(t, "game .ramtext", gb.GameRAMText, game, 2, gb.GameData)
+	fits(t, "game data", gb.GameData, game, 1, gameAudioBase)
+	fits(t, "game text", gb.GameTextXIP, game, 0, gameSFXHome)
 	pinSet(t, "deploy/", sizes)
+}
+
+// fits checks that one segment of a deployed image stops short of
+// whatever the map puts next to it, and says by how much it did not.
+func fits(t *testing.T, what string, base uint32, res *dmaasm.Result, seg int, limit uint32) {
+	t.Helper()
+	end := base + uint32(len(res.Image.Segments[seg].Data))
+	if end > limit {
+		t.Errorf("%s ends at %#x, %d bytes past %#x", what, end, end-limit, limit)
+		return
+	}
+	fmt.Printf("DEP   %-16s %#x..%#x, %d bytes to spare\n", what, base, end, limit-end)
 }

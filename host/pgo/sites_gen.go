@@ -376,7 +376,7 @@ var KernelHotSites = map[string]bool{
 }
 
 // GameHotSites: 348 of the image's 1429 comparison sites; 400 of them
-// were executed at all, and the set covers 99.99% of the 2149858
+// were executed at all, and the set covers 99.99% of the 2225323
 // comparisons the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
@@ -730,4 +730,81 @@ var GameHotSites = map[string]bool{
 	"cws_yacht_run_5":      true,
 	"cws_yacht_run_6":      true,
 	"cws_yacht_run_7":      true,
+}
+
+// The INLINE comparison-site sets, the top of the same ranking. A site
+// named here (dmacc Options.InlineSites) takes neither outlined form:
+// it gets the full jeq/jlt/jltu/jbool macro, 12-18 records that spend
+// bytes to save the helper jump and the cw_* staging moves. InlineSites
+// is asked before HotSites, and unlike it is not gated on OptSize.
+//
+// Candidates are the sites carrying at least 0.25% of everything their
+// image compared, against "executed 8 times at all" for the four-move
+// set. A share, not a count: the two workloads differ 5x in how many
+// comparisons they make. The rung comes off the measured ladder each
+// set quotes below — one down and the count runs away into the
+// merely-warm hundreds the four-move form already serves.
+//
+// Those candidates are then TRIMMED, hottest first, to what the image's
+// tightest board can hold — and for both images that trim, not the
+// bar, is what decides the set. The kernel is bounded in SRAM: every
+// inline compare burns a pair of slots in dmaasm's sign-dispatch
+// trampoline arena, which is appended after the last instruction and
+// so, in a split image, lands in .ramtext, growing in whole 256-byte
+// banks of 16 pairs — and the kernel's window has less than one bank
+// free on feather, so only the candidates the current bank still has
+// slots for can ship. The game is bounded in FLASH: its text runs at
+// the asset blob's home. Deploying the rest of either ranking needs a
+// window move, not a setting (prompts/042 §1).
+
+// KernelInlineSites: 2 sites covering 27.88% of the 403023 comparisons
+// the workload made, trimmed by the board fit (arena slack in .ramtext,
+// flash text room) from the 44 candidates over the 1007-execution bar
+// (84.79% together). Ladder (bar: sites, coverage) — 1000: 44, 85%;
+// 3000: 20, 75%; 10000: 10, 62%; 20000: 6, 48%; 30000: 2, 28%.
+// Workload: a feather boot to the prompt, the xsh benchmark command set
+// run cold and warm, then an editing session in vi.
+var KernelInlineSites = map[string]bool{
+	"cws_dma_ksyscall_37": true,
+	"cws_kfbcon_putc_48":  true,
+}
+
+// GameInlineSites: 28 sites covering 78.28% of the 2225323 comparisons
+// the workload made, trimmed by the board fit (arena slack in .ramtext,
+// flash text room) from the 58 candidates over the 5563-execution bar
+// (90.23% together). Ladder (bar: sites, coverage) — 1000: 129, 98%;
+// 3000: 78, 94%; 10000: 42, 85%; 20000: 22, 74%; 30000: 18, 70%;
+// 100000: 6, 46%.
+// Workload: gamepico boot to the menu, menu navigation, then the Dino,
+// LANWalk and Yacht scenes played to their first scoring event, and the
+// Benchmark run to completion.
+var GameInlineSites = map[string]bool{
+	"cws_gd_wait_1":       true,
+	"cws_gdma_rows_3":     true,
+	"cws_gdma_rows_4":     true,
+	"cws_gfx_blit_runs_3": true,
+	"cws_gfx_fill_8":      true,
+	"cws_gfx_fill_9":      true,
+	"cws_gfx_text2_6":     true,
+	"cws_gfx_text2_7":     true,
+	"cws_gfx_text2_8":     true,
+	"cws_gfx_text_5":      true,
+	"cws_gfx_text_6":      true,
+	"cws_gfx_text_7":      true,
+	"cws_gfx_text_8":      true,
+	"cws_k_bogo_1":        true,
+	"cws_k_sieve_2":       true,
+	"cws_k_sieve_3":       true,
+	"cws_k_sieve_4":       true,
+	"cws_k_sieve_5":       true,
+	"cws_k_sort_3":        true,
+	"cws_k_sort_4":        true,
+	"cws_stick_1":         true,
+	"cws_stick_2":         true,
+	"cws_stick_3":         true,
+	"cws_uputc_1":         true,
+	"cws_uputc_3":         true,
+	"cws_uputn_1":         true,
+	"cws_uputn_2":         true,
+	"cws_uputs_1":         true,
 }

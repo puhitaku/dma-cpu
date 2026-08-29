@@ -37,6 +37,16 @@ import (
 // blocks per branch, much larger); it ignores the facts, since its
 // macros are already full-range and unconditional.
 //
+// Options.InlineSites is the same lowering asked for one site at a
+// time, off the same profile that fills HotSites (prompts/042 §1, "per-
+// site compare inlining"). It is safe under approach-B interrupts for the
+// reason it always was: an inline macro is ONE dmaasm statement, dmacc
+// never emits a safepoint inside one, and the sign-dispatch trampoline
+// pair the macro jumps through is assembler-private — so the sequence
+// is as atomic against an ISR as the outlined helpers, which is why the
+// inline lowering was legal before the helpers existed and still is.
+// See siteInline for the precedence and emitInlineSite for the mapping.
+//
 // Size-directed variants. Under Options.OptSize a site can shrink from
 // four moves and a jump to two records by handing the helper a constant
 // descriptor instead (cmpDescHelpers), at roughly twice the per-branch
@@ -244,12 +254,25 @@ func (fc *funcCtx) wordAddr(op string) (string, bool) {
 // function attribution keys on that).
 func (fc *funcCtx) cmpSiteLabel() string {
 	fc.cmpN++
-	return fmt.Sprintf("cws_%s_%d", sanitize(fc.f.Name), fc.cmpN)
+	return fc.cmpSiteName(fc.cmpN)
 }
 
-// siteFourMove decides one site's form: true for the fast four-move
-// protocol, false to try the descriptor form (which still needs static
-// word addresses for both operands — emitCmpSite falls back).
+// cmpSiteName spells the n'th site of the function being lowered, and
+// peekCmpSite names the one the next emitCmpSite will take without
+// consuming it — emitBoolBranch has to know a site's identity BEFORE it
+// picks a lowering, because only it knows the tested word is an i1 and
+// so may take jbool instead of a zero test.
+func (fc *funcCtx) cmpSiteName(n int) string {
+	return fmt.Sprintf("cws_%s_%d", sanitize(fc.f.Name), n)
+}
+
+func (fc *funcCtx) peekCmpSite() string { return fc.cmpSiteName(fc.cmpN + 1) }
+
+// siteFourMove decides one OUTLINED site's form: true for the fast
+// four-move protocol, false to try the descriptor form (which still
+// needs static word addresses for both operands — emitCmpSite falls
+// back). Sites that took the inline macro never reach here (siteInline
+// is asked first).
 //
 // The order of the tests is the policy:
 //
@@ -282,15 +305,66 @@ func (fc *funcCtx) siteFourMove(site string) bool {
 	}
 }
 
-// emitCmpSite emits one outlined-comparison site: the four-move
-// protocol, or the two-record descriptor form. The choice is per SITE
-// where a profile names one (Options.HotSites) and per FUNCTION
-// otherwise (Options.OptSize minus Options.HotFuncs — fc.optSize);
-// siteFourMove spells the rule out.
+// siteInline decides whether one site skips the outlined forms
+// altogether for the fully inline macro (Options.InlineSites). It is
+// asked FIRST, ahead of siteFourMove: the inline form is the top of the
+// same ladder, and a site the profile put at the top of the image is
+// worth its 12-18 records whether or not the image is built for size —
+// which is why, unlike the four-move/descriptor question, this one is
+// not gated on OptSize.
+//
+// .ramtext is the exception, for the reason siteFourMove keeps those
+// sites four-move: that window is scarce (the kernel's already runs
+// close to full) and an inline site costs three times a four-move one
+// there. The profile cannot name one anyway — the driver's site scan
+// only covers XIP text (zz_pgogen_test.go, siteCounts).
+func (fc *funcCtx) siteInline(site string) bool {
+	if len(fc.g.opts.InlineSites) == 0 || fc.inRAM {
+		return false
+	}
+	return fc.g.opts.InlineSites[site]
+}
+
+// emitInlineSite is the InlineSites lowering of an already-normalized
+// site: emitCmpSite has put the operands and the two targets in the
+// order the predicate wants, so all that is left is the helper's own
+// predicate. It goes through emitInlineCompare, the one lowering
+// Options.InlineCompares uses, so the two paths cannot drift.
+//
+// There is no restricted-range macro to route to, so the fact-directed
+// helpers collapse back onto full-range predicates and an inline site
+// buys nothing from facts.go — the same way Options.InlineCompares
+// never did. eqzp folds into jeq-against-zero, which is full-range
+// anyway; ltp folds into jlt, which is the answer ltu would give too,
+// since the only thing that ever selects ltp is a proof that both
+// operands are nonneg and signed and unsigned agree there.
+func (fc *funcCtx) emitInlineSite(helper, a, b, t, f string) {
+	pred := map[string]string{
+		"eq": "eq", "eqz": "eq", "eqzp": "eq",
+		"lt": "slt", "ltp": "slt", "ltu": "ult",
+	}[helper]
+	if b == "" {
+		b = "$0x0" // the zero tests: a == 0 is a == $0
+	}
+	// The predicate comes from a closed set emitInlineCompare handles;
+	// its error cannot fire here.
+	_ = fc.emitInlineCompare(pred, a, b, t, f)
+}
+
+// emitCmpSite emits one comparison site: the inline macro, the
+// four-move protocol, or the two-record descriptor form. The choice is
+// per SITE where a profile names one (Options.InlineSites, then
+// Options.HotSites) and per FUNCTION otherwise (Options.OptSize minus
+// Options.HotFuncs — fc.optSize); siteInline and siteFourMove spell the
+// rule out.
 func (fc *funcCtx) emitCmpSite(helper, a, b, t, f string) {
-	fc.g.cmpUsed[helper] = true
 	site := fc.cmpSiteLabel()
 	fc.label(site)
+	if fc.siteInline(site) {
+		fc.emitInlineSite(helper, a, b, t, f)
+		return
+	}
+	fc.g.cmpUsed[helper] = true
 	if pa, ok := fc.wordAddr(a); ok && !fc.siteFourMove(site) {
 		pb, ok2 := "", b == ""
 		if b != "" {
@@ -413,7 +487,16 @@ func (fc *funcCtx) emitZeroTest(v string, vf uint8, ifZero, ifNonzero string) {
 }
 
 // emitBoolBranch branches on an i1 value: the zero test its facts
-// allow, or jbool under Options.InlineCompares.
+// allow, or jbool under Options.InlineCompares — and, for a site the
+// profile named in Options.InlineSites, jbool again, which is why this
+// is the one lowering that has to look up its site label itself.
+//
+// jbool is 6 records against jeq's 12, so it is the inline form worth
+// having here, but it is only DEFINED for a word that is 0 or 1. The
+// all-or-nothing flag asserts that of every i1; a per-site build does
+// not have to, so it asks facts.go and lets an unproven i1 fall through
+// to the zero test — which, for a named site, emitCmpSite still inlines
+// as a full-range jeq against zero.
 func (fc *funcCtx) emitBoolBranch(cond *llir.Value, ifTrue, ifFalse string) error {
 	c, err := fc.op(cond)
 	if err != nil {
@@ -423,7 +506,13 @@ func (fc *funcCtx) emitBoolBranch(cond *llir.Value, ifTrue, ifFalse string) erro
 		fc.ins("jbool %s, %s, %s", c, ifFalse, ifTrue)
 		return nil
 	}
-	fc.emitZeroTest(c, fc.facts.at(fc.curBlock, cond), ifFalse, ifTrue)
+	cf := fc.facts.at(fc.curBlock, cond)
+	if cf&factBool != 0 && fc.siteInline(fc.peekCmpSite()) {
+		fc.label(fc.cmpSiteLabel())
+		fc.ins("jbool %s, %s, %s", c, ifFalse, ifTrue)
+		return nil
+	}
+	fc.emitZeroTest(c, cf, ifFalse, ifTrue)
 	return nil
 }
 

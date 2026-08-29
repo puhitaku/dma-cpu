@@ -108,6 +108,24 @@ type Options struct {
 	// rule in charge. Names are not validated: a site that no longer
 	// exists is simply never asked about (siteFourMove).
 	HotSites map[string]bool
+	// InlineSites is the measured TOP-of-profile comparison-SITE set
+	// (host/pgo, same `make pgo`), keyed exactly like HotSites. A site
+	// named here takes neither outlined form: it gets the fully inline
+	// jeq/jlt/jltu/jbool macro Options.InlineCompares gives every site,
+	// which spends 12-18 records to save the helper jump and the cw_*
+	// staging moves. That is a much bigger byte bet than HotSites', so
+	// the set is the top few dozen sites of an image, not its top few
+	// hundred.
+	//
+	// Precedence: InlineSites wins wherever an outlined form was legal
+	// — over HotSites, over HotFuncs, and in a balanced (non-OptSize)
+	// build as well, since the question it answers is "spend bytes for
+	// speed HERE", which OptSize does not veto. The one exception is
+	// .ramtext code (RAMTextFuncs), which stays outlined for the same
+	// reason it stays four-move. Empty means "no profile": the output
+	// is then byte-identical to passing no map at all
+	// (TestCmpSiteEmptyProfileIsInert). Names are not validated.
+	InlineSites map[string]bool
 
 	// ColdBlocks is the measured cold-block set (host/pgo, regenerate
 	// with `make pgo`), keyed by emitted block label (`B_<func>_<blk>`,

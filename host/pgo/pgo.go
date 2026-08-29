@@ -29,6 +29,11 @@
 //     comparison site named here keeps the four-move protocol; every
 //     other site in the image takes the two-record descriptor form,
 //     whichever function it sits in.
+//   - dmacc.Options.InlineSites — the *InlineSites maps, the top of the
+//     same site ranking at a far higher bar. A site named here takes
+//     neither outlined form but the inline compare macro, which is why
+//     the set is a few dozen sites and not a few hundred. It is asked
+//     before HotSites and is not gated on OptSize.
 //   - dmacc.Options.HotFuncs — the *HotFuncs maps. They keep the
 //     record outliner off the hot functions, and they answer the
 //     compare question the old way (per function, all-or-nothing) for

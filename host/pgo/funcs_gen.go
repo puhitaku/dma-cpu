@@ -14,47 +14,37 @@ package pgo
 // that links a different module set (the displayless kernels take the
 // fb stub) simply has no function by some of these names.
 
-// KernelHotFuncs: 32 of 84 executed functions, covering 97.1% of the
-// 5555295 text reads the workload made.
+// KernelHotFuncs: 22 of 85 executed functions, covering 97.1% of the
+// 13043285 text reads the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
 var KernelHotFuncs = map[string]bool{
 	"badbuf":        true,
-	"bmap":          true,
 	"bread":         true,
 	"clear_cells":   true,
 	"cons_poll":     true,
 	"cputc":         true,
 	"cputc_wire":    true,
-	"dirlookup":     true,
 	"dma_ksyscall":  true,
-	"fdalloc":       true,
-	"filealloc":     true,
 	"fileread":      true,
 	"filewrite":     true,
-	"iget":          true,
 	"kconsread":     true,
 	"kconswrite":    true,
 	"kdmacpy":       true,
 	"kdmaset":       true,
 	"kfb_condark":   true,
-	"kfree_exec":    true,
-	"kfs_exit":      true,
-	"kfs_forkcopy":  true,
+	"kfbcon_putc":   true,
 	"kfs_read":      true,
-	"kfs_selready":  true,
 	"kfs_write":     true,
 	"memmove":       true,
-	"namex":         true,
 	"readi":         true,
-	"strncmp":       true,
 	"strncpy":       true,
 	"terminate":     true,
 	"vfork_release": true,
 }
 
-// GameHotFuncs: 32 of 83 executed functions, covering 97.0% of the
-// 50450907 text reads the workload made.
+// GameHotFuncs: 26 of 83 executed functions, covering 97.0% of the
+// 88117981 text reads the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
 // Benchmark run to completion.
@@ -67,12 +57,10 @@ var GameHotFuncs = map[string]bool{
 	"gdma_rows":     true,
 	"gdma_spi_rows": true,
 	"gfx_blit_runs": true,
-	"gfx_cell_runs": true,
 	"gfx_damage":    true,
 	"gfx_fill":      true,
 	"gfx_text":      true,
 	"gfx_text2":     true,
-	"gpio_out":      true,
 	"in_poll":       true,
 	"k_bogo":        true,
 	"k_mul":         true,
@@ -80,12 +68,8 @@ var GameHotFuncs = map[string]bool{
 	"k_sort":        true,
 	"lanwalk_run":   true,
 	"lcd_flush":     true,
-	"led_tick":      true,
 	"menu_run":      true,
-	"now_us":        true,
 	"pcm_tick":      true,
-	"snd_tick":      true,
-	"spi_put8":      true,
 	"stick":         true,
 	"uputc":         true,
 	"uputn":         true,
