@@ -67,20 +67,37 @@ import (
 // adds one pooled address, an open site adds one per site.
 //
 // GATE. Outlining trades one or two executed records per site for its
-// bytes, so hot code must not pay it. Two filters, both static:
+// bytes, so hot code must not pay it. Three filters, one measured:
 //
-//	LOOPS     a block that lies on a CFG cycle is never outlined
+//	LOOPS     a block that lies on a CFG cycle is not outlined
 //	          (loopBlocks). Ungated, the pass cost 2.0% of the xsh
 //	          five-command warm sum and 2.3% of the vi burst; the loop
 //	          filter takes both back to nothing, because what repeats
 //	          most — the `shl sc0, sc0` chains of a constant multiply —
-//	          is exactly what loops re-execute. It is blunt, and costs
-//	          2.9 points of the text it would otherwise save.
+//	          is exactly what loops re-execute.
+//	COLD      …unless the profile MEASURED that block cold. A loop that
+//	          never iterated once during its image's workload re-executes
+//	          nothing, so its exemption buys nothing and costs bytes:
+//	          Options.ColdBlocks (the same set that drives block layout)
+//	          hands the exemption back. See outlineHot.
 //	FUNCTIONS Options.HotFuncs is never outlined, unioned with
 //	          Options.ResidentFuncs (the hand-picked hot set). HotFuncs
 //	          is the measured set from prompts/042 §1; since §10 (c)
 //	          moved the compare decision onto Options.HotSites, gating
 //	          this pass is the only job it still has.
+//
+// PIPELINE ORDER, because two transforms now read Options.ColdBlocks.
+// funcCtx.layoutOrder reads it over the IR and decides where a block's
+// finished text is PLACED; this pass reads it over the finished .dasm,
+// after layoutOrder, elideFallthroughJumps and foldCopies have all run.
+// So layout sees blocks, the outliner sees placed text — the two cannot
+// fight over the same decision. They do not interact through position
+// either: olRuns flushes at every `B_` label, so a candidate run never
+// spans two blocks whatever order they were placed in, and matching is
+// by content, not by adjacency. What sinking does for this pass is
+// second-order and in its favour: the cold blocks it just unlocked end
+// up contiguous at the function tail, so the helper calls that replace
+// them sit out of the hot prefetch path too.
 
 // olMaxK bounds the length of an outlined sequence, in instructions.
 const olMaxK = 40
@@ -202,6 +219,51 @@ type olRun struct {
 	sec  int
 	at   []int // line indices, contiguous and in order
 	term bool  // the last instruction is a control transfer
+}
+
+// outlineHot is the pass's block-level gate: the emitted labels whose
+// code stays inline. That is gen.loopLabels — every block on a CFG
+// cycle (funcCtx.emit fills it through blockLabel, the same spelling
+// Options.ColdBlocks is keyed in) — MINUS the blocks the profile
+// measured cold.
+//
+// Why the subtraction is sound. The loop exemption is a proxy, and the
+// thing it proxies for is "this code re-executes, so the round-trip
+// through __ol_ret is paid per iteration". A block the workload fetched
+// zero words of executed zero iterations, so the proxy is answering for
+// a loop that did not run: the exemption buys no cycles and costs the
+// bytes the outliner would otherwise have taken. The measurement wins
+// over the structure wherever it exists.
+//
+// The fail-safe direction is the mirror of layout's, and deliberately
+// so. For layout an unlisted block is left where it is, so a stale set
+// costs a lost optimization; here an unlisted block keeps its
+// exemption, so a stale set costs the same lost optimization. What a
+// stale set can do is name a block that has since become hot, and then
+// its loop pays one or two extra records per iteration — cycles, never
+// correctness. Nothing here can move a safepoint (those are decided
+// during IR-order lowering, funcCtx.backward) and nothing here relaxes
+// a safety condition in olRuns: a cold block's code still has to be
+// relocatable to be moved at all.
+//
+// Blocks of functions the workload never ENTERED are not in ColdBlocks
+// — the generator lists only blocks inside functions it saw execute —
+// so those loops keep the structural exemption. That is measured and
+// left alone on purpose; prompts/042 §1 has the numbers and the reason.
+//
+// An empty ColdBlocks (no profile) subtracts nothing, so the gate is
+// exactly today's and the output is byte-identical: TestOutlineColdOff.
+func (g *gen) outlineHot() map[string]bool {
+	if len(g.opts.ColdBlocks) == 0 {
+		return g.loopLabels
+	}
+	hot := make(map[string]bool, len(g.loopLabels))
+	for l := range g.loopLabels {
+		if !g.opts.ColdBlocks[l] {
+			hot[l] = true
+		}
+	}
+	return hot
 }
 
 // loopBlocks names the blocks of f that lie on a CFG cycle — the

@@ -10,14 +10,14 @@
 # Every entry is exact: the emulator is deterministic, so any drift —
 # regression OR unrecorded improvement — fails the build. Regenerating
 # is a measurement to report, not a golden to refresh.
-fbcon/feather/cat README	1440007
-fbcon/feather/echo 0123456789012345678901234567890123456789	2777722
-fbcon/feather/ls /dev	6705002
-fbcon/feather/scroll (12x ls /dev)	102391669
-fbcon/pico2/cat README	1200152
-fbcon/pico2/echo 0123456789012345678901234567890123456789	2355002
-fbcon/pico2/ls /dev	5445001
-fbcon/pico2/scroll (12x ls /dev)	65219664
+fbcon/feather/cat README	1439988
+fbcon/feather/echo 0123456789012345678901234567890123456789	2777727
+fbcon/feather/ls /dev	6719990
+fbcon/feather/scroll (12x ls /dev)	102706187
+fbcon/pico2/cat README	1199993
+fbcon/pico2/echo 0123456789012345678901234567890123456789	2354975
+fbcon/pico2/ls /dev	5414993
+fbcon/pico2/scroll (12x ls /dev)	65118055
 game/us/bogo	2080846336
 game/us/div	3115336960
 game/us/mem	7693056
@@ -34,9 +34,9 @@ size/fs-kernel/text	221248
 size/fs-xip-Os/data	44520
 size/fs-xip-Os/ramtext	44040
 size/fs-xip-Os/text	193056
-size/fs-xip-pgo/data	45456
+size/fs-xip-pgo/data	45464
 size/fs-xip-pgo/ramtext	44040
-size/fs-xip-pgo/text	196952
+size/fs-xip-pgo/text	196936
 size/lean/data	10116
 size/lean/text	114400
 size/ls/data	2752
@@ -46,7 +46,7 @@ size/sh(K2)/text	45216
 size/sh-xip/data	14464
 size/sh-xip/ramtext	5856
 size/sh-xip/text	48560
-vi/TOTAL	174000000
+vi/TOTAL	173500000
 vi/human/delete char (x)	1000000
 vi/human/insert 5 chars	7000000
 vi/human/motion l	6000000
@@ -57,20 +57,20 @@ vi/phase/open README	15500000
 vi/phase/open aaa line (o)	23500000
 vi/phase/paste aaa x10 (p)	19500000
 vi/phase/paste x10 (p)	25000000
-vi/phase/quit (:q!)	45500000
+vi/phase/quit (:q!)	45000000
 vi/phase/replace char (rX)	3500000
 vi/phase/subst %s/a/A/g	3500000
 vi/phase/yank aaa (yy)	2500000
 vi/phase/yank line (yy)	1000000
-xsh/((((echo deep))))/cold	1468453
-xsh/((((echo deep))))/warm	1469880
-xsh/cat README | wc/cold	1904160
-xsh/cat README | wc/warm	1890011
-xsh/cat README/cold	1202973
-xsh/cat README/warm	1199855
-xsh/echo hi/cold	1457852
-xsh/echo hi/warm	839998
-xsh/free/cold	1858832
-xsh/free/warm	1829995
-xsh/ls/cold	2714662
-xsh/ls/warm	2700024
+xsh/((((echo deep))))/cold	1468426
+xsh/((((echo deep))))/warm	1470018
+xsh/cat README | wc/cold	1904004
+xsh/cat README | wc/warm	1889987
+xsh/cat README/cold	1202811
+xsh/cat README/warm	1200191
+xsh/echo hi/cold	1457858
+xsh/echo hi/warm	840004
+xsh/free/cold	1858340
+xsh/free/warm	1830507
+xsh/ls/cold	2714665
+xsh/ls/warm	2699994

@@ -772,7 +772,9 @@ func (fc *funcCtx) emit() error {
 		}
 	}
 	// The outliner's hot gate reads this: loop bodies keep their code
-	// inline (outline.go).
+	// inline, unless Options.ColdBlocks measured them cold (outline.go,
+	// gen.outlineHot). Same label spelling as the cold set, by
+	// construction — both go through blockLabel.
 	for name := range loopBlocks(f) {
 		fc.g.loopLabels[fc.blockLabel(name)] = true
 	}

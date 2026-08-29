@@ -111,18 +111,26 @@ type Options struct {
 
 	// ColdBlocks is the measured cold-block set (host/pgo, regenerate
 	// with `make pgo`), keyed by emitted block label (`B_<func>_<blk>`,
-	// funcCtx.blockLabel). A function's listed blocks sink to the end of
-	// its body; everything else keeps its IR order, entry block first.
-	// The point is layout, not size: a taken jump into unprefetched XIP
-	// parks the shared read master, so pulling never-executed code out
-	// from between hot blocks both shortens the prefetch path and turns
-	// the hot edges it separated into free fallthroughs
-	// (elideFallthroughJumps).
+	// funcCtx.blockLabel). Two consumers, in this order:
 	//
-	// Unlisted means hot, so an empty or stale map is safe: it only
-	// costs the layout win. Nothing about it can move a safepoint —
-	// backedges are decided on IR order, not on emission order (see
-	// funcCtx.backward).
+	// LAYOUT (funcCtx.layoutOrder). A function's listed blocks sink to
+	// the end of its body; everything else keeps its IR order, entry
+	// block first. A taken jump into unprefetched XIP parks the shared
+	// read master, so pulling never-executed code out from between hot
+	// blocks both shortens the prefetch path and turns the hot edges it
+	// separated into free fallthroughs (elideFallthroughJumps).
+	//
+	// THE OUTLINER'S GATE (outline.go, gen.outlineHot). A listed block
+	// gives up the loop exemption: code on a CFG cycle normally stays
+	// inline because outlining pays a __ol_ret round-trip per iteration,
+	// but a loop the workload never entered iterates nothing, so the
+	// exemption buys no cycles and costs bytes.
+	//
+	// Unlisted means hot, so an empty or stale map is safe for both: it
+	// costs the layout win and the size win. A stale ENTRY costs cycles
+	// on the outliner side (a now-hot loop pays the round-trip) and
+	// nothing on layout's. Neither can move a safepoint — backedges are
+	// decided on IR order, not on emission order (see funcCtx.backward).
 	ColdBlocks map[string]bool
 }
 
@@ -143,7 +151,7 @@ func Compile(m *llir.Module, opts Options) (string, error) {
 	src := foldCopies(g.out.String())
 	saved := 0
 	if !opts.NoOutline {
-		src, saved = olOutline(src, g.outlinable(), g.loopLabels)
+		src, saved = olOutline(src, g.outlinable(), g.outlineHot())
 	}
 	if s := opts.Stats; s != nil {
 		s.Folded, s.Outlined = g.icfN, saved
@@ -293,7 +301,8 @@ type gen struct {
 	ftailN     int
 	ftailBytes int
 
-	// loopLabels: block labels on a CFG cycle — the outliner's hot gate.
+	// loopLabels: block labels on a CFG cycle. The outliner's hot gate is
+	// this minus Options.ColdBlocks (outline.go, gen.outlineHot).
 	loopLabels map[string]bool
 }
 

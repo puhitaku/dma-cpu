@@ -162,6 +162,147 @@ That refresh alone moves no cycles — measured, the xsh bench is
 identical with it and without — but it accounts for sh's +372 bytes
 of SRAM data and most of its -360 bytes of text.
 
+### The outliner's hot set: a cold loop is not a loop — DONE, and small
+
+The fourth knob off the same measurement, and the last one §4 left
+open. The outliner's block gate was purely structural: a block on a
+CFG cycle keeps its code inline, because an outlined site pays the
+`__ol_ret` round-trip on every iteration. That is a proxy, and
+`ColdBlocks` is the measurement it was proxying for — a loop the
+workload never entered iterates nothing, so its exemption buys no
+cycles and costs bytes. The gate is now "on a CFG cycle AND NOT
+measured cold" (`gen.outlineHot`). Nothing else moved: the same set,
+the same `B_<func>_<block>` spelling (both sides go through
+`funcCtx.blockLabel`, so the match is exact by construction), no new
+build wiring — every deployable image already passes ColdBlocks.
+
+**Which transform sees what.** Two passes read ColdBlocks now, and
+they read different things. `layoutOrder` reads it over the IR and
+decides where a block's finished text is PLACED; the outliner reads it
+over the finished .dasm, after layout, `elideFallthroughJumps` and
+`foldCopies` have all run. They cannot fight over the same decision,
+and they do not interact through position either: `olRuns` flushes its
+candidate run at every `B_` label, so a run never spans two blocks
+whatever order they were placed in, and matching is by content, not by
+adjacency. Sinking helps second-order and in the same direction — the
+cold blocks it unlocked end up contiguous at the function tail, so the
+`jump __ol_N` that replaces them is out of the hot prefetch path too.
+
+**The opportunity, re-measured.** §4's "2.9 points" predates several
+waves, so it was priced again on the deployed shapes (TestDeploySizes,
+feather + gamepico) by running the pass with the loop gate switched
+off entirely — the ceiling — against the shipped gate:
+
+| image | loop blocks | of them cold | shipped | gate OFF | heat-aware |
+|---|---|---|---|---|---|
+| kernel | 642 | 128 | 231792 | 229212 (-1.11%) | 231784 (-0.00%) |
+| sh | 168 | 109 | 47584 | 46948 (-1.34%) | 47088 (-1.04%) |
+| vi | 397 | 184 | 161180 | 160096 (-0.67%) | 160840 (-0.21%) |
+| game | 975 | 49 | 256772 | 246884 (-3.85%) | 256772 (0) |
+
+So the blunt gate costs 0.7-3.9 points today, not 2.9 uniformly, and
+the measured set recovers a THIRD of that on sh, a fifth on vi and
+essentially nothing on the kernel or the game. Shipped against
+shipped, that is kernel 231792 -> 231784, sh 47584 -> 47088 (-1.04%),
+vi 161180 -> 160840 (-0.21%), game unchanged. TestZZAllSizes barely
+registers it (fs-xip-pgo text -16, data +8) for a reason worth
+knowing: most of the ratchet's size rows are built WITHOUT a cold set,
+so this item's win lives almost entirely in figures the ratchet does
+not pin. Worth fixing when someone next touches the ratchet — the
+DEPLOYED shapes are what ships and TestDeploySizes already prints
+them.
+
+**Why so little on the kernel and the game**, when their ceilings are
+the two biggest. The cold set names only blocks inside functions the
+workload EXECUTED — deliberately, because layout consumes the same set
+and a never-run function should not be reordered on no evidence. The
+kernel's 128 unlocked loop blocks produced no outlined site at all
+(the -8 bytes is the candidate pool shifting, not new sites), and the
+game's 49 produced none either. The ceiling for both is in the loops
+of functions the profile never entered — whole scenes for the game,
+whole driver paths for the kernel — and those keep the structural
+exemption; the game runs 83 of its functions during profiling and has
+1338 blocks against the 708 in those 83, so nearly half its code is
+behind that door. A probe standing in for the signal (no ColdBlocks
+entry AND not in HotFuncs — an over-estimate, since it also catches
+functions that ran with no cold arm) puts the kernel at 229672
+(-0.91%) and the game at 247628 (-3.56%), i.e. most of both ceilings.
+
+It was NOT built, and the game is the reason. The scenes the workload
+skips are Boing, Chute and Puni — 60 Hz render loops, and §4 already
+found that "per-frame code is nearly all loop, so the gate declines
+most of it". Handing those loops to the outliner is exactly what the
+loop gate exists to prevent, and the trade is bad on its face: two
+executed records per iteration of a frame loop, on a console with
+flash to spare, to save 9 KiB. Worse, the harness cannot price it.
+`game/us/*` times the Benchmark scene, which IS in the workload and
+would therefore not be outlined; TestGameBoing, TestGameChute and
+TestGamePuni check pixels, not cycles. So the extension would ship a
+cycle cost with no figure anywhere in the tree that could see it. It
+is left in the still-open list below with these numbers, and with what
+it would need first.
+
+**What actually got outlined**, sampled from the sites that landed in
+a cold-listed loop block: on sh, 26 blocks / 27 sites, and they are
+`readline`'s interactive editing arms (ulib.c) — tab completion,
+history recall, arrow-key and home/end cursor motion, Ctrl-U kill —
+plus two `memmove` tail loops those arms call. The xsh workload feeds
+a command script down the tty and never presses an arrow key. On vi,
+10 blocks / 12 sites, nearly all in `colon` (the `:` ex-command
+parser), plus one each in `find_range` and `refresh`.
+
+**Worst plausible case, honestly.** The workload is not all
+executions: a user path outside the profile now pays one or two extra
+records per iteration of those loops. Named as sampled, that is a
+human pressing an arrow key in sh's line editor or typing a `:`
+command in vi. Both loops are bounded by a line length (readline's
+buffer is 128 bytes) and both run at keystroke rate, so the worst case
+is a few hundred extra cycles per keypress on a machine that spends
+840 thousand of them echoing `echo hi` — invisible. The general shape
+of the risk is the same as ColdBlocks' own: a stale entry costs
+cycles, never correctness, and nothing here can move a safepoint
+(backedges are still decided during the IR-order lowering pass). The
+class of block that would hurt — a hot inner loop misread as cold —
+cannot appear, because the set is "fetched ZERO words", not "fetched
+few".
+
+**Measured cycles.** The xsh six-command cold sum moves 10606932 ->
+10606104 (-0.008%) and the warm sum 9929763 -> 9930701 (+0.009%); the
+largest single moves are `free` warm at +512 (+0.028%) and `free` cold
+at -492 (-0.026%). vi's editing TOTAL improves 174.0M -> 173.5M
+(-0.29%), on the `:q!` phase — vi's newly outlined blocks are `colon`'s
+own, so the phase that got faster is the one whose code moved. The
+game's `game/us/*` figures are untouched to the byte: its image is
+byte-identical, images.h included. The fbcon rows scatter both ways by
+up to 0.55% (pico2 `ls /dev` -0.55%, feather `scroll` +0.31%), and
+that is the XIP layout lottery this wave has hit before rather than
+executed records: the kernel gained no outlined site at all, so every
+fbcon cycle that moved moved because -8 bytes of text shifted the
+prefetch phase. Zero, in other words, which is what "blocks the
+workload never executed" predicts.
+
+**`make pgo` was run and DELIBERATELY NOT KEPT**, which is a finding
+of its own. On the new images the settings barely move: three pool
+keys renumber in sh's set (`__ol_3` -> `__ol_5`, the helper labels
+this change shifts), four blocks trade places across the four cold
+sets, and the counts in the generated comments drift by a fraction of
+a percent — including the game's, whose image this change leaves
+byte-identical, so that drift is the driver's and predates this work.
+The whole regeneration was worth 16 bytes on sh's deployed text and 16
+on the game's. What those 32 bytes cost was `TestGameChute`: the
+regenerated tables shift the game's frame pacing just enough that,
+inside the test's fixed cycle budget, a paratrooper reaches the gun
+and destroys it (`chute: gun destroyed` on
+the console), so the fixed screen rectangle the test samples is
+legitimately empty. Not a rendering bug and not this change's — the
+change alone leaves the test green — but it is the shape of thing the
+next regeneration will hit: the scene tests sample a live simulation
+at a fixed cycle offset, so any pacing shift can flip an outcome. The
+tables are name-keyed and a stale one costs only the optimization it
+did not take, so leaving them is safe. Whoever next runs `make pgo`
+should expect this and decide whether the scene tests want a
+state-driven sample point instead of a cycle-driven one.
+
 **Still open**, with what the driver already provides toward it:
 
 - per-site compare INLINING (InlineCompares is all-or-nothing today).
@@ -176,9 +317,22 @@ of SRAM data and most of its -360 bytes of text.
   (14.8% of kernel XIP reads, 792 B) and `kfbcon_putc` (29.1%, 8.9
   KiB) are next, and neither fits what the KernCRText window has left
   (176 B on feather). They need a window move, not a setting.
-- the outliner's hot set (§4). It gates on "block lies on a CFG
-  cycle" today, which is blunt enough to cost it 2.9 points of text;
-  Options.HotFuncs is already wired as the plug for the measured set.
+- a never-executed-FUNCTION set, the other half of the outliner's hot
+  set (§4; the ColdBlocks half is DONE and written up above). The
+  block-level cold signal covers only functions the workload ran, so
+  the loops of functions it never entered keep the structural
+  exemption — and that is where the remaining ceiling is, worth
+  -0.91% of the kernel's text and -3.56% of the game's on the probe.
+  The set itself is nearly free: `blockHeat` already computes
+  `fnRd[f] == 0` and throws it away, and it wants its own map rather
+  than a change to ColdBlocks, whose fail-safe direction layout
+  depends on. What it needs FIRST is a way to see the cost. The
+  functions in question are, for the game, the scenes the workload
+  does not play — Boing, Chute, Puni — i.e. 60 Hz render loops, and
+  nothing in the tree times them (`game/us/*` is the Benchmark scene,
+  which the workload DOES play). Either those scenes get cycle
+  figures in the ratchet, or the game's workload grows to visit them,
+  or the game opts out of the set and it ships for the kernel alone.
 
 ## 2. Alignment-aware memcpy/memset — DONE for the static cases
 
@@ -403,9 +557,15 @@ moves differ only in two labels and two operand words. It was not
 built because exact matching had to prove itself first. Bodies
 containing a `call` stay out: the resume cell would be live across code
 that can re-enter it, which needs a stack or a per-site cell and
-neither is free. And the loop gate is deliberately blunt — the
-2.9 percentage points of text it leaves on the table are recoverable
-the moment §1's profile can say which loops are actually hot.
+neither is free. The loop gate WAS deliberately blunt; §1's profile
+can now say which loops are actually hot, and a cold-listed block no
+longer gets the loop exemption (`gen.outlineHot`). Re-measured, the
+blunt gate was costing 0.7 points of vi's text and 3.9 of the game's
+rather than 2.9 uniformly, and the measured set recovers a third of
+sh's and a fifth of vi's; the rest of it sits in the loops of
+functions the workload never entered, which the block-level cold set
+does not name and which nothing in the tree times. §1 has the table,
+the samples and what is left.
 
 ## 5. Copy coalescing — MEASURED, CLOSED (don't build)
 
