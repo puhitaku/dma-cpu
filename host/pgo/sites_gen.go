@@ -25,7 +25,7 @@ package pgo
 // different module set simply never asks about some of them.
 
 // KernelHotSites: 377 of the image's 1822 comparison sites; 429 of them
-// were executed at all, and the set covers 99.95% of the 403025
+// were executed at all, and the set covers 99.95% of the 403023
 // comparisons the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
@@ -410,7 +410,7 @@ var KernelHotSites = map[string]bool{
 }
 
 // GameHotSites: 348 of the image's 1429 comparison sites; 400 of them
-// were executed at all, and the set covers 99.99% of the 2159724
+// were executed at all, and the set covers 99.99% of the 2149858
 // comparisons the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the

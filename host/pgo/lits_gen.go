@@ -10,10 +10,10 @@ package pgo
 // count and trimmed until the resident half fits every board that ships
 // the image, with 256 bytes of the window left over.
 
-// KernelLits: 708 of 6228 pool words resident (2832 bytes of SRAM),
-// covering 99.9% of the 119290876 pool reads the workload made.
-// Trimmed from 1335 loop-rate keys by the KernCData window (100.0%
-// coverage untrimmed): the 627 coldest of them pay flash instead.
+// KernelLits: 708 of 6227 pool words resident (2832 bytes of SRAM),
+// covering 99.9% of the 119352135 pool reads the workload made.
+// Trimmed from 1325 loop-rate keys by the KernCData window (100.0%
+// coverage untrimmed): the 617 coldest of them pay flash instead.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
 var KernelLits = map[string]bool{
@@ -51,6 +51,7 @@ var KernelLits = map[string]bool{
 	"#0000004e":             true,
 	"#00000050":             true,
 	"#00000054":             true,
+	"#0000005b":             true,
 	"#0000005f":             true,
 	"#00000080":             true,
 	"#00000200":             true,
@@ -88,7 +89,6 @@ var KernelLits = map[string]bool{
 	"#fffffffe":             true,
 	"#ffffffff":             true,
 	"&B_badbuf_14":          true,
-	"&B_badbuf_17":          true,
 	"&B_badbuf_9":           true,
 	"&B_bread_10":           true,
 	"&B_bread_11":           true,
@@ -109,7 +109,6 @@ var KernelLits = map[string]bool{
 	"&B_cons_poll_235":      true,
 	"&B_cons_poll_28":       true,
 	"&B_cons_poll_7":        true,
-	"&B_cons_poll_88":       true,
 	"&B_cputc_3":            true,
 	"&B_cputc_4":            true,
 	"&B_cputc_wire_4":       true,
@@ -117,7 +116,6 @@ var KernelLits = map[string]bool{
 	"&B_cursor_xor_10":      true,
 	"&B_cursor_xor_11":      true,
 	"&B_cursor_xor_6":       true,
-	"&B_dirlookup_13":       true,
 	"&B_dirlookup_17":       true,
 	"&B_dirlookup_35":       true,
 	"&B_dma_ksyscall_10":    true,
@@ -127,7 +125,6 @@ var KernelLits = map[string]bool{
 	"&B_dma_ksyscall_141":   true,
 	"&B_dma_ksyscall_144":   true,
 	"&B_dma_ksyscall_150":   true,
-	"&B_dma_ksyscall_154":   true,
 	"&B_dma_ksyscall_24":    true,
 	"&B_dma_ksyscall_242":   true,
 	"&B_dma_ksyscall_245":   true,
@@ -140,7 +137,6 @@ var KernelLits = map[string]bool{
 	"&B_dma_ksyscall_332":   true,
 	"&B_dma_ksyscall_34":    true,
 	"&B_dma_ksyscall_40":    true,
-	"&B_dma_ksyscall_45":    true,
 	"&B_dma_ksyscall_631":   true,
 	"&B_dma_ksyscall_635":   true,
 	"&B_dma_ksyscall_675":   true,
@@ -166,7 +162,6 @@ var KernelLits = map[string]bool{
 	"&B_filewrite_21":       true,
 	"&B_filewrite_23":       true,
 	"&B_filewrite_27":       true,
-	"&B_filewrite_52":       true,
 	"&B_filewrite_7":        true,
 	"&B_fire_income_10":     true,
 	"&B_fire_income_12":     true,
@@ -181,6 +176,7 @@ var KernelLits = map[string]bool{
 	"&B_iget_27":            true,
 	"&B_iget_3":             true,
 	"&B_iget_7":             true,
+	"&B_ilock_7":            true,
 	"&B_iunlock_11":         true,
 	"&B_kcons_aim_3":        true,
 	"&B_kcons_aim_9":        true,
@@ -237,6 +233,8 @@ var KernelLits = map[string]bool{
 	"&B_kfbcon_putc_10":     true,
 	"&B_kfbcon_putc_11":     true,
 	"&B_kfbcon_putc_13":     true,
+	"&B_kfbcon_putc_15":     true,
+	"&B_kfbcon_putc_16":     true,
 	"&B_kfbcon_putc_17":     true,
 	"&B_kfbcon_putc_170":    true,
 	"&B_kfbcon_putc_173":    true,
@@ -249,6 +247,7 @@ var KernelLits = map[string]bool{
 	"&B_kfbcon_putc_209":    true,
 	"&B_kfbcon_putc_210":    true,
 	"&B_kfbcon_putc_212":    true,
+	"&B_kfbcon_putc_213":    true,
 	"&B_kfbcon_putc_225":    true,
 	"&B_kfbcon_putc_226":    true,
 	"&B_kfbcon_putc_23":     true,
@@ -257,6 +256,7 @@ var KernelLits = map[string]bool{
 	"&B_kfbcon_putc_33":     true,
 	"&B_kfbcon_putc_4":      true,
 	"&B_kfbcon_putc_40":     true,
+	"&B_kfbcon_putc_41":     true,
 	"&B_kfbcon_putc_73":     true,
 	"&B_kfbcon_putc_8":      true,
 	"&B_kfs_exit_11":        true,
@@ -602,21 +602,22 @@ var KernelLits = map[string]bool{
 	"&__L11":                true,
 	"&__L114":               true,
 	"&__L115":               true,
-	"&__L127":               true,
-	"&__L129":               true,
+	"&__L120":               true,
+	"&__L122":               true,
 	"&__L13":                true,
 	"&__L134":               true,
 	"&__L14":                true,
 	"&__L15":                true,
 	"&__L296":               true,
 	"&__L34":                true,
+	"&__L35":                true,
 	"&__L353":               true,
 	"&__L355":               true,
-	"&__L37":                true,
-	"&__L38":                true,
-	"&__L53":                true,
-	"&__L54":                true,
-	"&__L57":                true,
+	"&__L36":                true,
+	"&__L42":                true,
+	"&__L43":                true,
+	"&__L45":                true,
+	"&__L62":                true,
 	"&__L691":               true,
 	"&__L692":               true,
 	"&__L694":               true,
@@ -636,7 +637,6 @@ var KernelLits = map[string]bool{
 	"&__L767":               true,
 	"&__L768":               true,
 	"&__L775":               true,
-	"&__L96":                true,
 	"&__cw_eq":              true,
 	"&__cw_eq_e":            true,
 	"&__cw_eq_n":            true,
@@ -727,10 +727,10 @@ var KernelLits = map[string]bool{
 	"&rt_udm_sub":           true,
 }
 
-// ShLits: 155 of 1432 pool words resident (620 bytes of SRAM), covering
-// 89.6% of the 100906 pool reads the workload made.
-// Trimmed from 242 loop-rate keys by the ShData window (94.3% coverage
-// untrimmed): the 87 coldest of them pay flash instead.
+// ShLits: 155 of 1433 pool words resident (620 bytes of SRAM), covering
+// 89.7% of the 100662 pool reads the workload made.
+// Trimmed from 240 loop-rate keys by the ShData window (94.3% coverage
+// untrimmed): the 85 coldest of them pay flash instead.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
 var ShLits = map[string]bool{
@@ -777,7 +777,6 @@ var ShLits = map[string]bool{
 	"&B_gettoken_57":         true,
 	"&B_memmove_49":          true,
 	"&B_memmove_5":           true,
-	"&B_memmove_85":          true,
 	"&B_memmove_90":          true,
 	"&B_memmove_95":          true,
 	"&B_memset_19":           true,
@@ -797,7 +796,6 @@ var ShLits = map[string]bool{
 	"&B_readline_24":         true,
 	"&B_readline_244":        true,
 	"&B_readline_246":        true,
-	"&B_readline_247":        true,
 	"&B_readline_25":         true,
 	"&B_readline_251":        true,
 	"&B_readline_37":         true,
@@ -813,7 +811,9 @@ var ShLits = map[string]bool{
 	"&B_strlen_8":            true,
 	"&Cf148_peek":            true,
 	"&Cf242_strcmp":          true,
+	"&Cf247_strcmp":          true,
 	"&Ct147_peek":            true,
+	"&Ct241_strcmp":          true,
 	"&Ld126_gettoken":        true,
 	"&Ld129_gettoken":        true,
 	"&Ld138_peek":            true,
@@ -862,19 +862,19 @@ var ShLits = map[string]bool{
 	"&Xr272_strchr":          true,
 	"&Xr323_fputstr":         true,
 	"&Xr435_readline":        true,
-	"&__L100":                true,
 	"&__L153":                true,
-	"&__L155":                true,
+	"&__L154":                true,
 	"&__L157":                true,
 	"&__L166":                true,
 	"&__L169":                true,
-	"&__L208":                true,
-	"&__L209":                true,
-	"&__L211":                true,
+	"&__L170":                true,
+	"&__L171":                true,
+	"&__L172":                true,
+	"&__L92":                 true,
 	"&__L93":                 true,
 	"&__L94":                 true,
-	"&__L95":                 true,
 	"&__L98":                 true,
+	"&__L99":                 true,
 	"&__fovf":                true,
 	"&__ol_1":                true,
 	"&__ol_2":                true,
@@ -891,10 +891,10 @@ var ShLits = map[string]bool{
 	"&g_whitespace":          true,
 }
 
-// ViLits: 66 of 4874 pool words resident (264 bytes of SRAM), covering
-// 87.7% of the 4131485 pool reads the workload made.
-// Trimmed from 1163 loop-rate keys by the all-cold arena claim (26624
-// bytes) (99.8% coverage untrimmed): the 1097 coldest of them pay flash
+// ViLits: 66 of 4868 pool words resident (264 bytes of SRAM), covering
+// 87.8% of the 4125645 pool reads the workload made.
+// Trimmed from 1151 loop-rate keys by the all-cold arena claim (26624
+// bytes) (99.8% coverage untrimmed): the 1085 coldest of them pay flash
 // instead.
 // Workload: an editing session on the feather (open, insert, yank,
 // paste x10, delete, replace, substitute, quit).
@@ -959,7 +959,7 @@ var ViLits = map[string]bool{
 	"&Xr2732_memmove":   true,
 	"&Xr2752_memmove":   true,
 	"&Xr2754_memmove":   true,
-	"&__L278":           true,
+	"&__L267":           true,
 	"&__L524":           true,
 	"&__L584":           true,
 	"&__L593":           true,
@@ -967,8 +967,8 @@ var ViLits = map[string]bool{
 	"&__L64":            true,
 }
 
-// GameLits: 1507 of 5470 pool words resident (6028 bytes of SRAM),
-// covering 100.0% of the 33877367 pool reads the workload made.
+// GameLits: 1500 of 5472 pool words resident (6000 bytes of SRAM),
+// covering 100.0% of the 33739937 pool reads the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
 // Benchmark run to completion.
@@ -1397,14 +1397,10 @@ var GameLits = map[string]bool{
 	"&B_lanwalk_run_106":     true,
 	"&B_lanwalk_run_11":      true,
 	"&B_lanwalk_run_112":     true,
-	"&B_lanwalk_run_116":     true,
 	"&B_lanwalk_run_120":     true,
-	"&B_lanwalk_run_124":     true,
 	"&B_lanwalk_run_128":     true,
-	"&B_lanwalk_run_132":     true,
 	"&B_lanwalk_run_136":     true,
 	"&B_lanwalk_run_14":      true,
-	"&B_lanwalk_run_140":     true,
 	"&B_lanwalk_run_143":     true,
 	"&B_lanwalk_run_144":     true,
 	"&B_lanwalk_run_151":     true,
@@ -1491,7 +1487,6 @@ var GameLits = map[string]bool{
 	"&B_stick_2":             true,
 	"&B_stick_7":             true,
 	"&B_stick_8":             true,
-	"&B_tone_set_14":         true,
 	"&B_tone_set_25":         true,
 	"&B_tone_set_28":         true,
 	"&B_tone_set_33":         true,
@@ -2203,9 +2198,8 @@ var GameLits = map[string]bool{
 	"&__JP9":                 true,
 	"&__JP90":                true,
 	"&__JP91":                true,
-	"&__L100":                true,
-	"&__L112":                true,
-	"&__L113":                true,
+	"&__L107":                true,
+	"&__L108":                true,
 	"&__L119":                true,
 	"&__L120":                true,
 	"&__L121":                true,
@@ -2213,17 +2207,16 @@ var GameLits = map[string]bool{
 	"&__L124":                true,
 	"&__L125":                true,
 	"&__L126":                true,
+	"&__L134":                true,
 	"&__L135":                true,
 	"&__L136":                true,
-	"&__L137":                true,
 	"&__L165":                true,
 	"&__L166":                true,
 	"&__L167":                true,
 	"&__L168":                true,
 	"&__L169":                true,
-	"&__L171":                true,
 	"&__L186":                true,
-	"&__L222":                true,
+	"&__L209":                true,
 	"&__L268":                true,
 	"&__L269":                true,
 	"&__L270":                true,
@@ -2273,9 +2266,10 @@ var GameLits = map[string]bool{
 	"&__L602":                true,
 	"&__L603":                true,
 	"&__L604":                true,
+	"&__L79":                 true,
 	"&__L80":                 true,
-	"&__L81":                 true,
-	"&__L83":                 true,
+	"&__L82":                 true,
+	"&__L84":                 true,
 	"&__L848":                true,
 	"&__L849":                true,
 	"&__L850":                true,
@@ -2288,7 +2282,6 @@ var GameLits = map[string]bool{
 	"&__L857":                true,
 	"&__L858":                true,
 	"&__L859":                true,
-	"&__L86":                 true,
 	"&__L860":                true,
 	"&__L861":                true,
 	"&__L862":                true,
@@ -2308,8 +2301,11 @@ var GameLits = map[string]bool{
 	"&__L877":                true,
 	"&__L878":                true,
 	"&__L879":                true,
+	"&__L88":                 true,
 	"&__L880":                true,
 	"&__L881":                true,
+	"&__L89":                 true,
+	"&__L90":                 true,
 	"&__L91":                 true,
 	"&__L92":                 true,
 	"&__L920":                true,
@@ -2326,8 +2322,6 @@ var GameLits = map[string]bool{
 	"&__L932":                true,
 	"&__L94":                 true,
 	"&__L95":                 true,
-	"&__L96":                 true,
-	"&__L99":                 true,
 	"&__cw_eq":               true,
 	"&__cw_eq_e":             true,
 	"&__cw_eq_n":             true,
@@ -2355,7 +2349,6 @@ var GameLits = map[string]bool{
 	"&__ol_9":                true,
 	"&__olr_1":               true,
 	"&__olr_2":               true,
-	"&__olr_34":              true,
 	"&__olr_4":               true,
 	"&__olr_5":               true,
 	"&__rt_lshr":             true,

@@ -311,7 +311,7 @@ var KernelColdBlocks = map[string]bool{
 	"B_strncpy_10":        true,
 	"B_strncpy_15":        true,
 	"B_strncpy_17":        true,
-	"B_strncpy_24":        true,
+	"B_strncpy_21":        true,
 	"B_strncpy_3":         true,
 	"B_strncpy_4":         true,
 	"B_terminate_12":      true,
@@ -340,7 +340,7 @@ var KernelColdBlocks = map[string]bool{
 	"B_vfs_stati_5":       true,
 }
 
-// ShColdBlocks: 181 of the 347 blocks in the 41 functions the workload
+// ShColdBlocks: 182 of the 347 blocks in the 41 functions the workload
 // executed (355 blocks in the image).
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
@@ -406,6 +406,7 @@ var ShColdBlocks = map[string]bool{
 	"B_parseredirs_21":  true,
 	"B_parseredirs_23":  true,
 	"B_parseredirs_27":  true,
+	"B_parseredirs_6":   true,
 	"B_peek_12":         true,
 	"B_readline_101":    true,
 	"B_readline_108":    true,
@@ -524,8 +525,8 @@ var ShColdBlocks = map[string]bool{
 	"B_runcmd__rt_76":   true,
 	"B_runcmd__rt_8":    true,
 	"B_runcmd__rt_84":   true,
+	"B_runcmd__rt_87":   true,
 	"B_runcmd__rt_9":    true,
-	"B_runcmd__rt_90":   true,
 }
 
 // ViColdBlocks: 529 of the 1007 blocks in the 75 functions the workload
@@ -1073,7 +1074,6 @@ var GameColdBlocks = map[string]bool{
 	"B_bench_run_124":   true,
 	"B_bench_run_151":   true,
 	"B_cat_score_31":    true,
-	"B_cat_score_48":    true,
 	"B_dino_run_157":    true,
 	"B_dino_run_186":    true,
 	"B_dino_run_189":    true,
@@ -1082,9 +1082,9 @@ var GameColdBlocks = map[string]bool{
 	"B_dino_run_359":    true,
 	"B_dino_run_363":    true,
 	"B_dino_run_47":     true,
+	"B_dino_run_48":     true,
 	"B_draw_die_38":     true,
 	"B_draw_die_42":     true,
-	"B_draw_tile_63":    true,
 	"B_gd_wait_0":       true,
 	"B_gdma_copy_15":    true,
 	"B_gdma_copy_18":    true,
@@ -1117,6 +1117,7 @@ var GameColdBlocks = map[string]bool{
 	"B_spi_put8_1":      true,
 	"B_spi_wait_idle_0": true,
 	"B_tone_set_10":     true,
+	"B_uputc_8":         true,
 	"B_yacht_run_105":   true,
 	"B_yacht_run_214":   true,
 	"B_yacht_run_219":   true,
