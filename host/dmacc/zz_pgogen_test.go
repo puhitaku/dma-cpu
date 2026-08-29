@@ -472,7 +472,8 @@ func workloadOf(img string) string {
 	switch img {
 	case "game":
 		return "gamepico boot to the menu, menu navigation, then the " +
-			"Dino, LANWalk and Yacht scenes played to their first scoring event"
+			"Dino, LANWalk and Yacht scenes played to their first scoring " +
+			"event, and the Benchmark run to completion"
 	case "vi":
 		return "an editing session on the feather (open, insert, yank, " +
 			"paste x10, delete, replace, substitute, quit)"
@@ -732,6 +733,19 @@ func profileGame(t *testing.T) *imgProfile {
 		press(t, m, prog, pinDown)
 		press(t, m, prog, pinA)
 		runUntil(t, m, "yacht: cat=0 score=", at, 100_000_000)
+	})
+	// Benchmark, run to completion: the scene is the compiler's
+	// first-class demo, so its kernels earn their heat here like any
+	// other code — leaving it out of the workload once cost the k_*
+	// loops their four-move compares (-15% MIPS on silicon).
+	run(func(m *emu.Machine, prog *dmaasm.Result, at int) {
+		for _, marker := range []string{"menu: Arm Info", "menu: Benchmark"} {
+			press(t, m, prog, pinUp)
+			at = runUntil(t, m, marker, at, 100_000_000)
+		}
+		press(t, m, prog, pinA)
+		at = runUntil(t, m, "bench: up", at, 100_000_000)
+		runUntil(t, m, "bench done", at, 600_000_000)
 	})
 	reportHeat("game XIP text", fns, funcTot)
 	return &imgProfile{name: "game", lits: lits, litTot: litTot, litN: litN,
