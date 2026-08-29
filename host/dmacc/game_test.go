@@ -842,11 +842,43 @@ func TestGameBench(t *testing.T) {
 		t.Errorf("missing MIPS summary line")
 	}
 
-	// the headline MIPS figure renders in live green
+	// The composite score is recomputed host-side with the same
+	// integer arithmetic bench.c uses: per-kernel rate from the
+	// printed ops/us, then the seven compute rates in k-ops/s plus
+	// the memory stream per 100k words/s.
+	var rates []uint64
+	for _, name := range []string{"bogo ", "sieve", "sort ", "mul  ",
+		"div  ", "rand ", "shr1 ", "mem  "} {
+		re := regexp.MustCompile(`BENCH ` + name + `\s+ops=(\d+) us=(\d+)`)
+		mm := re.FindStringSubmatch(out)
+		if mm == nil {
+			t.Fatalf("%s: no BENCH line for the score check", name)
+		}
+		ops, _ := strconv.ParseUint(mm[1], 10, 32)
+		us, _ := strconv.ParseUint(mm[2], 10, 32)
+		ms := us / 1000
+		if ms == 0 {
+			ms = 1
+		}
+		rates = append(rates, ops/ms*1000+ops%ms*1000/ms)
+	}
+	var sum uint64
+	for _, r := range rates[:7] {
+		sum += r
+	}
+	wantScore := sum/1000 + rates[7]/100000
+	sm := regexp.MustCompile(`BENCH score=(\d+)`).FindStringSubmatch(out)
+	if sm == nil {
+		t.Errorf("missing score line")
+	} else if got, _ := strconv.ParseUint(sm[1], 10, 32); got != wantScore {
+		t.Errorf("score=%d, want %d", got, wantScore)
+	}
+
+	// the headline score figure renders in live green
 	p := decodeLCD(m, 16)
 	live := rgb565(90, 240, 140)
 	if n := p.countColor(8, 160, 119, 176, live); n < 60 {
-		t.Errorf("MIPS headline: %d live-green pixels", n)
+		t.Errorf("score headline: %d live-green pixels", n)
 	}
 	dumpPNG(t, p, "bench.png")
 	_ = at

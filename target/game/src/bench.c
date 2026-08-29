@@ -278,6 +278,7 @@ bench_run(void)
   static const kfn kf[8] = {k_bogo, k_sieve, k_sort, k_mul,
                             k_div,  k_rand,  k_shr1, k_mem};
   uint kus[8];
+  uint krate[8];
   char line[32];
   for (int k = 0; k < 8; k++) {
     int y = 48 + k * 13;
@@ -309,6 +310,7 @@ bench_run(void)
     if (ms == 0)
       ms = 1;
     uint rate = ops / ms * 1000u + ops % ms * 1000u / ms;
+    krate[k] = rate;
     gfx_fill(56, y, 176, 12, C_BG);
     numsp(line, 5, ms);
     line[5] = 0;
@@ -320,29 +322,41 @@ bench_run(void)
     gfx_present();
   }
 
-  /* headline: the calibrated loop, in ISA instructions per second */
+  /* headline: the composite score. The bogo MIPS figure is one
+   * kernel's result, not a summary of the others, so every kernel
+   * counts as its own term: the seven compute rates in k-ops/s plus
+   * the memory stream per 100k words/s. */
+  uint score = (krate[0] + krate[1] + krate[2] + krate[3] + krate[4] +
+                krate[5] + krate[6]) /
+                   1000u +
+               krate[7] / 100000u;
   uint mips100 = LOOP_N / 100u * LOOP_INSTR * 10000u / kus[0];
   uint bogo100 = LOOP_N * 200u / kus[0]; /* Linux: loops/s / 500k */
   char m[16];
+  numsp(m, 5, score);
+  gfx_text2(8, 160, m, C_LIVE, C_BG);
+  gfx_text2(112, 160, "SCORE", C_TITLE, C_BG);
+  gfx_text(8, 184, "kernel rates/1k + mem/100k", C_DIM, C_BG);
   numsp(m, 3, mips100 / 100);
   m[3] = '.';
   m[4] = (char)('0' + mips100 / 10 % 10);
   m[5] = (char)('0' + mips100 % 10);
   m[6] = 0;
-  gfx_text2(8, 160, m, C_LIVE, C_BG);
-  gfx_text2(112, 160, "MIPS", C_TITLE, C_BG);
-  gfx_text(8, 184, "ISA instr/s via bogo loop", C_DIM, C_BG);
+  gfx_text(8, 198, "MIPS (bogo loop):", C_DIM, C_BG);
+  gfx_text(184, 198, m, C_TEXT, C_BG);
   numsp(m, 3, bogo100 / 100);
   m[3] = '.';
   m[4] = (char)('0' + bogo100 / 10 % 10);
   m[5] = (char)('0' + bogo100 % 10);
   m[6] = 0;
-  gfx_text(8, 198, "BogoMIPS (linux conv):", C_DIM, C_BG);
-  gfx_text(184, 198, m, C_TEXT, C_BG);
+  gfx_text(8, 212, "BogoMIPS (linux conv):", C_DIM, C_BG);
+  gfx_text(184, 212, m, C_TEXT, C_BG);
   gfx_text(8, 226, "press: back", C_DIM, C_BG);
   gfx_present();
 
-  uputs("BENCH mips100=");
+  uputs("BENCH score=");
+  uputn(score);
+  uputs("\nBENCH mips100=");
   uputn(mips100);
   uputs(" bogo100=");
   uputn(bogo100);

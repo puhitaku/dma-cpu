@@ -45,7 +45,7 @@ var KernelHotFuncs = map[string]bool{
 }
 
 // GameHotFuncs: 31 of 83 executed functions, covering 97.1% of the
-// 51332711 text reads the workload made.
+// 50173538 text reads the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
 // Benchmark run to completion.
