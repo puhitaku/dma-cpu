@@ -14,8 +14,8 @@ package pgo
 // that links a different module set (the displayless kernels take the
 // fb stub) simply has no function by some of these names.
 
-// KernelHotFuncs: 23 of 85 executed functions, covering 97.2% of the
-// 10825956 text reads the workload made.
+// KernelHotFuncs: 25 of 85 executed functions, covering 97.2% of the
+// 10802127 text reads the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
 var KernelHotFuncs = map[string]bool{
@@ -28,6 +28,7 @@ var KernelHotFuncs = map[string]bool{
 	"dma_ksyscall":  true,
 	"fileread":      true,
 	"filewrite":     true,
+	"iget":          true,
 	"kconsread":     true,
 	"kconswrite":    true,
 	"kdmacpy":       true,
@@ -38,14 +39,15 @@ var KernelHotFuncs = map[string]bool{
 	"kfs_read":      true,
 	"kfs_write":     true,
 	"memmove":       true,
+	"namex":         true,
 	"readi":         true,
 	"strncpy":       true,
 	"terminate":     true,
 	"vfork_release": true,
 }
 
-// GameHotFuncs: 31 of 83 executed functions, covering 97.1% of the
-// 50329118 text reads the workload made.
+// GameHotFuncs: 32 of 83 executed functions, covering 97.0% of the
+// 50591541 text reads the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
 // Benchmark run to completion.
@@ -71,10 +73,11 @@ var GameHotFuncs = map[string]bool{
 	"k_sort":        true,
 	"lanwalk_run":   true,
 	"lcd_flush":     true,
+	"led_tick":      true,
 	"menu_run":      true,
-	"neigh":         true,
 	"now_us":        true,
 	"pcm_tick":      true,
+	"snd_tick":      true,
 	"spi_put8":      true,
 	"stick":         true,
 	"uputc":         true,

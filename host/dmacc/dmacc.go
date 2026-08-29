@@ -74,7 +74,9 @@ type Options struct {
 	// (~9% smaller text) at ~2x the per-branch cost — the unpack is a
 	// byte-wise copy plus two indirections. The default (balanced)
 	// build keeps the four-move protocol: TestZZBenchXsh showed the
-	// descriptor form doubling whole-command cycle counts.
+	// descriptor form doubling whole-command cycle counts. It is a
+	// per-image switch; which SITES inside the image actually shrink is
+	// HotSites' question (or, with no profile, HotFuncs').
 	OptSize bool
 	// BoundsReport, when non-nil, receives the whole-program value-range
 	// report: the final bound of every function parameter and return,
@@ -87,13 +89,26 @@ type Options struct {
 	// (outline.go). Both are on by default: text size is what they buy.
 	NoOutline bool
 	// HotFuncs is the measured hot-function set (host/pgo, regenerate
-	// with `make pgo`), consumed twice: under OptSize a hot function
-	// keeps the four-move compare protocol while everything else pays
-	// descriptor sites, and the outliner never outlines a hot function
-	// (an outlined site pays one or two extra executed records for the
-	// jump). ResidentFuncs, the hand-picked hot list, is unioned in on
-	// the outliner side.
+	// with `make pgo`), consumed twice: the outliner never outlines a
+	// hot function (an outlined site pays one or two extra executed
+	// records for the jump), and under OptSize a hot function keeps the
+	// four-move compare protocol while everything else pays descriptor
+	// sites — the latter only while HotSites is empty, since a site
+	// profile decides the same question with more resolution.
+	// ResidentFuncs, the hand-picked hot list, is unioned in on the
+	// outliner side.
 	HotFuncs map[string]bool
+	// HotSites is the measured hot comparison-SITE set (host/pgo, same
+	// `make pgo`), keyed by the site labels compare.go emits —
+	// `cws_<function>_<ordinal in emission order>`. With OptSize on and
+	// this set non-empty it REPLACES HotFuncs in the compare decision:
+	// a named site takes the four-move protocol and every other site
+	// takes the descriptor form, whichever function it sits in. Empty
+	// means "no profile for this image" and leaves the per-function
+	// rule in charge. Names are not validated: a site that no longer
+	// exists is simply never asked about (siteFourMove).
+	HotSites map[string]bool
+
 	// ColdBlocks is the measured cold-block set (host/pgo, regenerate
 	// with `make pgo`), keyed by emitted block label (`B_<func>_<blk>`,
 	// funcCtx.blockLabel). A function's listed blocks sink to the end of

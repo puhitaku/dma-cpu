@@ -77,9 +77,10 @@ import (
 //	          is exactly what loops re-execute. It is blunt, and costs
 //	          2.9 points of the text it would otherwise save.
 //	FUNCTIONS Options.HotFuncs is never outlined, unioned with
-//	          Options.ResidentFuncs (today's hand-picked hot set). That
-//	          list is the plug for the profile driver of prompts/042 §1:
-//	          a generated hot-function set drops straight into it.
+//	          Options.ResidentFuncs (the hand-picked hot set). HotFuncs
+//	          is the measured set from prompts/042 §1; since §10 (c)
+//	          moved the compare decision onto Options.HotSites, gating
+//	          this pass is the only job it still has.
 
 // olMaxK bounds the length of an outlined sequence, in instructions.
 const olMaxK = 40
@@ -255,6 +256,7 @@ func olRuns(lines []olLine, eligible, hot map[string]bool) []olRun {
 	var runs []olRun
 	var cur []int
 	sec := olSecNone
+	next := -1 // line a run's next instruction must occupy to extend it
 	inFunc, owned := false, false
 	flush := func(term bool) {
 		if len(cur) >= 2 {
@@ -270,15 +272,34 @@ func olRuns(lines []olLine, eligible, hot map[string]bool) []olRun {
 				flush(false)
 				continue
 			}
-			if len(cur) > 0 && cur[len(cur)-1] != i-1 {
+			if len(cur) > 0 && i != next {
 				flush(false)
 			}
 			sec = l.sec
 			cur = append(cur, i)
+			next = i + 1
 			if olTerm[l.mnem] {
 				flush(true)
 			}
 		case olLabelLine:
+			// Compare-site labels (compare.go, cmpSiteLabel) are profile
+			// markers: nothing jumps to them and nothing addresses their
+			// records, so they are not the re-entry the "no label inside
+			// a run" rule guards against. Stepping over one keeps the
+			// site's moves in the same candidate run as the code that
+			// computed its operands — without this the marker would cost
+			// text by splitting runs that used to be whole. An outlined
+			// range swallows the marker with the instructions around it,
+			// so the site loses its name in the profile; that is the
+			// right outcome, since outlined code is cold code by
+			// construction and a name it cannot use would only tempt the
+			// driver to promote it.
+			if strings.HasPrefix(l.lbl, "cws_") {
+				if i == next {
+					next = i + 1
+				}
+				continue
+			}
 			flush(false)
 			switch {
 			case strings.HasPrefix(l.lbl, "f_"):

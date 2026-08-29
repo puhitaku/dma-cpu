@@ -1,8 +1,9 @@
 // Package pgo holds the committed profile-guided settings: the
 // hot-literal sets that decide each image's flash/SRAM pool split, the
-// hot-function sets that decide which functions keep the fast four-move
-// compare protocol under dmacc's OptSize, and the cold-block sets that
-// decide each function's block layout.
+// hot-SITE sets that decide which comparisons keep the fast four-move
+// protocol under dmacc's OptSize, the hot-function sets that gate the
+// outliner (and stand in for the site sets where none exists), and the
+// cold-block sets that decide each function's block layout.
 //
 // Every map in this package is GENERATED, never hand-edited. The
 // generator is TestGenPGO (host/dmacc/zz_pgogen_test.go): it boots each
@@ -24,9 +25,14 @@
 //     literal not named here moves to the flash text tail; the named
 //     ones stay in resident SRAM data. Bigger set = fewer flash reads,
 //     more SRAM (4 bytes per key).
-//   - dmacc.Options.HotFuncs — the *HotFuncs maps, with OptSize on. A
-//     function named here keeps the four-move compare protocol; every
-//     other function takes the two-record descriptor form.
+//   - dmacc.Options.HotSites — the *HotSites maps, with OptSize on. A
+//     comparison site named here keeps the four-move protocol; every
+//     other site in the image takes the two-record descriptor form,
+//     whichever function it sits in.
+//   - dmacc.Options.HotFuncs — the *HotFuncs maps. They keep the
+//     record outliner off the hot functions, and they answer the
+//     compare question the old way (per function, all-or-nothing) for
+//     an image whose *HotSites set is empty.
 //   - dmacc.Options.ColdBlocks — the *ColdBlocks maps. A block named
 //     here sinks to the end of its function, so the blocks that do run
 //     lie back to back. Cold-set, not hot-set: an unlisted block is

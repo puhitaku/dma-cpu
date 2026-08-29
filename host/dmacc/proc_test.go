@@ -56,7 +56,8 @@ func compileKernelOpts(t *testing.T, fs, xip bool) string {
 // compileKernelXsh is the deployable XIP configuration; fb picks the
 // real display driver (PSRAM boards) or the no-op stub. cmp "pgo" is
 // what dmxgen ships: descriptor compares everywhere EXCEPT the
-// measured hot functions (pgo.KernelHotFuncs).
+// measured hot compare sites (pgo.KernelHotSites), with
+// pgo.KernelHotFuncs holding the outliner off the hot functions.
 func compileKernelXsh(t *testing.T, fb bool) string {
 	return compileKernelFull(t, kernKey{fs: true, xip: true, fb: fb, cmp: "pgo"})
 }
@@ -71,7 +72,7 @@ var kernelCache sync.Map
 // kernKey selects a kernel shape: fs picks the real filesystem, xip
 // the flash-text layout, fb the real display driver, and cmp the
 // comparison-site policy ("" balanced four-move, "os" descriptors
-// everywhere, "pgo" descriptors minus the profiled hot functions).
+// everywhere, "pgo" descriptors minus the profiled hot sites).
 type kernKey struct {
 	fs, xip, fb bool
 	cmp         string
@@ -111,6 +112,7 @@ func compileKernelFull(t *testing.T, key kernKey) string {
 		// The measured layout rides with the measured compare policy:
 		// "pgo" is the shape dmxgen ships, and the size comparison
 		// against "" and "os" stays a comparison of one build.
+		opts.HotSites = pgo.KernelHotSites
 		opts.ColdBlocks = pgo.KernelColdBlocks
 	}
 	if xip && fs {

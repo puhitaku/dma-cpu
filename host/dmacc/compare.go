@@ -36,6 +36,14 @@ import (
 // Options.InlineCompares restores the inline lowering (faster by a few
 // blocks per branch, much larger); it ignores the facts, since its
 // macros are already full-range and unconditional.
+//
+// Size-directed variants. Under Options.OptSize a site can shrink from
+// four moves and a jump to two records by handing the helper a constant
+// descriptor instead (cmpDescHelpers), at roughly twice the per-branch
+// cost. Which sites pay that is a measurement, not a guess: every site
+// carries a stable label and the PGO driver ranks them by executions
+// (prompts/042 §10c) — see siteFourMove for the rule and cmpSiteLabel
+// for the naming.
 
 type cmpHelper struct {
 	name string
@@ -220,15 +228,70 @@ func (fc *funcCtx) wordAddr(op string) (string, bool) {
 	return sym, true
 }
 
+// cmpSiteLabel names the site about to be emitted. The name is the
+// function plus a per-function ordinal in EMISSION order, which is what
+// makes it a stable identity across builds: the ordinal counts calls to
+// emitCmpSite, and the form a site takes (four-move or descriptor) does
+// not change how many sites there are or in what order they come — so a
+// profile collected from one build still names the same sites in the
+// next. The label costs zero bytes; it exists so the PGO driver can
+// attribute text reads to a SITE and not just to its function
+// (zz_pgogen_test.go, siteCounts).
+//
+// The `cws_` spelling matters twice over: it is not `__`-prefixed (the
+// assembler drops those from Result.Symbols, which is where the driver
+// reads site addresses from), and it is not `f_`-prefixed (the driver's
+// function attribution keys on that).
+func (fc *funcCtx) cmpSiteLabel() string {
+	fc.cmpN++
+	return fmt.Sprintf("cws_%s_%d", sanitize(fc.f.Name), fc.cmpN)
+}
+
+// siteFourMove decides one site's form: true for the fast four-move
+// protocol, false to try the descriptor form (which still needs static
+// word addresses for both operands — emitCmpSite falls back).
+//
+// The order of the tests is the policy:
+//
+//	balanced   without OptSize nothing pays descriptors, profile or no
+//	           profile. HotSites is a way to spend size on speed, and a
+//	           balanced build has already spent it everywhere.
+//	.ramtext   RAMTextFuncs code runs while the XIP window is down and
+//	           its descriptors would live in flash text, so those sites
+//	           stay four-move whatever the profile says. The plain
+//	           helpers and their operand cells are RAM-resident.
+//	per-site   with a profile for this image, the measurement decides
+//	           each site on its own reads: a hot site keeps four moves
+//	           even in a function nobody calls often, and a cold site
+//	           pays descriptors even inside a hot function. This is what
+//	           per-function granularity could not express — most of a
+//	           hot function's sites are its error paths.
+//	per-func   with no profile, today's rule: hot functions keep the
+//	           four-move protocol, everything else shrinks (fc.optSize
+//	           is OptSize minus HotFuncs).
+func (fc *funcCtx) siteFourMove(site string) bool {
+	switch {
+	case !fc.g.opts.OptSize:
+		return true
+	case fc.inRAM:
+		return true
+	case len(fc.g.opts.HotSites) != 0:
+		return fc.g.opts.HotSites[site]
+	default:
+		return !fc.optSize
+	}
+}
+
 // emitCmpSite emits one outlined-comparison site: the four-move
-// protocol, or the two-record descriptor form where the function opted
-// into size (Options.OptSize minus Options.HotFuncs — fc.optSize).
+// protocol, or the two-record descriptor form. The choice is per SITE
+// where a profile names one (Options.HotSites) and per FUNCTION
+// otherwise (Options.OptSize minus Options.HotFuncs — fc.optSize);
+// siteFourMove spells the rule out.
 func (fc *funcCtx) emitCmpSite(helper, a, b, t, f string) {
 	fc.g.cmpUsed[helper] = true
-	// RAMTextFuncs code runs while XIP is down; its descriptors would
-	// live in flash text, so those sites keep the all-SRAM four-move
-	// protocol (the plain helpers and their operands are RAM-resident).
-	if pa, ok := fc.wordAddr(a); ok && !fc.inRAM && fc.optSize {
+	site := fc.cmpSiteLabel()
+	fc.label(site)
+	if pa, ok := fc.wordAddr(a); ok && !fc.siteFourMove(site) {
 		pb, ok2 := "", b == ""
 		if b != "" {
 			pb, ok2 = fc.wordAddr(b)

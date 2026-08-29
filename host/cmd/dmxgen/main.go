@@ -792,8 +792,10 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			 * placement-only residency (no closure), feather-style */
 			ResidentFuncs: []string{"shoot", "clearance", "in_box",
 				"normal_of"},
-			/* size everywhere, speed on the measured hot paths (host/pgo) */
-			OptSize: true, HotFuncs: pgo.GameHotFuncs,
+			/* size everywhere, speed on the measured hot paths (host/pgo):
+			 * HotSites decides the compare form one site at a time,
+			 * HotFuncs gates the outliner */
+			OptSize: true, HotFuncs: pgo.GameHotFuncs, HotSites: pgo.GameHotSites,
 			/* and the blocks the profile never reached sink out of the
 			 * prefetch path, per function (host/pgo) */
 			ColdBlocks: pgo.GameColdBlocks})
@@ -1053,10 +1055,11 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			ResidentFuncs: kernResident(bd),
 			/* host the shared runtime for every guest image below */
 			RuntimeHost: true,
-			/* size everywhere, speed on the measured hot paths: the
-			 * compare sites of every function outside pgo.KernelHotFuncs
-			 * take the two-record descriptor form (host/pgo) */
-			OptSize: true, HotFuncs: pgo.KernelHotFuncs,
+			/* size everywhere, speed on the measured hot paths: every
+			 * compare site outside pgo.KernelHotSites takes the
+			 * two-record descriptor form, and pgo.KernelHotFuncs keeps
+			 * the outliner off the hot functions (host/pgo) */
+			OptSize: true, HotFuncs: pgo.KernelHotFuncs, HotSites: pgo.KernelHotSites,
 			/* never-executed blocks sink to the end of their function,
 			 * so the hot ones lie back to back in the XIP window */
 			ColdBlocks: pgo.KernelColdBlocks})

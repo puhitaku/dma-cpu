@@ -41,6 +41,7 @@ type funcCtx struct {
 	facts     factSet                     // this function's value bounds (facts.go)
 
 	hasCalls   bool
+	cmpN       int  // compare sites emitted so far (site-label ordinal)
 	optSize    bool // this function's compare sites take the descriptor form
 	inRAM      bool // whole function emitted into .ramtext (RAMTextFuncs)
 	rec        bool // uses the recursion frame stack (push/pop)

@@ -7,17 +7,20 @@ leverage per effort; every item rides the existing differential-test
 and emulator harness.
 
 Status 2026-08-29: §1 (the PGO loop), §2 (static cases), §3, §4, §6,
-§9 and §10 (a) + (a1) + (a2) are DONE (eqzp/ltp shipped, then the
+§9 and §10 (a) + (a1) + (a2) + (c) are DONE (eqzp/ltp shipped, then the
 whole-program parameter/return bounds that feed them, then the
 `nsw`/`nuw` wrap flags — which are sound, tested and worth one routed
-site in the game and nothing anywhere else, and say so; §10's (b)
-planner idea is measured and CLOSED); §5 is measured and CLOSED as not
-worth building; §7 remains open. §6 shipped last and is the biggest
-single size win of the wave — sh's text is down 32.8% — and it also
-lifted sh's recursion bound from a clone count to a byte budget. The
-2026-08-29 wave also measured where executed records actually go
-(comparison lowering ~65%, see §10), which reranks everything still
-open. The wave's last item is §1's block layout: `Options.ColdBlocks`
+site in the game and nothing anywhere else, and say so; then (c), which
+moved the OptSize carve-out from whole functions down to individual
+compare SITES: -1.1% on the xsh cold sum and -104 bytes of kernel text,
+-0.5% on the game's Benchmark scene for +1.1 KiB; §10's (b) planner
+idea is measured and CLOSED); §5 is measured and CLOSED as not worth
+building; §7 remains open. §6 is the biggest single size win of the
+wave — sh's text is down 32.8% — and it also lifted sh's recursion
+bound from a clone count to a byte budget. The 2026-08-29 wave also
+measured where executed records actually go (comparison lowering ~65%,
+see §10), which reranks everything still open. §1's block layout
+closed alongside (c): `Options.ColdBlocks`
 sinks never-executed blocks to the end of their function, worth a
 uniform ~0.3% of cycles (xsh, vi, fbcon) and a few hundred bytes, and
 zero on the game — small, but it costs nothing when the map is empty
@@ -50,11 +53,16 @@ run prices everything:
   signal that ranks ResidentFuncs.
 - the same over the kernel's `.ramtext`, which prices what the current
   ResidentFuncs list is already buying.
+- per-SITE comparison executions, off the same text window (added by
+  §10 (c)). dmacc labels every outlined compare site `cws_<func>_<n>`,
+  so the word histogram resolves to sites as well as functions.
 
 Ownership comes from the `f_` function labels alone, which sidesteps
 the §8 attribution trap: under XIPText the runtime and compare
 millicode live in `.ramtext`, so the XIP text a histogram attributes
-holds nothing but dmacc's own labels.
+holds nothing but dmacc's own labels. The site scan reads the same
+symbol table, which is why the site labels are neither `__`-prefixed
+(dmaasm drops those) nor `f_`-prefixed.
 
 **Workloads.** kernel/sh: a feather boot to the prompt plus
 TestZZBenchXsh's command set run cold and warm; vi: TestZZBenchVi's
@@ -64,10 +72,13 @@ event. Changing a workload re-derives every setting together.
 
 **What it produces.** `pgo.KernelLits` / `ShLits` / `ViLits` /
 `GameLits` (hot literal pools for all four images, replacing the
-kernel-only hand-run `XSHHotLits`), and `pgo.KernelHotFuncs` /
+kernel-only hand-run `XSHHotLits`), `pgo.KernelHotFuncs` /
 `GameHotFuncs` — the per-FUNCTION carve-out of `dmacc.Options.OptSize`
 (`Options.HotFuncs`: OptSize everywhere, four-move compares on the
-functions covering the top 97% of executed text reads). Each set is
+functions covering the top 97% of executed text reads) — and, since
+§10 (c), `pgo.KernelHotSites` / `GameHotSites`, which make the same
+call per compare SITE and take that job off HotFuncs (which goes on
+gating the outliner). Each literal set is
 ranked by read count and trimmed until the resident half fits every
 board that ships the image with 256 bytes of the window to spare; vi's
 is trimmed harder still, to the slack inside kalloc's 256-byte
@@ -147,12 +158,14 @@ of SRAM data and most of its -360 bytes of text.
 
 **Still open**, with what the driver already provides toward it:
 
-- per-site compare inlining (InlineCompares is all-or-nothing today).
-  The per-function machinery is the same shape — `funcCtx.optSize` is
-  the pattern to copy — but a per-SITE decision needs site identity in
-  the profile, which means labelling compare sites in the .dasm and
-  attributing reads to them; the text histogram resolves to words
-  already, so only the labelling is missing.
+- per-site compare INLINING (InlineCompares is all-or-nothing today).
+  The site identity this needed is built and shipped — §10 (c) labels
+  every compare site `cws_<func>_<n>` and the driver ranks them by
+  executions — so what is left is only the third form: a site named in
+  `HotSites` could take the 14-18-block inline macro instead of the
+  four-move protocol. That is a much bigger byte bet per site than
+  (c)'s three records, so it wants its own measurement, on the top few
+  dozen sites rather than all 377.
 - ResidentFuncs past `cursor_xor`: the ranking says `cell_addr`
   (14.8% of kernel XIP reads, 792 B) and `kfbcon_putc` (29.1%, 8.9
   KiB) are next, and neither fits what the KernCRText window has left
@@ -732,9 +745,9 @@ The remaining lever for those was (a2), honouring `nsw`/`nuw` — built,
 measured and DONE below. It is worth ~nothing, and the section says
 why.
 
-Still on the table, in measured-value order:
-(c) per-site descriptor-vs-four-move selection from the §1 profile —
-(b), the compact bank-state planner, is measured and CLOSED below.
+(c), per-site descriptor-vs-four-move selection from the §1 profile, is
+DONE and measured below. (b), the compact bank-state planner, is
+measured and CLOSED below.
 
 ### (a2) The `nsw`/`nuw` wrap flags — DONE, and worth ~nothing
 
@@ -810,6 +823,77 @@ redesign and the signed-counter shape is closed as a lever. The rules
 stay: they are cheap, sound, tested, and the `sub nuw` one gives `sub`
 a bound rule it never had.
 
+### (c) Per-SITE descriptor-vs-four-move selection — DONE
+
+The OptSize carve-out used to be per FUNCTION: `Options.HotFuncs`
+named the functions covering 97% of executed text reads, and every
+compare site inside one kept the four-move protocol while every site
+outside took the two-record descriptor. A hot function is mostly not
+hot, though — its argument checks and error paths run once — so that
+rule bought speed for code that never executes and sold it on code
+that does. Per site, the same question has a much better answer.
+
+**The labelling.** `emitCmpSite` now emits `cws_<func>_<n>` before
+every site, n counting that function's sites in EMISSION order. The
+ordinal is what makes the identity stable: the form a site takes does
+not change how many sites there are or in what order they come, so a
+profile collected from one build still names the same sites in the
+next. Two constraints the name has to satisfy, both from the §8
+attribution trap: not `__`-prefixed (dmaasm drops those from
+`Result.Symbols`) and not `f_`-prefixed (that is the function scan's
+key). The labels cost zero bytes — but only after the outliner was
+taught to step over them (`olRuns`): a marker between two instructions
+otherwise ends a candidate run, and that alone cost sh 72 bytes of
+text. With the step-over, every image in TestZZAllSizes assembles to
+the byte it did before, and the compiled .dasm is identical modulo the
+label lines.
+
+**The attribution.** A site spans from its label to the next symbol
+(measured: 16, 32 or 40 bytes, i.e. 2, 4 or 5 compact records; capped
+at 5 records in case a `__`-prefixed successor was dropped). Reads are
+divided by the site's own word count to get EXECUTIONS — without that
+division the ranking would prefer the sites the last profile made five
+records long, and the choice would ratchet on its own output.
+
+**The policy, and a wrong turn worth recording.** The first cut copied
+`funcHotCover` and kept the sites covering 97% of executions. That is
+the wrong shape one level down: 429 of the kernel's 1822 sites execute
+at all, over four orders of magnitude, and 97% of the total lands
+inside a handful of loops — the cut kept 163 sites, saved 1048 bytes
+of text and cost 0.6% of the xsh cold sum. An absolute bar reads the
+distribution the right way round, because a site is cheap to keep (24
+bytes) and expensive to lose (a flash-resident descriptor unpacked on
+every branch). At `siteHotExecs = 8` the kernel keeps 377 sites and
+the game 348, covering 99.95% and 99.99% of their comparisons.
+
+**Measured, against 7f98c0b.** Kernel (fs-xip-pgo): text 197056 ->
+196952, data 45276 -> 45456. xsh cold cycles: echo hi 1416217 ->
+1458029, ls 2838596 -> 2774528, cat README 1227813 -> 1203141, cat
+README | wc 1976599 -> 1903824, free 1861669 -> 1858328, ((((echo
+deep)))) 1467563 -> 1468960 — the six-command sum -1.13%. vi is
+unchanged at 173.5M (its bench quantizes to 500k). Game: the Benchmark
+scene 46174253 -> 45924473 cycles (-0.54%) for +1108 bytes of text,
+data unchanged — the promotion direction, since the game's site
+profile is wider than its hot-function set.
+
+`echo hi` is the one command that regresses, and consistently: +2.9%
+here, +0.8% at a bar of 1, +0.8% under a promote-only rule. It is the
+shortest command and the most XIP-miss-bound, and the deltas across
+those three policies are bimodal (echo hi lands on 1.427M or 1.458M,
+free on 1.858M or 1.904M) in a way 52 sites cannot explain — this is
+layout, not compare form. Per-command deltas below ~2% on the xsh
+bench should be read as noise; the sum is the signal.
+
+**Two policies that do NOT pay, both measured and dropped.** Keeping
+every site the workload executed at all (bar of 1) gives -0.71% on the
+sum for +136 bytes — worse on both axes than a bar of 8. Unioning the
+site set with the old per-function rule, so the profile can only ever
+promote, gives -0.98% for +760 bytes: the demotions are not costing
+speed, so paying to keep them is pure loss. HotSites therefore
+REPLACES HotFuncs in the compare decision whenever it is non-empty,
+and an empty map (no profile) leaves the per-function rule exactly as
+it was — a mutation test pins that byte for byte.
+
 ### (b) The compact bank-state planner — MEASURED, CLOSED (don't build)
 
 The tax is real and was priced twice (2026-08-29). Statically it is
@@ -867,7 +951,9 @@ to follow it, is DONE too — the poison-semantics policy is settled and
 recorded in facts.go's header, and the payoff is one routed site in the
 game and zero cycles anywhere, because the operands that block the
 compares are loads and phis at the top, which no wrap flag can lift.
-What is left of the pair is §1 (it compounds: every future heuristic
-becomes automatic), and after it §10 (c), per-site
-descriptor-vs-four-move selection from the §1 profile.
+§1 followed (it compounds: every future heuristic becomes automatic),
+and §10 (c) — per-site descriptor-vs-four-move selection from the §1
+profile — followed that and is DONE. Both halves of the pair are now
+spent; what is left in §1's list is the block-layout work, which needs
+an emission side dmacc does not have yet.
 

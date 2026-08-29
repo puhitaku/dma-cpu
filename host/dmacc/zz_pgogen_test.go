@@ -28,6 +28,11 @@ package dmacc_test
 //	    finer (blockHeat). A block nobody fetched a word of, inside a
 //	    function that did run, is cold and sinks to the end of its
 //	    function under dmacc's Options.ColdBlocks.
+//	(e) per-SITE comparison executions, off the same text window. dmacc
+//	    labels every outlined compare site (`cws_<func>_<n>`), so the
+//	    word histogram resolves to sites as well as to functions, and
+//	    the four-move/descriptor choice can be made where it is paid —
+//	    per branch instead of per function (prompts/042 §10c).
 //
 // Attribution note (prompts/042 §8): dmaasm drops every `__`-prefixed
 // symbol from Result.Symbols, so a nearest-preceding-symbol scan over
@@ -35,7 +40,9 @@ package dmacc_test
 // whatever compiled function precedes them. Under XIPText the runtime
 // and millicode live in .ramtext, not in the XIP text this attributes,
 // and the only labels left there are dmacc's own — so ownership comes
-// from the `f_` function labels alone, which is exact.
+// from the `f_` function labels alone, which is exact. The site scan
+// reads the same table, which is why the site labels may be neither
+// `__`- nor `f_`-prefixed.
 
 import (
 	"fmt"
@@ -59,7 +66,37 @@ const litHotReads = 32
 // compare form (dmacc Options.OptSize); inside it they keep the
 // four-move protocol. The knee: the tail past this point is thousands
 // of cold records for a vanishing share of executed ones.
+//
+// It is the FALLBACK policy now: where a site profile exists the same
+// question is asked per compare site instead (siteHotExecs), and the
+// hot-function set is left holding only the outliner gate.
 const funcHotCover = 0.97
+
+// siteHotExecs is the bar one comparison SITE must clear to keep the
+// four-move form: executions during the workload, not a share of them.
+// Coverage is the wrong shape here and was measured to be: at the
+// funcHotCover bar of 97% the kernel keeps 163 of its 429 executed
+// sites and pays 1-3% of the xsh command cycles for 1 KB, because a
+// site's share of the total says nothing about how hot IT is — the
+// distribution is 400-odd sites over four orders of magnitude, and 97%
+// of it lands inside a handful of loops.
+//
+// An absolute bar reads the distribution the right way round. Sites are
+// cheap to keep (24 bytes over a descriptor) and expensive to lose (the
+// helper unpacks a descriptor on every branch), so the bar sits low:
+// executed a few times in a whole boot-plus-workload is already enough
+// to be worth the bytes, and everything below it is code the workload
+// touched once. In the kernel, 429 sites are executed at all, 377 clear
+// this bar, and the 52 in between are 0.05% of all comparisons made.
+const siteHotExecs = 8
+
+// cmpSiteMaxBytes bounds one comparison site's span when reads are
+// attributed to it: five compact records, which is the longest form
+// (four moves and the jump). The next symbol normally ends the site
+// well inside that — measured spans are 16, 32 and 40 bytes — but a
+// site whose successor label was `__`-prefixed (dmaasm drops those)
+// would otherwise swallow the code after it.
+const cmpSiteMaxBytes = 40
 
 // imgProfile is one payload's measured heat.
 type imgProfile struct {
@@ -69,7 +106,10 @@ type imgProfile struct {
 	litN    int               // pool size (keys)
 	funcs   map[string]uint64 // C function name -> text-word reads
 	funcTot uint64
-	blocks  *blkHeat // per-BLOCK reads over the same window
+	blocks  *blkHeat          // per-BLOCK reads over the same window
+	sites   map[string]uint64 // compare-site label -> executions
+	siteTot uint64
+	siteN   int // labelled sites in the image's text
 }
 
 // poolWindowIn is the profile window over the pool literals an image
@@ -300,6 +340,75 @@ func blockCand(h *blkHeat) int {
 	return n
 }
 
+// siteCounts folds a text window's per-word counts onto the owning
+// comparison site and converts them to EXECUTIONS. A site runs from its
+// `cws_` label to the next symbol of any kind (capped at
+// cmpSiteMaxBytes); dmacc emits nothing between the label and the
+// site's own records, so that span is exactly the site.
+//
+// The division is the point. The histogram counts word reads, and the
+// two forms are not the same size — a four-move site is five records
+// and a descriptor site is two — so ranking raw reads would rank the
+// sites the LAST profile made fast, and the choice would ratchet on its
+// own output. Every word of a site is fetched once per execution, so
+// reads divided by the site's own words is the execution count, and
+// that is a property of the workload alone.
+//
+// It also returns how many labelled sites the image's text holds, so a
+// regeneration can report the share that came out hot.
+func siteCounts(res *dmaasm.Result, w window, skip map[uint32]bool) (map[string]uint64, uint64, int) {
+	var addrs []uint32
+	name := map[uint32]string{}
+	for n, a := range res.Symbols {
+		if a < w.w[0] || a >= w.w[1] {
+			continue
+		}
+		addrs = append(addrs, a)
+		if strings.HasPrefix(n, "cws_") {
+			name[a] = n
+		}
+	}
+	sort.Slice(addrs, func(i, j int) bool { return addrs[i] < addrs[j] })
+	out := map[string]uint64{}
+	var tot uint64
+	n := 0
+	for i, a := range addrs {
+		s, ok := name[a]
+		if !ok {
+			continue
+		}
+		n++
+		end := w.w[1]
+		for j := i + 1; j < len(addrs); j++ {
+			if addrs[j] > a {
+				end = addrs[j]
+				break
+			}
+		}
+		if end > a+cmpSiteMaxBytes {
+			end = a + cmpSiteMaxBytes
+		}
+		var reads, words uint64
+		for x := a; x < end; x += 4 {
+			if skip[x] {
+				continue
+			}
+			c, in := w.at(x)
+			if !in {
+				continue
+			}
+			reads += uint64(c)
+			words++
+		}
+		if words == 0 || reads == 0 {
+			continue // never fetched: not an executed site
+		}
+		out[s] += reads / words
+		tot += reads / words
+	}
+	return out, tot, n
+}
+
 // rankLits returns the pool keys that cleared the loop-rate bar, most
 // read first.
 func rankLits(lits map[string]uint64) []string {
@@ -316,6 +425,49 @@ func rankLits(lits map[string]uint64) []string {
 		return keys[i] < keys[j]
 	})
 	return keys
+}
+
+// topCover ranks a heat map hottest-first and returns the prefix that
+// owns `cover` of its total, in name order. Ties break by name so the
+// generated sets do not churn between runs.
+func topCover(counts map[string]uint64, tot uint64, cover float64) []string {
+	type ent struct {
+		name string
+		n    uint64
+	}
+	var es []ent
+	for n, c := range counts {
+		es = append(es, ent{n, c})
+	}
+	sort.Slice(es, func(i, j int) bool {
+		if es[i].n != es[j].n {
+			return es[i].n > es[j].n
+		}
+		return es[i].name < es[j].name
+	})
+	var got uint64
+	var out []string
+	for _, e := range es {
+		if float64(got) >= cover*float64(tot) {
+			break
+		}
+		out = append(out, e.name)
+		got += e.n
+	}
+	sort.Strings(out)
+	return out
+}
+
+// overBar returns the keys whose count reaches bar, in name order.
+func overBar(counts map[string]uint64, bar uint64) []string {
+	var out []string
+	for n, c := range counts {
+		if c >= bar {
+			out = append(out, n)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // coverage is the share of reads a prefix of a ranked key list covers.
@@ -357,7 +509,7 @@ func largestFit(ranked []string, fits func(n int) bool) int {
 	return lo
 }
 
-// TestGenPGO regenerates host/pgo/{lits,funcs,blocks}_gen.go.
+// TestGenPGO regenerates host/pgo/{lits,funcs,sites,blocks}_gen.go.
 //
 //	GEN_PGO=1 go test -count=1 -timeout 3h -run TestGenPGO ./host/dmacc/
 func TestGenPGO(t *testing.T) {
@@ -466,35 +618,12 @@ func TestGenPGO(t *testing.T) {
 		return gb.GameData+uint32(len(res.Image.Segments[1].Data))+windowMargin <= gameAudioBase
 	})]
 
-	// --- hot functions: four-move compares where execution lives ---
-	hotFuncs := func(p *imgProfile) []string {
-		type ent struct {
-			name string
-			n    uint64
-		}
-		var es []ent
-		for n, c := range p.funcs {
-			es = append(es, ent{n, c})
-		}
-		sort.Slice(es, func(i, j int) bool {
-			if es[i].n != es[j].n {
-				return es[i].n > es[j].n
-			}
-			return es[i].name < es[j].name
-		})
-		var got uint64
-		var out []string
-		for _, e := range es {
-			if float64(got) >= funcHotCover*float64(p.funcTot) {
-				break
-			}
-			out = append(out, e.name)
-			got += e.n
-		}
-		sort.Strings(out)
-		return out
-	}
-	kernHot, gameHot := hotFuncs(kern), hotFuncs(game)
+	// --- hot functions and hot sites: four-move compares where
+	// execution lives, and the outliner gate ---
+	kernHot, gameHot := topCover(kern.funcs, kern.funcTot, funcHotCover),
+		topCover(game.funcs, game.funcTot, funcHotCover)
+	kernSites, gameSites := overBar(kern.sites, siteHotExecs),
+		overBar(game.sites, siteHotExecs)
 
 	// --- emit ---
 	var b strings.Builder
@@ -570,6 +699,53 @@ func TestGenPGO(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	b.Reset()
+	genHeader(&b)
+	wrapComment(&b, "The hot comparison-SITE sets. With dmacc's "+
+		"Options.OptSize on, the site named by one of these labels keeps the "+
+		"fast four-move protocol and EVERY other site in the image takes the "+
+		"two-record descriptor form — whichever function it sits in. Where a "+
+		"set here is non-empty it replaces the hot-function rule for that "+
+		"decision (dmacc Options.HotSites over Options.HotFuncs); the function "+
+		"sets go on gating the outliner.")
+	b.WriteString("//\n")
+	wrapComment(&b, fmt.Sprintf("A label is `cws_<function>_<ordinal>`, the "+
+		"ordinal counting that function's compare sites in emission order "+
+		"(dmacc compare.go, cmpSiteLabel). Each set is the sites the workload "+
+		"EXECUTED at least %d times — site reads divided by the site's own "+
+		"words, so that a site the last profile made five records long does "+
+		"not outrank a two-record one for that reason alone. Everything below "+
+		"the bar is code the workload touched once or never.", siteHotExecs))
+	b.WriteString("//\n")
+	wrapComment(&b, "Sites in .ramtext (RAMTextFuncs) never appear: their "+
+		"descriptors would live in flash text, so they stay four-move and are "+
+		"not profiled. Names are not validated by dmacc — a board linking a "+
+		"different module set simply never asks about some of them.")
+	for _, x := range []struct {
+		v, img string
+		hot    []string
+		p      *imgProfile
+	}{{"KernelHotSites", "kernel", kernSites, kern}, {"GameHotSites", "game", gameSites, game}} {
+		var got uint64
+		for _, n := range x.hot {
+			got += x.p.sites[n]
+		}
+		b.WriteString("\n")
+		wrapComment(&b, fmt.Sprintf("%s: %d of the image's %d comparison sites; "+
+			"%d of them were executed at all, and the set covers %.2f%% of the "+
+			"%d comparisons the workload made.", x.v, len(x.hot), x.p.siteN,
+			len(x.p.sites), 100*float64(got)/float64(x.p.siteTot), x.p.siteTot))
+		wrapComment(&b, "Workload: "+workloadOf(x.img)+".")
+		fmt.Fprintf(&b, "var %s = map[string]bool{\n", x.v)
+		for _, n := range x.hot {
+			fmt.Fprintf(&b, "\t%q: true,\n", n)
+		}
+		b.WriteString("}\n")
+	}
+	if err := os.WriteFile("../pgo/sites_gen.go", []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	// --- cold blocks: the layout the workload asks for ---
 	b.Reset()
 	genHeader(&b)
@@ -628,6 +804,10 @@ func TestGenPGO(t *testing.T) {
 		len(kernHot), len(kern.funcs), kern.funcTot)
 	fmt.Printf("PGO game    funcs %d/%d hot of %d text reads\n",
 		len(gameHot), len(game.funcs), game.funcTot)
+	fmt.Printf("PGO kernel  sites %d/%d hot (%d executed) of %d site executions\n",
+		len(kernSites), kern.siteN, len(kern.sites), kern.siteTot)
+	fmt.Printf("PGO game    sites %d/%d hot (%d executed) of %d site executions\n",
+		len(gameSites), game.siteN, len(game.sites), game.siteTot)
 }
 
 // windowMargin is the SRAM a resident pool must leave free in its
@@ -758,9 +938,11 @@ func profileXsh(t *testing.T) (*imgProfile, *imgProfile, *imgProfile) {
 		twin := window{tw, m.ProfileCountsAt(ti)}
 		lits, ltot := litCounts(res, lwin, twin)
 		fns, ftot := funcCounts(res, twin, litSet(res))
+		sites, stot, sn := siteCounts(res, twin, litSet(res))
 		return &imgProfile{name: name, lits: lits, litTot: ltot,
 			litN: len(res.LitAddrs), funcs: fns, funcTot: ftot,
-			blocks: blockHeat(res, twin, litSet(res))}
+			blocks: blockHeat(res, twin, litSet(res)),
+			sites:  sites, siteTot: stot, siteN: sn}
 	}
 	// The kernel's .ramtext heat prices what ResidentFuncs already
 	// buys; report it beside the XIP text it was pulled out of.
@@ -848,8 +1030,9 @@ func profileGame(t *testing.T) *imgProfile {
 	t.Helper()
 	var lits map[string]uint64
 	var fns map[string]uint64
-	var litTot, funcTot uint64
-	var litN int
+	var sites map[string]uint64
+	var litTot, funcTot, siteTot uint64
+	var litN, siteN int
 	blks := &blkHeat{reads: map[string]uint64{}, fn: map[string]string{},
 		fnRd: map[string]uint64{}}
 
@@ -865,8 +1048,10 @@ func profileGame(t *testing.T) *imgProfile {
 		l, lt := litCounts(prog, lwin, twin)
 		f, ft := funcCounts(prog, twin, litSet(prog))
 		blks.add(blockHeat(prog, twin, litSet(prog)))
+		s, st, sn := siteCounts(prog, twin, litSet(prog))
 		if lits == nil {
-			lits, fns, litN = map[string]uint64{}, map[string]uint64{}, len(prog.LitAddrs)
+			lits, fns, sites = map[string]uint64{}, map[string]uint64{}, map[string]uint64{}
+			litN, siteN = len(prog.LitAddrs), sn
 		}
 		for k, c := range l {
 			lits[k] += c
@@ -874,8 +1059,12 @@ func profileGame(t *testing.T) *imgProfile {
 		for k, c := range f {
 			fns[k] += c
 		}
+		for k, c := range s {
+			sites[k] += c
+		}
 		litTot += lt
 		funcTot += ft
+		siteTot += st
 	}
 
 	// Menu navigation, then Dino played to a game over and restarted.
@@ -931,5 +1120,6 @@ func profileGame(t *testing.T) *imgProfile {
 	})
 	reportHeat("game XIP text", fns, funcTot)
 	return &imgProfile{name: "game", lits: lits, litTot: litTot, litN: litN,
-		funcs: fns, funcTot: funcTot, blocks: blks}
+		funcs: fns, funcTot: funcTot, blocks: blks,
+		sites: sites, siteTot: siteTot, siteN: siteN}
 }
