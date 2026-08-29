@@ -2067,12 +2067,19 @@ func build(spec hilSpec, v *emu.Variant, lay layout) (*test, error) {
 		return nil, fmt.Errorf("%s: HIL programs need a done symbol: %w", spec.name, err)
 	}
 	t.Done = done
-	for sym, want := range spec.mem {
+	// In symbol order: the checks go into a committed header, and a Go
+	// map range would reorder them on every regeneration.
+	syms := make([]string, 0, len(spec.mem))
+	for sym := range spec.mem {
+		syms = append(syms, sym)
+	}
+	sort.Strings(syms)
+	for _, sym := range syms {
 		addr, err := res.Symbol(sym)
 		if err != nil {
 			return nil, err
 		}
-		t.Checks = append(t.Checks, check{checkMem, addr, want, sym})
+		t.Checks = append(t.Checks, check{checkMem, addr, spec.mem[sym], sym})
 	}
 	if spec.gpio != nil {
 		t.Checks = append(t.Checks, *spec.gpio)

@@ -3139,8 +3139,8 @@ static const hil_test hil_tests[] = {
     }},
     {"logic", hil_logic_dmx, sizeof hil_logic_dmx, 0, 0x20030098u, 0x00000000u, 0, 4, {
         {0, 0x20030090u, 0x000F0350u, "rAnd"},
-        {0, 0x20030094u, 0x0FF03CA5u, "rXor"},
         {0, 0x2003008Cu, 0x0FFF3FF5u, "rOr"},
+        {0, 0x20030094u, 0x0FF03CA5u, "rXor"},
         {0, 0x20030098u, 0x00000001u, "done"},
     }},
     {"condjump_pos", hil_condjump_pos_dmx, sizeof hil_condjump_pos_dmx, 0, 0x20030088u, 0x00000000u, 0, 2, {
