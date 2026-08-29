@@ -874,10 +874,11 @@ func TestGameBench(t *testing.T) {
 		t.Errorf("score=%d, want %d", got, wantScore)
 	}
 
-	// the headline score figure renders in live green
+	// the headline score figure renders in live green, right of the
+	// SCORE label
 	p := decodeLCD(m, 16)
 	live := rgb565(90, 240, 140)
-	if n := p.countColor(8, 160, 119, 176, live); n < 60 {
+	if n := p.countColor(112, 160, 231, 176, live); n < 60 {
 		t.Errorf("score headline: %d live-green pixels", n)
 	}
 	dumpPNG(t, p, "bench.png")

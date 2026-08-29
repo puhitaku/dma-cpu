@@ -152,8 +152,8 @@ define dso_local void @bench_run() local_unnamed_addr #0 {
   %69 = udiv i32 13107200, %67
   call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %5) #10
   call void @numsp(ptr noundef nonnull %5, i32 noundef 5, i32 noundef %66) #8
-  call void @gfx_text2(i32 noundef 8, i32 noundef 160, ptr noundef nonnull %5, i16 noundef zeroext 24465, i16 noundef zeroext 2147) #8
-  call void @gfx_text2(i32 noundef 112, i32 noundef 160, ptr noundef nonnull @.str.10, i16 noundef zeroext -377, i16 noundef zeroext 2147) #8
+  call void @gfx_text2(i32 noundef 8, i32 noundef 160, ptr noundef nonnull @.str.10, i16 noundef zeroext -377, i16 noundef zeroext 2147) #8
+  call void @gfx_text2(i32 noundef 112, i32 noundef 160, ptr noundef nonnull %5, i16 noundef zeroext 24465, i16 noundef zeroext 2147) #8
   call void @gfx_text(i32 noundef 8, i32 noundef 184, ptr noundef nonnull @.str.11, i16 noundef zeroext 27537, i16 noundef zeroext 2147) #8
   %70 = udiv i32 %68, 100
   call void @numsp(ptr noundef nonnull %5, i32 noundef 3, i32 noundef %70) #8

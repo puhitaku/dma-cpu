@@ -334,8 +334,8 @@ bench_run(void)
   uint bogo100 = LOOP_N * 200u / kus[0]; /* Linux: loops/s / 500k */
   char m[16];
   numsp(m, 5, score);
-  gfx_text2(8, 160, m, C_LIVE, C_BG);
-  gfx_text2(112, 160, "SCORE", C_TITLE, C_BG);
+  gfx_text2(8, 160, "SCORE", C_TITLE, C_BG);
+  gfx_text2(112, 160, m, C_LIVE, C_BG);
   gfx_text(8, 184, "kernel rates/1k + mem/100k", C_DIM, C_BG);
   numsp(m, 3, mips100 / 100);
   m[3] = '.';
