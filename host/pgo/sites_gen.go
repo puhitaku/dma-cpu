@@ -25,7 +25,7 @@ package pgo
 // different module set simply never asks about some of them.
 
 // KernelHotSites: 343 of the image's 1733 comparison sites; 390 of them
-// were executed at all, and the set covers 99.95% of the 313464
+// were executed at all, and the set covers 99.94% of the 312644
 // comparisons the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
@@ -376,7 +376,7 @@ var KernelHotSites = map[string]bool{
 }
 
 // GameHotSites: 348 of the image's 1429 comparison sites; 400 of them
-// were executed at all, and the set covers 99.99% of the 2225323
+// were executed at all, and the set covers 99.99% of the 2080022
 // comparisons the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
@@ -757,24 +757,60 @@ var GameHotSites = map[string]bool{
 // the asset blob's home. Deploying the rest of either ranking needs a
 // window move, not a setting (prompts/042 §1).
 
-// KernelInlineSites: 2 sites covering 27.88% of the 403023 comparisons
+// KernelInlineSites: 38 sites covering 82.91% of the 312644 comparisons
 // the workload made, trimmed by the board fit (arena slack in .ramtext,
-// flash text room) from the 44 candidates over the 1007-execution bar
-// (84.79% together). Ladder (bar: sites, coverage) — 1000: 44, 85%;
-// 3000: 20, 75%; 10000: 10, 62%; 20000: 6, 48%; 30000: 2, 28%.
+// flash text room) from the 45 candidates over the 781-execution bar
+// (85.04% together). Ladder (bar: sites, coverage) — 1000: 38, 83%;
+// 3000: 15, 70%; 10000: 9, 59%; 20000: 5, 42%; 30000: 1, 16%.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
 var KernelInlineSites = map[string]bool{
-	"cws_dma_ksyscall_37": true,
-	"cws_kfbcon_putc_48":  true,
+	"cws_badbuf_1":         true,
+	"cws_badbuf_2":         true,
+	"cws_badbuf_4":         true,
+	"cws_bread_10":         true,
+	"cws_bread_3":          true,
+	"cws_bread_4":          true,
+	"cws_bread_7":          true,
+	"cws_bread_8":          true,
+	"cws_bread_9":          true,
+	"cws_clear_cells_2":    true,
+	"cws_cons_poll_4":      true,
+	"cws_cputc_1":          true,
+	"cws_cputc_wire_1":     true,
+	"cws_dma_ksyscall_1":   true,
+	"cws_dma_ksyscall_102": true,
+	"cws_dma_ksyscall_103": true,
+	"cws_dma_ksyscall_104": true,
+	"cws_dma_ksyscall_105": true,
+	"cws_dma_ksyscall_2":   true,
+	"cws_dma_ksyscall_37":  true,
+	"cws_dma_ksyscall_44":  true,
+	"cws_dma_ksyscall_46":  true,
+	"cws_dma_ksyscall_94":  true,
+	"cws_filewrite_1":      true,
+	"cws_filewrite_2":      true,
+	"cws_filewrite_3":      true,
+	"cws_filewrite_6":      true,
+	"cws_filewrite_7":      true,
+	"cws_kconswrite_1":     true,
+	"cws_kdmacpy_12":       true,
+	"cws_kdmaset_1":        true,
+	"cws_kdmaset_2":        true,
+	"cws_kdmaset_3":        true,
+	"cws_kdmaset_5":        true,
+	"cws_kfs_write_1":      true,
+	"cws_kfs_write_2":      true,
+	"cws_kfs_write_3":      true,
+	"cws_memmove_15":       true,
 }
 
-// GameInlineSites: 28 sites covering 78.28% of the 2225323 comparisons
+// GameInlineSites: 28 sites covering 78.79% of the 2080022 comparisons
 // the workload made, trimmed by the board fit (arena slack in .ramtext,
-// flash text room) from the 58 candidates over the 5563-execution bar
-// (90.23% together). Ladder (bar: sites, coverage) — 1000: 129, 98%;
-// 3000: 78, 94%; 10000: 42, 85%; 20000: 22, 74%; 30000: 18, 70%;
-// 100000: 6, 46%.
+// flash text room) from the 58 candidates over the 5200-execution bar
+// (90.12% together). Ladder (bar: sites, coverage) — 1000: 126, 98%;
+// 3000: 77, 94%; 10000: 32, 81%; 20000: 21, 73%; 30000: 17, 68%;
+// 100000: 5, 40%.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
 // Benchmark run to completion.

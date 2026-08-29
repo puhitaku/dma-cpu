@@ -14,8 +14,8 @@ package pgo
 // that links a different module set (the displayless kernels take the
 // fb stub) simply has no function by some of these names.
 
-// KernelHotFuncs: 22 of 85 executed functions, covering 97.1% of the
-// 13043285 text reads the workload made.
+// KernelHotFuncs: 24 of 84 executed functions, covering 97.1% of the
+// 10533075 text reads the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
 var KernelHotFuncs = map[string]bool{
@@ -28,23 +28,25 @@ var KernelHotFuncs = map[string]bool{
 	"dma_ksyscall":  true,
 	"fileread":      true,
 	"filewrite":     true,
+	"iget":          true,
 	"kconsread":     true,
 	"kconswrite":    true,
 	"kdmacpy":       true,
 	"kdmaset":       true,
 	"kfb_condark":   true,
-	"kfbcon_putc":   true,
+	"kfs_forkcopy":  true,
 	"kfs_read":      true,
+	"kfs_selready":  true,
 	"kfs_write":     true,
 	"memmove":       true,
+	"namex":         true,
 	"readi":         true,
-	"strncpy":       true,
 	"terminate":     true,
 	"vfork_release": true,
 }
 
-// GameHotFuncs: 26 of 83 executed functions, covering 97.0% of the
-// 88117981 text reads the workload made.
+// GameHotFuncs: 27 of 83 executed functions, covering 97.2% of the
+// 81677076 text reads the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
 // Benchmark run to completion.
@@ -57,6 +59,7 @@ var GameHotFuncs = map[string]bool{
 	"gdma_rows":     true,
 	"gdma_spi_rows": true,
 	"gfx_blit_runs": true,
+	"gfx_cell_runs": true,
 	"gfx_damage":    true,
 	"gfx_fill":      true,
 	"gfx_text":      true,
