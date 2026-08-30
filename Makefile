@@ -250,7 +250,7 @@ endif
 
 firmware: images
 	PATH="$(PATH_WITH_TOOLS)" PICO_SDK_PATH="$(PICO_SDK_PATH)" \
-	  cmake -S target/firmware -B $(BUILD_DIR) -G Ninja -DPICO_BOARD=$(PICO_BOARD) $(HIL_DEV_OPT) $(GAME_BLOB_OPT)
+	  cmake -S target/firmware -B $(BUILD_DIR) -G Ninja -DPICO_BOARD=$(PICO_BOARD) -DHIL_BOARD=$(HIL_BOARD) $(HIL_DEV_OPT) $(GAME_BLOB_OPT)
 	PATH="$(PATH_WITH_TOOLS)" ninja -C $(BUILD_DIR)
 
 # Flash with OpenOCD over a Debug Probe, then watch the UART (115200):

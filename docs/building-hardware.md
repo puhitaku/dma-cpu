@@ -107,8 +107,9 @@ line or run the pixels closer to 3.7 V.
   QSPI PSRAM on QMI CS1 = GPIO8). See
   `references/datasheets/adafruit-feather-rp2350.pdf`.
 - **Display:** HDMI/DVI over the board's **HSTX 22-pin connector**.
-- **Slides:** delivered over **USB** (the parked ARM core handles the
-  transfer); no display-side storage is required.
+- **Slides:** delivered over **USB**; no display-side storage is
+  required. Nothing on this board is served by the ARM after boot — it
+  is held in reset once the machine starts (`target/firmware`).
 
 ### HDMI (HSTX)
 

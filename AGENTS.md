@@ -187,17 +187,20 @@ phased plan). Phase outcomes are logged in the numbered
   pixel pair ONLY; and everything else that reads flash must stay off
   the shared read master (exec's copies go through the QMI streamer,
   the idle machine off flash entirely) or the FIFO's ~1.3 us budget
-  slips. The core-1 CPU feeder that preceded it survives behind
-  `HIL_VIDEO_CPU_FEEDER=1` as the fallback. PSRAM is a storage tier,
+  slips. The core-1 CPU feeder that preceded it is retired: it needs a
+  live ARM, and the feather's ARM is now switched off at handover
+  (`HIL_VIDEO_CPU_FEEDER=1` is a compile error on halt boards). PSRAM
+  is a storage tier,
   not working memory: sustained machine window traffic breaks sync
   even though the accesses themselves are wire-speed (prompts/041
   corrects the 036 "~1000x slower" figure — it was copier contention).
   kfb.c/kfbcon.c ride only framebuffer boards' kernels; every other
   build links the no-op `kfbstub.c` (kfsstub-style) — a kernel list
   that links kproc must include one of the two. The HSTX FIFO write
-  port is base+4 (base+0 is STAT and discards silently). Framebuffer
-  boards sync flash through the ARM mailbox executor, never QMI direct
-  mode.
+  port is base+4 (base+0 is STAT and discards silently). The framebuffer
+  board ships a read-only fs and never syncs flash at all: its ARM is
+  in PSM reset once the machine starts, so there is no mailbox to sync
+  through (the plain-pico bench is the last mailbox user).
 
 - The game console (prompts/040, gamepico board): `target/game/` is
   bare-metal C on the machine, no xv6 — one shared arena (`g_arena`)
@@ -268,7 +271,24 @@ phased plan). Phase outcomes are logged in the numbered
   `make test-hw` flashes it. Everything board-dependent keys off
   `HIL_BOARD` (`pico2` default, `pico`, `feather`, `gamepico`), and
   `HIL_DEV=1` keeps the on-boot test/calibration suite that release
-  builds drop.
+  builds drop. `HIL_BOARD` is passed to CMake as well as to dmxgen:
+  gamepico and pico are both `PICO_BOARD=pico` and only that name
+  separates their memory maps.
+- Firmware SRAM on the two DEPLOYED boards (gamepico, feather): the
+  ARM's `.data`/`.bss`/heap live in the SCRATCH banks alone
+  (`target/firmware/CMakeLists.txt` sets `RAM_ORIGIN`/`RAM_LENGTH`
+  through `pico_set_linker_script_var`), so the machine owns SRAM from
+  `0x20000000` up — 0x20040000+4 KiB on gamepico, 0x20080000+8 KiB on
+  the feather, where the two scratch banks are contiguous. The
+  feather's boot STACK does not fit there and borrows the top 4 KiB of
+  the kernel's exec arena, which only becomes machine memory when
+  kalloc runs, i.e. after `dmx_start` — the same boot-only borrow the
+  flash staging buffer takes from the arena's bottom. Growth is caught
+  at link time (`region 'RAM' overflowed`) and again on the first boot
+  line (`HIL_FW_RAM_BASE`/`_END`). After handover these boards put
+  core 0 into PSM reset (`park_forever`): no wfi loop, no fetches, no
+  mailbox. The bench boards (pico, pico2) keep the stock map and the
+  live ARM.
 - Toolchain defaults (this machine; override via Makefile vars):
   pico-sdk 2.3.0 + GCC + CMake + Ninja under `~/.pico-sdk/`, OpenOCD at
   `~/dev/github.com/raspberrypi/openocd/prefix/bin/`.

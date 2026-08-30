@@ -1,9 +1,11 @@
 /* The DMA CPU's bootloader: everything the ARM cores do, and nothing
  * more. cpu0 sets clocks, opens ACCESSCTRL, prepares the fixed-function
  * video/SD hardware, stages the flash-resident images, loads the SRAM
- * segments through the DMX loader, starts the DMA machine — and parks
- * (executor.c). The on-boot test battery lives in devtests.c and is
- * compiled only into `make firmware HIL_DEV=1` builds. */
+ * segments through the DMX loader, starts the DMA machine — and hands
+ * the board over (executor.c: PSM reset on the deployed boards, the
+ * flash mailbox on the pico bench). The on-boot test battery lives in
+ * devtests.c and is compiled only into `make firmware HIL_DEV=1`
+ * builds. */
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -104,7 +106,8 @@ void machine_reset(void)
  * 036 lesson, relearned the hard way: one unbracketed staging pass at
  * boot wedged the ring and the screen stayed black. Stop aborts the
  * pair; start rebuilds the walker from the table top (one partial
- * frame, sync holds). */
+ * frame, sync holds). Every flash op on this board now runs before
+ * the ring is armed, so only devtests.c still brackets. */
 void video_dma_stop(void)
 {
     reg_wr(HIL_CHAN_ABORT_ADDR, SCAN_CH_MASK);
@@ -137,7 +140,13 @@ void arm_tick_ch(int ch, uint32_t vec, uint32_t disp0, uint32_t ctrl)
     reg_wr(chreg(ch, CH_CTRL_TRIG), ctrl);
 }
 
+/* Linker-placed bounds of the firmware's own RAM (memory map in
+ * CMakeLists): the .data/.bss span and the stack the SDK's crt0 hands
+ * main(). Both are reported at every boot and checked below. */
+extern char __data_start__;
 extern char __bss_end__;
+extern char __StackBottom;
+extern char __StackTop;
 
 #if defined(ADAFRUIT_FEATHER_RP2350)
 static void flash_continuous_read(void); /* defined by the overclock block */
@@ -190,17 +199,19 @@ static void game_start(void)
     /* Announce BEFORE starting the machine and drain the FIFO: once
      * dmx_start returns, the machine's own uputs bytes interleave
      * with anything the ARM still has in flight. */
-    printf("=== handing over to the GAMEPICO machine (ARM -> wfi) ===\n");
+    printf("=== handing over to the GAMEPICO machine (ARM -> PSM reset) ===\n");
     stdio_flush();
     uart_default_tx_wait_blocking();
     /* Stamp the CPU's final timestamp for the game's CPU-sleep
      * monitor: the ARM's only remaining work after this is dmx_start
      * plus the park prologue (a few us, invisible at second
-     * resolution), then wfi forever. The monitor reads this block
-     * (0x2003FF00, past the compact machine's scratch word and clear
-     * of the radiosity demo's patch window at 0x2003C000) and shows
-     * now - stamp climbing — a clock that only advances because
-     * nothing on the CPU side ever runs again. */
+     * resolution), then core 0 switches itself off at the PSM. The
+     * monitor reads this block (0x2003FF00, past the compact machine's
+     * scratch word and clear of the radiosity demo's patch window at
+     * 0x2003C000) and shows now - stamp climbing — a clock that only
+     * advances because nothing on the CPU side ever runs again. The
+     * stamp must be written HERE, before dmx_start: this is the last
+     * moment the ARM is guaranteed to own the bus quietly. */
     volatile uint32_t *cpustat = (volatile uint32_t *)0x2003FF00u;
     cpustat[1] = time_us_32();
     cpustat[0] = 0x51EE9500u; /* "SLEEP" marker: block valid */
@@ -227,10 +238,12 @@ static void game_start(void)
  * bounce as the fat golden: the blob source is itself in flash rodata
  * and flash_range_program runs with XIP disabled. */
 #ifdef HIL_XSH_ARENA
-/* The staging bounce buffer borrows the exec arena: every use runs
- * strictly before dmx_start (the machine has never touched the arena
- * yet), and the firmware's own .bss drops 4 KiB — RAM the map hands
- * straight back to that same arena. */
+/* The staging bounce buffer borrows the bottom of the exec arena:
+ * every use runs strictly before dmx_start, so the machine has never
+ * touched the arena yet, and the firmware's own .bss drops 4 KiB it
+ * could not afford anyway now that it lives in a scratch bank. (Same
+ * boot-only borrow the halt boards' stack takes from the arena's
+ * TOP — see CMakeLists.) */
 #define stage_sect ((uint8_t *)HIL_XSH_ARENA)
 #else
 static uint8_t stage_sect[4096]; /* shared with the fat-golden staging */
@@ -347,7 +360,11 @@ static void xsh_start(void)
 #if defined(ADAFRUIT_FEATHER_RP2350)
     flash_continuous_read(); /* all flash writes are done for this boot */
 #endif
-    printf("cpu0: starting DMA CPU, and going to sleep now\n");
+#if defined(HIL_ARM_HALT)
+    printf("cpu0: starting DMA CPU, then switching core0 off (PSM reset)\n");
+#else
+    printf("cpu0: starting DMA CPU, and parking on the flash mailbox\n");
+#endif
     dmx_machine_cfg cfg = {0, 1, 2, HIL_SCRATCH, 1}; /* compact machine */
 #if SCAN_CH_MASK
     video_dma_start();
@@ -381,8 +398,10 @@ static void xsh_start(void)
            (unsigned long)reg_rd(0x50600000u));
 #endif /* HIL_DEV_TESTS */
 #endif
+#if HIL_ARM_MAILBOX
     for (int i = 0; i < 5; i++) /* clear the flash-request mailbox */
         reg_wr(HIL_XSH_FLASHREQ + 4u * i, 0);
+#endif
     /* Unstamped divider: everything above is cpu0's epoch, everything
      * below is the DMA CPU's own log on its own clock. Printed (and
      * DRAINED) before dmx_start: the machine's kernel banner arrives on
@@ -504,8 +523,12 @@ static void feather_video_init(void)
            (unsigned long)frequency_count_khz(CLOCKS_FC0_SRC_VALUE_CLK_SYS),
            (unsigned long)frequency_count_khz(CLOCKS_FC0_SRC_VALUE_CLK_HSTX),
            (unsigned long)frequency_count_khz(CLOCKS_FC0_SRC_VALUE_PLL_USB_CLKSRC_PRIMARY));
-    /* The boot-time QMI window configs, for comparing against the
-     * post-sync state (the executor must restore these exactly). */
+    /* The boot-time QMI window configs: the flash window the machine
+     * will read its XIP text through for the rest of the session
+     * (flash_continuous_read retunes M0 once, at the end of staging),
+     * and the PSRAM window behind the framebuffer. Log-only — nothing
+     * restores them later: with the mailbox gone, no post-boot flash
+     * op ever disturbs them. */
     printf("feather: qmi m0 timing=%08lx rfmt=%08lx rcmd=%08lx\n",
            (unsigned long)qmi_hw->m[0].timing,
            (unsigned long)qmi_hw->m[0].rfmt, (unsigned long)qmi_hw->m[0].rcmd);
@@ -513,14 +536,6 @@ static void feather_video_init(void)
            (unsigned long)qmi_hw->m[1].timing,
            (unsigned long)qmi_hw->m[1].rfmt, (unsigned long)qmi_hw->m[1].rcmd,
            (unsigned long)qmi_hw->m[1].wfmt);
-    /* Snapshot the bootrom's fast M0 window config for the executor's
-     * end-of-sync restore. It is per-burst (RFMT PREFIX_LEN=8, RCMD
-     * suffix 0x00 — no continuous-read mode), so writing the three
-     * registers back is exact and safe from any chip state. */
-    boot_m0[0] = qmi_hw->m[0].timing;
-    boot_m0[1] = qmi_hw->m[0].rfmt;
-    boot_m0[2] = qmi_hw->m[0].rcmd;
-    boot_m0_saved = 1;
 }
 #endif
 
@@ -741,10 +756,11 @@ int main(void)
 
 #if defined(ADAFRUIT_FEATHER_RP2350)
     feather_video_init();
-    /* Machine-driven SD (ksd.c): the ARM's whole role is this one-time
-     * plumbing — mux the SPI pins, un-reset the block, park CS high.
-     * The machine reprograms clocks and runs the protocol itself; the
-     * mailbox SD ops (4/5) remain compiled as the fallback path. */
+    /* Machine-driven SD (ksd.c, boards.MachineSDExec): the ARM's whole
+     * role is this one-time plumbing — mux the SPI pins, un-reset the
+     * block, park CS high. The machine reprograms clocks and runs the
+     * protocol itself, and it is the only driver: the ARM is in reset
+     * before the first sector is ever read. */
     spi_init(SD_SPI, 400 * 1000);
     gpio_set_function(SD_SCK, GPIO_FUNC_SPI);
     gpio_set_function(SD_MOSI, GPIO_FUNC_SPI);
@@ -786,8 +802,10 @@ int main(void)
     gpio_set_dir(2, false);
 
     for (unsigned iter = 1;; iter++) {
-        printf("dmacpu: sku=%s iter=%u bss_end=%p machine_ram=[0x%08lx,0x%08lx)\n",
-               HIL_SKU, iter, (void *)&__bss_end__,
+        printf("dmacpu: sku=%s iter=%u fw_ram=[%p,%p) fw_stack=[%p,%p) "
+               "machine_ram=[0x%08lx,0x%08lx)\n",
+               HIL_SKU, iter, (void *)&__data_start__, (void *)&__bss_end__,
+               (void *)&__StackBottom, (void *)&__StackTop,
                (unsigned long)HIL_MACHINE_RAM_START,
                (unsigned long)HIL_MACHINE_RAM_END);
 #if defined(HIL_XSH_FSSLOT) && HIL_XSH_FSSLOT
@@ -798,11 +816,33 @@ int main(void)
             continue;
         }
 #endif
+#if defined(HIL_ARM_HALT)
+        /* The halt boards moved the firmware's RAM into the scratch
+         * banks so the machine can own SRAM from 0x20000000 up; the
+         * machine's own floor is the image generator's business, not
+         * ours, so what is asserted here is OUR placement. The window
+         * constants come from the same CMake variables that fed the
+         * linker's RAM_ORIGIN/RAM_LENGTH, so a map edit that forgets
+         * one side of the pair fails at the first boot line rather
+         * than by corrupting the kernel. */
+        if ((uintptr_t)&__data_start__ < HIL_FW_RAM_BASE ||
+            (uintptr_t)&__bss_end__ > HIL_FW_RAM_END) {
+            printf("FATAL: firmware RAM outside the scratch window "
+                   "[0x%08lx,0x%08lx)\n",
+                   (unsigned long)HIL_FW_RAM_BASE,
+                   (unsigned long)HIL_FW_RAM_END);
+            sleep_ms(5000);
+            continue;
+        }
+#else
+        /* Bench boards keep the stock map: firmware RAM at the bottom
+         * of SRAM, the machine's floor above it. */
         if ((uintptr_t)&__bss_end__ >= HIL_MACHINE_RAM_START) {
             printf("FATAL: firmware bss overlaps machine RAM\n");
             sleep_ms(5000);
             continue;
         }
+#endif
         /* The on-boot suite (devtests.c) is a development tool;
          * release builds (the default) boot straight to the payload.
          * Build with `make firmware HIL_DEV=1` to keep it. */
