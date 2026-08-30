@@ -113,6 +113,13 @@ lcd_init(void)
   lcd_cmd(0xE1); /* NVGAMCTRL */
   for (int i = 0; i < 14; i++)
     lcd_dat(ngam[i]);
+  /* GAMSET: select the 1.0 curve — luminance proportional to code.
+   * The demo that motivated all of this (radiosity) computes LINEAR
+   * light, so a linear panel renders it physically; the 2.2-family
+   * curves expand code ratios into larger luminance ratios, which is
+   * what made the red wall's shadow boundary read as a hard step. */
+  lcd_cmd(0x26);
+  lcd_dat(0x08); /* GC3: gamma 1.0 */
   lcd_cmd(0x13); /* NORON */
   /* The controller's GRAM powers up as noise: paint it black (fb is
    * still all-zero here) BEFORE the panel shows anything, then turn

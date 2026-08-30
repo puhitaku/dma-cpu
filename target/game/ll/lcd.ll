@@ -57,6 +57,8 @@ define dso_local void @lcd_init() local_unnamed_addr #0 {
   br i1 %12, label %13, label %14
 
 13:                                               ; preds = %10
+  tail call fastcc void @lcd_cmd(i32 noundef 38) #5
+  tail call fastcc void @spi_put8(i32 noundef 8) #5
   tail call fastcc void @lcd_cmd(i32 noundef 19) #5
   tail call void @lcd_flush(i32 noundef 0, i32 noundef 0, i32 noundef 239, i32 noundef 239) #5
   tail call fastcc void @lcd_cmd(i32 noundef 41) #5
