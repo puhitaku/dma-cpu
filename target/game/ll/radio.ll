@@ -1526,10 +1526,15 @@ define internal fastcc zeroext i16 @patch_tone(i32 noundef range(i32 -2147483648
 declare dso_local void @gfx_present() local_unnamed_addr #1
 
 ; Function Attrs: minsize mustprogress nofree noinline norecurse nosync nounwind optsize willreturn memory(none)
-define internal fastcc noundef range(i32 0, 256) i32 @tone(i32 noundef range(i32 0, 65536) %0) unnamed_addr #6 {
+define internal fastcc range(i32 -15, 256) i32 @tone(i32 noundef range(i32 0, 65536) %0) unnamed_addr #6 {
   %2 = lshr i32 %0, 3
   %3 = tail call i32 @llvm.umin.i32(i32 %2, i32 255)
-  ret i32 %3
+  %4 = xor i32 %3, 255
+  %5 = mul nuw nsw i32 %3, 4112
+  %6 = mul nuw nsw i32 %5, %4
+  %7 = lshr i32 %6, 24
+  %8 = sub nsw i32 %3, %7
+  ret i32 %8
 }
 
 ; Function Attrs: minsize optsize

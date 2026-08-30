@@ -25,7 +25,7 @@ package pgo
 // different module set simply never asks about some of them.
 
 // KernelHotSites: 343 of the image's 1735 comparison sites; 390 of them
-// were executed at all, and the set covers 99.94% of the 312646
+// were executed at all, and the set covers 99.94% of the 312642
 // comparisons the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
@@ -375,8 +375,8 @@ var KernelHotSites = map[string]bool{
 	"cws_vfs_stati_2":      true,
 }
 
-// GameHotSites: 347 of the image's 1457 comparison sites; 400 of them
-// were executed at all, and the set covers 99.99% of the 2052468
+// GameHotSites: 350 of the image's 1480 comparison sites; 402 of them
+// were executed at all, and the set covers 99.99% of the 2068776
 // comparisons the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
@@ -553,15 +553,16 @@ var GameHotSites = map[string]bool{
 	"cws_gfx_damage_4":     true,
 	"cws_gfx_damage_5":     true,
 	"cws_gfx_damage_6":     true,
-	"cws_gfx_fill_1":       true,
-	"cws_gfx_fill_2":       true,
-	"cws_gfx_fill_3":       true,
-	"cws_gfx_fill_4":       true,
-	"cws_gfx_fill_5":       true,
-	"cws_gfx_fill_6":       true,
-	"cws_gfx_fill_7":       true,
-	"cws_gfx_fill_8":       true,
-	"cws_gfx_fill_9":       true,
+	"cws_gfx_dfill_1":      true,
+	"cws_gfx_dfill_10":     true,
+	"cws_gfx_dfill_2":      true,
+	"cws_gfx_dfill_3":      true,
+	"cws_gfx_dfill_4":      true,
+	"cws_gfx_dfill_5":      true,
+	"cws_gfx_dfill_6":      true,
+	"cws_gfx_dfill_7":      true,
+	"cws_gfx_dfill_8":      true,
+	"cws_gfx_dfill_9":      true,
 	"cws_gfx_glyph_cell_1": true,
 	"cws_gfx_glyph_cell_2": true,
 	"cws_gfx_glyph_cell_3": true,
@@ -678,6 +679,7 @@ var GameHotSites = map[string]bool{
 	"cws_relight_4":        true,
 	"cws_relight_5":        true,
 	"cws_relight_6":        true,
+	"cws_relight_7":        true,
 	"cws_snd_tick_1":       true,
 	"cws_snd_tick_2":       true,
 	"cws_snd_tick_3":       true,
@@ -705,6 +707,7 @@ var GameHotSites = map[string]bool{
 	"cws_uputn_1":          true,
 	"cws_uputn_2":          true,
 	"cws_uputs_1":          true,
+	"cws_vline2_1":         true,
 	"cws_yacht_run_1":      true,
 	"cws_yacht_run_10":     true,
 	"cws_yacht_run_2":      true,
@@ -756,7 +759,7 @@ var GameHotSites = map[string]bool{
 // the asset blob's home. Deploying the rest of either ranking needs a
 // window move, not a setting (prompts/042 §1).
 
-// KernelInlineSites: 38 sites covering 82.91% of the 312646 comparisons
+// KernelInlineSites: 38 sites covering 82.91% of the 312642 comparisons
 // the workload made, trimmed by the board fit (arena slack in .ramtext,
 // flash text room) from the 45 candidates over the 781-execution bar
 // (85.04% together). Ladder (bar: sites, coverage) — 1000: 38, 83%;
@@ -804,12 +807,12 @@ var KernelInlineSites = map[string]bool{
 	"cws_memmove_15":       true,
 }
 
-// GameInlineSites: 63 sites covering 91.24% of the 2052468 comparisons
+// GameInlineSites: 62 sites covering 90.38% of the 2068776 comparisons
 // the workload made, trimmed by the board fit (arena slack in .ramtext,
-// flash text room) from the 63 candidates over the 5131-execution bar
-// (91.24% together). Ladder (bar: sites, coverage) — 1000: 126, 98%;
-// 3000: 77, 94%; 10000: 33, 81%; 20000: 21, 73%; 30000: 17, 68%;
-// 100000: 5, 40%.
+// flash text room) from the 63 candidates over the 5171-execution bar
+// (90.64% together). Ladder (bar: sites, coverage) — 1000: 131, 98%;
+// 3000: 77, 93%; 10000: 42, 84%; 20000: 21, 72%; 30000: 17, 67%;
+// 100000: 5, 41%.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
 // Benchmark run to completion.
@@ -821,6 +824,7 @@ var GameInlineSites = map[string]bool{
 	"cws_gdma_rows_3":     true,
 	"cws_gdma_rows_4":     true,
 	"cws_gdma_spi_rows_2": true,
+	"cws_gdma_spi_rows_3": true,
 	"cws_gdma_spi_rows_4": true,
 	"cws_gfx_blit_runs_1": true,
 	"cws_gfx_blit_runs_3": true,
@@ -829,8 +833,6 @@ var GameInlineSites = map[string]bool{
 	"cws_gfx_blit_runs_6": true,
 	"cws_gfx_blit_runs_7": true,
 	"cws_gfx_blit_runs_8": true,
-	"cws_gfx_fill_8":      true,
-	"cws_gfx_fill_9":      true,
 	"cws_gfx_text2_5":     true,
 	"cws_gfx_text2_6":     true,
 	"cws_gfx_text2_7":     true,
@@ -865,7 +867,6 @@ var GameInlineSites = map[string]bool{
 	"cws_menu_run_4":      true,
 	"cws_menu_run_6":      true,
 	"cws_menu_run_8":      true,
-	"cws_menu_run_9":      true,
 	"cws_pcm_tick_1":      true,
 	"cws_snd_tick_1":      true,
 	"cws_spi_put8_1":      true,
@@ -877,4 +878,5 @@ var GameInlineSites = map[string]bool{
 	"cws_uputn_1":         true,
 	"cws_uputn_2":         true,
 	"cws_uputs_1":         true,
+	"cws_vline2_1":        true,
 }

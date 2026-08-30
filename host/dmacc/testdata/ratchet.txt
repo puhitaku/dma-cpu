@@ -16,28 +16,28 @@ deploy/feather-kernel/ramtext	56448
 deploy/feather-kernel/text	224680
 deploy/feather-sh/data	8960
 deploy/feather-sh/ramtext	3952
-deploy/feather-sh/text	47072
+deploy/feather-sh/text	47088
 deploy/feather-vi/arenaclaim	26624
 deploy/feather-vi/data	11880
 deploy/feather-vi/ramtext	14488
 deploy/feather-vi/text	160840
-deploy/gamepico-game/data	142508
+deploy/gamepico-game/data	143104
 deploy/gamepico-game/ramtext	44616
-deploy/gamepico-game/text	273772
-fbcon/feather/cat README	1350001
-fbcon/feather/echo 0123456789012345678901234567890123456789	2669488
-fbcon/feather/ls /dev	6209982
-fbcon/feather/scroll (12x ls /dev)	97921352
-fbcon/pico2/cat README	1169974
-fbcon/pico2/echo 0123456789012345678901234567890123456789	2321458
-fbcon/pico2/ls /dev	5189996
-fbcon/pico2/scroll (12x ls /dev)	62707079
-game/us/bogo	2131189248
+deploy/gamepico-game/text	274036
+fbcon/feather/cat README	1349986
+fbcon/feather/echo 0123456789012345678901234567890123456789	2678055
+fbcon/feather/ls /dev	6210000
+fbcon/feather/scroll (12x ls /dev)	97921358
+fbcon/pico2/cat README	1125000
+fbcon/pico2/echo 0123456789012345678901234567890123456789	2321476
+fbcon/pico2/ls /dev	5163795
+fbcon/pico2/scroll (12x ls /dev)	62793102
+game/us/bogo	2131188992
 game/us/div	3115336960
 game/us/mem	7705344
-game/us/mul	699781120
+game/us/mul	699781376
 game/us/rand	177301760
-game/us/shr1	75305216
+game/us/shr1	75305472
 game/us/sieve	1449423360
 game/us/sort	1155173120
 size/fs-kern-xip/data	48392
@@ -76,15 +76,15 @@ vi/phase/replace char (rX)	3500000
 vi/phase/subst %s/a/A/g	3500000
 vi/phase/yank aaa (yy)	2500000
 vi/phase/yank line (yy)	1000000
-xsh/((((echo deep))))/cold	1381337
-xsh/((((echo deep))))/warm	1410006
-xsh/cat README | wc/cold	1832953
-xsh/cat README | wc/warm	1845013
-xsh/cat README/cold	1169214
-xsh/cat README/warm	1125015
-xsh/echo hi/cold	1276373
-xsh/echo hi/warm	769336
-xsh/free/cold	1694378
-xsh/free/warm	1649972
-xsh/ls/cold	2621331
-xsh/ls/warm	2625003
+xsh/((((echo deep))))/cold	1381313
+xsh/((((echo deep))))/warm	1410015
+xsh/cat README | wc/cold	1832983
+xsh/cat README | wc/warm	1844977
+xsh/cat README/cold	1169232
+xsh/cat README/warm	1169992
+xsh/echo hi/cold	1276394
+xsh/echo hi/warm	769321
+xsh/free/cold	1694390
+xsh/free/warm	1649984
+xsh/ls/cold	2621310
+xsh/ls/warm	2625015

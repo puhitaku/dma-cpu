@@ -15,7 +15,7 @@ package pgo
 // fb stub) simply has no function by some of these names.
 
 // KernelHotFuncs: 23 of 84 executed functions, covering 97.1% of the
-// 10510051 text reads the workload made.
+// 10509947 text reads the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
 var KernelHotFuncs = map[string]bool{
@@ -44,12 +44,13 @@ var KernelHotFuncs = map[string]bool{
 	"vfork_release": true,
 }
 
-// GameHotFuncs: 27 of 82 executed functions, covering 97.1% of the
-// 87743249 text reads the workload made.
+// GameHotFuncs: 29 of 84 executed functions, covering 97.3% of the
+// 89257197 text reads the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
 // Benchmark run to completion.
 var GameHotFuncs = map[string]bool{
+	"cell_render":   true,
 	"dino_run":      true,
 	"frame_sync":    true,
 	"gd_wait":       true,
@@ -58,7 +59,7 @@ var GameHotFuncs = map[string]bool{
 	"gdma_spi_rows": true,
 	"gfx_blit_runs": true,
 	"gfx_damage":    true,
-	"gfx_fill":      true,
+	"gfx_dfill":     true,
 	"gfx_text":      true,
 	"gfx_text2":     true,
 	"gpio_out":      true,
@@ -76,5 +77,6 @@ var GameHotFuncs = map[string]bool{
 	"uputc":         true,
 	"uputn":         true,
 	"uputs":         true,
+	"vline2":        true,
 	"xrand":         true,
 }

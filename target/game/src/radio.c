@@ -282,7 +282,7 @@ is_light(int w, int i, int k)
  * K = 0 gcomp is the identity and clang folds it out of the image
  * entirely; adopting whatever the bench settles on is this one
  * constant and nothing else. */
-#define RADIO_K 0
+#define RADIO_K 1 /* the user's pick on the Compensate screen (2026-08-31) */
 
 static __attribute__((noinline)) uint
 tone(uint v)
