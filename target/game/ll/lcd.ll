@@ -3,8 +3,6 @@ source_filename = "lcd.c"
 target datalayout = "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
 target triple = "thumbv6m-unknown-none-eabi"
 
-@lcd_init.pgam = internal unnamed_addr constant [14 x i8] c"\D0\04\0D\11\13+?TL\18\0D\0B\1F#", align 1
-@lcd_init.ngam = internal unnamed_addr constant [14 x i8] c"\D0\04\0C\11\13,?DQ/\1F\1F #", align 1
 @fb = external dso_local global [57600 x i16], align 2
 @spi16 = internal unnamed_addr global i32 0, align 4
 
@@ -31,48 +29,12 @@ define dso_local void @lcd_init() local_unnamed_addr #0 {
   tail call fastcc void @lcd_cmd(i32 noundef 54) #5
   tail call fastcc void @spi_put8(i32 noundef 0) #5
   tail call fastcc void @lcd_cmd(i32 noundef 33) #5
-  tail call fastcc void @lcd_cmd(i32 noundef 224) #5
-  br label %1
-
-1:                                                ; preds = %5, %0
-  %2 = phi i32 [ 0, %0 ], [ %9, %5 ]
-  %3 = icmp eq i32 %2, 14
-  br i1 %3, label %4, label %5
-
-4:                                                ; preds = %1
-  tail call fastcc void @lcd_cmd(i32 noundef 225) #5
-  br label %10
-
-5:                                                ; preds = %1
-  %6 = getelementptr inbounds nuw [14 x i8], ptr @lcd_init.pgam, i32 0, i32 %2
-  %7 = load i8, ptr %6, align 1, !tbaa !7
-  %8 = zext i8 %7 to i32
-  tail call fastcc void @spi_put8(i32 noundef %8) #5
-  %9 = add nuw nsw i32 %2, 1
-  br label %1, !llvm.loop !8
-
-10:                                               ; preds = %14, %4
-  %11 = phi i32 [ 0, %4 ], [ %18, %14 ]
-  %12 = icmp eq i32 %11, 14
-  br i1 %12, label %13, label %14
-
-13:                                               ; preds = %10
-  tail call fastcc void @lcd_cmd(i32 noundef 38) #5
-  tail call fastcc void @spi_put8(i32 noundef 8) #5
   tail call fastcc void @lcd_cmd(i32 noundef 19) #5
   tail call void @lcd_flush(i32 noundef 0, i32 noundef 0, i32 noundef 239, i32 noundef 239) #5
   tail call fastcc void @lcd_cmd(i32 noundef 41) #5
   tail call void @delay_us(i32 noundef 20000) #4
   tail call void @gpio_out(i32 noundef 21, i32 noundef 1) #4
   ret void
-
-14:                                               ; preds = %10
-  %15 = getelementptr inbounds nuw [14 x i8], ptr @lcd_init.ngam, i32 0, i32 %11
-  %16 = load i8, ptr %15, align 1, !tbaa !7
-  %17 = zext i8 %16 to i32
-  tail call fastcc void @spi_put8(i32 noundef %17) #5
-  %18 = add nuw nsw i32 %11, 1
-  br label %10, !llvm.loop !11
 }
 
 ; Function Attrs: minsize optsize
@@ -85,7 +47,7 @@ declare dso_local void @gpio_out(i32 noundef, i32 noundef) local_unnamed_addr #1
 declare dso_local void @delay_us(i32 noundef) local_unnamed_addr #1
 
 ; Function Attrs: minsize nounwind optsize
-define internal fastcc void @lcd_cmd(i32 noundef range(i32 17, 226) %0) unnamed_addr #0 {
+define internal fastcc void @lcd_cmd(i32 noundef range(i32 17, 59) %0) unnamed_addr #0 {
   tail call void @gd_wait() #4
   %2 = load i32, ptr @spi16, align 4, !tbaa !3
   %3 = icmp eq i32 %2, 0
@@ -177,7 +139,7 @@ define internal fastcc void @spi_wait_idle() unnamed_addr #2 {
   %2 = load volatile i32, ptr inttoptr (i32 1073987596 to ptr), align 4, !tbaa !3
   %3 = and i32 %2, 16
   %4 = icmp eq i32 %3, 0
-  br i1 %4, label %5, label %1, !llvm.loop !12
+  br i1 %4, label %5, label %1, !llvm.loop !7
 
 5:                                                ; preds = %1
   ret void
@@ -191,7 +153,7 @@ define internal fastcc void @spi_put8(i32 noundef %0) unnamed_addr #2 {
   %3 = load volatile i32, ptr inttoptr (i32 1073987596 to ptr), align 4, !tbaa !3
   %4 = and i32 %3, 2
   %5 = icmp eq i32 %4, 0
-  br i1 %5, label %2, label %6, !llvm.loop !13
+  br i1 %5, label %2, label %6, !llvm.loop !10
 
 6:                                                ; preds = %2
   %7 = and i32 %0, 255
@@ -222,10 +184,7 @@ attributes #5 = { minsize nobuiltin optsize "no-builtins" }
 !4 = !{!"int", !5, i64 0}
 !5 = !{!"omnipotent char", !6, i64 0}
 !6 = !{!"Simple C/C++ TBAA"}
-!7 = !{!5, !5, i64 0}
-!8 = distinct !{!8, !9, !10}
-!9 = !{!"llvm.loop.mustprogress"}
-!10 = !{!"llvm.loop.unroll.disable"}
-!11 = distinct !{!11, !9, !10}
-!12 = distinct !{!12, !9, !10}
-!13 = distinct !{!13, !9, !10}
+!7 = distinct !{!7, !8, !9}
+!8 = !{!"llvm.loop.mustprogress"}
+!9 = !{!"llvm.loop.unroll.disable"}
+!10 = distinct !{!10, !8, !9}
