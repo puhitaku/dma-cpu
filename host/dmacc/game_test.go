@@ -33,6 +33,33 @@ const (
 var btnBit = map[int]uint32{pinUp: 0x1, pinDown: 0x2, pinLeft: 0x4,
 	pinRight: 0x8, pinA: 0x10}
 
+// gameResident: the game's .ramtext placement list, mirroring dmxgen's
+// buildGame (see the note on compileGameDasm — the two must agree or
+// the harness measures a layout nobody ships). Two groups, and they
+// are there for opposite reasons:
+//
+//   - radio.c's shooter, for SPEED. Its inner loop visits every one of
+//     the scene's ~3000 patches per shot and XIP misses are the
+//     bottleneck.
+//   - grad.c's scene, for ROOM. Gradient is a bench instrument that
+//     runs at 30 fps against a stick, so its speed is nobody's
+//     problem; what it has is a body the matching screen grew by
+//     ~5.8 KiB in a flash window with a few hundred bytes left, next
+//     to a .ramtext window with 9 KiB going spare. Placement is
+//     placement-only — the gfx, lcd and grt calls it makes stay in
+//     flash — which for a scene this cold is exactly the trade
+//     wanted.
+//
+// Two absences in that second group are deliberate. redraw, the ramp
+// painter, is the one grad.c body big enough that moving it too would
+// overrun .ramtext (it pays 2.6 KiB of flash for 2.5 KiB of SRAM);
+// leaving it behind is what balances the two windows. mstep and mtop
+// are not here because clang inlines both into grad_frame and dmacc
+// rejects a ResidentFuncs name it cannot find — the check that keeps
+// this list honest as the scene changes.
+var gameResident = []string{"shoot", "clearance", "in_box",
+	"grad_run", "grad_frame", "mredraw", "mrows", "mcolor"}
+
 // compileGameDasm compiles the gamepico bare-metal image. It mirrors
 // dmxgen's buildGame exactly: the harness must share the shipped
 // layout, or the data tail lands differently against the fixed audio
@@ -52,7 +79,7 @@ func compileGameDasm(t *testing.T, tweak ...func(*dmacc.Options)) string {
 	}
 	opts := dmacc.Options{
 		Entry: "gmain", NoSafepoints: true, XIPText: true,
-		ResidentFuncs: []string{"shoot", "clearance", "in_box"},
+		ResidentFuncs: gameResident,
 		OptSize:       true, HotFuncs: pgo.GameHotFuncs, HotSites: pgo.GameHotSites,
 		InlineSites: pgo.GameInlineSites,
 		ColdBlocks:  pgo.GameColdBlocks}
@@ -982,6 +1009,150 @@ func TestGameGrad(t *testing.T) {
 	}
 
 	// press goes back, and the menu is live again
+	press(t, m, prog, pinA)
+	at = runUntil(t, m, "grad: back", at, 200_000_000)
+	at = runUntil(t, m, "menu up", at, 200_000_000)
+	press(t, m, prog, pinDown)
+	runUntil(t, m, "menu: LANWalk", at, 200_000_000)
+}
+
+// holdA holds stick A's button down until marker appears, then lets it
+// go and waits for the release to be observed. This is the long half of
+// grad.c's one-button gesture: press() cannot reach it, because it
+// releases on the very frame the game first sees the press.
+func holdA(t *testing.T, m *emu.Machine, prog *dmaasm.Result, marker string,
+	at int) int {
+	t.Helper()
+	m.SetPadIn(pinA, false)
+	at = runUntil(t, m, marker, at, 400_000_000)
+	m.SetPadIn(pinA, true)
+	down := mustSym(t, prog, "g_in_down")
+	for spent := 0; spent < 4000; spent++ {
+		if m.Peek32(down)&btnBit[pinA] == 0 {
+			return at
+		}
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 1_000_000,
+			WatchWrites: []uint32{down}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Fatal("stick A never read as released")
+	return at
+}
+
+// checkerLevels walks the matching screen's left half and returns the
+// two levels it finds on the two checkerboard parities, plus the count
+// of pixels that broke the pattern. chan565 pulls the channel under
+// test out of a 565 word.
+func checkerLevels(p *lcdPanel, chan565 func(uint16) int) (int, int, int) {
+	even, odd, bad := -1, -1, 0
+	for y := 16; y < 240; y++ {
+		for x := 0; x < 120; x++ {
+			v := chan565(p.px[y*240+x])
+			seen := &even
+			if (x+y)&1 == 1 {
+				seen = &odd
+			}
+			if *seen < 0 {
+				*seen = v
+			} else if *seen != v {
+				bad++
+			}
+		}
+	}
+	return even, odd, bad
+}
+
+// TestGameGradMatch: the luminance-matching screen, the second
+// instrument in the Gradient scene. It is the eye used as a null
+// detector — a 1-px checkerboard of levels 0 and N beside a solid M —
+// so what the emulator can check is that the two fields are exactly
+// what the arithmetic behind the reading assumes: a clean two-level
+// checker on one side, one flat level on the other, in the selected
+// channel and nothing else.
+func TestGameGradMatch(t *testing.T) {
+	t.Parallel()
+	m, prog := bootGame(t)
+	at := gradEnter(t, m, prog)
+	// A tap is still back-to-menu; the HOLD opens the matching screen,
+	// and it opens on the floorless match point (N = 2M, reading zero).
+	at = holdA(t, m, prog, "grad: match R  N 16  M 08  floor +000", at)
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 60_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	p := decodeLCD(m, 16)
+	red := func(c uint16) int { return int(c >> 11) }
+	// Left half: a 1-px checker of level 0 against level N, pure red.
+	even, odd, bad := checkerLevels(p, red)
+	if bad != 0 {
+		t.Errorf("left half: %d pixels off the checker pattern", bad)
+	}
+	if even != 0 || odd != 16 {
+		t.Errorf("checker levels = %d/%d, want 0/16", even, odd)
+	}
+	// ...and it is red ONLY: a checker leaking into the other channels
+	// would be measuring their floors too.
+	if n := p.countColor(0, 16, 119, 239, rgb565(0, 0, 0)) +
+		p.countColor(0, 16, 119, 239, rgb565(16<<3, 0, 0)); n != 120*224 {
+		t.Errorf("left half is not pure red: %d of %d pixels", n, 120*224)
+	}
+	// Right half: one solid level M.
+	if n := p.countColor(120, 16, 239, 239, rgb565(8<<3, 0, 0)); n != 120*224 {
+		t.Errorf("right half: %d of %d pixels at level 8", n, 120*224)
+	}
+	dumpPNG(t, p, "match.png")
+
+	// RIGHT walks N: the checker's bright level moves and the derived
+	// floor follows it (N - 2M = 17 - 16).
+	press(t, m, prog, pinRight)
+	at = runUntil(t, m, "grad: match R  N 17  M 08  floor +001", at,
+		200_000_000)
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 60_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	p = decodeLCD(m, 16)
+	even, odd, bad = checkerLevels(p, red)
+	if bad != 0 || even != 0 || odd != 17 {
+		t.Errorf("after one RIGHT: checker %d/%d (%d off pattern), want 0/17",
+			even, odd, bad)
+	}
+	// UP walks M, the half the seam moves with.
+	press(t, m, prog, pinUp)
+	at = runUntil(t, m, "grad: match R  N 17  M 09  floor -001", at,
+		200_000_000)
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 60_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	if n := decodeLCD(m, 16).countColor(120, 16, 239, 239,
+		rgb565(9<<3, 0, 0)); n != 120*224 {
+		t.Errorf("right half after one UP: %d of %d pixels at level 9",
+			n, 120*224)
+	}
+	// Another hold takes the next channel: green, whose 6-bit code is
+	// the one range in the scene that is not 0..31.
+	at = holdA(t, m, prog, "grad: match G  N 17  M 09  floor -001", at)
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 60_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	p = decodeLCD(m, 16)
+	even, odd, bad = checkerLevels(p, func(c uint16) int {
+		return int((c >> 5) & 0x3F)
+	})
+	if bad != 0 || even != 0 || odd != 17 {
+		t.Errorf("green checker %d/%d (%d off pattern), want 0/17",
+			even, odd, bad)
+	}
+	if n := p.countColor(120, 16, 239, 239, rgb565(0, 9<<2, 0)); n != 120*224 {
+		t.Errorf("green right half: %d of %d pixels at level 9", n, 120*224)
+	}
+
+	// A tap goes back to the ramps, where the window readout is exactly
+	// as it was left...
+	press(t, m, prog, pinA)
+	at = runUntil(t, m, "grad: ramps", at, 200_000_000)
+	press(t, m, prog, pinUp)
+	at = runUntil(t, m, "grad: view 064-191", at, 200_000_000)
+	// ...and a tap THERE still exits to the menu, unchanged.
 	press(t, m, prog, pinA)
 	at = runUntil(t, m, "grad: back", at, 200_000_000)
 	at = runUntil(t, m, "menu up", at, 200_000_000)

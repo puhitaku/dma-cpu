@@ -848,14 +848,23 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		"target/game/ll/boing.ll", "target/game/ll/chute.ll", "target/game/ll/puni.ll",
 		"target/game/ll/lcd.ll", "target/game/ll/grt.ll"},
 		dmacc.Options{Entry: "gmain", NoSafepoints: true, XIPText: true,
-			/* the radiosity shooter is the one workload that wants the
+			/* .ramtext placement, two groups with opposite motives.
+			 * The radiosity shooter is the one workload that wants the
 			 * machine's full speed: its inner loop visits every one of
 			 * the scene's ~3000 patches per shot, and XIP misses are the
 			 * bottleneck — placement-only residency (no closure),
 			 * feather-style. normal_of left the list by ceasing to
 			 * exist: the per-patch group byte turned it into two loads
-			 * that inline into shoot. */
-			ResidentFuncs: []string{"shoot", "clearance", "in_box"},
+			 * that inline into shoot.
+			 * grad.c is here for ROOM instead: the matching screen grew
+			 * a bench instrument nobody times by ~5.8 KiB, in a flash
+			 * window with a few hundred bytes left and a .ramtext
+			 * window with 9 KiB spare. grad.c's redraw stays behind —
+			 * moving it too overruns .ramtext — and mstep/mtop are
+			 * inlined away.
+			 * MIRRORS game_test.go's gameResident; see the note there. */
+			ResidentFuncs: []string{"shoot", "clearance", "in_box",
+				"grad_run", "grad_frame", "mredraw", "mrows", "mcolor"},
 			/* size everywhere, speed on the measured hot paths (host/pgo):
 			 * HotSites decides the compare form one site at a time,
 			 * HotFuncs gates the outliner */

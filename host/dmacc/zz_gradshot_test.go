@@ -50,5 +50,24 @@ func TestZZGradShots(t *testing.T) {
 		t.Fatal(err)
 	}
 	dumpPNG(t, decodeLCD(m, 16), "grad-zoomed.png")
-	_ = at
+
+	// ...and the matching screen, the scene's other instrument: a hold
+	// of A opens it, four RIGHTs walk the checker's bright level up to
+	// 20 so the header carries a reading that is not the zero it opens
+	// on. On silicon the two halves are compared by eye; here the shot
+	// only shows what the eye will be looking at.
+	at = holdA(t, m, prog, "grad: match ", at)
+	for i := 0; i < 4; i++ {
+		press(t, m, prog, pinRight)
+		at = runUntil(t, m, "grad: match ", at, 100_000_000)
+	}
+	if !strings.Contains(string(m.ConsoleOut),
+		"grad: match R  N 20  M 08  floor +004") {
+		t.Fatalf("the matching screen did not reach N=20; console tail:\n%s",
+			tailLines(string(m.ConsoleOut), 6))
+	}
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 40_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	dumpPNG(t, decodeLCD(m, 16), "match-screen.png")
 }

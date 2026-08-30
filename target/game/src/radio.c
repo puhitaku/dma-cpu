@@ -76,6 +76,10 @@
  * 0..240. */
 #include "g.h"
 
+/* The surround behind the opening. Already clear of the panel's black
+ * floor (levels 1, 2, 2) and it is the ONLY color in the scene that
+ * does not come out of tone() — so with tone()'s remap in place
+ * nothing this demo paints sits at channel code 0. */
 #define C_BG RGB(8, 8, 16)
 
 #define N 24        /* patches per wall edge; must divide 240 */
@@ -221,14 +225,31 @@ is_light(int w, int i, int k)
          k >= LIGHT_LO && k < LIGHT_LO + LIGHT_N;
 }
 
-/* tone map a radiosity channel to 0..255 (soft linear, <16 shift) */
+/* The panel's black floor, in 8-bit codes. Measured with the Gradient
+ * app (2026-08-31): this ST7789 is linear from channel level 1 up to
+ * its maximum, but level 0 is the pixel OFF — a luminance cliff sits
+ * between code 0 and code 1 that no gamma table closes (two attempts
+ * at one were reverted). A linear-light renderer walks straight
+ * across it: the dark end of every gradient in the box loses its last
+ * quantum in one hard edge that the image itself never contains.
+ * TONE_MIN lifts the whole ramp clear of the cliff — 8 is level 1 for
+ * the 5-bit channels, level 2 for green's 6, matching the per-channel
+ * linearity the ramps show. */
+#define TONE_MIN 8
+
+/* tone map a radiosity channel to 0..255 (soft linear, <16 shift),
+ * then remap onto [TONE_MIN, 255] so no surface the solver shades can
+ * land on channel code 0. The scale is 248/256, not 247/255: it is a
+ * multiply and a WHOLE-BYTE-LANE shift (the only cheap one on this
+ * machine), and it still lands both ends exactly — 0 -> 8 and
+ * 255 -> 255. One of each per channel per patch per repaint. */
 static uint
 tone(uint v)
 {
   uint c = v >> 3;
   if (c > 255)
     c = 255;
-  return c;
+  return TONE_MIN + ((c * (256 - TONE_MIN)) >> 8);
 }
 
 static ushort

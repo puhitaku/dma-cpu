@@ -21,9 +21,9 @@ deploy/feather-vi/arenaclaim	26624
 deploy/feather-vi/data	11880
 deploy/feather-vi/ramtext	14488
 deploy/feather-vi/text	160840
-deploy/gamepico-game/data	141048
-deploy/gamepico-game/ramtext	35944
-deploy/gamepico-game/text	273648
+deploy/gamepico-game/data	141972
+deploy/gamepico-game/ramtext	43248
+deploy/gamepico-game/text	272324
 fbcon/feather/cat README	1350001
 fbcon/feather/echo 0123456789012345678901234567890123456789	2669488
 fbcon/feather/ls /dev	6209982

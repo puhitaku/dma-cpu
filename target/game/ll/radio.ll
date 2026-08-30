@@ -1460,35 +1460,41 @@ define internal fastcc void @face_point(i32 noundef range(i32 -2147483648, 10) %
 }
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, inaccessiblemem: none)
-define internal fastcc zeroext i16 @patch_color(i32 noundef range(i32 -2147483648, 3044) %0, i32 noundef range(i32 0, 2) %1) unnamed_addr #6 {
+define internal fastcc zeroext range(i16 2048, 0) i16 @patch_color(i32 noundef range(i32 -2147483648, 3044) %0, i32 noundef range(i32 0, 2) %1) unnamed_addr #6 {
   %3 = icmp eq i32 %1, 0
-  br i1 %3, label %4, label %24
+  br i1 %3, label %4, label %30
 
 4:                                                ; preds = %2
   %5 = getelementptr inbounds i16, ptr inttoptr (i32 537077808 to ptr), i32 %0
   %6 = load i16, ptr %5, align 2, !tbaa !14
   %7 = lshr i16 %6, 3
   %8 = tail call i16 @llvm.umin.i16(i16 %7, i16 255)
-  %9 = shl nuw i16 %8, 8
+  %9 = mul nuw i16 %8, 248
   %10 = and i16 %9, -2048
-  %11 = getelementptr inbounds i16, ptr inttoptr (i32 537083968 to ptr), i32 %0
-  %12 = load i16, ptr %11, align 2, !tbaa !14
-  %13 = lshr i16 %12, 3
-  %14 = tail call i16 @llvm.umin.i16(i16 %13, i16 255)
-  %15 = shl nuw nsw i16 %14, 3
-  %16 = and i16 %15, 2016
-  %17 = or disjoint i16 %16, %10
-  %18 = getelementptr inbounds i16, ptr inttoptr (i32 537090128 to ptr), i32 %0
-  %19 = load i16, ptr %18, align 2, !tbaa !14
-  %20 = lshr i16 %19, 3
-  %21 = tail call i16 @llvm.umin.i16(i16 %20, i16 255)
-  %22 = lshr i16 %21, 3
-  %23 = or disjoint i16 %17, %22
-  br label %24
+  %11 = add nuw i16 %10, 2048
+  %12 = getelementptr inbounds i16, ptr inttoptr (i32 537083968 to ptr), i32 %0
+  %13 = load i16, ptr %12, align 2, !tbaa !14
+  %14 = lshr i16 %13, 3
+  %15 = tail call i16 @llvm.umin.i16(i16 %14, i16 255)
+  %16 = mul nuw i16 %15, 248
+  %17 = lshr i16 %16, 5
+  %18 = add nuw nsw i16 %17, 64
+  %19 = and i16 %18, 2016
+  %20 = or disjoint i16 %19, %11
+  %21 = getelementptr inbounds i16, ptr inttoptr (i32 537090128 to ptr), i32 %0
+  %22 = load i16, ptr %21, align 2, !tbaa !14
+  %23 = lshr i16 %22, 3
+  %24 = tail call i16 @llvm.umin.i16(i16 %23, i16 255)
+  %25 = mul nuw i16 %24, 248
+  %26 = lshr i16 %25, 8
+  %27 = add nuw nsw i16 %26, 8
+  %28 = lshr i16 %27, 3
+  %29 = or i16 %20, %28
+  br label %30
 
-24:                                               ; preds = %2, %4
-  %25 = phi i16 [ %23, %4 ], [ -2, %2 ]
-  ret i16 %25
+30:                                               ; preds = %2, %4
+  %31 = phi i16 [ %29, %4 ], [ -2, %2 ]
+  ret i16 %31
 }
 
 ; Function Attrs: minsize optsize
