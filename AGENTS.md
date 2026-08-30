@@ -212,10 +212,17 @@ phased plan). Phase outcomes are logged in the numbered
   holds the running game's bulk state, and a 16 KiB ring at a 16
   KiB-aligned address feeds I2S through ch9. Above the data segment,
   `0x2002E000..0x2003FE00` is a pinned CONTIGUOUS span for whichever
-  scene is running (40 KiB free + the audio ring + radio.c/bench.c's
-  region, 73216 B): `boards.GameFreeBase` marks its bottom and dmxgen
+  scene is running (40 KiB free + the audio ring + bench.c's region,
+  73216 B): `boards.GameFreeBase` marks its bottom and dmxgen
   refuses a build whose data reaches past it. When that assert fires,
-  move the pin on purpose and re-price the span — do not shave a scene. Two rules the silicon
+  move the pin on purpose and re-price the span — do not shave a scene.
+  The audio ring INSIDE the span is borrowed, not simply free: ch9
+  free-runs over it forever (silence is a zeroed ring, which is what
+  keeps the amp from popping), so a scene that wants those bytes as
+  memory brackets itself with `aud_borrow`/`aud_release` (`fx.c`) —
+  quiesce the channel before the first store, hand back a zeroed ring
+  on the way out. `radio.c` does; `bench.c` stays above the ring and
+  needs no protocol. Two rules the silicon
   taught: (a) the machine has no right-shift instruction and no divide,
   so `>>`, `/` and `%` are only cheap when the compiler can see the
   count or the divisor — a constant count is a byte-lane copy and a
@@ -233,6 +240,23 @@ phased plan). Phase outcomes are logged in the numbered
   during clips (waiting there deadlocks the game-over sting). The
   ST7789 is write-only: no TE line, no MISO, so tearing is managed by
   the frame's own two-phase erase/draw order.
+- Dead ARM SRAM (`boards.Board.ArmScratchFree`; gamepico 0x20040000,
+  feather 0x20080000, 8 KiB each): the boards that ship a payload link
+  the firmware's own .data/.bss/heap (and on the RP2040 its stacks)
+  into the SCRATCH banks at the top of SRAM and PSM-halt core 0 as soon
+  as `dmx_start` returns, so afterwards those bytes have no owner at
+  all. They are claimable, with two conditions. (a) RUNTIME CLAIM ONLY:
+  the loader RUNS on that memory right up to `dmx_start`, so no
+  link-time segment may ever be placed there — absolute pointers
+  written after the machine is up are the whole legal use, and a
+  claimant must initialize everything it reads. (b) No teardown
+  obligation, because the previous owner is in reset until the next
+  chip reset. pico and pico2 get no constant on purpose: their ARM is
+  still alive (mailbox executor, live core stacks) and its RAM sits at
+  the BOTTOM of SRAM, which is exactly why those boards' machine floor
+  is `0x20002000`. `radio.c` is the first claimant — its projected
+  corner grids and group tables live there so the scene-exclusive span
+  below can hold nothing but patch-count-scaling arrays.
 - Overclocking (the Feather runs clk_sys at 300 MHz, the gamepico at 250,
   via `boards.ClkSysKHz`), three silicon laws: (a) RP2350's POWMAN clamps
   VREG to 1.15 V until `vreg_disable_voltage_limit()` — a plain

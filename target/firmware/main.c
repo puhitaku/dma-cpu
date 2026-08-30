@@ -207,8 +207,9 @@ static void game_start(void)
      * plus the park prologue (a few us, invisible at second
      * resolution), then core 0 switches itself off at the PSM. The
      * monitor reads this block (0x2003FF00, past the compact machine's
-     * scratch word and clear of the radiosity demo's patch window at
-     * 0x2003C000) and shows now - stamp climbing — a clock that only
+     * scratch word at 0x2003FE00 and therefore above the whole
+     * scene-exclusive span the radiosity demo claims below it) and
+     * shows now - stamp climbing — a clock that only
      * advances because nothing on the CPU side ever runs again. The
      * stamp must be written HERE, before dmx_start: this is the last
      * moment the ARM is guaranteed to own the bus quietly. */

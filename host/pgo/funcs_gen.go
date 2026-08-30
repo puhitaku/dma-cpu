@@ -44,13 +44,12 @@ var KernelHotFuncs = map[string]bool{
 	"vfork_release": true,
 }
 
-// GameHotFuncs: 27 of 82 executed functions, covering 97.2% of the
-// 81659927 text reads the workload made.
+// GameHotFuncs: 27 of 82 executed functions, covering 97.1% of the
+// 87743249 text reads the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
 // Benchmark run to completion.
 var GameHotFuncs = map[string]bool{
-	"cell_render":   true,
 	"dino_run":      true,
 	"frame_sync":    true,
 	"gd_wait":       true,
@@ -58,20 +57,21 @@ var GameHotFuncs = map[string]bool{
 	"gdma_rows":     true,
 	"gdma_spi_rows": true,
 	"gfx_blit_runs": true,
-	"gfx_cell_runs": true,
 	"gfx_damage":    true,
 	"gfx_fill":      true,
 	"gfx_text":      true,
 	"gfx_text2":     true,
+	"gpio_out":      true,
 	"in_poll":       true,
 	"k_bogo":        true,
-	"k_mul":         true,
 	"k_sieve":       true,
 	"k_sort":        true,
 	"lanwalk_run":   true,
-	"lcd_flush":     true,
+	"led_tick":      true,
 	"menu_run":      true,
 	"pcm_tick":      true,
+	"snd_tick":      true,
+	"spi_put8":      true,
 	"stick":         true,
 	"uputc":         true,
 	"uputn":         true,

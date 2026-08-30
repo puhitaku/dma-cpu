@@ -1027,8 +1027,8 @@ var ViColdBlocks = map[string]bool{
 	"B_yank_delete_9":        true,
 }
 
-// GameColdBlocks: 75 of the 708 blocks in the 82 functions the workload
-// executed (1338 blocks in the image).
+// GameColdBlocks: 77 of the 708 blocks in the 82 functions the workload
+// executed (1356 blocks in the image).
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
 // Benchmark run to completion.
@@ -1036,6 +1036,7 @@ var GameColdBlocks = map[string]bool{
 	"B_bench_run_124":   true,
 	"B_bench_run_151":   true,
 	"B_cat_score_31":    true,
+	"B_cat_score_48":    true,
 	"B_dino_run_157":    true,
 	"B_dino_run_186":    true,
 	"B_dino_run_189":    true,
@@ -1074,6 +1075,7 @@ var GameColdBlocks = map[string]bool{
 	"B_lanwalk_run_87":  true,
 	"B_led_tick_12":     true,
 	"B_pcm_tick_5":      true,
+	"B_relight_42":      true,
 	"B_snd_tick_10":     true,
 	"B_snd_tick_20":     true,
 	"B_spi_put8_1":      true,

@@ -741,15 +741,38 @@ const PinJoyAUp = 2
 
 // gameSFXHome is the flash home the PCM+asset blob is LINKED at
 // (.gamesfx section), well past the firmware image and clear of the
-// game text window.
-const gameSFXHome = 0x10140000
+// game text window. It also SIZES that window: text runs from
+// boards.GamePico.GameTextXIP up to here, and the check below is a
+// hard error.
+//
+// The home moved up from 0x10140000 when the radiosity grid grew: at
+// 256 KiB the text window had 296 bytes left in it, which is not a
+// margin, it is a coincidence.
+//
+// It moved as far as it can. The console owns exactly the upper 1 MiB
+// of a 2 MiB part (GameTextXIP..flash end) and the asset blob — the
+// two PCM clips, the drum kit and the Boing ball's precomputed frames
+// — is 773776 bytes of it. Pinning the blob at 0x10143000 puts its
+// tail 368 bytes below the top of flash and hands the text window
+// everything else: 274432 bytes against the 268496 the image measures
+// at (ratchet deploy/gamepico-game/text). Both walls are
+// now real, so growth on either side is a decision, not a surprise;
+// dmxgen fails the build at whichever one is hit first. Both halves of
+// the address are pinned by hand — this constant and the
+// --section-start in target/firmware/CMakeLists.txt — with images.h's
+// HIL_GAME_SFX_HOME and main.c's blob-link check standing between a
+// half-edit and a silent misflash.
+const gameSFXHome = 0x10143000
 
 // checkGameFree is the link-time pin under the gamepico's
 // scene-exclusive SRAM span: the game's data segment must END at or
 // below boards.GameFreeBase, so that everything from there up to the
 // machine's scratch word — the 40 KiB pinned free block, fx.c's audio
-// ring, radio.c's patch state — stays one CONTIGUOUS 73216-byte region
-// a scene can claim whole. The old audio-overlap check below only
+// ring, bench.c's buffers — stays one CONTIGUOUS 73216-byte region a
+// scene can claim whole. radio.c is what makes that contiguity worth
+// enforcing: its per-patch arrays run 64680 bytes from the pin
+// upward, straight through the ring, which is why they arrive with a
+// borrow protocol. The old audio-overlap check below only
 // catches a segment that has already grown into the ring; this one
 // fires 40 KiB earlier, while there is still a choice to make.
 //
@@ -825,11 +848,13 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		"target/game/ll/lcd.ll", "target/game/ll/grt.ll"},
 		dmacc.Options{Entry: "gmain", NoSafepoints: true, XIPText: true,
 			/* the radiosity shooter is the one workload that wants the
-			 * machine's full speed: its inner loop visits all 660
-			 * patches per shot, and XIP misses are the bottleneck —
-			 * placement-only residency (no closure), feather-style */
-			ResidentFuncs: []string{"shoot", "clearance", "in_box",
-				"normal_of"},
+			 * machine's full speed: its inner loop visits every one of
+			 * the scene's ~3000 patches per shot, and XIP misses are the
+			 * bottleneck — placement-only residency (no closure),
+			 * feather-style. normal_of left the list by ceasing to
+			 * exist: the per-patch group byte turned it into two loads
+			 * that inline into shoot. */
+			ResidentFuncs: []string{"shoot", "clearance", "in_box"},
 			/* size everywhere, speed on the measured hot paths (host/pgo):
 			 * HotSites decides the compare form one site at a time,
 			 * HotFuncs gates the outliner */
@@ -931,12 +956,18 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		return nil, err
 	}
 	sfxBlob = append(sfxBlob, gameassets.BallBlob()...)
-	if gameSFXHome+len(sfxBlob) > int(bd.GameTextXIP)+0x100000 {
-		return nil, fmt.Errorf("game asset blob overflows flash: ends %#x",
-			gameSFXHome+len(sfxBlob))
+	if top := 0x10000000 + int(bd.FlashSize); gameSFXHome+len(sfxBlob) > top {
+		return nil, fmt.Errorf("game asset blob ends at %#x, %d bytes past "+
+			"the top of flash (%#x) — the blob and the text window share the "+
+			"upper %d KiB and both are full; move gameSFXHome down only by "+
+			"first making the text fit",
+			gameSFXHome+len(sfxBlob), gameSFXHome+len(sfxBlob)-top, top,
+			(top-int(bd.GameTextXIP))/1024)
 	}
 	// Fixed audio region (fx.c): the 16 KiB ring at 0x20038000 (the
-	// drum PCM moved to flash). Nothing in the image may grow in.
+	// drum PCM moved to flash). Nothing LINKED may grow in — a scene
+	// that wants those bytes at runtime borrows them instead, with
+	// ch9 quiesced (fx.c's aud_borrow; radio.c is the one user).
 	const auBase, auEnd = 0x20038000, 0x2003C000
 	for _, seg := range prog.Image.Segments {
 		end := seg.LinkAddr + uint32(len(seg.Data))

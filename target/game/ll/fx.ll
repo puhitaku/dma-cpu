@@ -393,6 +393,26 @@ define dso_local void @snd_tick() local_unnamed_addr #1 {
   ret void
 }
 
+; Function Attrs: minsize nounwind optsize
+define dso_local void @aud_borrow() local_unnamed_addr #1 {
+  tail call void @gd_wait() #7
+  tail call void @pcm_stop() #8
+  tail call void @snd_off() #8
+  %1 = load i32, ptr @sndctrl, align 4, !tbaa !3
+  %2 = and i32 %1, -2
+  store volatile i32 %2, ptr inttoptr (i32 1342177872 to ptr), align 16, !tbaa !3
+  ret void
+}
+
+; Function Attrs: minsize nounwind optsize
+define dso_local void @aud_release() local_unnamed_addr #1 {
+  tail call void @gd_wait() #7
+  tail call void @gdma_fill(i32 noundef 537100288, i32 noundef 0, i32 noundef 16384) #7
+  %1 = load i32, ptr @sndctrl, align 4, !tbaa !3
+  store volatile i32 %1, ptr inttoptr (i32 1342177872 to ptr), align 16, !tbaa !3
+  ret void
+}
+
 ; Function Attrs: minsize nofree norecurse nounwind optsize
 define dso_local void @led(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
   store i32 %0, ptr @led_base0, align 4, !tbaa !3

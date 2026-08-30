@@ -47,8 +47,11 @@ typedef unsigned char uchar;
  *     reads at *_run() entry: no initializers, no cross-run state;
  *   - state that must survive between runs (the sequencer's edited
  *     pattern) stays static, and had better be small;
- *   - radiosity keeps its own window (RAD_RAM: the 15.9 KiB above
- *     the audio region) — its ~15.4 KiB doesn't fit here.
+ *   - radiosity is the exception that proves the rule: its patch
+ *     arrays are ~63 KiB and claim the whole scene-exclusive span
+ *     (boards.GameFreeBase upward, the audio ring included — see
+ *     aud_borrow below), with the fixed lookups in the dead ARM
+ *     window on top. Nothing that big belongs here.
  * Word-backed so every offset may be cast to any element type. */
 #define GARENA_SZ 9216
 extern uint arena_w[GARENA_SZ / 4]; /* symbol g_arena_w */
@@ -135,6 +138,12 @@ void pcm_play(uint addr, uint samples); /* mono 16-bit clip from flash */
 void pcm_stop(void);
 void pcm_tick(void);
 void snd_tick(void);
+/* The ring channel free-runs, so a scene that wants the ring's 16 KiB
+ * as memory must bracket itself with these: borrow quiesces ch9 (after
+ * finishing whatever the menu was playing), release re-zeroes the ring
+ * and restarts the stream. See fx.c for the full protocol. */
+void aud_borrow(void);
+void aud_release(void);
 void led(uint rgb0, uint rgb1); /* 0xRRGGBB each; per-channel capped */
 void led_rainbow(uint frames);   /* fast hue loop, then back to base */
 void led_blink(uint rgb, uint cycles); /* tri-ramp blink, 4 f/side */

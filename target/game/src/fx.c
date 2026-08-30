@@ -308,6 +308,54 @@ snd_tick(void)
   }
 }
 
+/* --- lending the ring's 16 KiB to a scene ---
+ *
+ * The ring channel FREE-RUNS. fx_init arms ch9 with a transfer count of
+ * 0xFFFFFFFF over a 16 KiB address-masked ring and never disarms it, so
+ * it is walking AURING into the I2S FIFO every DREQ of every frame
+ * whether or not anything is playing — silence IS a zeroed ring, and
+ * that is deliberate: the MAX98357's SD_MODE is strapped high, so the
+ * stream has to keep framing or the amp pops. Nothing here is "armed
+ * per hit"; snd_play only rewrites the words under a channel that was
+ * already reading them.
+ *
+ * Which makes the ring's SRAM borrowable only under a protocol. A scene
+ * that wants those 16 KiB as working memory (radio.c's patch arrays run
+ * straight through them) must stop the channel BEFORE its first store,
+ * or every word it writes is played out of the speaker; and it must
+ * hand back silence, or the menu's first sound plays over whatever the
+ * scene left behind.
+ *
+ * aud_borrow is the entry half: finish anything in flight (an async LCD
+ * flush still holding ch11, a menu PCM clip still streaming from
+ * flash), drop the tone budget and zero the ring so the last words the
+ * FIFO ever sees are silence, then EN-clear ch9 — the documented pause,
+ * the same one pcm_play uses. While it is paused the DREQs go
+ * unserviced and SM0 stalls on its autopull with a zero level held: no
+ * click going in, and none coming out.
+ *
+ * aud_release is the exit half: re-zero the ring (the scene owned it)
+ * and unpause. READ_ADDR is still wherever it stopped, which is fine —
+ * the ring wraps by address mask, so every position in it is a legal
+ * start, and the count has ~27 hours left on it.
+ */
+void
+aud_borrow(void)
+{
+  gd_wait();  /* an async lcd flush may still hold ch11 */
+  pcm_stop(); /* a menu clip streaming from flash: end it cleanly */
+  snd_off();  /* drop the tone budget and fill the ring with silence */
+  W32(DMACH(9) + 0x10) = sndctrl & ~1u;
+}
+
+void
+aud_release(void)
+{
+  gd_wait();
+  gdma_fill(AURING, 0, AURING_BYTES);
+  W32(DMACH(9) + 0x10) = sndctrl;
+}
+
 /* --- LEDs: both WS2811s, colors as 0xRRGGBB. Wire order is GRB (the
  * common integrated parts); swap the packing here if the strip is an
  * RGB-order WS2811. Two words fit the four-deep FIFO, and the >50 us

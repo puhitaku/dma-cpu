@@ -1,23 +1,21 @@
 /* radio.c: progressive radiosity in the classic red/green light box,
- * rendered live — now with the two interior boxes (a tall cuboid and
- * a cube, both rotated about the vertical axis) that give the scene
- * its soft shadows. Five walls are split into 10x10 patches, box
- * faces into per-visibility grids (the tall box's front at 6x12);
- * a 2x2 ceiling light carries the initial energy. A
- * sixth, INVISIBLE wall closes the camera opening (4x4, never drawn):
- * without it the opening is an energy sink and the camera-facing box
- * sides — lit only by third-bounce light off the wall strips in front
- * of them — quantize to black. The closed box bounces the ceiling
- * light straight back at them.
- * Each step "shoots" the brightest patch's unshot energy at every
- * other patch and repaints what changed, so the room brightens and
- * color-bleeds in front of you — the whole point is WATCHING the
- * light bounce.
+ * rendered live — with the two interior boxes (a tall cuboid and a
+ * cube, both rotated about the vertical axis) that give the scene its
+ * soft shadows. Five walls are split into NxN patches, box faces into
+ * per-visibility grids (the tall box's front at 6x12); a small block of
+ * ceiling patches carries the initial energy. A sixth, INVISIBLE wall
+ * closes the camera opening (never drawn): without it the opening is an
+ * energy sink and the camera-facing box sides — lit only by third-bounce
+ * light off the wall strips in front of them — quantize to black. The
+ * closed box bounces the ceiling light straight back at them.
+ * Each step "shoots" the brightest patch's unshot energy at every other
+ * patch and repaints what changed, so the room brightens and color-bleeds
+ * in front of you — the whole point is WATCHING the light bounce.
  *
  * Everything is integer. The tricks that make that work:
  *  - the receiver update is brightness-normalized (area-free), and
- *    only the SHOOTER scales its energy by its patch-area ratio, so
- *    unequal box/wall patch areas cost one Q8 multiply;
+ *    only the SHOOTER's area enters the form factor, so unequal
+ *    box/wall patch areas cost nothing beyond one table load;
  *  - normals are Q8 constants (the boxes rotate only about Y, so
  *    their corner positions and normals are compile-time numbers,
  *    and vertical edges stay vertical on screen);
@@ -34,36 +32,85 @@
  *    rides the runtime's OUT_REV fast path: the Q8 dot products are
  *    signed, so they shift through asr8() rather than `>>` (the
  *    drawing path's wider Q12 shifts stay signed — they run per
- *    redraw, not per receiver).
+ *    redraw, not per receiver);
+ *  - and NOTHING in the receiver loop divides by a non-constant or by
+ *    a constant the machine cannot fold. The grid edge N is a
+ *    parameter now, so `p / NPW` (which recovers a patch's wall) is a
+ *    general divide at every N but 16 — thousands of cycles, twice per
+ *    pair. It is gone: setup() writes a per-patch GROUP byte (pgrp)
+ *    and the loop reads the normal, the reflectance and the area
+ *    straight out of 16-entry tables indexed by it.
  *
- * Patch state lives in the free SRAM window at 0x2003C000 (the ARM's
- * park stamp moved to 0x2003FF00 to make it contiguous; bench.c's
- * buffers overlap it — the two apps never run together). Projected
- * corners are uchar pairs: the camera is fixed and the opening maps
- * exactly to the 240x240 screen, so every corner is 0..240. */
+ * --- where the state lives -------------------------------------
+ *
+ * Two homes, and the split is the whole reason N could be raised:
+ *
+ *  (1) The eleven NP-SCALING arrays — the ten shorts/ushorts plus the
+ *      group byte — sit at the BOTTOM of the gamepico's scene-exclusive
+ *      span (boards.GameFreeBase = 0x2002E000 up to the machine's
+ *      scratch word at 0x2003FE00, 73216 contiguous bytes). This scene
+ *      claims the span whole, which means it claims fx.c's audio ring
+ *      at 0x20038000 along with it — see radio_run's aud_borrow /
+ *      aud_release pair, and fx.c for why a free-running channel makes
+ *      that a protocol rather than a comment. bench.c's buffers overlap
+ *      the top of the same span; the two demos never run together.
+ *  (2) Every FIXED-SIZE lookup — the projected corner grids, the box
+ *      cell coords and the 16-entry group tables — lives in the dead
+ *      ARM window (boards.ArmScratchFree: on gamepico 0x20040000,
+ *      8192 B). That memory is the firmware's own .data/.bss/stack,
+ *      and core 0 is in PSM reset from dmx_start onward, so after boot
+ *      it has no owner at all. RUNTIME CLAIM ONLY — the loader
+ *      executes on it right up to dmx_start, so nothing linked may
+ *      ever live there, and setup() must therefore write every byte it
+ *      later reads.
+ *
+ * At N=24 the arrays want 64680 B of the 73216 and the corner grid
+ * 6250 B of the 8192, so both budgets are two thirds to three quarters
+ * spent. There is no next step to argue about: PSIZE and PSIZEF both
+ * have to divide 240 exactly, which leaves N in {4, 8, 12, 16, 20, 24,
+ * 40, ...}, and N=40 wants 165 KiB of arrays and a 16 KiB corner grid
+ * — over both walls by more than double. 24 is the top of this
+ * lattice, and the #error pair below says so at compile time.
+ * Projected corners are uchar pairs: the camera is fixed and the
+ * opening maps exactly to the 240x240 screen, so every corner is
+ * 0..240. */
 #include "g.h"
 
 #define C_BG RGB(8, 8, 16)
 
-#define N 10           /* patches per wall edge */
-#define NPW (N * N)    /* 100 per wall */
+#define N 24        /* patches per wall edge; must divide 240 */
+#define NPW (N * N) /* per wall */
 #define NWALL (5 * NPW)
-#define NBF 10         /* box faces: 2 boxes x (4 sides + top) */
+#define NBF 10 /* box faces: 2 boxes x (4 sides + top) */
 /* Per-face patch resolution, budgeted by what the camera sees
  * (f = box*5 + side; sides 0 right, 1 left, 2 back, 3 front, 4 top):
  * the tall box's front — the demo's biggest visible surface — gets
  * 6 across x 12 down (~12-unit square patches over 72x150), the
  * short box's front 6x6, the tall left / short top 4x4, every face
- * the camera cannot see 2x2. */
-#define NBOX 164 /* sum of NFI[f]*NFK[f] */
+ * the camera cannot see 2x2. These do NOT scale with N: pcell packs a
+ * cell as i | k<<4, so a face edge can never exceed 16, and the corner
+ * grids they need are what the 8 KiB lookup window has left over. */
+#define NBOX 164   /* sum of NFI[f]*NFK[f] */
+#define BCORNP 244 /* sum of (NFI[f]+1)*(NFK[f]+1), in uchar pairs */
 #define NFRONT (NWALL + NBOX) /* first invisible front-wall patch */
-#define NF 4                  /* front wall: 4x4, an energy mirror */
-#define PSIZEF 60
-#define NP (NFRONT + NF * NF) /* 680 patches */
-#define HALF 120       /* box half-width in scene units */
-#define ZNEAR 200      /* opening (camera at z=0, focal ZNEAR) */
-#define PSIZE 24       /* wall patch edge: 240/10 */
+/* The front wall is an energy mirror, never drawn. Its patches stay
+ * FOUR wall-patch edges across at every N, which keeps the one Q8
+ * ratio in the shooter (its area over a wall patch's) pinned at 16
+ * instead of growing as the wall grid gets finer. */
+#define NF (N / 4)
+#define PSIZEF (240 / NF)
+#define NP (NFRONT + NF * NF)
+#define HALF 120  /* box half-width in scene units */
+#define ZNEAR 200 /* opening (camera at z=0, focal ZNEAR) */
+#define PSIZE (240 / N) /* wall patch edge */
 #define AREA (PSIZE * PSIZE)
+
+#if 240 % N
+#error "N must divide 240: PSIZE has to be an integral number of scene units"
+#endif
+#if N % 4 || 240 % NF
+#error "N/4 must be a divisor of 240: the front mirror needs an integral PSIZEF"
+#endif
 
 #define W_BACK 0
 #define W_FLOOR 1
@@ -94,36 +141,54 @@ static const uchar NFK[NBF] = {2, 4, 2, 12, 2, 2, 2, 2, 6, 4}; /* down   */
 static const uchar PBASE[NBF] = {0, 4, 20, 24, 96, 100, 104, 108, 112, 148};
 static const ushort CGOFF[NBF] = {0, 9, 34, 43, 134, 143, 152, 161, 170, 219};
 
-/* --- state in free SRAM (see bench.c for the region's story) ---
- * ten NP-sized arrays at a 1360-byte stride, then the projected wall
- * corner grid (5 walls x 11x11 uchar pairs), the box face corner
- * grids ((NFI+1)*(NFK+1) pairs each; the front wall projects to
- * nothing and has none), and two per-patch lookups the variable
- * resolution needs in the hot loop (face id, packed cell coords);
- * ~15.4 KiB of the 15.9 KiB window. */
-#define RAD_RAM 0x2003C000u
-#define pcx ((short *)RAD_RAM)
-#define pcy ((short *)(RAD_RAM + 1360))
-#define pcz ((short *)(RAD_RAM + 2720))
-#define bR ((ushort *)(RAD_RAM + 4080))
-#define bG ((ushort *)(RAD_RAM + 5440))
-#define bB ((ushort *)(RAD_RAM + 6800))
-#define uR ((ushort *)(RAD_RAM + 8160))
-#define uG ((ushort *)(RAD_RAM + 9520))
-#define uB ((ushort *)(RAD_RAM + 10880))
-#define shown ((ushort *)(RAD_RAM + 12240))
-#define corn ((uchar *)(RAD_RAM + 13600))   /* walls: 1210 B */
-#define bcorn ((uchar *)(RAD_RAM + 14810))  /* boxes: 488 B */
-#define pface ((uchar *)(RAD_RAM + 15298))  /* box patch -> face */
-#define pcell ((uchar *)(RAD_RAM + 15462))  /* box patch cell: i | k<<4 */
-#define CI(w, i, k) ((w) * 242 + ((k) * 11 + (i)) * 2)
+/* --- (1) the NP-scaling arrays, at the bottom of the span --- */
+#define RAD_RAM 0x2002E000u /* == boards.GameFreeBase */
+#define RAD_SPAN 73216u     /* .. up to the machine's scratch word */
+#define PSTRIDE ((NP * 2 + 3) & ~3)
+#define pcx ((short *)(RAD_RAM + 0 * PSTRIDE))
+#define pcy ((short *)(RAD_RAM + 1 * PSTRIDE))
+#define pcz ((short *)(RAD_RAM + 2 * PSTRIDE))
+#define bR ((ushort *)(RAD_RAM + 3 * PSTRIDE))
+#define bG ((ushort *)(RAD_RAM + 4 * PSTRIDE))
+#define bB ((ushort *)(RAD_RAM + 5 * PSTRIDE))
+#define uR ((ushort *)(RAD_RAM + 6 * PSTRIDE))
+#define uG ((ushort *)(RAD_RAM + 7 * PSTRIDE))
+#define uB ((ushort *)(RAD_RAM + 8 * PSTRIDE))
+#define shown ((ushort *)(RAD_RAM + 9 * PSTRIDE))
+/* pgrp: 0..4 the five walls, 5+f the ten box faces, 15 the front
+ * mirror — the one lookup that replaced the receiver loop's divisions */
+#define pgrp ((uchar *)(RAD_RAM + 10 * PSTRIDE))
+#define RAD_USED (10 * PSTRIDE + NP)
+
+#if RAD_USED > RAD_SPAN
+#error "radiosity arrays overflow the scene-exclusive span: lower N"
+#endif
+
+/* --- (2) the fixed-size lookups, in the dead ARM window --- */
+#define RADLUT 0x20040000u /* == boards.GamePico.ArmScratchFree */
+#define RADLUT_SZ 0x2000u
+#define L_CORN 0u                                     /* 5 walls of pairs */
+#define L_BCORN (L_CORN + 5 * (N + 1) * (N + 1) * 2)  /* box face pairs */
+#define L_PCELL (L_BCORN + BCORNP * 2)                /* box cell, i|k<<4 */
+#define L_GNRM (((L_PCELL + NBOX) + 3) & ~3u)         /* 16 x 3 Q8 normals */
+#define L_GRHO (L_GNRM + 16 * 3 * 2)                  /* 16 x 3 Q8 rho */
+#define L_GAREA (L_GRHO + 16 * 3 * 2)                 /* 16 patch areas */
+#define L_FVIS (L_GAREA + 16 * 2)                     /* NBF visibility */
+#define L_END (L_FVIS + NBF * 2)
+#define corn ((uchar *)(RADLUT + L_CORN))
+#define bcorn ((uchar *)(RADLUT + L_BCORN))
+#define pcell ((uchar *)(RADLUT + L_PCELL))
+#define gnrm ((short *)(RADLUT + L_GNRM))
+#define grho ((ushort *)(RADLUT + L_GRHO))
+#define garea ((ushort *)(RADLUT + L_GAREA))
+#define fvis ((short *)(RADLUT + L_FVIS))
+/* wall corner grid: (N+1)^2 pairs per wall; box grid: (NFI+1)x(NFK+1) */
+#define CI(w, i, k) (((w) * (N + 1) * (N + 1) + (k) * (N + 1) + (i)) * 2)
 #define BCI(f, i, k) ((CGOFF[f] + (k) * (NFI[f] + 1) + (i)) * 2)
 
-/* per-face normals (Q8) and shooter area ratios (Q8 vs a wall patch),
- * filled by setup(); +10 visibility flags */
-#define nrm ((short *)(RAD_RAM + 15626))   /* 10 x 3 */
-#define areaq ((short *)(RAD_RAM + 15686)) /* 10 */
-#define fvis ((short *)(RAD_RAM + 15706))  /* 10; ends 0x2003FD6E */
+#if L_END > RADLUT_SZ
+#error "radiosity lookups overflow boards.ArmScratchFree: lower N"
+#endif
 
 /* reflectance per wall group, Q8; box faces are warm white */
 static const ushort rho[6][3] = {
@@ -133,24 +198,27 @@ static const ushort rho[6][3] = {
     {200, 195, 185}, /* the boxes */
 };
 
-/* the middle 2x2 of the ceiling: four compile-time patch indices —
- * this runs per patch per repaint scan, and p/NPW + p%N cost two
- * millicode divisions each (rt_udm was 13% of the whole profile) */
-#define LP(i, k) (W_CEIL * NPW + (k) * N + (i))
-static int
-is_light(int p)
-{
-  return p == LP(4, 4) || p == LP(5, 4) || p == LP(4, 5) || p == LP(5, 5);
-}
+/* wall normals, Q8, into the room */
+static const short wnrm[5][3] = {
+    {0, 0, -256}, {0, -256, 0}, {0, 256, 0}, {256, 0, 0}, {-256, 0, 0},
+};
 
-/* patch group: 0..4 walls, 5 boxes (for reflectance); the invisible
- * front wall reflects like the white walls */
+/* The ceiling lamp: a centred LIGHT_N x LIGHT_N block of ceiling
+ * patches, sized to stay ~48 scene units across however fine the grid
+ * gets (N/5 rounded, which is the exact middle 2x2 at N=10). Keeping
+ * its AREA fixed is what keeps the room's total flux — and therefore
+ * the converged image tone() maps — the same at every N. */
+#define LIGHT_N ((N + 2) / 5)
+#define LIGHT_LO ((N - LIGHT_N) / 2)
+#define LP(i, k) (W_CEIL * NPW + (k) * N + (i))
+
+/* Repaint rides (w,i,k) along its patch scan, so the lamp test is four
+ * compares on numbers already in hand — no p/NPW, no p%N. */
 static int
-group(int p)
+is_light(int w, int i, int k)
 {
-  if (p >= NFRONT)
-    return 0;
-  return p < NWALL ? p / NPW : 5;
+  return w == W_CEIL && i >= LIGHT_LO && i < LIGHT_LO + LIGHT_N &&
+         k >= LIGHT_LO && k < LIGHT_LO + LIGHT_N;
 }
 
 /* tone map a radiosity channel to 0..255 (soft linear, <16 shift) */
@@ -164,9 +232,9 @@ tone(uint v)
 }
 
 static ushort
-patch_color(int p)
+patch_color(int p, int lit)
 {
-  if (is_light(p))
+  if (lit)
     return RGB(255, 255, 240);
   return (ushort)RGB(tone(bR[p]), tone(bG[p]), tone(bB[p]));
 }
@@ -277,20 +345,45 @@ project(void)
 static void
 setup(void)
 {
-  for (int p = 0; p < NWALL; p++) {
-    int w = p / NPW, i = p % N, k = p % NPW / N;
-    int a = -HALF + PSIZE / 2 + PSIZE * i;
-    int d = ZNEAR + PSIZE / 2 + PSIZE * k;
-    switch (w) {
-    case W_BACK:
-      pcx[p] = (short)a;
-      pcy[p] = (short)(-HALF + PSIZE / 2 + PSIZE * k);
-      pcz[p] = ZNEAR + N * PSIZE;
-      break;
-    case W_FLOOR: pcx[p] = (short)a; pcy[p] = HALF; pcz[p] = (short)d; break;
-    case W_CEIL: pcx[p] = (short)a; pcy[p] = -HALF; pcz[p] = (short)d; break;
-    case W_LEFT: pcx[p] = -HALF; pcy[p] = (short)a; pcz[p] = (short)d; break;
-    default: pcx[p] = HALF; pcy[p] = (short)a; pcz[p] = (short)d; break;
+  /* the 16 group slots: normal, reflectance and patch area, so the
+   * receiver loop never recovers a patch's identity by dividing */
+  for (int g = 0; g < 16; g++) {
+    const ushort *r = rho[g < 5 ? g : (g < 15 ? 5 : 0)];
+    grho[g * 3] = r[0];
+    grho[g * 3 + 1] = r[1];
+    grho[g * 3 + 2] = r[2];
+  }
+  for (int w = 0; w < 5; w++) {
+    gnrm[w * 3] = wnrm[w][0];
+    gnrm[w * 3 + 1] = wnrm[w][1];
+    gnrm[w * 3 + 2] = wnrm[w][2];
+    garea[w] = AREA;
+  }
+  gnrm[15 * 3] = 0; /* the invisible front wall: into the room */
+  gnrm[15 * 3 + 1] = 0;
+  gnrm[15 * 3 + 2] = 256;
+  garea[15] = PSIZEF * PSIZEF;
+
+  /* wall patch centers; (w,i,k) ride the loops, so nothing divides */
+  int p = 0;
+  for (int w = 0; w < 5; w++) {
+    for (int k = 0; k < N; k++) {
+      for (int i = 0; i < N; i++, p++) {
+        int a = -HALF + PSIZE / 2 + PSIZE * i;
+        int d = ZNEAR + PSIZE / 2 + PSIZE * k;
+        pgrp[p] = (uchar)w;
+        switch (w) {
+        case W_BACK:
+          pcx[p] = (short)a;
+          pcy[p] = (short)(-HALF + PSIZE / 2 + PSIZE * k);
+          pcz[p] = ZNEAR + N * PSIZE;
+          break;
+        case W_FLOOR: pcx[p] = (short)a; pcy[p] = HALF; pcz[p] = (short)d; break;
+        case W_CEIL: pcx[p] = (short)a; pcy[p] = -HALF; pcz[p] = (short)d; break;
+        case W_LEFT: pcx[p] = -HALF; pcy[p] = (short)a; pcz[p] = (short)d; break;
+        default: pcx[p] = HALF; pcy[p] = (short)a; pcz[p] = (short)d; break;
+        }
+      }
     }
   }
   /* box patches: centers from the face grids' cell midpoints */
@@ -306,46 +399,53 @@ setup(void)
     case 3: nx = sn; ny = 0; nz = -c; break;
     default: nx = 0; ny = -256; nz = 0; break;
     }
-    nrm[f * 3] = (short)nx;
-    nrm[f * 3 + 1] = (short)ny;
-    nrm[f * 3 + 2] = (short)nz;
+    gnrm[(5 + f) * 3] = (short)nx;
+    gnrm[(5 + f) * 3 + 1] = (short)ny;
+    gnrm[(5 + f) * 3 + 2] = (short)nz;
     int h = b == 0 ? B0_H : B1_H, top = b == 0 ? B0_TOP : B1_TOP;
     int ni = NFI[f], nk = NFK[f];
-    int aq = (s == 4 ? 4 * h * h : 2 * h * (HALF - top)) / (ni * nk);
-    areaq[f] = (short)(aq * 256 / AREA);
-    for (int pb = 0; pb < ni * nk; pb++) {
-      int p = NWALL + PBASE[f] + pb;
-      int i = pb % ni, k = pb / ni;
-      pface[PBASE[f] + pb] = (uchar)f;
-      pcell[PBASE[f] + pb] = (uchar)(i | (k << 4));
-      int x0, y0, z0, x1, y1, z1;
-      face_point(f, i, k, &x0, &y0, &z0);
-      face_point(f, i + 1, k + 1, &x1, &y1, &z1);
-      pcx[p] = (short)((x0 + x1) / 2);
-      pcy[p] = (short)((y0 + y1) / 2);
-      pcz[p] = (short)((z0 + z1) / 2);
+    garea[5 + f] = (ushort)((s == 4 ? 4 * h * h : 2 * h * (HALF - top)) /
+                            (ni * nk));
+    for (int k = 0; k < nk; k++) {
+      for (int i = 0; i < ni; i++) {
+        int pb = k * ni + i;
+        int q = NWALL + PBASE[f] + pb;
+        pgrp[q] = (uchar)(5 + f);
+        pcell[PBASE[f] + pb] = (uchar)(i | (k << 4));
+        int x0, y0, z0, x1, y1, z1;
+        face_point(f, i, k, &x0, &y0, &z0);
+        face_point(f, i + 1, k + 1, &x1, &y1, &z1);
+        pcx[q] = (short)((x0 + x1) / 2);
+        pcy[q] = (short)((y0 + y1) / 2);
+        pcz[q] = (short)((z0 + z1) / 2);
+      }
     }
     /* visible from the camera at the origin? n . center < 0 */
     int cx, cy, cz2;
     face_point(f, NFI[f] / 2, NFK[f] / 2, &cx, &cy, &cz2);
     fvis[f] = (short)((nx * cx + ny * cy + nz * cz2) < 0);
   }
-  for (int j = 0; j < NF * NF; j++) { /* the invisible front wall */
-    int p = NFRONT + j, i = j % NF, k = j / NF;
-    pcx[p] = (short)(-HALF + PSIZEF / 2 + PSIZEF * i);
-    pcy[p] = (short)(-HALF + PSIZEF / 2 + PSIZEF * k);
-    pcz[p] = ZNEAR;
+  for (int k = 0; k < NF; k++) { /* the invisible front wall */
+    for (int i = 0; i < NF; i++) {
+      int q = NFRONT + k * NF + i;
+      pgrp[q] = 15;
+      pcx[q] = (short)(-HALF + PSIZEF / 2 + PSIZEF * i);
+      pcy[q] = (short)(-HALF + PSIZEF / 2 + PSIZEF * k);
+      pcz[q] = ZNEAR;
+    }
   }
-  for (int p = 0; p < NP; p++) {
-    bR[p] = bG[p] = bB[p] = 0;
-    uR[p] = uG[p] = uB[p] = 0;
-    shown[p] = 0xFFFF;
-    if (is_light(p)) {
-      /* the 10-grid's middle 2x2 lamp is 48x48 units (was 60x60):
-       * initial energy rides the ushort ceiling to buy back flux */
-      uR[p] = 65500;
-      uG[p] = 65500;
-      uB[p] = 58950;
+  for (int q = 0; q < NP; q++) {
+    bR[q] = bG[q] = bB[q] = 0;
+    uR[q] = uG[q] = uB[q] = 0;
+    shown[q] = 0xFFFF;
+  }
+  /* the lamp's initial energy rides the ushort ceiling to buy flux */
+  for (int k = LIGHT_LO; k < LIGHT_LO + LIGHT_N; k++) {
+    for (int i = LIGHT_LO; i < LIGHT_LO + LIGHT_N; i++) {
+      int q = LP(i, k);
+      uR[q] = 65500;
+      uG[q] = 65500;
+      uB[q] = 58950;
     }
   }
 }
@@ -466,7 +566,7 @@ draw_wall_patch(int w, int i, int k, ushort c)
 static void
 draw_box_patch(int p, ushort c)
 {
-  int rel = p - NWALL, f = pface[rel];
+  int rel = p - NWALL, f = pgrp[p] - 5;
   if (!fvis[f])
     return;
   int i = pcell[rel] & 15, k = pcell[rel] >> 4;
@@ -493,7 +593,7 @@ repaint(int all)
    * divisions that recovered them per patch were pure rt_udm tax */
   int w = 0, i = 0, k = 0;
   for (int p = 0; p < NWALL; p++) {
-    ushort c = patch_color(p);
+    ushort c = patch_color(p, is_light(w, i, k));
     if (all || c != shown[p]) {
       shown[p] = c;
       draw_wall_patch(w, i, k, c);
@@ -508,7 +608,7 @@ repaint(int all)
     }
   }
   for (int p = NWALL; p < NFRONT; p++) {
-    ushort c = patch_color(p);
+    ushort c = patch_color(p, 0);
     if (!all && !wallchanged && c == shown[p])
       continue;
     shown[p] = c;
@@ -597,54 +697,20 @@ clearance(int p, int q)
 }
 
 /* --- the shooter ---
- * shoot/clearance/in_box/normal_of/brightest are noinline: dmxgen
- * places them (ResidentFuncs) in the game's SRAM ramtext, so the
- * 680-receiver inner loop never touches XIP flash. --- */
-
-static void
-normal_of(int p, int *nx, int *ny, int *nz)
-{
-  if (p >= NFRONT) { /* the invisible front wall: into the room */
-    *nx = 0;
-    *ny = 0;
-    *nz = 256;
-    return;
-  }
-  if (p >= NWALL) {
-    int f = pface[p - NWALL];
-    *nx = nrm[f * 3];
-    *ny = nrm[f * 3 + 1];
-    *nz = nrm[f * 3 + 2];
-    return;
-  }
-  switch (p / NPW) {
-  case W_BACK: *nx = 0; *ny = 0; *nz = -256; break;
-  case W_FLOOR: *nx = 0; *ny = -256; *nz = 0; break;
-  case W_CEIL: *nx = 0; *ny = 256; *nz = 0; break;
-  case W_LEFT: *nx = 256; *ny = 0; *nz = 0; break;
-  default: *nx = -256; *ny = 0; *nz = 0; break;
-  }
-}
-
-static int
-shooter_scale(int p) /* Q8 area ratio vs a wall patch */
-{
-  if (p < NWALL)
-    return 256;
-  if (p >= NFRONT)
-    return (PSIZEF * PSIZEF * 256) / AREA; /* 60x60 vs 24x24: 1600 */
-  return areaq[pface[p - NWALL]];
-}
+ * shoot/clearance/in_box are noinline: dmxgen places them
+ * (ResidentFuncs) in the game's SRAM ramtext, so the NP-receiver inner
+ * loop never touches XIP flash. --- */
 
 static __attribute__((noinline)) uint
 shoot(int p)
 {
-  uint sc = (uint)shooter_scale(p);
-  uint upr = uR[p] * sc >> 8, upg = uG[p] * sc >> 8, upb = uB[p] * sc >> 8;
+  int g = pgrp[p];
+  uint ap = garea[g]; /* the shooter's area, in scene units^2 */
+  uint upr = uR[p], upg = uG[p], upb = uB[p];
   uR[p] = uG[p] = uB[p] = 0;
   int px = pcx[p], py = pcy[p], pz = pcz[p];
-  int pnx, pny, pnz;
-  normal_of(p, &pnx, &pny, &pnz);
+  const short *pn = gnrm + g * 3;
+  int pnx = pn[0], pny = pn[1], pnz = pn[2];
   for (int q = 0; q < NP; q++) {
     if (q == p)
       continue;
@@ -652,9 +718,9 @@ shoot(int p)
     int dp = asr8(dx * pnx + dy * pny + dz * pnz);
     if (dp <= 0)
       continue;
-    int qnx, qny, qnz;
-    normal_of(q, &qnx, &qny, &qnz);
-    int dq = -asr8(dx * qnx + dy * qny + dz * qnz);
+    int gq = pgrp[q];
+    const short *qn = gnrm + gq * 3;
+    int dq = -asr8(dx * qn[0] + dy * qn[1] + dz * qn[2]);
     if (dq <= 0)
       continue;
     uint r2 = (uint)(dx * dx) + (uint)(dy * dy) + (uint)(dz * dz);
@@ -663,22 +729,42 @@ shoot(int p)
     int vis = clearance(p, q);
     if (vis == 0)
       continue;
-    /* F = dp*dq*AREA / (pi*r2*r2), staged so u32 never overflows:
-     * a <= 1024 (dp*dq <= r2), b <= (576<<10)/64, and the fold to a
-     * Q12 form factor is a*b*41 >> 15 (41/32768 ~ 1/(256*pi)). The
-     * receiver term is area-free by design — see the header. */
+    /* F = dp*dq*ap / (pi*r2*r2), staged so u32 never overflows:
+     * a <= 1024 (dp*dq <= r2) in Q10, b in Q14 clamped at 1.0, and
+     * the fold to a Q16 form factor is a*b*41 >> 15 (the 41/2^15
+     * carries the 1/pi and both Q scales). a*b*41 peaks at 6.9e8 and
+     * f at 20992, so upr*f stays under 1.4e9.
+     *
+     * Q16, where this was Q12, and Q14 in b where it was Q10. Those
+     * six bits are the whole story of raising N: the shooter's area
+     * is the REAL patch area now, and a 10-unit wall patch has 5.76x
+     * less of it. Every one of those bits came off the BOTTOM of f,
+     * and in Q12 the far half of the room rounded to a form factor of
+     * exactly zero — the light stopped crossing the box, and the
+     * render came out a stop and a half dark. The wider fixed point
+     * costs nothing (the same two divisions) and is measurably more
+     * accurate than the 10-patch grid ever was: for a facing pair at
+     * r=400 the old b truncated 3.69 to 3 and lost 19 % of the
+     * transfer, where this one truncates f from 12.8 to 12 and loses
+     * 6 %.
+     *
+     * The clamp is ap/r2 <= 1, i.e. pairs closer together than their
+     * own size, where a point-to-point form factor means nothing
+     * anyway (and where dp or dq has usually gone non-positive
+     * already, because patches that close are nearly coplanar).
+     * The receiver term stays area-free by design — see the header. */
     uint a = ((uint)(dp * dq) << 10) / r2;
-    uint b = ((uint)AREA << 10) / r2;
-    if (b > 4096)
-      b = 4096; /* clamp the closest pairs; keeps a*b*41 in u32 */
+    uint b = (ap << 14) / r2;
+    if (b > 16384)
+      b = 16384;
     uint f = a * b * 41 >> 15;
     f = f * (uint)(vis * 51) >> 8; /* x vis/5 (51/256 ~ 1/5.02) */
     if (f == 0)
       continue;
-    const ushort *rq = rho[group(q)];
-    uint dr = (upr * f >> 12) * rq[0] >> 8;
-    uint dg = (upg * f >> 12) * rq[1] >> 8;
-    uint db = (upb * f >> 12) * rq[2] >> 8;
+    const ushort *rq = grho + gq * 3;
+    uint dr = (upr * f >> 16) * rq[0] >> 8;
+    uint dg = (upg * f >> 16) * rq[1] >> 8;
+    uint db = (upb * f >> 16) * rq[2] >> 8;
     uint t;
     t = bR[q] + dr; bR[q] = t > 65535 ? 65535 : (ushort)t;
     t = bG[q] + dg; bG[q] = t > 65535 ? 65535 : (ushort)t;
@@ -690,25 +776,40 @@ shoot(int p)
   return upr + upg + upb;
 }
 
+/* The stop test is a FLUX, not a brightness: unshot radiosity times
+ * the patch's own area, so a coarse box face and a fine wall patch are
+ * compared on the energy each would actually deliver. The floor is
+ * 96 brightness units on a WALL patch, which is where the N=10 grid
+ * has always stopped — expressed against AREA it means the same
+ * converged image however fine the grid gets, at the price of more
+ * shots to drain the smaller patches. */
+#define SHOT_MIN (96u * AREA)
+
 static __attribute__((noinline)) int
 brightest(void)
 {
   uint best = 0;
   int bi = -1;
   for (int p = 0; p < NP; p++) {
-    uint e = ((uint)uR[p] + uG[p] + uB[p]) * (uint)shooter_scale(p) >> 8;
+    uint e = ((uint)uR[p] + uG[p] + uB[p]) * (uint)garea[pgrp[p]];
     if (e > best) {
       best = e;
       bi = p;
     }
   }
-  return best >= 96 ? bi : -1;
+  return best >= SHOT_MIN ? bi : -1;
 }
 
 void
 radio_run(void)
 {
   uputs("radio: up\n");
+  /* The patch arrays run straight through fx.c's 16 KiB audio ring, so
+   * the ring channel has to stop before the first store lands — see
+   * aud_borrow(), which also finishes off whatever the menu was
+   * playing. The scene is silent by construction: it calls no snd_*,
+   * and frame_sync's snd_tick has nothing left to do. */
+  aud_borrow();
   led(LED_DIM(0xFF6010), LED_DIM(0xFF6010));
   gfx_clear(C_BG); /* the box owns the whole screen; press = back */
   project();
@@ -721,6 +822,7 @@ radio_run(void)
     in_poll();
     if (in_edge & (BTN_A | BTN_UP | BTN_DOWN | BTN_LEFT | BTN_RIGHT)) {
       led(0, 0);
+      aud_release(); /* zero the ring, then let ch9 stream it again */
       uputs("radio: back\n");
       return;
     }

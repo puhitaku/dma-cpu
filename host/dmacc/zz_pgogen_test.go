@@ -1143,7 +1143,7 @@ const gameAudioBase = 0x20038000
 // refuses to bundle an image that crosses it — which is what bounds the
 // game's inline-site set, its .ramtext window being the roomier of the
 // two.
-const gameSFXHome = 0x10140000
+const gameSFXHome = 0x10143000
 
 func litVar(img string) string {
 	return map[string]string{"kernel": "KernelLits", "sh": "ShLits",

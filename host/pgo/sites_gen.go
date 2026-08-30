@@ -375,8 +375,8 @@ var KernelHotSites = map[string]bool{
 	"cws_vfs_stati_2":      true,
 }
 
-// GameHotSites: 348 of the image's 1429 comparison sites; 400 of them
-// were executed at all, and the set covers 99.99% of the 2080022
+// GameHotSites: 347 of the image's 1457 comparison sites; 400 of them
+// were executed at all, and the set covers 99.99% of the 2052468
 // comparisons the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
@@ -678,7 +678,6 @@ var GameHotSites = map[string]bool{
 	"cws_relight_4":        true,
 	"cws_relight_5":        true,
 	"cws_relight_6":        true,
-	"cws_relight_7":        true,
 	"cws_snd_tick_1":       true,
 	"cws_snd_tick_2":       true,
 	"cws_snd_tick_3":       true,
@@ -805,22 +804,34 @@ var KernelInlineSites = map[string]bool{
 	"cws_memmove_15":       true,
 }
 
-// GameInlineSites: 28 sites covering 78.79% of the 2080022 comparisons
+// GameInlineSites: 63 sites covering 91.24% of the 2052468 comparisons
 // the workload made, trimmed by the board fit (arena slack in .ramtext,
-// flash text room) from the 58 candidates over the 5200-execution bar
-// (90.12% together). Ladder (bar: sites, coverage) — 1000: 126, 98%;
-// 3000: 77, 94%; 10000: 32, 81%; 20000: 21, 73%; 30000: 17, 68%;
+// flash text room) from the 63 candidates over the 5131-execution bar
+// (91.24% together). Ladder (bar: sites, coverage) — 1000: 126, 98%;
+// 3000: 77, 94%; 10000: 33, 81%; 20000: 21, 73%; 30000: 17, 68%;
 // 100000: 5, 40%.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
 // Benchmark run to completion.
 var GameInlineSites = map[string]bool{
+	"cws_frame_sync_1":    true,
+	"cws_frame_sync_2":    true,
+	"cws_frame_sync_3":    true,
 	"cws_gd_wait_1":       true,
 	"cws_gdma_rows_3":     true,
 	"cws_gdma_rows_4":     true,
+	"cws_gdma_spi_rows_2": true,
+	"cws_gdma_spi_rows_4": true,
+	"cws_gfx_blit_runs_1": true,
 	"cws_gfx_blit_runs_3": true,
+	"cws_gfx_blit_runs_4": true,
+	"cws_gfx_blit_runs_5": true,
+	"cws_gfx_blit_runs_6": true,
+	"cws_gfx_blit_runs_7": true,
+	"cws_gfx_blit_runs_8": true,
 	"cws_gfx_fill_8":      true,
 	"cws_gfx_fill_9":      true,
+	"cws_gfx_text2_5":     true,
 	"cws_gfx_text2_6":     true,
 	"cws_gfx_text2_7":     true,
 	"cws_gfx_text2_8":     true,
@@ -828,6 +839,11 @@ var GameInlineSites = map[string]bool{
 	"cws_gfx_text_6":      true,
 	"cws_gfx_text_7":      true,
 	"cws_gfx_text_8":      true,
+	"cws_gpio_out_1":      true,
+	"cws_gpio_out_2":      true,
+	"cws_in_poll_1":       true,
+	"cws_in_poll_3":       true,
+	"cws_in_poll_4":       true,
 	"cws_k_bogo_1":        true,
 	"cws_k_sieve_2":       true,
 	"cws_k_sieve_3":       true,
@@ -835,6 +851,24 @@ var GameInlineSites = map[string]bool{
 	"cws_k_sieve_5":       true,
 	"cws_k_sort_3":        true,
 	"cws_k_sort_4":        true,
+	"cws_lanwalk_run_12":  true,
+	"cws_lanwalk_run_15":  true,
+	"cws_lanwalk_run_18":  true,
+	"cws_lanwalk_run_21":  true,
+	"cws_lanwalk_run_24":  true,
+	"cws_lanwalk_run_25":  true,
+	"cws_lanwalk_run_26":  true,
+	"cws_lanwalk_run_27":  true,
+	"cws_lanwalk_run_28":  true,
+	"cws_led_tick_1":      true,
+	"cws_menu_run_2":      true,
+	"cws_menu_run_4":      true,
+	"cws_menu_run_6":      true,
+	"cws_menu_run_8":      true,
+	"cws_menu_run_9":      true,
+	"cws_pcm_tick_1":      true,
+	"cws_snd_tick_1":      true,
+	"cws_spi_put8_1":      true,
 	"cws_stick_1":         true,
 	"cws_stick_2":         true,
 	"cws_stick_3":         true,

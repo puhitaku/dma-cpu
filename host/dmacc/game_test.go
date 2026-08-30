@@ -52,9 +52,8 @@ func compileGameDasm(t *testing.T, tweak ...func(*dmacc.Options)) string {
 	}
 	opts := dmacc.Options{
 		Entry: "gmain", NoSafepoints: true, XIPText: true,
-		ResidentFuncs: []string{"shoot", "clearance", "in_box",
-			"normal_of"},
-		OptSize: true, HotFuncs: pgo.GameHotFuncs, HotSites: pgo.GameHotSites,
+		ResidentFuncs: []string{"shoot", "clearance", "in_box"},
+		OptSize:       true, HotFuncs: pgo.GameHotFuncs, HotSites: pgo.GameHotSites,
 		InlineSites: pgo.GameInlineSites,
 		ColdBlocks:  pgo.GameColdBlocks}
 	// The PGO driver's inline-site trim compiles candidate sets through
@@ -148,7 +147,7 @@ type sfxClip struct {
 // same home dmxgen uses, returning the table the loader would poke.
 func stageSFX(t *testing.T, m *emu.Machine) ([]sfxClip, []uint32, uint32) {
 	t.Helper()
-	const home = 0x10140000
+	const home = 0x10143000 // dmxgen's gameSFXHome
 	off := uint32(0)
 	var clips []sfxClip
 	var drums []uint32
@@ -771,9 +770,15 @@ func TestGameRadio(t *testing.T) {
 	}
 	press(t, m, prog, pinA)
 	at = runUntil(t, m, "radio: up", at, 100_000_000)
-	// let a few dozen shots land: the ceiling light must have lit the
-	// floor, and the red/green walls must be bleeding their colors
-	at = runUntil(t, m, "radio: shot 32", at, 5_000_000_000)
+	// The scene claims fx.c's ring the moment it starts: ch9 must be
+	// stopped BEFORE the first patch store, or the arrays are audible.
+	if ctrl := m.Peek32(0x50000240 + 0x10); ctrl&emu.CtrlEN != 0 {
+		t.Errorf("audio ch9 still enabled inside radio: CTRL %#x", ctrl)
+	}
+	// Let the lamp finish shooting and a first bounce land: the ceiling
+	// light must have lit the floor, and the red/green walls must be
+	// bleeding their colors.
+	at = runUntil(t, m, "radio: shot 48", at, 40_000_000_000)
 
 	p := decodeLCD(m, 16)
 	// the 2x2 ceiling light renders near-white in the upper middle
@@ -815,7 +820,24 @@ func TestGameRadio(t *testing.T) {
 
 	// press exits back to the menu
 	press(t, m, prog, pinA)
-	runUntil(t, m, "radio: back", at, 200_000_000)
+	at = runUntil(t, m, "radio: back", at, 400_000_000)
+	// ...and the ring goes back the way it was found. A scene that
+	// handed the channel back over its own patch words would play them
+	// as the menu's first sound, which is exactly what aud_release
+	// exists to prevent: the ring must be silent and ch9 must be
+	// streaming it again.
+	for a := uint32(0x20038000); a < 0x2003C000; a += 4 {
+		if v := m.Peek32(a); v != 0 {
+			t.Fatalf("audio ring not zeroed on exit: %#x = %#x", a, v)
+		}
+	}
+	if ctrl := m.Peek32(0x50000240 + 0x10); ctrl&emu.CtrlEN == 0 {
+		t.Errorf("audio ch9 left paused after radio: CTRL %#x", ctrl)
+	}
+	// The menu is live again: it draws, and it answers the stick.
+	at = runUntil(t, m, "menu up", at, 200_000_000)
+	press(t, m, prog, pinDown) // the selection reset to the top row
+	runUntil(t, m, "menu: LANWalk", at, 200_000_000)
 }
 
 func TestGameBench(t *testing.T) {

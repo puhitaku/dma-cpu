@@ -49,13 +49,19 @@
 
 /* Working buffers live in free SRAM, NOT in .data: the game's data
  * segment once ended just under the old drum arena (0x2002E000), and
- * ~10 KiB of bench statics pushed it straight into the ring — a menu
- * blip then overwrote live data words (the emulator crashed on a PC
- * of replicated audio samples). 0x2003C000..0x2003FE00 is unclaimed
- * (the ARM's park stamp moved to 0x2003FF00, past the compact
- * machine's scratch word at 0x2003FE00, to make room contiguous for
- * the radiosity patch state). Bench keeps its old base and uses
- * 9.7 KiB; the two apps never run together. */
+ * ~10 KiB of bench statics pushed it straight into the audio ring — a
+ * menu blip then overwrote live data words (the emulator crashed on a
+ * PC of replicated audio samples). What replaced that accident is the
+ * scene-exclusive span boards.GameFreeBase pins: 0x2002E000 up to the
+ * compact machine's scratch word at 0x2003FE00 (the ARM's park stamp
+ * moved to 0x2003FF00 to keep the run contiguous), claimable whole by
+ * ONE scene at a time. Bench keeps its historical base near the top
+ * and uses 9.7 KiB of it. radio.c claims the same span from the
+ * bottom and now reaches past this base — which is legal for exactly
+ * the reason it always was: the two demos never run together, and
+ * each initializes everything it reads at *_run() entry. Bench does
+ * NOT touch the audio ring (0x20038000..0x2003C000) and therefore
+ * needs none of radiosity's borrow protocol. */
 #define BENCH_RAM 0x2003D100u
 #define flags ((uchar *)BENCH_RAM)                    /* 4 KiB; mem dst */
 #define scratch ((uint *)(BENCH_RAM + 0x1000))        /* 4 KiB */

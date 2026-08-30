@@ -21,9 +21,9 @@ deploy/feather-vi/arenaclaim	26624
 deploy/feather-vi/data	11880
 deploy/feather-vi/ramtext	14488
 deploy/feather-vi/text	160840
-deploy/gamepico-game/data	141188
-deploy/gamepico-game/ramtext	36432
-deploy/gamepico-game/text	261848
+deploy/gamepico-game/data	140876
+deploy/gamepico-game/ramtext	35944
+deploy/gamepico-game/text	268496
 fbcon/feather/cat README	1350001
 fbcon/feather/echo 0123456789012345678901234567890123456789	2669488
 fbcon/feather/ls /dev	6209982
@@ -36,7 +36,7 @@ game/us/bogo	2131189248
 game/us/div	3115336960
 game/us/mem	7705344
 game/us/mul	699781376
-game/us/rand	177301504
+game/us/rand	177301760
 game/us/shr1	75305472
 game/us/sieve	1449423104
 game/us/sort	1155173120

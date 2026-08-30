@@ -28,6 +28,37 @@ type Board struct {
 	ConsRings uint32
 	Scratch   uint32 // ARM mailbox page (flash executor at +0x10)
 
+	// --- dead ARM SRAM: {base, length}, RUNTIME-CLAIM ONLY ---
+	// On the boards whose core 0 PSM-halts itself the moment dmx_start
+	// returns, the firmware's own RAM — .data, .bss, the heap, and on
+	// the RP2040 the boot stack too — is linked into the SCRATCH banks
+	// at the top of SRAM (target/firmware/CMakeLists.txt's RAM_ORIGIN
+	// and the HIL_FW_RAM_BASE/END pair main.c asserts on its first boot
+	// line). After the halt those bytes have no owner at all: the ARM
+	// that wrote them is held in reset until the next chip reset. A
+	// scene may take them, under two conditions that are not
+	// negotiable:
+	//
+	//   - RUNTIME CLAIM ONLY, never a link-time segment. The loader
+	//     RUNS on this memory — dmx_load walks it, the blob staging
+	//     buffers live in it, the handover banner is printf'd from it —
+	//     right up to dmx_start. A .data/.bss/.ramtext window placed
+	//     here would be trampled by the very code that installed it.
+	//     Absolute pointers, written only after the machine is up, are
+	//     the whole of the legal use.
+	//   - No teardown obligation, in either direction. Nothing reads
+	//     these bytes again, so a claimant need not restore them; and
+	//     nothing wrote them since boot, so a claimant must initialize
+	//     everything it reads.
+	//
+	// Zero on pico and pico2, and deliberately so: their ARM stays
+	// alive as the flash mailbox executor (Pico) or simply keeps the
+	// stock map (Pico2), its .data/.bss sit at the bottom of SRAM —
+	// which is why those boards' machine floor is 0x20002000 — and the
+	// scratch banks hold live core stacks. There is nothing dead to
+	// claim on a board that never stopped.
+	ArmScratchFree [2]uint32
+
 	// --- flash sections (absolute XIP addresses) ---
 	FlashSize   uint32
 	FSSlot      uint32 // persistent-fs slot (4 KiB header + disk)
@@ -123,6 +154,15 @@ func (b *Board) TickCycles() uint32 {
 		return 15000
 	}
 	return b.ClkSysKHz / 10
+}
+
+// ArmScratchEnd is the exclusive top of the board's dead-ARM window,
+// or 0 where the board has none (see Board.ArmScratchFree).
+func (b *Board) ArmScratchEnd() uint32 {
+	if b.ArmScratchFree[1] == 0 {
+		return 0
+	}
+	return b.ArmScratchFree[0] + b.ArmScratchFree[1]
 }
 
 // HasBundle reports whether the board installs the named bundle.
@@ -313,6 +353,11 @@ var Feather = &Board{
 	Arena: 0x2001D000, ArenaEnd: 0x20030300, // 76.75 KiB up to the table
 	ConsRings: 0x20034400, // UART rings; FbBuf follows at 0x20034C00
 	Scratch:   0x2007FE00,
+	// The RP2350's two 4 KiB scratch banks are CONTIGUOUS, so the
+	// firmware links .data/.bss/heap into them as one 8 KiB region
+	// (the boot stack does not fit and borrows the arena's top
+	// instead). Dead once core 0 halts; no claimant here yet.
+	ArmScratchFree: [2]uint32{0x20080000, 0x2000},
 
 	// Flash sections sit in the upper 4 MiB: the feather firmware ELF
 	// (all bundles + vi + apps + the golden disk) exceeds 2 MiB, so
@@ -416,6 +461,15 @@ var GamePico = &Board{
 	// grows toward GameFreeBase (below), which pins the top of the
 	// segment 40 KiB short of the audio ring
 	Scratch: 0x2003FE00,
+	// The RP2040's SRAM ends in two 4 KiB scratch banks; the firmware
+	// links its whole RAM side into them (RAM_ORIGIN 0x20040000 for
+	// .data/.bss/heap, SCRATCH_X/Y above it for the core stacks) and
+	// core 0 halts at the PSM the moment the machine is up. radio.c
+	// claims the window at runtime for its fixed-size lookups — the
+	// projected corner grids and the per-patch face tables — which is
+	// what lets the whole scene-exclusive span below hold nothing but
+	// arrays that scale with the patch count.
+	ArmScratchFree: [2]uint32{0x20040000, 0x2000},
 
 	FlashSize:   0x200000,
 	GameTextXIP: 0x10100000, // upper half: clear of the firmware image
@@ -431,20 +485,35 @@ var GamePico = &Board{
 // of the pin is contiguity — a scene that wants a big flat working set
 // gets one span, not three fragments:
 //
-//	0x2002E000..0x20038000  40960 B  pinned free (this constant)
-//	0x20038000..0x2003C000  16384 B  fx.c's audio ring
-//	0x2003C000..0x2003FE00  15872 B  radio.c patch state / bench.c buffers
+//	0x2002E000..0x20038000  40960 B  unconditionally free
+//	0x20038000..0x2003C000  16384 B  fx.c's audio ring — free to a
+//	                                 scene that BORROWS it first
+//	0x2003C000..0x2003FE00  15872 B  free to a scene that does not
+//	                                 want bench.c's buffers
 //	                       -------
 //	0x2002E000..0x2003FE00  73216 B  contiguous, 71.5 KiB
 //
-// The ring and the radiosity region are only "free" to a scene that
-// does not use them (the two demos up there already share by never
-// running together, radio.c), which is why the pin sits below both:
-// 40 KiB is unconditional, the rest is scene-exclusive. 0x2002E000 is
-// where the drum arena used to start, so the boundary is one bench.c
-// already documents. Data currently ends at 0x2002D784 — about 2.1 KiB
-// of margin, and the assert tripping on some future build is the
-// signal to MOVE the pin deliberately rather than to shave a scene.
+// Only the first block is unconditional; the rest is scene-exclusive,
+// which is why the pin sits below all three. The ring is the sharp
+// edge: ch9 free-runs over it forever (silence is a zeroed ring, which
+// is what keeps the amp from popping), so a scene claiming those
+// bytes must quiesce the channel before its first store and hand back
+// silence on the way out — fx.c's aud_borrow/aud_release, used by
+// radio.c. bench.c's overlap needs no protocol at all: it stays above
+// the ring, and the two demos never run together.
+//
+// radio.c is what the span was pinned for and what now measures it:
+// its eleven per-patch arrays claim 64680 B from 0x2002E000 up (a
+// 24x24 wall grid, 3080 patches), leaving 8536 B spare. Its FIXED-size
+// lookups live somewhere else entirely — Board.ArmScratchFree, the
+// dead ARM window — because a 6250-byte corner grid in here would
+// have cost a whole step of grid resolution.
+//
+// 0x2002E000 is where the drum arena used to start, so the boundary is
+// one bench.c already documents. Data currently ends at 0x2002D60C —
+// about 2.5 KiB of margin, and the assert tripping on some future
+// build is the signal to MOVE the pin deliberately rather than to
+// shave a scene.
 const GameFreeBase = 0x2002E000
 
 // All maps board names to definitions.
