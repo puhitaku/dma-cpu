@@ -97,6 +97,22 @@ lcd_init(void)
   lcd_cmd(0x36); /* MADCTL: row/col order default, RGB */
   lcd_dat(0x00);
   lcd_cmd(0x21); /* INVON: these IPS panels are inverted */
+  /* Gamma: the power-on OTP curve on these modules is untuned and
+   * steep in the dark end — a one-code step in low red renders as a
+   * visible luminance jump (seen as tone banding on the radiosity
+   * demo's red wall; the DATA was verified smooth, prompts/042-era
+   * probe). Program the vendor's standard ST7789V positive/negative
+   * voltage gamma tables instead of trusting the OTP. */
+  static const uchar pgam[14] = {0xD0, 0x04, 0x0D, 0x11, 0x13, 0x2B, 0x3F,
+                                 0x54, 0x4C, 0x18, 0x0D, 0x0B, 0x1F, 0x23};
+  static const uchar ngam[14] = {0xD0, 0x04, 0x0C, 0x11, 0x13, 0x2C, 0x3F,
+                                 0x44, 0x51, 0x2F, 0x1F, 0x1F, 0x20, 0x23};
+  lcd_cmd(0xE0); /* PVGAMCTRL */
+  for (int i = 0; i < 14; i++)
+    lcd_dat(pgam[i]);
+  lcd_cmd(0xE1); /* NVGAMCTRL */
+  for (int i = 0; i < 14; i++)
+    lcd_dat(ngam[i]);
   lcd_cmd(0x13); /* NORON */
   /* The controller's GRAM powers up as noise: paint it black (fb is
    * still all-zero here) BEFORE the panel shows anything, then turn
