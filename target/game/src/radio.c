@@ -203,10 +203,10 @@ static const ushort CGOFF[NBF] = {0, 9, 34, 43, 134, 143, 152, 161, 170, 219};
 
 /* reflectance per wall group, Q8; box faces are warm white */
 static const ushort rho[6][3] = {
-    {192, 192, 192}, {192, 192, 192}, {192, 192, 192},
-    {230, 45, 45},   /* left wall: red */
-    {45, 230, 45},   /* right wall: green */
-    {200, 195, 185}, /* the boxes */
+    {200, 130, 0}, {200, 130, 0}, {200, 130, 0},
+    {240, 45, 45}, /* left wall: red */
+    {45, 240, 45}, /* right wall: green */
+    {200, 130, 0}, /* the boxes */
 };
 
 /* wall normals, Q8, into the room */
