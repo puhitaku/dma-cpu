@@ -798,7 +798,7 @@ func TestGenPGO(t *testing.T) {
 
 	// vi: a registry image whose [ramtext][data] claim comes out of the
 	// arena, which also has to hold sh's heap and vi's own 40 KiB heap
-	// ask — the feather map budgets those three against 68.75 KiB with
+	// ask — the feather map budgets those three against 76.75 KiB with
 	// little to spare. So vi's hot pool must be FREE: the claim with it
 	// may not exceed the all-cold claim, which means the set lives in
 	// the slack of kalloc's 256-byte rounding.
@@ -810,11 +810,12 @@ func TestGenPGO(t *testing.T) {
 		return viClaim(t, v, bd, viDasm, setOf(vo.ranked[:n])) <= viCold
 	})]
 
-	// The game's data segment grows toward the fixed audio ring at
-	// 0x20038000 (fx.c); its text grows toward the asset blob.
+	// The game's data segment grows toward the pin under the
+	// scene-exclusive span (boards.GameFreeBase), which is the bound
+	// dmxgen enforces; its text grows toward the asset blob.
 	gdasm := compileGameDasm(t)
 	go_ := outs["game"]
-	go_.limitOf = "GameData/audio-ring gap"
+	go_.limitOf = "GameData/GameFreeBase gap"
 	gb := boards.GamePico
 	gv, _ := emu.VariantByName(gb.SKU)
 	go_.kept = go_.ranked[:largestFit(go_.ranked, func(n int) bool {
@@ -825,7 +826,7 @@ func TestGenPGO(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return gb.GameData+uint32(len(res.Image.Segments[1].Data))+windowMargin <= gameAudioBase
+		return gb.GameData+uint32(len(res.Image.Segments[1].Data))+windowMargin <= boards.GameFreeBase
 	})]
 
 	// --- hot functions and hot sites: four-move compares where
@@ -1129,8 +1130,11 @@ func TestGenPGO(t *testing.T) {
 // regenerations.
 const windowMargin = 256
 
-// gameAudioBase is fx.c's fixed 16 KiB audio ring; the game's data
-// segment must stop short of it (dmxgen checks the same bound).
+// gameAudioBase is fx.c's fixed 16 KiB audio ring. It is no longer the
+// bound the generator trims against: boards.GameFreeBase pins the data
+// segment 40 KiB lower so the scene-exclusive span above stays
+// contiguous, and dmxgen refuses a build that crosses THAT. Kept
+// because the audio region is still checked for overlap on its own.
 const gameAudioBase = 0x20038000
 
 // gameSFXHome is the flash home of the PCM+asset blob, the other end

@@ -50,9 +50,13 @@ import (
 //   - Only whitelisted mnemonics; anything unrecognized ends the run.
 //   - A control transfer may only be a run's LAST instruction, and then
 //     the run is a tail candidate.
-//   - Runs never cross a section boundary, so a .ramtext site never
-//     jumps into a .text helper: RAMTextFuncs code runs while the XIP
-//     window is down and must not fetch from flash.
+//   - Runs never cross a section boundary, AND a helper folds only the
+//     copies that share one section, so a .ramtext site never jumps
+//     into a .text helper: RAMTextFuncs code runs while the XIP window
+//     is down and must not fetch from flash. A run that recurs on both
+//     sides of the split therefore yields two helpers, one per section,
+//     each priced on its own copies — which is also why either half can
+//     fail to pay and be left inline while the other is taken.
 //   - Only code owned by a compiled function is eligible. The crt0, the
 //     rt_/__cw_ bodies and the shared-runtime vector page are entered
 //     from other images at frozen addresses, so they are left alone.
@@ -545,30 +549,50 @@ func olOutline(src string, eligible, hot map[string]bool) (string, int) {
 				take = append(take, p)
 			}
 		}
-		sv := olSave(len(take), c.recs, c.term)
-		if sv <= 0 {
-			for _, p := range take {
-				for d := 0; d < c.k; d++ {
-					used[p+d] = false
-				}
-			}
-			continue
-		}
-		h := helper{name: fmt.Sprintf("__ol_%d", len(helpers)+1),
-			sec: runs[slots[take[0]].run].sec, body: nil, term: c.term}
-		for d := 0; d < c.k; d++ {
-			h.body = append(h.body, take[0]+d)
-		}
-		helpers = append(helpers, h)
+		// One helper PER SECTION, never one across both. The body is
+		// emitted in exactly one section (a helper label is defined
+		// once), so folding a run whose copies straddle the split would
+		// send the .ramtext sites jumping into flash text — records that
+		// are not fetchable while the XIP window is down. Each side is
+		// then priced on its own copies: a lone copy saves nothing and
+		// stays inline, which is why `take` is released per group and
+		// not wholesale.
+		bySec := map[int][]int{}
+		var secs []int // deterministic order: first appearance in take
 		for _, p := range take {
-			s := &site{last: slots[p+c.k-1].line, helper: h.name}
-			if !c.term {
-				retN++
-				s.ret = fmt.Sprintf("__olr_%d", retN)
+			s := runs[slots[p].run].sec
+			if _, seen := bySec[s]; !seen {
+				secs = append(secs, s)
 			}
-			sites[slots[p].line] = s
+			bySec[s] = append(bySec[s], p)
 		}
-		saved += sv
+		for _, sec := range secs {
+			grp := bySec[sec]
+			sv := olSave(len(grp), c.recs, c.term)
+			if sv <= 0 {
+				for _, p := range grp {
+					for d := 0; d < c.k; d++ {
+						used[p+d] = false
+					}
+				}
+				continue
+			}
+			h := helper{name: fmt.Sprintf("__ol_%d", len(helpers)+1),
+				sec: sec, body: nil, term: c.term}
+			for d := 0; d < c.k; d++ {
+				h.body = append(h.body, grp[0]+d)
+			}
+			helpers = append(helpers, h)
+			for _, p := range grp {
+				s := &site{last: slots[p+c.k-1].line, helper: h.name}
+				if !c.term {
+					retN++
+					s.ret = fmt.Sprintf("__olr_%d", retN)
+				}
+				sites[slots[p].line] = s
+			}
+			saved += sv
+		}
 	}
 	if len(helpers) == 0 {
 		return src, 0

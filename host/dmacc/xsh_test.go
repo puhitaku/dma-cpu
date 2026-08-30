@@ -450,8 +450,16 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 	if !bd.MachineFlashExec {
 		/* Boards without the QMI machine executor use the parked
 		 * ARM's mailbox for flash sync AND SD reads — the executor
-		 * exists regardless of persistence (serviceMailbox plays it). */
-		m.Poke32(mustSym(t, kernC, "g_kflash_arm"), bd.Scratch+0x10)
+		 * exists regardless of persistence (serviceMailbox plays it).
+		 * Unless the board ships no executor at all, in which case
+		 * the kernel gets the sentinel dmxgen bakes and sync answers
+		 * -ENODEV rather than spinning on an ack nobody posts. This
+		 * mirrors dmxgen's flashArm — keep the two in step. */
+		arm := bd.Scratch + 0x10
+		if bd.NoFlashExec {
+			arm = 1 /* KFLASH_NOEXEC */
+		}
+		m.Poke32(mustSym(t, kernC, "g_kflash_arm"), arm)
 	}
 	// HDMI framebuffer (kfb.c, prompts/036): framebuffer boards get
 	// the fb globals (and a PSRAM model for the storage side);
@@ -773,27 +781,31 @@ func TestXv6ShPico(t *testing.T) {
 // user writes straight into the PSRAM window, verify, release).
 func TestXv6ShFeather(t *testing.T) {
 	t.Parallel()
-	// A blank flash part: persistence is live, so `sync` runs the
-	// machine's QMI direct-mode session with the scanout enabled —
-	// the kfb_pause/resume bracket is on the path (prompts/036).
+	// A blank flash part. Persistence is DEAD on this board: the ARM
+	// mailbox service is gone from the feather firmware, so the kernel
+	// carries the KFLASH_NOEXEC sentinel and a sync must come back as
+	// an error — the one thing it must never do is spin on an ack.
 	flash := make([]byte, boards.Feather.FlashSize)
 	for i := range flash {
 		flash[i] = 0xFF
 	}
 	m, kernC := bootXshBoard(t, flash, boards.Feather)
-	// The shipped feather is read-only (ReadOnlyFS); re-arm the slot
-	// here so the ARM-mailbox sync machinery — pause/park the scanout,
-	// flash ops, XIP restore, resume — keeps emulator coverage.
+	// Re-arm the fs slot the shipped board zeroes (ReadOnlyFS) so the
+	// refusal below is the EXECUTOR's, not just a missing slot: with a
+	// valid slot address in hand, kflash_sync still has nothing to run
+	// the burn on and says so.
 	m.Poke32(mustSym(t, kernC, "g_fsslot"), boards.Feather.FSSlot)
+	// Flash as the boot left it: nothing the session does may change a
+	// byte of it, because there is no executor to change one with.
+	before := append([]byte(nil), m.Flash...)
 	m.FeedConsole("ls /dev\rcat /dev/fb0\rfbtest\rcat /dev/fb0\r" +
 		"echo persists > note\rsync\rcat note\recho done\r")
-	// Chunked run: the feather syncs through the ARM-executor mailbox
-	// (boards.Feather.MachineFlashExec is false), which the test plays.
+	// No mailbox is serviced here (that coverage lives with the boards
+	// that still ship one: TestXv6Persist, TestXv6ShPico). A hang would
+	// show up as the loop running out of budget without "done".
 	for used := uint64(0); used < 2_500_000_000; used += 500_000 {
 		if _, err := m.Run(emu.RunConfig{MaxCycles: 500_000}); err != nil {
 			t.Fatalf("%v\nconsole:\n%s", err, m.ConsoleOut)
-		}
-		for serviceFlashMailbox(m, flash) {
 		}
 		if strings.Contains(strings.ReplaceAll(string(m.ConsoleOut), "\r", ""), "\ndone\n") {
 			break
@@ -802,16 +814,21 @@ func TestXv6ShFeather(t *testing.T) {
 	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
 	t.Logf("console:\n%s", out)
 	for _, want := range []string{
-		"fb: 640x480x8 on",  // kfb_init on the boot path
-		"fb0",               // devfs node
-		"640x480x8 owner=0", // fb0 text after release
-		"fb ok 640x480x8",   // fbtest acquired, wrote, verified
-		"\npersists\n",      // written, synced, read back
-		"\ndone\n",          // still alive after pause/resume
+		"fb: 640x480x8 on",      // kfb_init on the boot path
+		"fb0",                   // devfs node
+		"640x480x8 owner=0",     // fb0 text after release
+		"fb ok 640x480x8",       // fbtest acquired, wrote, verified
+		"sync: not supported\n", // -ENODEV: no executor, and no hang
+		"\npersists\n",          // the file is in the RAM disk regardless
+		"\ndone\n",              // the session survived the refused sync
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("feather session missing %q", want)
 		}
+	}
+	if !bytes.Equal(before, m.Flash) {
+		t.Errorf("flash changed during the session: something burned "+
+			"without an executor (%d bytes)", len(m.Flash))
 	}
 }
 
@@ -883,7 +900,7 @@ func TestXv6Fbcon(t *testing.T) {
 	}
 }
 
-// TestXv6ViFeather: the pre-relocated vi inside the feather's 68.75K
+// TestXv6ViFeather: the pre-relocated vi inside the feather's 76.75K
 // arena — text from flash, [ramtext][data] at the arena bottom, the
 // shell's heap up top. Launch, insert a line, quit without saving
 // (the feather ships read-only).

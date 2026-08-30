@@ -12,8 +12,8 @@
 # regression OR unrecorded improvement — fails the build. Regenerating
 # is a measurement to report, not a golden to refresh.
 deploy/feather-kernel/data	35328
-deploy/feather-kernel/ramtext	56304
-deploy/feather-kernel/text	224596
+deploy/feather-kernel/ramtext	56448
+deploy/feather-kernel/text	224680
 deploy/feather-sh/data	8960
 deploy/feather-sh/ramtext	3952
 deploy/feather-sh/text	47072
@@ -40,17 +40,17 @@ game/us/rand	177301504
 game/us/shr1	75305472
 game/us/sieve	1449423104
 game/us/sort	1155173120
-size/fs-kern-xip/data	48360
-size/fs-kern-xip/ramtext	44040
-size/fs-kern-xip/text	198248
-size/fs-kernel/data	40744
-size/fs-kernel/text	221248
-size/fs-xip-Os/data	44520
-size/fs-xip-Os/ramtext	44040
-size/fs-xip-Os/text	193056
-size/fs-xip-pgo/data	45584
-size/fs-xip-pgo/ramtext	44296
-size/fs-xip-pgo/text	202048
+size/fs-kern-xip/data	48392
+size/fs-kern-xip/ramtext	44184
+size/fs-kern-xip/text	198304
+size/fs-kernel/data	40772
+size/fs-kernel/text	221416
+size/fs-xip-Os/data	44548
+size/fs-xip-Os/ramtext	44184
+size/fs-xip-Os/text	193112
+size/fs-xip-pgo/data	45612
+size/fs-xip-pgo/ramtext	44440
+size/fs-xip-pgo/text	202112
 size/lean/data	10116
 size/lean/text	114400
 size/ls/data	2752

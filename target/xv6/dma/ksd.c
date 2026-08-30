@@ -11,7 +11,14 @@
  * inside its caller, and the kernel is single-threaded).
  *
  * Zero-config-off like every board seam: g_sd_spi = 0 (the baked
- * default) keeps kflash_sd on the ARM-mailbox path. The loader bakes
+ * default) keeps kflash_sd on the ARM-mailbox path. Conversely, a
+ * board that arms this driver never reaches that path at all —
+ * kflash_sd tries ksd_on() FIRST, and dmxgen bakes g_sd_spi nonzero
+ * exactly when Board.MachineSDExec is set (its sdSpi). That is what
+ * makes the feather safe with the ARM mailbox retired from its
+ * firmware: MachineSDExec is true there, so ops 4/5 are served here,
+ * and the executor-less case below it now answers -ENODEV instead of
+ * spinning (kflash.c, KFLASH_NOEXEC). The loader bakes
  * the SPI base, the CS pin's IO_BANK0 CTRL register and its two
  * override words (drive-low / drive-high with output-enable forced,
  * so the machine owns the pin whatever the ARM left there), and the

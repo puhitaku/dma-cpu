@@ -24,8 +24,8 @@ package pgo
 // profiled. Names are not validated by dmacc — a board linking a
 // different module set simply never asks about some of them.
 
-// KernelHotSites: 343 of the image's 1733 comparison sites; 390 of them
-// were executed at all, and the set covers 99.94% of the 312644
+// KernelHotSites: 343 of the image's 1735 comparison sites; 390 of them
+// were executed at all, and the set covers 99.94% of the 312646
 // comparisons the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
@@ -757,7 +757,7 @@ var GameHotSites = map[string]bool{
 // the asset blob's home. Deploying the rest of either ranking needs a
 // window move, not a setting (prompts/042 §1).
 
-// KernelInlineSites: 38 sites covering 82.91% of the 312644 comparisons
+// KernelInlineSites: 38 sites covering 82.91% of the 312646 comparisons
 // the workload made, trimmed by the board fit (arena slack in .ramtext,
 // flash text room) from the 45 candidates over the 781-execution bar
 // (85.04% together). Ladder (bar: sites, coverage) — 1000: 38, 83%;

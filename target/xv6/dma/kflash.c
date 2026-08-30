@@ -15,9 +15,18 @@
  *    below runs on silicon: exit-XIP dance, WREN, RDSR/WIP polling,
  *    4K erase, 256B page program, then an XIP-compatible serial read
  *    config so subsequent XIP fetches work from plain-SPI state.
- *  - The parked ARM's SRAM mailbox loop (kflash_arm != 0): the SDK's
- *    XIP-safe routines execute {op, off, src} requests. Kept as the
- *    fallback executor and for A/B validation.
+ *  - The parked ARM's SRAM mailbox loop (kflash_arm holds its
+ *    address): the SDK's XIP-safe routines execute {op, off, src}
+ *    requests. Kept as the fallback executor and for A/B validation.
+ *
+ * And a third state, which is neither: kflash_arm == KFLASH_NOEXEC
+ * says the board ships NO executor — the QMI driver is not used and
+ * no firmware mailbox service exists to answer. That has to be said
+ * explicitly rather than left to look like the mailbox case, because
+ * arm_request SPINS on the ack: a board whose mailbox nobody services
+ * would hang the machine on the first sync instead of failing. Every
+ * entry point checks kflash_noexec() and returns -ENODEV, the port's
+ * absent-device face (PORT.md, "Device absence").
  *
  * Slot layout (loader-patched fsslot, sector-aligned XIP address):
  *   +0x0000  header sector: magic 'DMF2', generation, length,
@@ -52,14 +61,20 @@
 
 #define TIMER_RAWL 0x400B0028u /* free-running us counter */
 
+/* Not zero and not a plausible mailbox address (those are word-aligned
+ * SRAM): the value kflash_arm is loader-patched to on a board with NO
+ * flash executor. Mirrored by host/cmd/dmxgen's kflashNoExec. */
+#define KFLASH_NOEXEC 1u
+
 extern uint dma_disk;     /* RAM disk base (kbio.c) */
 extern uint dma_disksize;
 extern uint fs_dirty;     /* per-4K-sector dirty bits (kbio.c) */
 
 uint fsslot;     /* loader-patched: XIP address of the slot header;
                   * 0 = no persistence configured */
-uint kflash_arm; /* loader-patched: &flashreq mailbox in SRAM, or 0
-                  * to let the machine drive the QMI itself */
+uint kflash_arm; /* loader-patched: &flashreq mailbox in SRAM, 0 to
+                  * let the machine drive the QMI itself, or
+                  * KFLASH_NOEXEC when the board has neither */
 uint kflash_phase; /* diagnostic: fine-grained progress marker */
 uint goldsum; /* loader-patched: checksum of the BUILD's golden disk —
                * stamped into the slot header so a persisted image from
@@ -223,6 +238,15 @@ flash_wren(void)
 
 /* --- ARM mailbox executor (fallback) --- */
 
+/* kflash_noexec: the board ships neither executor (KFLASH_NOEXEC).
+ * Every caller of arm_request checks this first — the spin below is
+ * unbreakable if nobody is servicing the mailbox. */
+static int
+kflash_noexec(void)
+{
+  return kflash_arm == KFLASH_NOEXEC;
+}
+
 static void
 arm_request(uint op, uint off, uint src)
 {
@@ -237,10 +261,13 @@ arm_request(uint op, uint off, uint src)
 
 /* kflash_sd posts an SD-card request to the parked ARM (ops 4: read
  * one 512-byte sector `off` into machine SRAM at `src`; 5: initialize
- * the card, writing {status, sectors} at `src`). -1 without an
- * executor (machine-flash boards have no ARM in the loop). The
- * mailbox is strictly serial — the machine is single-threaded and
- * sync never interleaves with fs reads. */
+ * the card, writing {status, sectors} at `src`). The machine's own
+ * driver takes it first where the board arms one (ksd.c); otherwise
+ * the mailbox, and an error where there is no executor at all —
+ * machine-flash boards have no ARM in the loop, and a KFLASH_NOEXEC
+ * board has no mailbox service to answer ops 4/5 either. The mailbox
+ * is strictly serial — the machine is single-threaded and sync never
+ * interleaves with fs reads. */
 extern int ksd_on(void);                       /* ksd.c */
 extern int ksd_op(uint op, uint off, uint src); /* ksd.c */
 
@@ -249,6 +276,8 @@ kflash_sd(uint op, uint off, uint src)
 {
   if (ksd_on()) /* machine-driven SD (ksd.c): no ARM in the loop */
     return ksd_op(op, off, src);
+  if (kflash_noexec())
+    return -ENODEV;
   if (kflash_arm == 0)
     return -1;
   arm_request(op, off, src);
@@ -260,6 +289,9 @@ kflash_sd(uint op, uint off, uint src)
 static void
 flash_erase4k(uint off)
 {
+  if (kflash_noexec()) /* no executor: kflash_sync refuses before
+                        * here, and kflash_cal simply does nothing */
+    return;
   if (kflash_arm) {
     arm_request(1, off, 0);
     return;
@@ -277,6 +309,8 @@ flash_erase4k(uint off)
 static void
 flash_prog_page(uint off, const uchar *src)
 {
+  if (kflash_noexec())
+    return;
   if (kflash_arm) {
     arm_request(2, off, (uint)src);
     return;
@@ -414,11 +448,15 @@ kflash_cal(volatile uint *r)
   r[8] = 1;
 }
 
-/* SYS_sync: burn the RAM disk into the slot. Returns 0, or -1 when
- * persistence is not configured. */
+/* SYS_sync: burn the RAM disk into the slot. Returns 0, -ENODEV when
+ * the board ships no flash executor (nothing can burn, and waiting on
+ * a mailbox nobody services would hang), or -1 when persistence is
+ * simply not configured on a board that could otherwise sync. */
 int
 kflash_sync(void)
 {
+  if (kflash_noexec())
+    return -ENODEV;
   if (fsslot == 0)
     return -1;
   uint base = fsslot - 0x10000000u; /* flash offset of the header */

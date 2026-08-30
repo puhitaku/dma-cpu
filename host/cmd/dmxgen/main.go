@@ -46,6 +46,19 @@ type layout struct {
 	text, data, scratch uint32
 }
 
+// layouts is keyed by SKU, NOT by board, and that is deliberate: these
+// bases home the standalone HIL images (the cc_* checks, the registry
+// probes) that BOTH boards of a SKU run. So the rp2040 entry has to
+// clear the plain pico's live firmware RAM as well as the gamepico's,
+// and the rp2350 entry the plain pico2's as well as the feather's.
+//
+// DO NOT "unify" these with the per-BOARD windows in host/boards. The
+// feather and the gamepico link their firmware RAM into the scratch
+// banks, so THEIR machine windows start at 0x20000000; the pico and
+// pico2 firmwares still live in low SRAM, so a shared image placed at
+// 0x20000000 would land on top of a running firmware's .data on those
+// two. The 8 KiB below is a per-board reclaim, and the map here is the
+// per-SKU floor that stays.
 var layouts = map[string]layout{
 	// rp2350: nearly all of main SRAM (firmware .data/.bss end low,
 	// core stacks live in the scratch banks above 0x20080000) — the
@@ -731,6 +744,31 @@ const PinJoyAUp = 2
 // game text window.
 const gameSFXHome = 0x10140000
 
+// checkGameFree is the link-time pin under the gamepico's
+// scene-exclusive SRAM span: the game's data segment must END at or
+// below boards.GameFreeBase, so that everything from there up to the
+// machine's scratch word — the 40 KiB pinned free block, fx.c's audio
+// ring, radio.c's patch state — stays one CONTIGUOUS 73216-byte region
+// a scene can claim whole. The old audio-overlap check below only
+// catches a segment that has already grown into the ring; this one
+// fires 40 KiB earlier, while there is still a choice to make.
+//
+// A failure here is not a bug to code around. It means the data
+// segment genuinely outgrew its home, and the answer is to move the
+// pin on purpose (and re-price the span in boards.GameFreeBase's
+// table) rather than to shave whatever scene happened to grow last.
+func checkGameFree(bd *boards.Board, dataLen int) error {
+	end := bd.GameData + uint32(dataLen)
+	if end > boards.GameFreeBase {
+		return fmt.Errorf("game data ends at %#x, %d bytes past the pinned "+
+			"free base %#x — the scene-exclusive span %#x..%#x is no longer "+
+			"contiguous; move the pin deliberately (host/boards GameFreeBase)",
+			end, end-boards.GameFreeBase, uint32(boards.GameFreeBase),
+			uint32(boards.GameFreeBase), bd.Scratch)
+	}
+	return nil
+}
+
 // gameSFX lists the clips baked into the blob, in sfx_tab order.
 var gameSFX = []string{"target/game/sfx/dino_fail.wav", "target/game/sfx/lanwalk_success.wav"}
 
@@ -906,6 +944,11 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			return nil, fmt.Errorf("game segment %#x..%#x overlaps the audio region %#x..%#x",
 				seg.LinkAddr, end, auBase, auEnd)
 		}
+	}
+	// And the pin above the data segment: the scene-exclusive span
+	// starts at boards.GameFreeBase and must stay whole.
+	if err := checkGameFree(bd, len(prog.Image.Segments[1].Data)); err != nil {
+		return nil, err
 	}
 	// Emulator verification: boot to the menu. Image.Load also
 	// applies the init Writes (register banks, dispatch presets) —
@@ -1280,7 +1323,8 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 		{"g_pio0base", v.PIO0Base}, {"g_gpiopins", uint32(v.GPIOPins)},
 		{"g_gpio_hi", v.GPIOOutCtrl(true)}, {"g_gpio_lo", v.GPIOOutCtrl(false)},
 		{"g_kflash_arm", flashArm(bd)}, /* 0: the MACHINE drives the
-		 * flash itself (RP2350 QMI, prompts/028); else the parked
+		 * flash itself (RP2350 QMI, prompts/028); KFLASH_NOEXEC (1):
+		 * no executor at all, sync answers -ENODEV; else the parked
 		 * ARM's mailbox loop at scratch+0x10 executes for it */
 		{"g_dmacpy_ctrl", xshKdmaCtrl(v, bd)}, /* kdma.c bulk channel */
 		{"g_dmacpy_sctrl", xshKdmaStreamCtrl(v, bd)},
@@ -1682,11 +1726,24 @@ func roFSSlot(bd *boards.Board) uint32 {
 	return bd.FSSlot
 }
 
-// flashArm picks the flash executor the kernel uses for sync: 0 for
-// the machine-driven QMI driver, else the ARM mailbox address.
+// kflashNoExec is kflash.c's KFLASH_NOEXEC sentinel: not zero (which
+// means "the machine drives the QMI itself") and not a mailbox address
+// either — no executor exists, so sync answers -ENODEV. Kept in step
+// with the #define in target/xv6/dma/kflash.c.
+const kflashNoExec = 1
+
+// flashArm picks the flash executor the kernel uses for sync, in the
+// three states the kernel knows: 0 for the machine-driven QMI driver,
+// the sentinel for a board that ships NO executor, else the address of
+// the parked ARM's mailbox. The sentinel is what keeps a mailbox-less
+// board from hanging: kflash.c's arm_request spins on an ack, so a
+// baked mailbox address that nobody services is worse than an error.
 func flashArm(bd *boards.Board) uint32 {
-	if bd.MachineFlashExec {
+	switch {
+	case bd.MachineFlashExec:
 		return 0
+	case bd.NoFlashExec:
+		return kflashNoExec
 	}
 	return bd.Scratch + 0x10
 }
@@ -2199,6 +2256,21 @@ func calExpect(v *emu.Variant, sniffCtrl, seed, word uint32) uint32 {
 
 // --- C header emission ---
 
+// machineFloor is the lowest SRAM address anything this board's
+// firmware loads links at: the per-SKU standalone-image base, or the
+// board's own kernel/game window when that sits lower (the feather and
+// the gamepico link their firmware RAM into the scratch banks, which
+// hands the machine the 8 KiB below the family floor).
+func machineFloor(bd *boards.Board, lay layout) uint32 {
+	lo := lay.text
+	for _, a := range []uint32{bd.KernText, bd.GameRAMText} {
+		if a != 0 && a < lo {
+			lo = a
+		}
+	}
+	return lo
+}
+
 func emitHeader(bd *boards.Board, v *emu.Variant, lay layout, tests []*test, sched, shl, sys, exe, xsh, game *kernBundle) string {
 	var b strings.Builder
 	p := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
@@ -2218,6 +2290,12 @@ func emitHeader(bd *boards.Board, v *emu.Variant, lay layout, tests []*test, sch
 	p("#define HIL_SCRATCH 0x%08Xu", lay.scratch)
 	p("#define HIL_MACHINE_RAM_START 0x%08Xu", lay.text)
 	p("#define HIL_MACHINE_RAM_END 0x%08Xu", lay.scratch+4)
+	p("/* The lowest address THIS BOARD's payload links at, which can be")
+	p(" * below HIL_MACHINE_RAM_START: that one is the per-SKU floor the")
+	p(" * standalone HIL images share (both boards of a SKU run them), while")
+	p(" * a board whose firmware RAM moved into the scratch banks owns the")
+	p(" * 8 KiB underneath it. Check firmware .bss against this. */")
+	p("#define HIL_MACHINE_RAM_FLOOR 0x%08Xu", machineFloor(bd, lay))
 	p("")
 	p("/* Calibration experiment constants (channel %d). */", calCh)
 	p("#define HIL_CAL_CH %d", calCh)

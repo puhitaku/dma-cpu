@@ -25,15 +25,20 @@ define dso_local i32 @kflash_sd(i32 noundef %0, i32 noundef %1, i32 noundef %2) 
 
 8:                                                ; preds = %3
   %9 = load i32, ptr @kflash_arm, align 4, !tbaa !3
-  %10 = icmp eq i32 %9, 0
-  br i1 %10, label %12, label %11
+  switch i32 %9, label %10 [
+    i32 1, label %12
+    i32 0, label %11
+  ]
 
-11:                                               ; preds = %8
+10:                                               ; preds = %8
   tail call fastcc void @arm_request(i32 noundef %0, i32 noundef %1, i32 noundef %2) #7
   br label %12
 
-12:                                               ; preds = %8, %11, %6
-  %13 = phi i32 [ %7, %6 ], [ 0, %11 ], [ -1, %8 ]
+11:                                               ; preds = %8
+  br label %12
+
+12:                                               ; preds = %8, %11, %10, %6
+  %13 = phi i32 [ %7, %6 ], [ 0, %10 ], [ -19, %8 ], [ -1, %11 ]
   ret i32 %13
 }
 
@@ -315,29 +320,31 @@ define internal fastcc void @flash_wren() unnamed_addr #2 {
 ; Function Attrs: minsize nofree norecurse nounwind optsize
 define internal fastcc void @flash_erase4k(i32 noundef %0) unnamed_addr #2 {
   %2 = load i32, ptr @kflash_arm, align 4, !tbaa !3
-  %3 = icmp eq i32 %2, 0
-  br i1 %3, label %5, label %4
+  switch i32 %2, label %3 [
+    i32 1, label %13
+    i32 0, label %4
+  ]
+
+3:                                                ; preds = %1
+  tail call fastcc void @arm_request(i32 noundef 1, i32 noundef %0, i32 noundef 0) #7
+  br label %13
 
 4:                                                ; preds = %1
-  tail call fastcc void @arm_request(i32 noundef 1, i32 noundef %0, i32 noundef 0) #7
-  br label %14
-
-5:                                                ; preds = %1
   tail call fastcc void @flash_wren() #7
-  %6 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
-  %7 = or i32 %6, 16777221
-  store volatile i32 %7, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
-  %8 = tail call fastcc i32 @qmi_xfer(i32 noundef 32) #7
-  %9 = lshr i32 %0, 16
-  %10 = tail call fastcc i32 @qmi_xfer(i32 noundef %9) #7
-  %11 = lshr i32 %0, 8
-  %12 = tail call fastcc i32 @qmi_xfer(i32 noundef %11) #7
-  %13 = tail call fastcc i32 @qmi_xfer(i32 noundef %0) #7
+  %5 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
+  %6 = or i32 %5, 16777221
+  store volatile i32 %6, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
+  %7 = tail call fastcc i32 @qmi_xfer(i32 noundef 32) #7
+  %8 = lshr i32 %0, 16
+  %9 = tail call fastcc i32 @qmi_xfer(i32 noundef %8) #7
+  %10 = lshr i32 %0, 8
+  %11 = tail call fastcc i32 @qmi_xfer(i32 noundef %10) #7
+  %12 = tail call fastcc i32 @qmi_xfer(i32 noundef %0) #7
   tail call fastcc void @qmi_end() #7
   tail call fastcc void @flash_wait_wip() #7
-  br label %14
+  br label %13
 
-14:                                               ; preds = %5, %4
+13:                                               ; preds = %1, %4, %3
   ret void
 }
 
@@ -374,198 +381,204 @@ define internal fastcc i32 @qmi_read32() unnamed_addr #2 {
 ; Function Attrs: minsize nofree norecurse nounwind optsize
 define internal fastcc void @flash_prog_page(i32 noundef %0, ptr noundef %1) unnamed_addr #2 {
   %3 = load i32, ptr @kflash_arm, align 4, !tbaa !3
-  %4 = icmp eq i32 %3, 0
-  br i1 %4, label %7, label %5
+  switch i32 %3, label %4 [
+    i32 1, label %25
+    i32 0, label %6
+  ]
 
-5:                                                ; preds = %2
-  %6 = ptrtoint ptr %1 to i32
-  tail call fastcc void @arm_request(i32 noundef 2, i32 noundef %0, i32 noundef %6) #7
-  br label %26
+4:                                                ; preds = %2
+  %5 = ptrtoint ptr %1 to i32
+  tail call fastcc void @arm_request(i32 noundef 2, i32 noundef %0, i32 noundef %5) #7
+  br label %25
 
-7:                                                ; preds = %2
+6:                                                ; preds = %2
   tail call fastcc void @flash_wren() #7
-  %8 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
-  %9 = or i32 %8, 16777221
-  store volatile i32 %9, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
-  %10 = tail call fastcc i32 @qmi_xfer(i32 noundef 2) #7
-  %11 = lshr i32 %0, 16
-  %12 = tail call fastcc i32 @qmi_xfer(i32 noundef %11) #7
-  %13 = lshr i32 %0, 8
-  %14 = tail call fastcc i32 @qmi_xfer(i32 noundef %13) #7
-  %15 = tail call fastcc i32 @qmi_xfer(i32 noundef %0) #7
-  br label %16
+  %7 = load volatile i32, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
+  %8 = or i32 %7, 16777221
+  store volatile i32 %8, ptr inttoptr (i32 1074593792 to ptr), align 65536, !tbaa !3
+  %9 = tail call fastcc i32 @qmi_xfer(i32 noundef 2) #7
+  %10 = lshr i32 %0, 16
+  %11 = tail call fastcc i32 @qmi_xfer(i32 noundef %10) #7
+  %12 = lshr i32 %0, 8
+  %13 = tail call fastcc i32 @qmi_xfer(i32 noundef %12) #7
+  %14 = tail call fastcc i32 @qmi_xfer(i32 noundef %0) #7
+  br label %15
 
-16:                                               ; preds = %20, %7
-  %17 = phi i32 [ 0, %7 ], [ %25, %20 ]
-  %18 = icmp eq i32 %17, 256
-  br i1 %18, label %19, label %20
+15:                                               ; preds = %19, %6
+  %16 = phi i32 [ 0, %6 ], [ %24, %19 ]
+  %17 = icmp eq i32 %16, 256
+  br i1 %17, label %18, label %19
 
-19:                                               ; preds = %16
+18:                                               ; preds = %15
   tail call fastcc void @qmi_end() #7
   tail call fastcc void @flash_wait_wip() #7
-  br label %26
+  br label %25
 
-20:                                               ; preds = %16
-  %21 = getelementptr inbounds nuw i8, ptr %1, i32 %17
-  %22 = load i8, ptr %21, align 1, !tbaa !17
-  %23 = zext i8 %22 to i32
-  %24 = tail call fastcc i32 @qmi_xfer(i32 noundef %23) #7
-  %25 = add nuw nsw i32 %17, 1
-  br label %16, !llvm.loop !22
+19:                                               ; preds = %15
+  %20 = getelementptr inbounds nuw i8, ptr %1, i32 %16
+  %21 = load i8, ptr %20, align 1, !tbaa !17
+  %22 = zext i8 %21 to i32
+  %23 = tail call fastcc i32 @qmi_xfer(i32 noundef %22) #7
+  %24 = add nuw nsw i32 %16, 1
+  br label %15, !llvm.loop !22
 
-26:                                               ; preds = %19, %5
+25:                                               ; preds = %2, %18, %4
   ret void
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define dso_local range(i32 -1, 1) i32 @kflash_sync() local_unnamed_addr #2 {
+define dso_local range(i32 -19, 1) i32 @kflash_sync() local_unnamed_addr #2 {
   %1 = alloca [64 x i32], align 4
-  %2 = load i32, ptr @fsslot, align 4, !tbaa !3
-  %3 = icmp eq i32 %2, 0
-  br i1 %3, label %83, label %4
+  %2 = load i32, ptr @kflash_arm, align 4, !tbaa !3
+  %3 = icmp eq i32 %2, 1
+  br i1 %3, label %85, label %4
 
 4:                                                ; preds = %0
-  %5 = add i32 %2, -268435456
-  %6 = load i32, ptr @dma_disksize, align 4, !tbaa !3
-  %7 = lshr i32 %6, 12
-  %8 = tail call i32 @kflash_slot_gen() #7
-  %9 = load i32, ptr @fs_gen, align 4, !tbaa !3
-  %10 = icmp eq i32 %8, %9
-  %11 = icmp ne i32 %9, 0
-  %12 = and i1 %10, %11
-  %13 = load i32, ptr @fs_dirty, align 4
-  %14 = icmp eq i32 %13, 0
-  %15 = select i1 %12, i1 %14, i1 false
-  br i1 %15, label %83, label %16
+  %5 = load i32, ptr @fsslot, align 4, !tbaa !3
+  %6 = icmp eq i32 %5, 0
+  br i1 %6, label %85, label %7
 
-16:                                               ; preds = %4
-  %17 = load i32, ptr @kflash_arm, align 4, !tbaa !3
-  %18 = icmp eq i32 %17, 0
-  br i1 %18, label %19, label %20
+7:                                                ; preds = %4
+  %8 = add i32 %5, -268435456
+  %9 = load i32, ptr @dma_disksize, align 4, !tbaa !3
+  %10 = lshr i32 %9, 12
+  %11 = tail call i32 @kflash_slot_gen() #7
+  %12 = load i32, ptr @fs_gen, align 4, !tbaa !3
+  %13 = icmp eq i32 %11, %12
+  %14 = icmp ne i32 %12, 0
+  %15 = and i1 %13, %14
+  %16 = load i32, ptr @fs_dirty, align 4
+  %17 = icmp eq i32 %16, 0
+  %18 = select i1 %15, i1 %17, i1 false
+  br i1 %18, label %85, label %19
 
-19:                                               ; preds = %16
+19:                                               ; preds = %7
+  %20 = icmp eq i32 %2, 0
+  br i1 %20, label %21, label %22
+
+21:                                               ; preds = %19
   tail call fastcc void @flash_exit_xip() #7
-  br label %20
-
-20:                                               ; preds = %19, %16
-  tail call fastcc void @flash_erase4k(i32 noundef %5) #7
-  %21 = add i32 %2, -268431360
   br label %22
 
-22:                                               ; preds = %45, %20
-  %23 = phi i32 [ 0, %20 ], [ %46, %45 ]
-  %24 = icmp eq i32 %23, %7
-  br i1 %24, label %25, label %26
+22:                                               ; preds = %21, %19
+  tail call fastcc void @flash_erase4k(i32 noundef %8) #7
+  %23 = add i32 %5, -268431360
+  br label %24
 
-25:                                               ; preds = %22
+24:                                               ; preds = %47, %22
+  %25 = phi i32 [ 0, %22 ], [ %48, %47 ]
+  %26 = icmp eq i32 %25, %10
+  br i1 %26, label %27, label %28
+
+27:                                               ; preds = %24
   call void @llvm.lifetime.start.p0(i64 256, ptr nonnull %1) #8
-  br label %47
+  br label %49
 
-26:                                               ; preds = %22
-  br i1 %12, label %27, label %32
+28:                                               ; preds = %24
+  br i1 %15, label %29, label %34
 
-27:                                               ; preds = %26
-  %28 = load i32, ptr @fs_dirty, align 4, !tbaa !3
-  %29 = shl nuw i32 1, %23
-  %30 = and i32 %28, %29
-  %31 = icmp eq i32 %30, 0
-  br i1 %31, label %45, label %32
+29:                                               ; preds = %28
+  %30 = load i32, ptr @fs_dirty, align 4, !tbaa !3
+  %31 = shl nuw i32 1, %25
+  %32 = and i32 %30, %31
+  %33 = icmp eq i32 %32, 0
+  br i1 %33, label %47, label %34
 
-32:                                               ; preds = %27, %26
-  %33 = shl nuw i32 %23, 12
-  %34 = add i32 %21, %33
-  %35 = load i32, ptr @dma_disk, align 4, !tbaa !3
-  %36 = add i32 %35, %33
-  %37 = inttoptr i32 %36 to ptr
-  tail call fastcc void @flash_erase4k(i32 noundef %34) #7
-  br label %38
+34:                                               ; preds = %29, %28
+  %35 = shl nuw i32 %25, 12
+  %36 = add i32 %23, %35
+  %37 = load i32, ptr @dma_disk, align 4, !tbaa !3
+  %38 = add i32 %37, %35
+  %39 = inttoptr i32 %38 to ptr
+  tail call fastcc void @flash_erase4k(i32 noundef %36) #7
+  br label %40
 
-38:                                               ; preds = %41, %32
-  %39 = phi i32 [ 0, %32 ], [ %44, %41 ]
-  %40 = icmp samesign ult i32 %39, 4096
-  br i1 %40, label %41, label %45
+40:                                               ; preds = %43, %34
+  %41 = phi i32 [ 0, %34 ], [ %46, %43 ]
+  %42 = icmp samesign ult i32 %41, 4096
+  br i1 %42, label %43, label %47
 
-41:                                               ; preds = %38
-  %42 = add i32 %39, %34
-  %43 = getelementptr inbounds nuw i8, ptr %37, i32 %39
-  tail call fastcc void @flash_prog_page(i32 noundef %42, ptr noundef %43) #7
-  %44 = add nuw nsw i32 %39, 256
-  br label %38, !llvm.loop !23
+43:                                               ; preds = %40
+  %44 = add i32 %41, %36
+  %45 = getelementptr inbounds nuw i8, ptr %39, i32 %41
+  tail call fastcc void @flash_prog_page(i32 noundef %44, ptr noundef %45) #7
+  %46 = add nuw nsw i32 %41, 256
+  br label %40, !llvm.loop !23
 
-45:                                               ; preds = %38, %27
-  %46 = add nuw nsw i32 %23, 1
-  br label %22, !llvm.loop !24
+47:                                               ; preds = %40, %29
+  %48 = add nuw nsw i32 %25, 1
+  br label %24, !llvm.loop !24
 
-47:                                               ; preds = %74, %25
-  %48 = phi i32 [ 0, %25 ], [ %76, %74 ]
-  %49 = icmp eq i32 %48, 64
-  br i1 %49, label %50, label %74
+49:                                               ; preds = %76, %27
+  %50 = phi i32 [ 0, %27 ], [ %78, %76 ]
+  %51 = icmp eq i32 %50, 64
+  br i1 %51, label %52, label %76
 
-50:                                               ; preds = %47
+52:                                               ; preds = %49
   store i32 843468100, ptr %1, align 4, !tbaa !3
-  %51 = load i32, ptr @fs_gen, align 4, !tbaa !3
-  %52 = add i32 %51, 1
-  %53 = getelementptr inbounds nuw i8, ptr %1, i32 4
-  store i32 %52, ptr %53, align 4, !tbaa !3
-  %54 = load i32, ptr @dma_disksize, align 4, !tbaa !3
-  %55 = getelementptr inbounds nuw i8, ptr %1, i32 8
+  %53 = load i32, ptr @fs_gen, align 4, !tbaa !3
+  %54 = add i32 %53, 1
+  %55 = getelementptr inbounds nuw i8, ptr %1, i32 4
   store i32 %54, ptr %55, align 4, !tbaa !3
-  %56 = load i32, ptr @dma_disk, align 4, !tbaa !3
-  %57 = inttoptr i32 %56 to ptr
-  %58 = lshr i32 %54, 2
-  br label %59
+  %56 = load i32, ptr @dma_disksize, align 4, !tbaa !3
+  %57 = getelementptr inbounds nuw i8, ptr %1, i32 8
+  store i32 %56, ptr %57, align 4, !tbaa !3
+  %58 = load i32, ptr @dma_disk, align 4, !tbaa !3
+  %59 = inttoptr i32 %58 to ptr
+  %60 = lshr i32 %56, 2
+  br label %61
 
-59:                                               ; preds = %63, %50
-  %60 = phi i32 [ 0, %50 ], [ %66, %63 ]
-  %61 = phi i32 [ 0, %50 ], [ %67, %63 ]
-  %62 = icmp eq i32 %61, %58
-  br i1 %62, label %68, label %63
+61:                                               ; preds = %65, %52
+  %62 = phi i32 [ 0, %52 ], [ %68, %65 ]
+  %63 = phi i32 [ 0, %52 ], [ %69, %65 ]
+  %64 = icmp eq i32 %63, %60
+  br i1 %64, label %70, label %65
 
-63:                                               ; preds = %59
-  %64 = getelementptr inbounds nuw i32, ptr %57, i32 %61
-  %65 = load i32, ptr %64, align 4, !tbaa !3
-  %66 = add i32 %65, %60
-  %67 = add nuw nsw i32 %61, 1
-  br label %59, !llvm.loop !25
+65:                                               ; preds = %61
+  %66 = getelementptr inbounds nuw i32, ptr %59, i32 %63
+  %67 = load i32, ptr %66, align 4, !tbaa !3
+  %68 = add i32 %67, %62
+  %69 = add nuw nsw i32 %63, 1
+  br label %61, !llvm.loop !25
 
-68:                                               ; preds = %59
-  %69 = getelementptr inbounds nuw i8, ptr %1, i32 12
-  store i32 %60, ptr %69, align 4, !tbaa !3
-  %70 = load i32, ptr @goldsum, align 4, !tbaa !3
-  %71 = getelementptr inbounds nuw i8, ptr %1, i32 16
-  store i32 %70, ptr %71, align 4, !tbaa !3
-  call fastcc void @flash_prog_page(i32 noundef %5, ptr noundef nonnull %1) #7
-  %72 = load i32, ptr @kflash_arm, align 4, !tbaa !3
-  %73 = icmp eq i32 %72, 0
-  br i1 %73, label %77, label %80
+70:                                               ; preds = %61
+  %71 = getelementptr inbounds nuw i8, ptr %1, i32 12
+  store i32 %62, ptr %71, align 4, !tbaa !3
+  %72 = load i32, ptr @goldsum, align 4, !tbaa !3
+  %73 = getelementptr inbounds nuw i8, ptr %1, i32 16
+  store i32 %72, ptr %73, align 4, !tbaa !3
+  call fastcc void @flash_prog_page(i32 noundef %8, ptr noundef nonnull %1) #7
+  %74 = load i32, ptr @kflash_arm, align 4, !tbaa !3
+  %75 = icmp eq i32 %74, 0
+  br i1 %75, label %79, label %82
 
-74:                                               ; preds = %47
-  %75 = getelementptr inbounds nuw [64 x i32], ptr %1, i32 0, i32 %48
-  store i32 -1, ptr %75, align 4, !tbaa !3
-  %76 = add nuw nsw i32 %48, 1
-  br label %47, !llvm.loop !26
+76:                                               ; preds = %49
+  %77 = getelementptr inbounds nuw [64 x i32], ptr %1, i32 0, i32 %50
+  store i32 -1, ptr %77, align 4, !tbaa !3
+  %78 = add nuw nsw i32 %50, 1
+  br label %49, !llvm.loop !26
 
-77:                                               ; preds = %68
+79:                                               ; preds = %70
   store volatile i32 4096, ptr inttoptr (i32 1074593808 to ptr), align 16, !tbaa !3
   store volatile i32 3, ptr inttoptr (i32 1074593812 to ptr), align 4, !tbaa !3
-  %78 = load i32, ptr @fs_gen, align 4, !tbaa !3
-  %79 = add i32 %78, 1
-  br label %81
-
-80:                                               ; preds = %68
-  call fastcc void @arm_request(i32 noundef 3, i32 noundef 0, i32 noundef 0) #7
-  br label %81
-
-81:                                               ; preds = %80, %77
-  %82 = phi i32 [ %52, %80 ], [ %79, %77 ]
-  store i32 %82, ptr @fs_gen, align 4, !tbaa !3
-  store i32 0, ptr @fs_dirty, align 4, !tbaa !3
-  call void @llvm.lifetime.end.p0(i64 256, ptr nonnull %1) #8
+  %80 = load i32, ptr @fs_gen, align 4, !tbaa !3
+  %81 = add i32 %80, 1
   br label %83
 
-83:                                               ; preds = %81, %4, %0
-  %84 = phi i32 [ -1, %0 ], [ 0, %4 ], [ 0, %81 ]
-  ret i32 %84
+82:                                               ; preds = %70
+  call fastcc void @arm_request(i32 noundef 3, i32 noundef 0, i32 noundef 0) #7
+  br label %83
+
+83:                                               ; preds = %82, %79
+  %84 = phi i32 [ %54, %82 ], [ %81, %79 ]
+  store i32 %84, ptr @fs_gen, align 4, !tbaa !3
+  store i32 0, ptr @fs_dirty, align 4, !tbaa !3
+  call void @llvm.lifetime.end.p0(i64 256, ptr nonnull %1) #8
+  br label %85
+
+85:                                               ; preds = %83, %7, %4, %0
+  %86 = phi i32 [ -19, %0 ], [ -1, %4 ], [ 0, %7 ], [ 0, %83 ]
+  ret i32 %86
 }
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize

@@ -259,7 +259,11 @@ a different screen.
   write() helpers, the dma utilities merged into one multi-call
   `toolbox` binary (busybox-style argv[0] dispatch, hard links from
   fsimg.AddLink), the disk slimmed to 96 KB, and the machine RAM
-  base dropped to 0x20002000 (the firmware's unused headroom).
+  base dropped to 0x20002000 (the firmware's unused headroom). That
+  0x20002000 is still the family floor for pico and pico2, whose
+  firmware RAM lives below it; the feather went 8 KiB lower later
+  (0x20000000, its firmware RAM having moved to the scratch banks).
+  host/boards is the map of record.
 - [x] More peripherals for the machine (prompts/034): SYS_gpio /
   SYS_pinmux / SYS_pio drive IO_BANK0, PADS_BANK0 and the PIO register
   files straight from the machine (`xv6/dma/kgpio.c`, front ends in

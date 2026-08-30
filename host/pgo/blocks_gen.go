@@ -24,7 +24,7 @@ package pgo
 // different module set simply has no block by some of these names.
 
 // KernelColdBlocks: 273 of the 859 blocks in the 84 functions the
-// workload executed (1626 blocks in the image).
+// workload executed (1627 blocks in the image).
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
 var KernelColdBlocks = map[string]bool{

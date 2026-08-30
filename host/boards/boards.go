@@ -80,6 +80,15 @@ type Board struct {
 	// itself for sync (the RP2350 QMI direct-mode driver). Boards
 	// without it use the parked ARM's mailbox executor.
 	MachineFlashExec bool
+	// NoFlashExec is the THIRD state: this board ships neither
+	// executor. The machine's QMI driver is not used AND the firmware
+	// runs no mailbox service, so a flash sync has nothing to run on.
+	// The distinction matters at the kernel: an unserviced mailbox is
+	// not a failure, it is a HANG (kflash.c's arm_request spins on the
+	// ack), so dmxgen bakes a sentinel — g_kflash_arm = KFLASH_NOEXEC
+	// — and kflash.c answers -ENODEV, the repo's absent-device face.
+	// Ignored unless MachineFlashExec is false.
+	NoFlashExec bool
 	// MachineSDExec: the machine drives the SD card itself (ksd.c,
 	// SPI mode over SPI0 with the ch11 drain borrow) instead of the
 	// ARM-mailbox executor. SDCSPin is the chip-select GPIO.
@@ -256,17 +265,28 @@ var Feather = &Board{
 	PicoBoard: "adafruit_feather_rp2350",
 
 	// Repacked tight (measured sizes + ~0x200-0x400 margins): the
-	// firmware's staging buffer now borrows the arena, so the family
-	// floor (0x20002000) is back; the param.h shim trimmed the fs
-	// tables; sh runs 2 recursion clones plus the frame-stack tail
-	// (prompts/042 §6 — the windows still have its 4 KB of slack in
-	// them). Every byte reclaimed here is arena — the window that
-	// decides whether `show` fits beside the scanout table.
-	// KernCData moved up 1 KiB for the shared-runtime host: the vector
-	// page + force-included bodies grew ramtext to ~31.6K, and the
-	// slot-colored data side had the slack to give.
-	KernText: 0x20002000, KernData: 0x20002400,
-	KernCRText: 0x20002600, KernCData: 0x20010300, /* ramtext grows +22.25K:
+	// firmware's staging buffer borrows the arena, the param.h shim
+	// trimmed the fs tables, and sh runs 2 recursion clones plus the
+	// frame-stack tail (prompts/042 §6 — the windows still have its
+	// 4 KB of slack in them). Every byte reclaimed here is arena — the
+	// window that decides whether `show` fits beside the scanout table.
+	//
+	// THE FLOOR IS 0x20000000 ON THIS BOARD, not the 0x20002000 family
+	// floor pico/pico2 keep: the feather firmware links its own .data/
+	// .bss into the RP2350 scratch banks and PSM-halts core0 once the
+	// machine is running, so nothing of the ARM's is left down here to
+	// collide with. The whole fixed run of windows below slid down by
+	// that 8 KiB at UNCHANGED SIZES — only the bases moved — and the
+	// arena took the whole gap (68.75 -> 76.75 KiB). Note this is a
+	// per-BOARD floor: dmxgen's per-SKU layout map (its `layouts`,
+	// which homes the standalone cc_*/registry HIL images) still
+	// starts at 0x20002000, because the same SKU's plain pico2 runs a
+	// firmware whose RAM lives there.
+	// KernCData sits 1 KiB above where the pre-shared-runtime map put
+	// it: the vector page + force-included bodies grew ramtext to
+	// ~31.6K, and the slot-colored data side had the slack to give.
+	KernText: 0x20000000, KernData: 0x20000400,
+	KernCRText: 0x20000600, KernCData: 0x2000E300, /* ramtext grows +22.25K:
 	// the resident tick/console path (dmacc ResidentFuncs) joins the shared
 	// runtime so the idle machine never reads flash while the display
 	// scans, plus the reciprocal divide-by-ten (__rt_udivmod10) and the
@@ -282,15 +302,15 @@ var Feather = &Board{
 	// resident, sh data 8.6K all-cold). The arena covers sh's heap and
 	// resident vi's [ramtext][data] claim + argv + vi's first heap
 	// chunk: 63 KiB, the peak measured by walking kproc.c's free list
-	// through a whole editing session here, leaving ~5.7 KiB spare.
-	// vi's chunk ask is 40K and a SECOND one has never fit in this
-	// arena — not before the window move either — which is why the
-	// arena was the right thing to spend.
-	ShRText: 0x20018E00, ShData: 0x2001A000,
-	IdleText: 0x2001C400, IdleData: 0x2001C600,
-	DiskHome: 0x2001C800, DiskMax: 0x2800, // 10 KiB: room for a demo's
+	// through a whole editing session here, leaving ~13.75 KiB spare
+	// now that the floor move handed the arena its 8 KiB. vi's chunk
+	// ask is 40K and a SECOND one still does not fit — it never did —
+	// so the spare is headroom for the heavier viewers, not a second vi.
+	ShRText: 0x20016E00, ShData: 0x20018000,
+	IdleText: 0x2001A400, IdleData: 0x2001A600,
+	DiskHome: 0x2001A800, DiskMax: 0x2800, // 10 KiB: room for a demo's
 	// simultaneous files (a text file + a mount point + slack)
-	Arena: 0x2001F000, ArenaEnd: 0x20030300, // 68.75 KiB up to the table
+	Arena: 0x2001D000, ArenaEnd: 0x20030300, // 76.75 KiB up to the table
 	ConsRings: 0x20034400, // UART rings; FbBuf follows at 0x20034C00
 	Scratch:   0x2007FE00,
 
@@ -306,7 +326,7 @@ var Feather = &Board{
 	AppsHome:    0x104C0000, AppsEnd: 0x10540000,
 	// vi returns via pre-relocation: text executes in place from
 	// flash, so its arena claim is only [ramtext][data] (26K) plus a
-	// small heap — inside the 68.75K arena the fb once priced it out
+	// small heap — inside the 76.75K arena the fb once priced it out
 	// of. Section sits above the scanout staging blob (DTab + ~17K).
 	ViHome: 0x10560000, ViEnd: 0x105E0000,
 	// Apps are flash-resident registry rows (the pico pattern): the
@@ -338,20 +358,28 @@ var Feather = &Board{
 	DTab:    0x10540000,
 	DTabRAM: 0x20030300, /* table ends 16B shy of the console rings */
 
-	// Flash sync goes through the parked ARM's mailbox executor, NOT
-	// the machine's QMI direct-mode driver: that driver leaves XIP in
-	// plain-SPI mode, and on silicon the degraded M0 interleaved with
-	// the scanout's QPI PSRAM bursts corrupted kernel fetches within
-	// a millisecond of resuming the display (prompts/036). The SDK
-	// path restores full quad XIP and re-runs the CS1 setup hook.
+	// NO FLASH EXECUTOR AT ALL on this board — the third state, and
+	// the reason NoFlashExec exists. The machine's QMI direct-mode
+	// driver was never usable here (it leaves XIP in plain-SPI mode,
+	// and on silicon the degraded M0 interleaved with the scanout's
+	// QPI PSRAM bursts corrupted kernel fetches within a millisecond
+	// of resuming the display, prompts/036), so sync used the parked
+	// ARM's mailbox instead. That mailbox service is gone from the
+	// feather firmware: the ARM's RAM moved into the scratch banks and
+	// core0 is PSM-halted once the machine is up, so nobody is left to
+	// answer a request. The kernel is told so explicitly (dmxgen bakes
+	// g_kflash_arm = KFLASH_NOEXEC) and a sync attempt returns -ENODEV
+	// instead of spinning on an ack that will never come. Storage that
+	// still works: the SD card, which the MACHINE drives (ksd.c).
 	MachineFlashExec: false,
-	MachineSDExec:    true, /* ksd.c owns the card; ARM keeps only
-	 * boot staging, USB and flash-sync */
+	NoFlashExec:      true,
+	MachineSDExec:    true, /* ksd.c owns the card; the ARM keeps only
+	 * boot staging and USB */
 	SDCSPin: 10, /* D10: the Adalogger FeatherWing CS */
-	// RO by default: the HDMI console is the product; persistence is
-	// a nice-to-have and stays off until wanted (slides arrive over
-	// USB, not the fs). The sync machinery itself remains validated
-	// (silicon + TestXv6ShFeather re-arms it in the emulator).
+	// RO anyway: the HDMI console is the product; persistence is a
+	// nice-to-have and slides arrive over USB, not the fs. With
+	// NoFlashExec the two agree — ReadOnlyFS zeroes the slot, and the
+	// absent executor means even a re-armed slot cannot burn.
 	ReadOnlyFS: true,
 	DiskBlocks: 10,
 	DiskInodes: 8, /* one inode block; frees data blocks for the
@@ -373,11 +401,20 @@ var GamePico = &Board{
 	Name: "gamepico",
 	SKU:  "rp2040",
 
-	GameRAMText: 0x20002000, // self-modifying records + the radiosity
-	// shooter's resident hot path (dmxgen ResidentFuncs): 36 KiB window
+	// The floor is SRAM's own base, not the 0x20002000 family floor:
+	// the gamepico firmware links its .data/.bss into the scratch
+	// banks and PSM-halts core0 once the machine is running, so the
+	// low 8 KiB is the machine's. Only this per-BOARD window moved —
+	// dmxgen's per-SKU `layouts` map still starts the standalone
+	// cc_*/registry HIL images at 0x20002000, because the same rp2040
+	// entry serves the plain pico, whose firmware lives down here.
+	GameRAMText: 0x20000000, // self-modifying records + the radiosity
+	// shooter's resident hot path (dmxgen ResidentFuncs): a 44 KiB
+	// window, 36 before the floor move — the +8 KiB is headroom for
+	// the inline-compare trampoline banks and future ResidentFuncs
 	GameData: 0x2000B000, // data + the 240x240 RGB565 framebuffer;
-	// grows toward the audio ring at 0x20038000 (the drum PCM moved
-	// to flash, returning its 40 KiB arena to this segment)
+	// grows toward GameFreeBase (below), which pins the top of the
+	// segment 40 KiB short of the audio ring
 	Scratch: 0x2003FE00,
 
 	FlashSize:   0x200000,
@@ -386,6 +423,29 @@ var GamePico = &Board{
 	ClkSysKHz: 250000,
 	Bundles:   []string{"game"},
 }
+
+// GameFreeBase pins the bottom of the gamepico's scene-exclusive SRAM
+// span: everything from here to the machine's scratch word is free for
+// one scene at a time to claim, and dmxgen REFUSES a build whose game
+// data segment reaches past it (buildGame's checkGameFree). The point
+// of the pin is contiguity — a scene that wants a big flat working set
+// gets one span, not three fragments:
+//
+//	0x2002E000..0x20038000  40960 B  pinned free (this constant)
+//	0x20038000..0x2003C000  16384 B  fx.c's audio ring
+//	0x2003C000..0x2003FE00  15872 B  radio.c patch state / bench.c buffers
+//	                       -------
+//	0x2002E000..0x2003FE00  73216 B  contiguous, 71.5 KiB
+//
+// The ring and the radiosity region are only "free" to a scene that
+// does not use them (the two demos up there already share by never
+// running together, radio.c), which is why the pin sits below both:
+// 40 KiB is unconditional, the rest is scene-exclusive. 0x2002E000 is
+// where the drum arena used to start, so the boundary is one bench.c
+// already documents. Data currently ends at 0x2002D784 — about 2.1 KiB
+// of margin, and the assert tripping on some future build is the
+// signal to MOVE the pin deliberately rather than to shave a scene.
+const GameFreeBase = 0x2002E000
 
 // All maps board names to definitions.
 var All = map[string]*Board{

@@ -15,7 +15,7 @@ package pgo
 // fb stub) simply has no function by some of these names.
 
 // KernelHotFuncs: 23 of 84 executed functions, covering 97.1% of the
-// 10510033 text reads the workload made.
+// 10510051 text reads the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, then an editing session in vi.
 var KernelHotFuncs = map[string]bool{

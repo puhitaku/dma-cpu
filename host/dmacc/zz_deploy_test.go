@@ -70,8 +70,9 @@ func TestDeploySizes(t *testing.T) {
 	sizes["deploy/feather-vi/arenaclaim"] = uint64(claim)
 	fmt.Printf("DEP vi:     text=%d data=%d rtext=%d  (arena claim %d of %d)\n",
 		len(text), len(data), len(rt), claim, bd.ArenaEnd-bd.Arena)
-	// The game: bare metal on the gamepico, data growing toward fx.c's
-	// fixed audio ring at 0x20038000.
+	// The game: bare metal on the gamepico, data growing toward the
+	// pin under the scene-exclusive span (boards.GameFreeBase), which
+	// stops it 40 KiB short of fx.c's fixed audio ring at 0x20038000.
 	gb := boards.GamePico
 	gv, _ := emu.VariantByName(gb.SKU)
 	game, err := dmaasm.Assemble(compileGameDasm(t), dmaasm.Options{
@@ -84,9 +85,9 @@ func TestDeploySizes(t *testing.T) {
 	rec("gamepico-game", game.Image.Segments)
 	fmt.Printf("DEP game:   text=%d data=%d rtext=%d  (data window %d)\n",
 		len(game.Image.Segments[0].Data), len(game.Image.Segments[1].Data),
-		len(game.Image.Segments[2].Data), 0x20038000-gb.GameData)
+		len(game.Image.Segments[2].Data), boards.GameFreeBase-gb.GameData)
 	fits(t, "game .ramtext", gb.GameRAMText, game, 2, gb.GameData)
-	fits(t, "game data", gb.GameData, game, 1, gameAudioBase)
+	fits(t, "game data", gb.GameData, game, 1, boards.GameFreeBase)
 	fits(t, "game text", gb.GameTextXIP, game, 0, gameSFXHome)
 	pinSet(t, "deploy/", sizes)
 }

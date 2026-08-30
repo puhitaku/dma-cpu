@@ -197,15 +197,25 @@ phased plan). Phase outcomes are logged in the numbered
   kfb.c/kfbcon.c ride only framebuffer boards' kernels; every other
   build links the no-op `kfbstub.c` (kfsstub-style) — a kernel list
   that links kproc must include one of the two. The HSTX FIFO write
-  port is base+4 (base+0 is STAT and discards silently). The framebuffer
-  board ships a read-only fs and never syncs flash at all: its ARM is
-  in PSM reset once the machine starts, so there is no mailbox to sync
-  through (the plain-pico bench is the last mailbox user).
+  port is base+4 (base+0 is STAT and discards silently). Framebuffer
+  boards never sync through QMI direct mode: the degraded XIP state it
+  leaves corrupts fetches under scanout. The feather no longer syncs at
+  all — its firmware moved its RAM into the scratch banks and PSM-halts
+  core0, so the ARM mailbox service is gone; `Board.NoFlashExec` bakes
+  `g_kflash_arm = KFLASH_NOEXEC` and `kflash.c` answers `-ENODEV`
+  instead of spinning on an ack nobody posts. Storage there is the SD
+  card, machine-driven (`ksd.c`, `MachineSDExec`). The plain pico keeps
+  its mailbox.
 
 - The game console (prompts/040, gamepico board): `target/game/` is
   bare-metal C on the machine, no xv6 — one shared arena (`g_arena`)
   holds the running game's bulk state, and a 16 KiB ring at a 16
-  KiB-aligned address feeds I2S through ch9. Two rules the silicon
+  KiB-aligned address feeds I2S through ch9. Above the data segment,
+  `0x2002E000..0x2003FE00` is a pinned CONTIGUOUS span for whichever
+  scene is running (40 KiB free + the audio ring + radio.c/bench.c's
+  region, 73216 B): `boards.GameFreeBase` marks its bottom and dmxgen
+  refuses a build whose data reaches past it. When that assert fires,
+  move the pin on purpose and re-price the span — do not shave a scene. Two rules the silicon
   taught: (a) the machine has no right-shift instruction and no divide,
   so `>>`, `/` and `%` are only cheap when the compiler can see the
   count or the divisor — a constant count is a byte-lane copy and a

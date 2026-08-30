@@ -122,6 +122,143 @@ func checkOutline(t *testing.T, name, dasm string) {
 	t.Logf("%s: %d outlined helpers", name, helpers)
 }
 
+// splitSectionsIR: the same long straight-line run in four functions,
+// two of which will be placed in .ramtext. The outliner sees ONE
+// repeated run with copies on both sides of the flash/SRAM split, and
+// two copies per side so that folding pays on each.
+const splitSectionsIR = `
+@k0 = global i32 0
+@k1 = global i32 0
+@k2 = global i32 0
+@k3 = global i32 0
+@k4 = global i32 0
+@k5 = global i32 0
+@k6 = global i32 0
+@k7 = global i32 0
+@k8 = global i32 0
+@k9 = global i32 0
+@u1 = global i32 0
+@u2 = global i32 0
+@u3 = global i32 0
+@u4 = global i32 0
+
+define i32 @flash1(i32 %n) {
+entry:
+  store i32 11, ptr @k0
+  store i32 22, ptr @k1
+  store i32 33, ptr @k2
+  store i32 44, ptr @k3
+  store i32 55, ptr @k4
+  store i32 66, ptr @k5
+  store i32 77, ptr @k6
+  store i32 88, ptr @k7
+  store i32 99, ptr @k8
+  store i32 110, ptr @k9
+  store i32 7, ptr @u1
+  ret i32 %n
+}
+
+define i32 @flash2(i32 %n) {
+entry:
+  store i32 11, ptr @k0
+  store i32 22, ptr @k1
+  store i32 33, ptr @k2
+  store i32 44, ptr @k3
+  store i32 55, ptr @k4
+  store i32 66, ptr @k5
+  store i32 77, ptr @k6
+  store i32 88, ptr @k7
+  store i32 99, ptr @k8
+  store i32 110, ptr @k9
+  store i32 7, ptr @u2
+  ret i32 %n
+}
+
+define i32 @ram1(i32 %n) {
+entry:
+  store i32 11, ptr @k0
+  store i32 22, ptr @k1
+  store i32 33, ptr @k2
+  store i32 44, ptr @k3
+  store i32 55, ptr @k4
+  store i32 66, ptr @k5
+  store i32 77, ptr @k6
+  store i32 88, ptr @k7
+  store i32 99, ptr @k8
+  store i32 110, ptr @k9
+  store i32 7, ptr @u3
+  ret i32 %n
+}
+
+define i32 @ram2(i32 %n) {
+entry:
+  store i32 11, ptr @k0
+  store i32 22, ptr @k1
+  store i32 33, ptr @k2
+  store i32 44, ptr @k3
+  store i32 55, ptr @k4
+  store i32 66, ptr @k5
+  store i32 77, ptr @k6
+  store i32 88, ptr @k7
+  store i32 99, ptr @k8
+  store i32 110, ptr @k9
+  store i32 7, ptr @u4
+  ret i32 %n
+}
+
+define i32 @main() {
+entry:
+  %a = call i32 @flash1(i32 1)
+  %b = call i32 @flash2(i32 2)
+  %c = call i32 @ram1(i32 3)
+  %d = call i32 @ram2(i32 4)
+  %e = add i32 %a, %b
+  %f = add i32 %c, %d
+  %g = add i32 %e, %f
+  ret i32 %g
+}
+`
+
+// TestOutlineSplitSections pins the section rule at the point where it
+// is easy to get wrong: a helper body is emitted ONCE, so a run that
+// repeats on both sides of the flash/SRAM split must become two
+// helpers, not one placed in whichever section its first copy sat in.
+// The one-helper form assembles and looks fine — it fails on silicon,
+// where a .ramtext record fetches flash with the XIP window down — so
+// nothing but this check stands between it and a deploy. Found the hard
+// way: a two-line guard added to kflash.c grew a run that a resident
+// kernel function already had, and TestOutlineInvariants caught the
+// cross-section jump on the real image.
+func TestOutlineSplitSections(t *testing.T) {
+	t.Parallel()
+	mod, err := llir.Parse(splitSectionsIR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dasm, err := dmacc.Compile(mod, dmacc.Options{Entry: "main", XIPText: true,
+		RAMTextFuncs: []string{"ram1", "ram2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The invariant itself, on the fixture.
+	checkOutline(t, "split-sections", dasm)
+	// And the fixture has to be exercising it: a helper on each side.
+	sec, perSec := "", map[string]int{}
+	for _, raw := range strings.Split(dasm, "\n") {
+		l := strings.TrimSpace(raw)
+		switch {
+		case l == ".text" || l == ".ramtext" || l == ".data":
+			sec = l
+		case strings.HasPrefix(l, "__ol_") && strings.HasSuffix(l, ":"):
+			perSec[sec]++
+		}
+	}
+	if perSec[".text"] == 0 || perSec[".ramtext"] == 0 {
+		t.Errorf("the run was not folded on both sides: %v — the fixture "+
+			"no longer reaches the case it is here for", perSec)
+	}
+}
+
 // twoLoopsIR: two loop bodies whose leading runs are textually
 // identical (constant stores to the same globals lower to the same
 // `move $k, g_x` records, which two structurally-equal but

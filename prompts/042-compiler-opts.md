@@ -409,6 +409,41 @@ which is what made the arena the right thing to spend. pico and pico2
 are untouched: they have no display to protect and their windows keep
 the slack they had.
 
+**And then the floor gave it back.** The feather firmware's own RAM
+moved into the RP2350 scratch banks and its core0 is PSM-halted once
+the machine is running, which frees `0x20000000..0x20002000` on that
+board at link time. Every fixed window slid down by those 8 KiB at
+UNCHANGED size — `KernText` `0x20002000` -> `0x20000000`, `KernCRText`
+`0x20002600` -> `0x20000600`, `KernCData` `0x20010300` -> `0x2000E300`,
+`ShRText` `0x20018E00` -> `0x20016E00`, `ShData` `0x2001A000` ->
+`0x20018000`, on through `IdleText`/`IdleData`/`DiskHome` — and the
+arena took the whole gap: `Arena` `0x2001F000` -> `0x2001D000`, 70400
+-> 78592 bytes, 68.75 -> 76.75 KiB. `ArenaEnd` did not move; it is
+still clamped to `DTabRAM` at `0x20030300`. Against the same 64512
+bytes of measured vi peak the spare goes 5888 -> 14080, which still
+does not admit vi's second 40 KiB chunk — it never did — so the win is
+headroom for the heavier viewers, not a second editor.
+
+The gamepico took the same 8 KiB at its own floor, as ramtext:
+`GameRAMText` `0x20002000` -> `0x20000000` widens the window to
+`GameData` from 36 to 44 KiB, which is where the inline-compare
+trampoline banks and any future `ResidentFuncs` go (the game image had
+432 bytes of that window left before the move, and the bar in the
+sweep above was the window, not the profile). Its data segment gained
+a pin rather than room: `boards.GameFreeBase` = `0x2002E000`, asserted
+at link time by dmxgen, keeps `0x2002E000..0x2003FE00` — 40960 B of
+pinned free block, fx.c's 16384 B audio ring, radio.c's 15872 B patch
+state, 73216 B in all — CONTIGUOUS for one scene at a time to claim.
+Data ends at `0x2002D784`, so the assert carries ~2.1 KiB of margin,
+and it firing on a future build is the signal to move the pin
+deliberately.
+
+pico and pico2 keep the `0x20002000` family floor: their firmwares
+still live down there. That is also why dmxgen's per-SKU `layouts` map
+— the home of the standalone `cc_*`/registry HIL images, which BOTH
+boards of a SKU run — did not move with the per-board windows, and
+must not be "unified" with them later.
+
 Measured after `make pgo` (which the changed `.ramtext` required).
 fbcon feather: `cat README` 1440007 -> 1424970, `echo`x40 2777722 ->
 2729480, `ls /dev` 6705002 -> 6465015, 12x scroll 102391669 ->
@@ -774,6 +809,22 @@ sh's and a fifth of vi's; the rest of it sits in the loops of
 functions the workload never entered, which the block-level cold set
 does not name and which nothing in the tree times. §1 has the table,
 the samples and what is left.
+
+**A section bug the SRAM-reclaim wave surfaced.** The file comment
+promised "runs never cross a section boundary, so a .ramtext site never
+jumps into a .text helper" — true of each RUN, but not of a HELPER. A
+candidate's occurrences were folded into one body placed in
+`runs[take[0]].sec`, the section of its FIRST copy, so a run repeating
+on both sides of the flash/SRAM split produced .ramtext sites jumping
+into flash text: records that are not fetchable at all while the XIP
+window is down. It never fired because nothing had happened to share a
+run across the split. Two guard lines added to `kflash.c` did, and
+`TestOutlineInvariants` caught it on the xsh kernel (`__ol_8`, three
+sites) — that test is exactly why the map wave did not ship it. The fix
+groups a candidate's occurrences by section and cuts one helper per
+group, priced on its own copies, so a lone copy on one side stays
+inline; the xsh kernel went 41 -> 42 helpers. `TestOutlineSplitSections`
+now pins it on a four-function fixture, and fails without the fix.
 
 ## 5. Copy coalescing — MEASURED, CLOSED (don't build)
 
