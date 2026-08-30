@@ -226,30 +226,52 @@ is_light(int w, int i, int k)
 }
 
 /* The panel's black floor, in 8-bit codes. Measured with the Gradient
- * app (2026-08-31): this ST7789 is linear from channel level 1 up to
- * its maximum, but level 0 is the pixel OFF — a luminance cliff sits
- * between code 0 and code 1 that no gamma table closes (two attempts
- * at one were reverted). A linear-light renderer walks straight
- * across it: the dark end of every gradient in the box loses its last
- * quantum in one hard edge that the image itself never contains.
- * TONE_MIN lifts the whole ramp clear of the cliff — 8 is level 1 for
- * the 5-bit channels, level 2 for green's 6, matching the per-channel
- * linearity the ramps show. */
-#define TONE_MIN 8
+ * app (2026-08-31): this ST7789 renders luminance LINEAR in channel
+ * code — the checker-vs-solid matching screen puts the black floor at
+ * 0 steps on R/B and +1 on G, so there is no curve in the panel at
+ * all (it evidently ignores its gamma registers; two programming
+ * attempts changed nothing and were reverted). A linear panel is why
+ * the dark end of a linear-light ramp reads as cliffs: the eye judges
+ * contrast RATIOS, and level 1 -> 2 is a 2x jump while 28 -> 29 is
+ * 3%. The fix is the encoding every display pipeline applies and this
+ * panel omits: tone() gamma-encodes (^1/2.2) so equal code steps are
+ * equal perceptual steps. True black still maps to 0; the smallest
+ * lit value lands on level 1+ and the dark gradient gets most of the
+ * code range. Table over arithmetic: 255*(v/255)^(1/2.2) per entry,
+ * one byte load per channel per repaint. */
+static const uchar gam[256] = {
+    0, 21, 28, 34, 39, 43, 46, 50, 53, 56, 59, 61,
+    64, 66, 68, 70, 72, 74, 76, 78, 80, 82, 84, 85,
+    87, 89, 90, 92, 93, 95, 96, 98, 99, 101, 102, 103,
+    105, 106, 107, 109, 110, 111, 112, 114, 115, 116, 117, 118,
+    119, 120, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131,
+    132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143,
+    144, 144, 145, 146, 147, 148, 149, 150, 151, 151, 152, 153,
+    154, 155, 156, 156, 157, 158, 159, 160, 160, 161, 162, 163,
+    164, 164, 165, 166, 167, 167, 168, 169, 170, 170, 171, 172,
+    173, 173, 174, 175, 175, 176, 177, 178, 178, 179, 180, 180,
+    181, 182, 182, 183, 184, 184, 185, 186, 186, 187, 188, 188,
+    189, 190, 190, 191, 192, 192, 193, 194, 194, 195, 195, 196,
+    197, 197, 198, 199, 199, 200, 200, 201, 202, 202, 203, 203,
+    204, 205, 205, 206, 206, 207, 207, 208, 209, 209, 210, 210,
+    211, 212, 212, 213, 213, 214, 214, 215, 215, 216, 217, 217,
+    218, 218, 219, 219, 220, 220, 221, 221, 222, 223, 223, 224,
+    224, 225, 225, 226, 226, 227, 227, 228, 228, 229, 229, 230,
+    230, 231, 231, 232, 232, 233, 233, 234, 234, 235, 235, 236,
+    236, 237, 237, 238, 238, 239, 239, 240, 240, 241, 241, 242,
+    242, 243, 243, 244, 244, 245, 245, 246, 246, 247, 247, 248,
+    248, 249, 249, 249, 250, 250, 251, 251, 252, 252, 253, 253,
+    254, 254, 255, 255};
 
 /* tone map a radiosity channel to 0..255 (soft linear, <16 shift),
- * then remap onto [TONE_MIN, 255] so no surface the solver shades can
- * land on channel code 0. The scale is 248/256, not 247/255: it is a
- * multiply and a WHOLE-BYTE-LANE shift (the only cheap one on this
- * machine), and it still lands both ends exactly — 0 -> 8 and
- * 255 -> 255. One of each per channel per patch per repaint. */
+ * then gamma-encode for the measured-linear panel (table above). */
 static uint
 tone(uint v)
 {
   uint c = v >> 3;
   if (c > 255)
     c = 255;
-  return TONE_MIN + ((c * (256 - TONE_MIN)) >> 8);
+  return gam[c];
 }
 
 static ushort

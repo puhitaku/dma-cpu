@@ -16,6 +16,7 @@ target triple = "thumbv6m-unknown-none-eabi"
 @rho = internal unnamed_addr constant [6 x [3 x i16]] [[3 x i16] [i16 192, i16 192, i16 192], [3 x i16] [i16 192, i16 192, i16 192], [3 x i16] [i16 192, i16 192, i16 192], [3 x i16] [i16 230, i16 45, i16 45], [3 x i16] [i16 45, i16 230, i16 45], [3 x i16] [i16 200, i16 195, i16 185]], align 2
 @wnrm = internal unnamed_addr constant [5 x [3 x i16]] [[3 x i16] [i16 0, i16 0, i16 -256], [3 x i16] [i16 0, i16 -256, i16 0], [3 x i16] [i16 0, i16 256, i16 0], [3 x i16] [i16 256, i16 0, i16 0], [3 x i16] [i16 -256, i16 0, i16 0]], align 2
 @PBASE = internal unnamed_addr constant [10 x i8] c"\00\04\14\18`dhlp\94", align 1
+@gam = internal unnamed_addr constant [256 x i8] c"\00\15\1C\22'+.258;=@BDFHJLNPRTUWYZ\\]_`bcefgijkmnoprstuvwxz{|}~\7F\80\81\82\83\84\85\86\87\88\89\8A\8B\8C\8D\8E\8F\90\90\91\92\93\94\95\96\97\97\98\99\9A\9B\9C\9C\9D\9E\9F\A0\A0\A1\A2\A3\A4\A4\A5\A6\A7\A7\A8\A9\AA\AA\AB\AC\AD\AD\AE\AF\AF\B0\B1\B2\B2\B3\B4\B4\B5\B6\B6\B7\B8\B8\B9\BA\BA\BB\BC\BC\BD\BE\BE\BF\C0\C0\C1\C2\C2\C3\C3\C4\C5\C5\C6\C7\C7\C8\C8\C9\CA\CA\CB\CB\CC\CD\CD\CE\CE\CF\CF\D0\D1\D1\D2\D2\D3\D4\D4\D5\D5\D6\D6\D7\D7\D8\D9\D9\DA\DA\DB\DB\DC\DC\DD\DD\DE\DF\DF\E0\E0\E1\E1\E2\E2\E3\E3\E4\E4\E5\E5\E6\E6\E7\E7\E8\E8\E9\E9\EA\EA\EB\EB\EC\EC\ED\ED\EE\EE\EF\EF\F0\F0\F1\F1\F2\F2\F3\F3\F4\F4\F5\F5\F6\F6\F7\F7\F8\F8\F9\F9\F9\FA\FA\FB\FB\FC\FC\FD\FD\FE\FE\FF\FF", align 1
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @radio_run() local_unnamed_addr #0 {
@@ -1460,41 +1461,47 @@ define internal fastcc void @face_point(i32 noundef range(i32 -2147483648, 10) %
 }
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, inaccessiblemem: none)
-define internal fastcc zeroext range(i16 2048, 0) i16 @patch_color(i32 noundef range(i32 -2147483648, 3044) %0, i32 noundef range(i32 0, 2) %1) unnamed_addr #6 {
+define internal fastcc zeroext i16 @patch_color(i32 noundef range(i32 -2147483648, 3044) %0, i32 noundef range(i32 0, 2) %1) unnamed_addr #6 {
   %3 = icmp eq i32 %1, 0
-  br i1 %3, label %4, label %30
+  br i1 %3, label %4, label %36
 
 4:                                                ; preds = %2
   %5 = getelementptr inbounds i16, ptr inttoptr (i32 537077808 to ptr), i32 %0
   %6 = load i16, ptr %5, align 2, !tbaa !14
   %7 = lshr i16 %6, 3
   %8 = tail call i16 @llvm.umin.i16(i16 %7, i16 255)
-  %9 = mul nuw i16 %8, 248
-  %10 = and i16 %9, -2048
-  %11 = add nuw i16 %10, 2048
-  %12 = getelementptr inbounds i16, ptr inttoptr (i32 537083968 to ptr), i32 %0
-  %13 = load i16, ptr %12, align 2, !tbaa !14
-  %14 = lshr i16 %13, 3
-  %15 = tail call i16 @llvm.umin.i16(i16 %14, i16 255)
-  %16 = mul nuw i16 %15, 248
-  %17 = lshr i16 %16, 5
-  %18 = add nuw nsw i16 %17, 64
-  %19 = and i16 %18, 2016
-  %20 = or disjoint i16 %19, %11
-  %21 = getelementptr inbounds i16, ptr inttoptr (i32 537090128 to ptr), i32 %0
-  %22 = load i16, ptr %21, align 2, !tbaa !14
-  %23 = lshr i16 %22, 3
-  %24 = tail call i16 @llvm.umin.i16(i16 %23, i16 255)
-  %25 = mul nuw i16 %24, 248
-  %26 = lshr i16 %25, 8
-  %27 = add nuw nsw i16 %26, 8
+  %9 = zext nneg i16 %8 to i32
+  %10 = getelementptr inbounds nuw [256 x i8], ptr @gam, i32 0, i32 %9
+  %11 = load i8, ptr %10, align 1, !tbaa !12
+  %12 = zext i8 %11 to i16
+  %13 = shl nuw i16 %12, 8
+  %14 = and i16 %13, -2048
+  %15 = getelementptr inbounds i16, ptr inttoptr (i32 537083968 to ptr), i32 %0
+  %16 = load i16, ptr %15, align 2, !tbaa !14
+  %17 = lshr i16 %16, 3
+  %18 = tail call i16 @llvm.umin.i16(i16 %17, i16 255)
+  %19 = zext nneg i16 %18 to i32
+  %20 = getelementptr inbounds nuw [256 x i8], ptr @gam, i32 0, i32 %19
+  %21 = load i8, ptr %20, align 1, !tbaa !12
+  %22 = zext i8 %21 to i16
+  %23 = shl nuw nsw i16 %22, 3
+  %24 = and i16 %23, 2016
+  %25 = or disjoint i16 %24, %14
+  %26 = getelementptr inbounds i16, ptr inttoptr (i32 537090128 to ptr), i32 %0
+  %27 = load i16, ptr %26, align 2, !tbaa !14
   %28 = lshr i16 %27, 3
-  %29 = or i16 %20, %28
-  br label %30
+  %29 = tail call i16 @llvm.umin.i16(i16 %28, i16 255)
+  %30 = zext nneg i16 %29 to i32
+  %31 = getelementptr inbounds nuw [256 x i8], ptr @gam, i32 0, i32 %30
+  %32 = load i8, ptr %31, align 1, !tbaa !12
+  %33 = lshr i8 %32, 3
+  %34 = zext nneg i8 %33 to i16
+  %35 = or disjoint i16 %25, %34
+  br label %36
 
-30:                                               ; preds = %2, %4
-  %31 = phi i16 [ %29, %4 ], [ -2, %2 ]
-  ret i16 %31
+36:                                               ; preds = %2, %4
+  %37 = phi i16 [ %35, %4 ], [ -2, %2 ]
+  ret i16 %37
 }
 
 ; Function Attrs: minsize optsize
