@@ -30,6 +30,8 @@ gmain(void)
     else if (g == 7)
       seq_run();
     else if (g == 8)
+      grad_run();
+    else if (g == 9)
       bench_run();
     else
       cpumon_run();

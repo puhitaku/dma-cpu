@@ -28,7 +28,8 @@ func TestProfileRadio(t *testing.T) {
 		m, prog := bootGame(t)
 		at := runUntil(t, m, "menu up", 0, 300_000_000)
 		for _, marker := range []string{"menu: LANWalk", "menu: Yacht",
-			"menu: Sequencer", "menu: Benchmark", "menu: Radiosity"} {
+			"menu: Parachute", "menu: Puni Puni", "menu: Boing",
+			"menu: Radiosity"} {
 			press(t, m, prog, pinDown)
 			at = runUntil(t, m, marker, at, 100_000_000)
 		}

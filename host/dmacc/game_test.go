@@ -42,7 +42,7 @@ func compileGameDasm(t *testing.T, tweak ...func(*dmacc.Options)) string {
 	t.Helper()
 	var mods []*llir.Module
 	for _, p := range []string{"gmain", "menu", "dino", "lanwalk", "yacht",
-		"input", "fx", "seq", "cpumon", "bench", "radio", "gfx",
+		"input", "fx", "seq", "grad", "cpumon", "bench", "radio", "gfx",
 		"boing", "chute", "puni", "lcd", "grt"} {
 		mods = append(mods, parseLL(t, "../../target/game/ll/"+p+".ll"))
 	}
@@ -584,6 +584,8 @@ func TestGameSeq(t *testing.T) {
 	at = runUntil(t, m, "menu: Arm Info", at, 100_000_000)
 	press(t, m, prog, pinUp) // -> Benchmark
 	at = runUntil(t, m, "menu: Benchmark", at, 100_000_000)
+	press(t, m, prog, pinUp) // -> Gradient
+	at = runUntil(t, m, "menu: Gradient", at, 100_000_000)
 	press(t, m, prog, pinUp) // -> Sequencer
 	at = runUntil(t, m, "menu: Sequencer", at, 100_000_000)
 	press(t, m, prog, pinA)
@@ -838,6 +840,163 @@ func TestGameRadio(t *testing.T) {
 	at = runUntil(t, m, "menu up", at, 200_000_000)
 	press(t, m, prog, pinDown) // the selection reset to the top row
 	runUntil(t, m, "menu: LANWalk", at, 200_000_000)
+}
+
+// gradEnter walks the menu down to Gradient and starts it, returning
+// the console offset just past the scene's "up" marker.
+func gradEnter(t *testing.T, m *emu.Machine, prog *dmaasm.Result) int {
+	t.Helper()
+	at := runUntil(t, m, "menu up", 0, 300_000_000)
+	for _, marker := range []string{"menu: LANWalk", "menu: Yacht",
+		"menu: Parachute", "menu: Puni Puni", "menu: Boing",
+		"menu: Radiosity", "menu: Sequencer", "menu: Gradient"} {
+		press(t, m, prog, pinDown)
+		at = runUntil(t, m, marker, at, 100_000_000)
+	}
+	press(t, m, prog, pinA)
+	return runUntil(t, m, "grad: up", at, 100_000_000)
+}
+
+// gradLabels counts the label box's grey inside one bar's numeral
+// band — zero until a channel band is wider than its numeral.
+func gradLabels(p *lcdPanel, ybar int) int {
+	return p.countColor(0, ybar+44, 239, ybar+51, rgb565(216, 200, 184))
+}
+
+// TestGameGrad: the panel gradient probe. The scene is an instrument,
+// so the test checks what the instrument claims — four ramps in the
+// right channels, each running dark to bright with no reversal, the
+// window responding to the stick, and the numerals appearing only once
+// a band is wide enough to hold one.
+func TestGameGrad(t *testing.T) {
+	t.Parallel()
+	m, prog := bootGame(t)
+	at := gradEnter(t, m, prog)
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 40_000_000}); err != nil {
+		t.Fatal(err) // let the default view finish its flush
+	}
+	p := decodeLCD(m, 16)
+	// The four bars start below the 16-px header; sample a row well
+	// clear of the numeral band at the bottom of each.
+	lev := func(y, x int) (int, int, int) {
+		c := p.px[y*240+x]
+		return int(c >> 11), int((c >> 5) & 0x3F), int(c & 0x1F)
+	}
+	bars := []struct {
+		name string
+		y    int
+		ch   int // 0=r 1=g 2=b, 3=grey
+	}{{"R", 30, 0}, {"G", 90, 1}, {"B", 145, 2}, {"W", 200, 3}}
+	for _, b := range bars {
+		r0, g0, b0 := lev(b.y, 8)
+		r1, g1, b1 := lev(b.y, 230)
+		var lo, hi int
+		switch b.ch {
+		case 0:
+			lo, hi = r0, r1
+			if g0|b0|g1|b1 != 0 {
+				t.Errorf("R bar is not pure red: %d,%d,%d .. %d,%d,%d",
+					r0, g0, b0, r1, g1, b1)
+			}
+		case 1:
+			lo, hi = g0, g1
+			if r0|b0|r1|b1 != 0 {
+				t.Errorf("G bar is not pure green: %d,%d,%d .. %d,%d,%d",
+					r0, g0, b0, r1, g1, b1)
+			}
+		case 2:
+			lo, hi = b0, b1
+			if r0|g0|r1|g1 != 0 {
+				t.Errorf("B bar is not pure blue: %d,%d,%d .. %d,%d,%d",
+					r0, g0, b0, r1, g1, b1)
+			}
+		default:
+			lo, hi = r0, r1
+			// grey: the 6-bit green carries one extra bit of the
+			// same code, so g>>1 is r and b exactly
+			if r0 != b0 || r1 != b1 || g0>>1 != r0 || g1>>1 != r1 {
+				t.Errorf("W bar is not grey: %d,%d,%d .. %d,%d,%d",
+					r0, g0, b0, r1, g1, b1)
+			}
+		}
+		// green counts in 6-bit codes, the rest in 5-bit
+		want := 28
+		if b.ch == 1 {
+			want = 56
+		}
+		if lo > 4 || hi < want {
+			t.Errorf("%s bar ramp: level %d at x=8, %d at x=230 (want <=4 .. >=%d)",
+				b.name, lo, hi, want)
+		}
+		// and it never runs backwards across the width
+		prev := 0
+		for x := 0; x < 240; x++ {
+			r, g, bl := lev(b.y, x)
+			v := r
+			if b.ch == 1 {
+				v = g
+			} else if b.ch == 2 {
+				v = bl
+			}
+			if v < prev {
+				t.Fatalf("%s bar falls at x=%d: %d after %d", b.name, x, v, prev)
+			}
+			prev = v
+		}
+	}
+	// full range: a band is 7.5 px wide (3.75 for green), far too
+	// narrow for a numeral, so no label boxes are painted at all
+	for _, ybar := range []int{16, 72, 128, 184} {
+		if n := gradLabels(p, ybar); n != 0 {
+			t.Errorf("bar at y=%d: %d label pixels at full range", ybar, n)
+		}
+	}
+	dumpPNG(t, p, "grad.png")
+
+	// Zoom in three times: the window closes on its center (0..255 ->
+	// 112..143), so the left edge brightens and the R and B bands grow
+	// wide enough to carry their numerals.
+	for i := 0; i < 3; i++ {
+		press(t, m, prog, pinUp)
+		at = runUntil(t, m, "grad: view ", at, 100_000_000)
+	}
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 40_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(m.ConsoleOut), "grad: view 112-143") {
+		t.Errorf("zoom did not land on 112-143; console tail:\n%s",
+			tailLines(string(m.ConsoleOut), 6))
+	}
+	p = decodeLCD(m, 16)
+	if r, _, _ := lev(30, 4); r < 12 {
+		t.Errorf("zoomed R bar starts at level %d, want >=12", r)
+	}
+	for _, ybar := range []int{16, 72, 128} {
+		if n := gradLabels(p, ybar); n < 200 {
+			t.Errorf("bar at y=%d: only %d label pixels when zoomed", ybar, n)
+		}
+	}
+	// ...but W stays a clean reference ramp, at every zoom
+	if n := gradLabels(p, 184); n != 0 {
+		t.Errorf("W bar carries %d label pixels; it must stay bare", n)
+	}
+
+	// press goes back, and the menu is live again
+	press(t, m, prog, pinA)
+	at = runUntil(t, m, "grad: back", at, 200_000_000)
+	at = runUntil(t, m, "menu up", at, 200_000_000)
+	press(t, m, prog, pinDown)
+	runUntil(t, m, "menu: LANWalk", at, 200_000_000)
+}
+
+// tailLines returns the last n lines of s, for failure messages that
+// want the console's end and not all of it.
+func tailLines(s string, n int) string {
+	ls := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(ls) > n {
+		ls = ls[len(ls)-n:]
+	}
+	return strings.Join(ls, "\n")
 }
 
 func TestGameBench(t *testing.T) {

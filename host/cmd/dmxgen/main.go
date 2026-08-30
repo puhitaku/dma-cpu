@@ -843,6 +843,7 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	dasm, err := compileLL([]string{"target/game/ll/gmain.ll", "target/game/ll/menu.ll",
 		"target/game/ll/dino.ll", "target/game/ll/lanwalk.ll", "target/game/ll/yacht.ll",
 		"target/game/ll/input.ll", "target/game/ll/fx.ll", "target/game/ll/seq.ll",
+		"target/game/ll/grad.ll",
 		"target/game/ll/cpumon.ll", "target/game/ll/bench.ll", "target/game/ll/radio.ll", "target/game/ll/gfx.ll",
 		"target/game/ll/boing.ll", "target/game/ll/chute.ll", "target/game/ll/puni.ll",
 		"target/game/ll/lcd.ll", "target/game/ll/grt.ll"},

@@ -163,6 +163,7 @@ void lanwalk_run(void);
 void yacht_run(void);
 void cpumon_run(void); /* the "CPU is asleep" monitor */
 void bench_run(void);  /* the fixed-work MIPS benchmark */
+void grad_run(void);   /* Gradient: the panel's brightness ramps */
 void radio_run(void);  /* progressive radiosity in the light box */
 void boing_run(void);  /* the precomputed bouncing-ball demo */
 void chute_run(void);  /* Parachute: defend the turret */
