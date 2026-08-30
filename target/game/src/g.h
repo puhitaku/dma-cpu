@@ -101,6 +101,18 @@ int gfx_cell_runs(const ushort *cell, int cw, int ch, ushort bg,
                   uchar *out, int cap); /* exact silhouette runs, for */
 void gfx_blit_runs(int x, int y, const ushort *src, int cw, int ch,
                    const uchar *rt); /* ...true-transparency blits */
+/* The 2x2 ordered dither. gfx_tile is THE BRUSH — the four colors a
+ * dithered fill lays down, indexed ((y&1)<<1)|(x&1) in SCREEN
+ * coordinates — and it is a global and not an argument because a
+ * whole patch, or a whole band of a ramp, is one brush: passing four
+ * halfwords down three call levels bought nothing but code. gfx_dither
+ * loads it from three channel codes on the panel's 0..255 axis and
+ * returns the three sub-level fractions it is spending, two bits each;
+ * gfx_dfill then fills with whatever the brush holds. See gfx.c for
+ * what the panel's levels are and why the tile is 2x2. */
+extern ushort gfx_tile[4];
+uint gfx_dither(uint rcode, uint gcode, uint bcode);
+void gfx_dfill(int x0, int y0, int w, int h);
 void gfx_damage(int x0, int y0, int x1, int y1);
 void gfx_present(void); /* flush the damage rect, reset it */
 
@@ -171,5 +183,42 @@ void puni_run(void);   /* Puni Puni: falling-pairs chain puzzle */
 
 #define RGB(r, g, b) \
   ((ushort)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | (((b) & 0xF8) >> 3)))
+
+/* --- the dither compensation curve ---
+ *
+ * ONE definition, shared by the two scenes that need it: grad.c's
+ * Compensate screen, where the strength is chosen by eye on silicon,
+ * and radio.c, which ships the number the screen settles on. v is a
+ * code on the panel's own 0..255 axis and k the strength in
+ * sixteenths:
+ *
+ *   D(v) = v * ((16-k)*255 + k*v) / (16*255)
+ *        = v - k*v*(255-v) / (16*255)
+ *
+ * k = 0 is the identity and k = 16 a gamma-2 darkening. Whatever k,
+ * the curve leaves v = 255 exactly where it found it and bends
+ * further below the straight line the darker v gets — the widening
+ * gap toward black, which is the shape the eye asks for and the shape
+ * a luminance-linear panel does not have.
+ *
+ * It is only usable BECAUSE of the 2x2 dither: the codes it produces
+ * land BETWEEN the panel's levels, and the fraction left over is what
+ * the dither spends. Without the density mix this curve would just
+ * re-quantize onto the same levels and change nothing.
+ *
+ * The /4080 is a multiply and a WHOLE-BYTE-LANE shift: 4112/2^24 is
+ * 1/4080 to 15 parts per million, far inside the last integer code,
+ * and a 24-bit shift is three lanes where the 20-bit one the same
+ * identity offers is neither — worth 400 bytes of flash on this
+ * machine, and measured. That keeps D monotone in v at every k
+ * (checked over the whole 17 x 256 table), D(0) = 0, and D(255) = 255
+ * exactly — the gap term carries a factor of (255-v), so the top of
+ * the range cannot move. k*v*(255-v)*4112 peaks at 1.07e9, inside u32
+ * with room. */
+static uint
+gcomp(uint v, uint k)
+{
+  return v - ((k * v * (255u - v) * 4112u) >> 24);
+}
 
 #endif

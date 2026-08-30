@@ -8,7 +8,10 @@ target triple = "thumbv6m-unknown-none-eabi"
 @dx1 = internal unnamed_addr global i32 0, align 4
 @dy1 = internal unnamed_addr global i32 0, align 4
 @fb = dso_local global [57600 x i16] zeroinitializer, align 2
-@fillword = internal global i32 0, align 4
+@gfx_tile = dso_local local_unnamed_addr global [4 x i16] zeroinitializer, align 2
+@fillword = internal global [2 x i32] zeroinitializer, align 4
+@dbmp = internal unnamed_addr constant [64 x [4 x i8]] [[4 x i8] zeroinitializer, [4 x i8] c"\04\00\00\00", [4 x i8] c"\04\00\00\04", [4 x i8] c"\04\04\00\04", [4 x i8] c"\02\00\00\00", [4 x i8] c"\06\00\00\00", [4 x i8] c"\06\00\00\04", [4 x i8] c"\06\04\00\04", [4 x i8] c"\02\00\00\02", [4 x i8] c"\06\00\00\02", [4 x i8] c"\06\00\00\06", [4 x i8] c"\06\04\00\06", [4 x i8] c"\02\02\00\02", [4 x i8] c"\06\02\00\02", [4 x i8] c"\06\02\00\06", [4 x i8] c"\06\06\00\06", [4 x i8] c"\01\00\00\00", [4 x i8] c"\05\00\00\00", [4 x i8] c"\05\00\00\04", [4 x i8] c"\05\04\00\04", [4 x i8] c"\03\00\00\00", [4 x i8] c"\07\00\00\00", [4 x i8] c"\07\00\00\04", [4 x i8] c"\07\04\00\04", [4 x i8] c"\03\00\00\02", [4 x i8] c"\07\00\00\02", [4 x i8] c"\07\00\00\06", [4 x i8] c"\07\04\00\06", [4 x i8] c"\03\02\00\02", [4 x i8] c"\07\02\00\02", [4 x i8] c"\07\02\00\06", [4 x i8] c"\07\06\00\06", [4 x i8] c"\01\00\00\01", [4 x i8] c"\05\00\00\01", [4 x i8] c"\05\00\00\05", [4 x i8] c"\05\04\00\05", [4 x i8] c"\03\00\00\01", [4 x i8] c"\07\00\00\01", [4 x i8] c"\07\00\00\05", [4 x i8] c"\07\04\00\05", [4 x i8] c"\03\00\00\03", [4 x i8] c"\07\00\00\03", [4 x i8] c"\07\00\00\07", [4 x i8] c"\07\04\00\07", [4 x i8] c"\03\02\00\03", [4 x i8] c"\07\02\00\03", [4 x i8] c"\07\02\00\07", [4 x i8] c"\07\06\00\07", [4 x i8] c"\01\01\00\01", [4 x i8] c"\05\01\00\01", [4 x i8] c"\05\01\00\05", [4 x i8] c"\05\05\00\05", [4 x i8] c"\03\01\00\01", [4 x i8] c"\07\01\00\01", [4 x i8] c"\07\01\00\05", [4 x i8] c"\07\05\00\05", [4 x i8] c"\03\01\00\03", [4 x i8] c"\07\01\00\03", [4 x i8] c"\07\01\00\07", [4 x i8] c"\07\05\00\07", [4 x i8] c"\03\03\00\03", [4 x i8] c"\07\03\00\03", [4 x i8] c"\07\03\00\07", [4 x i8] c"\07\07\00\07"], align 1
+@dinc = internal unnamed_addr constant [8 x i16] [i16 0, i16 1, i16 32, i16 33, i16 2048, i16 2049, i16 2080, i16 2081], align 2
 @fbfont = internal unnamed_addr constant [1024 x i8] c"\00\00\00\00\00\00\00\00<B\A5\81\A5\99B<<~\DB\FF\FF\DBf<l\FE\FE\FE|8\10\00\108|\FE|8\10\00\108T\FET\108\00\108|\FE\FE\108\00\00\00\0000\00\00\00\FF\FF\FF\E7\E7\FF\FF\FF8D\82\82\82D8\00\C7\BB}}}\BB\C7\FF\0F\03\05y\88\88\88p8DDD8\10|\100($$( \E0\C0<$<$$\E4\DC\18\10T8\EE8T\10\00\80\C0\E0\F0\E0\C0\80\00\01\03\07\0F\07\03\01\00\10\10\10|\10\10\10\10\FCHHH\E8\08P |\A8\A8h(((\008@0HH0\08p\00\00\00<<\00\00\00  p p  \00\FF\FF\00\00\00\00\00\00\00\00\00\00\00\00\FF\FF\03\03\03\03\03\03\03\03\C0\C0\C0\C0\C0\C0\C0\C0\00\10\10\FF\10\10\00\00\00 P\88P \00\00\00\00\00\00\108|\FE\FE|8\10\00\00\00\00\00\00\00\00\00\00\00\00    \00\00 \00PPP\00\00\00\00\00PP\F8P\F8PP\00 x\A0p(\F0 \00\C0\C8\10 @\98\18\00@\A0@\A8\90\98`\00\10 @\00\00\00\00\00\10 @@@ \10\00@ \10\10\10 @\00 \A8p p\A8 \00\00  \F8  \00\00\00\00\00\00\00  @\00\00\00x\00\00\00\00\00\00\00\00\00``\00\00\00\08\10 @\80\00p\88\98\A8\C8\88p\00 `\A0   \F8\00p\88\08\10`\80\F8\00p\88\080\08\88p\00\100P\90\F8\10\10\00\F8\80\E0\10\08\10\E0\000@\80\F0\88\88p\00\F8\88\10    \00p\88\88p\88\88p\00p\88\88x\08\10`\00\00\00 \00\00 \00\00\00\00 \00\00  @\00\10 @ \10\00\00\00\00\F8\00\F8\00\00\00\00@ \10 @\00\00p\88\08\10 \00 \00\00p\A8\A8\B0\80p\00 P\88\88\F8\88\88\00\F0HHpHH\F0\000H\80\80\80H0\00\E0PHHHP\E0\00\F8\80\80\F0\80\80\F8\00\F8\80\80\F0\80\80\80\00p\88\80\B8\88\88p\00\88\88\88\F8\88\88\88\00p     p\008\10\10\10\90\90`\00\88\90\A0\C0\A0\90\88\00\80\80\80\80\80\80\F8\00\88\D8\A8\A8\88\88\88\00\88\C8\C8\A8\98\98\88\00p\88\88\88\88\88p\00\F0\88\88\F0\80\80\80\00p\88\88\88\A8\90h\00\F0\88\88\F0\A0\90\88\00p\88\80p\08\88p\00\F8      \00\88\88\88\88\88\88p\00\88\88\88\88PP \00\88\88\88\A8\A8\D8\88\00\88\88P P\88\88\00\88\88\88p   \00\F8\08\10 @\80\F8\00p@@@@@p\00\00\00\80@ \10\08\00p\10\10\10\10\10p\00 P\88\00\00\00\00\00\00\00\00\00\00\00\F8\00@ \10\00\00\00\00\00\00\00p\08x\88x\00\80\80\B0\C8\88\C8\B0\00\00\00p\88\80\88p\00\08\08h\98\88\98h\00\00\00p\88\F8\80p\00\10( \F8   \00\00\00h\98\98h\08p\80\80\F0\88\88\88\88\00 \00`   p\00\10\000\10\10\10\90`@@HP`PH\00`     p\00\00\00\D0\A8\A8\A8\A8\00\00\00\B0\C8\88\88\88\00\00\00p\88\88\88p\00\00\00\B0\C8\C8\B0\80\80\00\00h\98\98h\08\08\00\00\B0\C8\80\80\80\00\00\00x\80\F0\08\F0\00@@\F0@@H0\00\00\00\90\90\90\90h\00\00\00\88\88\88P \00\00\00\88\A8\A8\A8P\00\00\00\88P P\88\00\00\00\88\88\98h\08p\00\00\F8\10 @\F8\00\18  @  \18\00   \00   \00\C0  \10  \C0\00@\A8\10\00\00\00\00\00\00\00 P\F8\00\00\00", align 1
 @half_tab = internal unnamed_addr global [241 x i8] zeroinitializer, align 1
 
@@ -75,7 +78,7 @@ define dso_local void @gfx_present() local_unnamed_addr #1 {
 4:                                                ; preds = %0
   %5 = load i32, ptr @dy0, align 4, !tbaa !3
   %6 = load i32, ptr @dy1, align 4, !tbaa !3
-  tail call void @lcd_flush(i32 noundef %2, i32 noundef %5, i32 noundef %1, i32 noundef %6) #7
+  tail call void @lcd_flush(i32 noundef %2, i32 noundef %5, i32 noundef %1, i32 noundef %6) #10
   store i32 240, ptr @dx0, align 4, !tbaa !3
   store i32 240, ptr @dy0, align 4, !tbaa !3
   store i32 -1, ptr @dx1, align 4, !tbaa !3
@@ -93,8 +96,8 @@ declare dso_local void @lcd_flush(i32 noundef, i32 noundef, i32 noundef, i32 nou
 define dso_local void @gfx_clear(i16 noundef zeroext %0) local_unnamed_addr #1 {
   %2 = zext i16 %0 to i32
   %3 = mul nuw i32 %2, 65537
-  tail call void @gdma_fill(i32 noundef ptrtoint (ptr @fb to i32), i32 noundef %3, i32 noundef 115200) #7
-  tail call void @gfx_damage(i32 noundef 0, i32 noundef 0, i32 noundef 239, i32 noundef 239) #8
+  tail call void @gdma_fill(i32 noundef ptrtoint (ptr @fb to i32), i32 noundef %3, i32 noundef 115200) #10
+  tail call void @gfx_damage(i32 noundef 0, i32 noundef 0, i32 noundef 239, i32 noundef 239) #11
   ret void
 }
 
@@ -102,91 +105,143 @@ define dso_local void @gfx_clear(i16 noundef zeroext %0) local_unnamed_addr #1 {
 declare dso_local void @gdma_fill(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #2
 
 ; Function Attrs: minsize nounwind optsize
-define dso_local void @gfx_fill(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3, i16 noundef zeroext %4) local_unnamed_addr #1 {
-  %6 = tail call i32 @llvm.smin.i32(i32 %0, i32 0)
-  %7 = add nsw i32 %2, %6
-  %8 = tail call i32 @llvm.smax.i32(i32 %0, i32 0)
-  %9 = tail call i32 @llvm.smax.i32(i32 %1, i32 0)
-  %10 = tail call i32 @llvm.smin.i32(i32 %1, i32 0)
-  %11 = add i32 %3, %10
-  %12 = add nsw i32 %7, %8
-  %13 = icmp sgt i32 %12, 240
-  %14 = sub nsw i32 240, %8
-  %15 = select i1 %13, i32 %14, i32 %7
-  %16 = add i32 %11, %9
-  %17 = icmp sgt i32 %16, 240
-  %18 = sub nsw i32 240, %9
-  %19 = select i1 %17, i32 %18, i32 %11
-  %20 = icmp slt i32 %15, 1
-  br i1 %20, label %55, label %21
+define dso_local void @gfx_dfill(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3) local_unnamed_addr #1 {
+  %5 = tail call i32 @llvm.smin.i32(i32 %0, i32 0)
+  %6 = add nsw i32 %2, %5
+  %7 = tail call i32 @llvm.smax.i32(i32 %0, i32 0)
+  %8 = tail call i32 @llvm.smin.i32(i32 %1, i32 0)
+  %9 = add nsw i32 %3, %8
+  %10 = tail call i32 @llvm.smax.i32(i32 %1, i32 0)
+  %11 = add nsw i32 %6, %7
+  %12 = icmp sgt i32 %11, 240
+  %13 = sub nsw i32 240, %7
+  %14 = select i1 %12, i32 %13, i32 %6
+  %15 = add nsw i32 %9, %10
+  %16 = icmp sgt i32 %15, 240
+  %17 = sub nsw i32 240, %10
+  %18 = select i1 %16, i32 %17, i32 %9
+  %19 = icmp slt i32 %14, 1
+  br i1 %19, label %83, label %20
 
-21:                                               ; preds = %5
-  %22 = icmp slt i32 %19, 1
-  br i1 %22, label %55, label %23
+20:                                               ; preds = %4
+  %21 = icmp slt i32 %18, 1
+  br i1 %21, label %83, label %22
 
-23:                                               ; preds = %21
-  %24 = mul nuw nsw i32 %9, 240
-  %25 = add nuw nsw i32 %24, %8
-  %26 = getelementptr inbounds nuw [57600 x i16], ptr @fb, i32 0, i32 %25
-  %27 = ptrtoint ptr %26 to i32
-  %28 = and i32 %27, 2
-  %29 = and i32 %15, 1
-  %30 = or disjoint i32 %28, %29
-  %31 = icmp eq i32 %30, 0
-  br i1 %31, label %32, label %36
+22:                                               ; preds = %20
+  %23 = add nsw i32 %14, -1
+  %24 = add nuw i32 %23, %7
+  %25 = add nsw i32 %10, -1
+  %26 = add i32 %25, %18
+  tail call void @gfx_damage(i32 noundef %7, i32 noundef %10, i32 noundef %24, i32 noundef %26) #11
+  %27 = and i32 %10, 1
+  %28 = shl nuw nsw i32 %27, 2
+  %29 = getelementptr inbounds nuw i8, ptr @gfx_tile, i32 %28
+  %30 = xor i32 %27, 1
+  %31 = shl nuw nsw i32 %30, 2
+  %32 = getelementptr inbounds nuw i8, ptr @gfx_tile, i32 %31
+  %33 = mul nuw nsw i32 %10, 240
+  %34 = add nuw nsw i32 %33, %7
+  %35 = getelementptr inbounds nuw [57600 x i16], ptr @fb, i32 0, i32 %34
+  tail call void @gd_wait() #10
+  %36 = and i32 %7, 1
+  %37 = icmp eq i32 %36, 0
+  br i1 %37, label %44, label %38
 
-32:                                               ; preds = %23
-  %33 = zext i16 %4 to i32
-  %34 = mul nuw i32 %33, 65537
-  store i32 %34, ptr @fillword, align 4, !tbaa !3
-  %35 = tail call fastcc i32 @halfof(i32 noundef %15) #8
-  tail call void @gdma_rows(i32 noundef %27, i32 noundef ptrtoint (ptr @fillword to i32), i32 noundef %35, i32 noundef %19, i32 noundef 480, i32 noundef 0) #7
-  br label %50
+38:                                               ; preds = %22
+  %39 = getelementptr inbounds nuw i8, ptr %29, i32 2
+  %40 = load i16, ptr %39, align 2, !tbaa !7
+  %41 = getelementptr inbounds nuw i8, ptr %32, i32 2
+  %42 = load i16, ptr %41, align 2, !tbaa !7
+  tail call fastcc void @vline2(ptr noundef nonnull %35, i32 noundef %18, i16 noundef zeroext %40, i16 noundef zeroext %42) #11
+  %43 = getelementptr inbounds nuw i8, ptr %35, i32 2
+  br label %44
 
-36:                                               ; preds = %23
-  tail call void @gd_wait() #7
-  br label %37
+44:                                               ; preds = %38, %22
+  %45 = phi i32 [ %23, %38 ], [ %14, %22 ]
+  %46 = phi ptr [ %43, %38 ], [ %35, %22 ]
+  %47 = and i32 %45, 1
+  %48 = icmp eq i32 %47, 0
+  br i1 %48, label %55, label %49
 
-37:                                               ; preds = %44, %36
-  %38 = phi ptr [ %26, %36 ], [ %46, %44 ]
-  %39 = phi i32 [ 0, %36 ], [ %45, %44 ]
-  %40 = icmp eq i32 %39, %19
-  br i1 %40, label %50, label %41
-
-41:                                               ; preds = %37, %47
-  %42 = phi i32 [ %49, %47 ], [ 0, %37 ]
-  %43 = icmp eq i32 %42, %15
-  br i1 %43, label %44, label %47
-
-44:                                               ; preds = %41
-  %45 = add nuw i32 %39, 1
-  %46 = getelementptr inbounds nuw i8, ptr %38, i32 480
-  br label %37, !llvm.loop !7
-
-47:                                               ; preds = %41
-  %48 = getelementptr inbounds nuw i16, ptr %38, i32 %42
-  store i16 %4, ptr %48, align 2, !tbaa !10
-  %49 = add nuw i32 %42, 1
-  br label %41, !llvm.loop !12
-
-50:                                               ; preds = %37, %32
-  %51 = add nsw i32 %8, -1
-  %52 = add i32 %51, %15
-  %53 = add nsw i32 %9, -1
-  %54 = add i32 %53, %19
-  tail call void @gfx_damage(i32 noundef %8, i32 noundef %9, i32 noundef %52, i32 noundef %54) #8
+49:                                               ; preds = %44
+  %50 = getelementptr inbounds nuw i16, ptr %46, i32 %45
+  %51 = getelementptr inbounds i8, ptr %50, i32 -2
+  %52 = load i16, ptr %29, align 2, !tbaa !7
+  %53 = load i16, ptr %32, align 2, !tbaa !7
+  tail call fastcc void @vline2(ptr noundef nonnull %51, i32 noundef %18, i16 noundef zeroext %52, i16 noundef zeroext %53) #11
+  %54 = add nsw i32 %45, -1
   br label %55
 
-55:                                               ; preds = %5, %21, %50
+55:                                               ; preds = %49, %44
+  %56 = phi i32 [ %54, %49 ], [ %45, %44 ]
+  %57 = icmp eq i32 %56, 0
+  br i1 %57, label %83, label %58
+
+58:                                               ; preds = %55
+  %59 = load i16, ptr @gfx_tile, align 2, !tbaa !7
+  %60 = zext i16 %59 to i32
+  %61 = load i16, ptr getelementptr inbounds nuw (i8, ptr @gfx_tile, i32 2), align 2, !tbaa !7
+  %62 = zext i16 %61 to i32
+  %63 = shl nuw i32 %62, 16
+  %64 = or disjoint i32 %63, %60
+  store i32 %64, ptr @fillword, align 4, !tbaa !3
+  %65 = load i16, ptr getelementptr inbounds nuw (i8, ptr @gfx_tile, i32 4), align 2, !tbaa !7
+  %66 = zext i16 %65 to i32
+  %67 = load i16, ptr getelementptr inbounds nuw (i8, ptr @gfx_tile, i32 6), align 2, !tbaa !7
+  %68 = zext i16 %67 to i32
+  %69 = shl nuw i32 %68, 16
+  %70 = or disjoint i32 %69, %66
+  store i32 %70, ptr getelementptr inbounds nuw (i8, ptr @fillword, i32 4), align 4, !tbaa !3
+  %71 = tail call fastcc i32 @halfof(i32 noundef %56) #11
+  %72 = tail call fastcc i32 @halfof(i32 noundef %18) #11
+  %73 = ptrtoint ptr %46 to i32
+  %74 = getelementptr inbounds nuw [2 x i32], ptr @fillword, i32 0, i32 %27
+  %75 = ptrtoint ptr %74 to i32
+  %76 = sub nsw i32 %18, %72
+  tail call void @gdma_rows(i32 noundef %73, i32 noundef %75, i32 noundef %71, i32 noundef %76, i32 noundef 960, i32 noundef 0) #10
+  %77 = icmp eq i32 %72, 0
+  br i1 %77, label %83, label %78
+
+78:                                               ; preds = %58
+  %79 = getelementptr inbounds nuw i8, ptr %46, i32 480
+  %80 = ptrtoint ptr %79 to i32
+  %81 = getelementptr inbounds nuw [2 x i32], ptr @fillword, i32 0, i32 %30
+  %82 = ptrtoint ptr %81 to i32
+  tail call void @gdma_rows(i32 noundef %80, i32 noundef %82, i32 noundef %71, i32 noundef %72, i32 noundef 960, i32 noundef 0) #10
+  br label %83
+
+83:                                               ; preds = %55, %78, %58, %4, %20
   ret void
 }
 
 ; Function Attrs: minsize optsize
-declare dso_local void @gdma_rows(i32 noundef, i32 noundef, i32 noundef, i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #2
+declare dso_local void @gd_wait() local_unnamed_addr #2
+
+; Function Attrs: minsize nofree noinline norecurse nosync nounwind optsize memory(argmem: write)
+define internal fastcc void @vline2(ptr noundef writeonly captures(none) %0, i32 noundef range(i32 1, -2147483648) %1, i16 noundef zeroext %2, i16 noundef zeroext %3) unnamed_addr #3 {
+  br label %5
+
+5:                                                ; preds = %12, %4
+  %6 = phi i16 [ %2, %4 ], [ %7, %12 ]
+  %7 = phi i16 [ %3, %4 ], [ %6, %12 ]
+  %8 = phi i32 [ 0, %4 ], [ %13, %12 ]
+  %9 = phi ptr [ %0, %4 ], [ %14, %12 ]
+  %10 = icmp eq i32 %8, %1
+  br i1 %10, label %11, label %12
+
+11:                                               ; preds = %5
+  ret void
+
+12:                                               ; preds = %5
+  store i16 %6, ptr %9, align 2, !tbaa !7
+  %13 = add nuw i32 %8, 1
+  %14 = getelementptr inbounds nuw i8, ptr %9, i32 480
+  br label %5, !llvm.loop !9
+}
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(readwrite, argmem: none, inaccessiblemem: none)
-define internal fastcc range(i32 0, 256) i32 @halfof(i32 noundef range(i32 1, -2147483648) %0) unnamed_addr #3 {
-  %2 = load i8, ptr getelementptr inbounds nuw (i8, ptr @half_tab, i32 2), align 1, !tbaa !13
+define internal fastcc range(i32 0, 256) i32 @halfof(i32 noundef range(i32 1, -2147483648) %0) unnamed_addr #4 {
+  %2 = load i8, ptr getelementptr inbounds nuw (i8, ptr @half_tab, i32 2), align 1, !tbaa !12
   %3 = icmp eq i8 %2, 0
   br i1 %3, label %4, label %14
 
@@ -199,31 +254,93 @@ define internal fastcc range(i32 0, 256) i32 @halfof(i32 noundef range(i32 1, -2
 8:                                                ; preds = %4
   %9 = trunc i32 %5 to i8
   %10 = getelementptr inbounds nuw [241 x i8], ptr @half_tab, i32 0, i32 %6
-  store i8 %9, ptr %10, align 1, !tbaa !13
+  store i8 %9, ptr %10, align 1, !tbaa !12
   %11 = and i32 %6, 1
   %12 = add i32 %11, %5
   %13 = add nuw nsw i32 %6, 1
-  br label %4, !llvm.loop !14
+  br label %4, !llvm.loop !13
 
 14:                                               ; preds = %4, %1
   %15 = getelementptr inbounds nuw [241 x i8], ptr @half_tab, i32 0, i32 %0
-  %16 = load i8, ptr %15, align 1, !tbaa !13
+  %16 = load i8, ptr %15, align 1, !tbaa !12
   %17 = zext i8 %16 to i32
   ret i32 %17
 }
 
 ; Function Attrs: minsize optsize
-declare dso_local void @gd_wait() local_unnamed_addr #2
+declare dso_local void @gdma_rows(i32 noundef, i32 noundef, i32 noundef, i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #2
+
+; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(write, argmem: none, inaccessiblemem: none)
+define dso_local range(i32 0, 64) i32 @gfx_dither(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #5 {
+  %4 = lshr i32 %0, 1
+  %5 = tail call fastcc i32 @clampu(i32 noundef %4, i32 noundef 124) #11
+  %6 = tail call fastcc i32 @clampu(i32 noundef %1, i32 noundef 252) #11
+  %7 = lshr i32 %2, 1
+  %8 = tail call fastcc i32 @clampu(i32 noundef %7, i32 noundef 124) #11
+  %9 = and i32 %5, 3
+  %10 = shl nuw nsw i32 %6, 2
+  %11 = and i32 %10, 12
+  %12 = or disjoint i32 %11, %9
+  %13 = shl nuw nsw i32 %8, 4
+  %14 = and i32 %13, 48
+  %15 = or disjoint i32 %12, %14
+  %16 = getelementptr inbounds nuw [64 x [4 x i8]], ptr @dbmp, i32 0, i32 %15
+  %17 = shl nuw nsw i32 %5, 9
+  %18 = and i32 %17, 63488
+  %19 = shl nuw nsw i32 %6, 3
+  %20 = and i32 %19, 2016
+  %21 = or disjoint i32 %20, %18
+  %22 = lshr i32 %8, 2
+  %23 = or i32 %21, %22
+  %24 = trunc nuw i32 %23 to i16
+  br label %25
+
+25:                                               ; preds = %29, %3
+  %26 = phi i32 [ 0, %3 ], [ %37, %29 ]
+  %27 = icmp eq i32 %26, 4
+  br i1 %27, label %28, label %29
+
+28:                                               ; preds = %25
+  ret i32 %15
+
+29:                                               ; preds = %25
+  %30 = getelementptr inbounds nuw i8, ptr %16, i32 %26
+  %31 = load i8, ptr %30, align 1, !tbaa !12
+  %32 = zext i8 %31 to i32
+  %33 = getelementptr inbounds nuw [8 x i16], ptr @dinc, i32 0, i32 %32
+  %34 = load i16, ptr %33, align 2, !tbaa !7
+  %35 = add i16 %34, %24
+  %36 = getelementptr inbounds nuw i16, ptr @gfx_tile, i32 %26
+  store i16 %35, ptr %36, align 2, !tbaa !7
+  %37 = add nuw nsw i32 %26, 1
+  br label %25, !llvm.loop !14
+}
+
+; Function Attrs: minsize mustprogress nofree noinline norecurse nosync nounwind optsize willreturn memory(none)
+define internal fastcc range(i32 0, 253) i32 @clampu(i32 noundef %0, i32 noundef range(i32 124, 253) %1) unnamed_addr #6 {
+  %3 = tail call i32 @llvm.umin.i32(i32 %0, i32 %1)
+  ret i32 %3
+}
+
+; Function Attrs: minsize nounwind optsize
+define dso_local void @gfx_fill(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3, i16 noundef zeroext %4) local_unnamed_addr #1 {
+  store i16 %4, ptr @gfx_tile, align 2, !tbaa !7
+  store i16 %4, ptr getelementptr inbounds nuw (i8, ptr @gfx_tile, i32 2), align 2, !tbaa !7
+  store i16 %4, ptr getelementptr inbounds nuw (i8, ptr @gfx_tile, i32 4), align 2, !tbaa !7
+  store i16 %4, ptr getelementptr inbounds nuw (i8, ptr @gfx_tile, i32 6), align 2, !tbaa !7
+  tail call void @gfx_dfill(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3) #11
+  ret void
+}
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @gfx_text(i32 noundef %0, i32 noundef %1, ptr noundef readonly captures(none) %2, i16 noundef zeroext %3, i16 noundef zeroext %4) local_unnamed_addr #1 {
-  tail call void @gd_wait() #7
+  tail call void @gd_wait() #10
   br label %6
 
 6:                                                ; preds = %22, %5
   %7 = phi i32 [ %0, %5 ], [ %11, %22 ]
   %8 = phi ptr [ %2, %5 ], [ %23, %22 ]
-  %9 = load i8, ptr %8, align 1, !tbaa !13
+  %9 = load i8, ptr %8, align 1, !tbaa !12
   %10 = icmp ne i8 %9, 0
   %11 = add nsw i32 %7, 8
   %12 = icmp slt i32 %7, 233
@@ -252,7 +369,7 @@ define dso_local void @gfx_text(i32 noundef %0, i32 noundef %1, ptr noundef read
   %27 = add nsw i32 %26, %7
   %28 = getelementptr inbounds [57600 x i16], ptr @fb, i32 0, i32 %27
   %29 = getelementptr inbounds nuw i8, ptr %18, i32 %20
-  %30 = load i8, ptr %29, align 1, !tbaa !13
+  %30 = load i8, ptr %29, align 1, !tbaa !12
   %31 = zext i8 %30 to i32
   br label %32
 
@@ -271,7 +388,7 @@ define dso_local void @gfx_text(i32 noundef %0, i32 noundef %1, ptr noundef read
   %40 = icmp eq i32 %39, 0
   %41 = select i1 %40, i16 %4, i16 %3
   %42 = getelementptr inbounds nuw i16, ptr %28, i32 %34
-  store i16 %41, ptr %42, align 2, !tbaa !10
+  store i16 %41, ptr %42, align 2, !tbaa !7
   %43 = add nsw i32 %34, -1
   %44 = shl i32 %33, 1
   br label %32, !llvm.loop !17
@@ -279,19 +396,19 @@ define dso_local void @gfx_text(i32 noundef %0, i32 noundef %1, ptr noundef read
 45:                                               ; preds = %6
   %46 = add nsw i32 %7, -1
   %47 = add nsw i32 %1, 7
-  tail call void @gfx_damage(i32 noundef %0, i32 noundef %1, i32 noundef %46, i32 noundef %47) #8
+  tail call void @gfx_damage(i32 noundef %0, i32 noundef %1, i32 noundef %46, i32 noundef %47) #11
   ret void
 }
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @gfx_text2(i32 noundef %0, i32 noundef %1, ptr noundef readonly captures(none) %2, i16 noundef zeroext %3, i16 noundef zeroext %4) local_unnamed_addr #1 {
-  tail call void @gd_wait() #7
+  tail call void @gd_wait() #10
   br label %6
 
 6:                                                ; preds = %22, %5
   %7 = phi i32 [ %0, %5 ], [ %11, %22 ]
   %8 = phi ptr [ %2, %5 ], [ %23, %22 ]
-  %9 = load i8, ptr %8, align 1, !tbaa !13
+  %9 = load i8, ptr %8, align 1, !tbaa !12
   %10 = icmp ne i8 %9, 0
   %11 = add nsw i32 %7, 16
   %12 = icmp slt i32 %7, 225
@@ -321,7 +438,7 @@ define dso_local void @gfx_text2(i32 noundef %0, i32 noundef %1, ptr noundef rea
   %28 = add nsw i32 %27, %7
   %29 = getelementptr inbounds [57600 x i16], ptr @fb, i32 0, i32 %28
   %30 = getelementptr inbounds nuw i8, ptr %18, i32 %20
-  %31 = load i8, ptr %30, align 1, !tbaa !13
+  %31 = load i8, ptr %30, align 1, !tbaa !12
   %32 = zext i8 %31 to i32
   br label %33
 
@@ -341,13 +458,13 @@ define dso_local void @gfx_text2(i32 noundef %0, i32 noundef %1, ptr noundef rea
   %42 = select i1 %41, i16 %4, i16 %3
   %43 = shl nuw nsw i32 %35, 2
   %44 = getelementptr inbounds nuw i8, ptr %29, i32 %43
-  store i16 %42, ptr %44, align 2, !tbaa !10
+  store i16 %42, ptr %44, align 2, !tbaa !7
   %45 = getelementptr inbounds nuw i8, ptr %44, i32 2
-  store i16 %42, ptr %45, align 2, !tbaa !10
+  store i16 %42, ptr %45, align 2, !tbaa !7
   %46 = getelementptr inbounds nuw i8, ptr %44, i32 480
-  store i16 %42, ptr %46, align 2, !tbaa !10
+  store i16 %42, ptr %46, align 2, !tbaa !7
   %47 = getelementptr inbounds nuw i8, ptr %44, i32 482
-  store i16 %42, ptr %47, align 2, !tbaa !10
+  store i16 %42, ptr %47, align 2, !tbaa !7
   %48 = add nsw i32 %35, -1
   %49 = shl i32 %34, 1
   br label %33, !llvm.loop !20
@@ -355,23 +472,23 @@ define dso_local void @gfx_text2(i32 noundef %0, i32 noundef %1, ptr noundef rea
 50:                                               ; preds = %6
   %51 = add nsw i32 %7, -1
   %52 = add nsw i32 %1, 15
-  tail call void @gfx_damage(i32 noundef %0, i32 noundef %1, i32 noundef %51, i32 noundef %52) #8
+  tail call void @gfx_damage(i32 noundef %0, i32 noundef %1, i32 noundef %51, i32 noundef %52) #11
   ret void
 }
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @gfx_rect(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %3, i32 noundef %4, i16 noundef zeroext %5) local_unnamed_addr #1 {
-  tail call void @gfx_fill(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %4, i16 noundef zeroext %5) #8
+  tail call void @gfx_fill(i32 noundef %0, i32 noundef %1, i32 noundef %2, i32 noundef %4, i16 noundef zeroext %5) #11
   %7 = add nsw i32 %3, %1
   %8 = sub i32 %7, %4
-  tail call void @gfx_fill(i32 noundef %0, i32 noundef %8, i32 noundef %2, i32 noundef %4, i16 noundef zeroext %5) #8
+  tail call void @gfx_fill(i32 noundef %0, i32 noundef %8, i32 noundef %2, i32 noundef %4, i16 noundef zeroext %5) #11
   %9 = add nsw i32 %4, %1
   %10 = shl nsw i32 %4, 1
   %11 = sub nsw i32 %3, %10
-  tail call void @gfx_fill(i32 noundef %0, i32 noundef %9, i32 noundef %4, i32 noundef %11, i16 noundef zeroext %5) #8
+  tail call void @gfx_fill(i32 noundef %0, i32 noundef %9, i32 noundef %4, i32 noundef %11, i16 noundef zeroext %5) #11
   %12 = add nsw i32 %2, %0
   %13 = sub i32 %12, %4
-  tail call void @gfx_fill(i32 noundef %13, i32 noundef %9, i32 noundef %4, i32 noundef %11, i16 noundef zeroext %5) #8
+  tail call void @gfx_fill(i32 noundef %13, i32 noundef %9, i32 noundef %4, i32 noundef %11, i16 noundef zeroext %5) #11
   ret void
 }
 
@@ -433,9 +550,9 @@ define dso_local void @gfx_blit(i32 noundef %0, i32 noundef %1, ptr noundef %2, 
   br label %29, !llvm.loop !21
 
 49:                                               ; preds = %34
-  %50 = tail call fastcc i32 @halfof(i32 noundef %21) #8
+  %50 = tail call fastcc i32 @halfof(i32 noundef %21) #11
   %51 = shl i32 %3, 1
-  tail call void @gdma_rows(i32 noundef %40, i32 noundef %36, i32 noundef %50, i32 noundef %25, i32 noundef 480, i32 noundef %51) #7
+  tail call void @gdma_rows(i32 noundef %40, i32 noundef %36, i32 noundef %50, i32 noundef %25, i32 noundef 480, i32 noundef %51) #10
   br label %65
 
 52:                                               ; preds = %44, %56
@@ -451,7 +568,7 @@ define dso_local void @gfx_blit(i32 noundef %0, i32 noundef %1, ptr noundef %2, 
   %60 = getelementptr inbounds nuw [57600 x i16], ptr @fb, i32 0, i32 %59
   %61 = ptrtoint ptr %60 to i32
   %62 = ptrtoint ptr %53 to i32
-  tail call void @gdma_copy(i32 noundef %61, i32 noundef %62, i32 noundef %45) #7
+  tail call void @gdma_copy(i32 noundef %61, i32 noundef %62, i32 noundef %45) #10
   %63 = getelementptr i16, ptr %53, i32 %3
   %64 = add nuw i32 %54, 1
   br label %52, !llvm.loop !22
@@ -461,7 +578,7 @@ define dso_local void @gfx_blit(i32 noundef %0, i32 noundef %1, ptr noundef %2, 
   %67 = add i32 %66, %21
   %68 = add nsw i32 %14, -1
   %69 = add i32 %68, %25
-  tail call void @gfx_damage(i32 noundef %9, i32 noundef %14, i32 noundef %67, i32 noundef %69) #8
+  tail call void @gfx_damage(i32 noundef %9, i32 noundef %14, i32 noundef %67, i32 noundef %69) #11
   br label %70
 
 70:                                               ; preds = %5, %27, %65
@@ -472,7 +589,7 @@ define dso_local void @gfx_blit(i32 noundef %0, i32 noundef %1, ptr noundef %2, 
 declare dso_local void @gdma_copy(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #2
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: readwrite)
-define dso_local i32 @gfx_cell_runs(ptr noundef readonly captures(none) %0, i32 noundef %1, i32 noundef %2, i16 noundef zeroext %3, ptr noundef writeonly captures(none) %4, i32 noundef %5) local_unnamed_addr #4 {
+define dso_local i32 @gfx_cell_runs(ptr noundef readonly captures(none) %0, i32 noundef %1, i32 noundef %2, i16 noundef zeroext %3, ptr noundef writeonly captures(none) %4, i32 noundef %5) local_unnamed_addr #7 {
   br label %7
 
 7:                                                ; preds = %50, %6
@@ -505,7 +622,7 @@ define dso_local i32 @gfx_cell_runs(ptr noundef readonly captures(none) %0, i32 
 
 25:                                               ; preds = %22
   %26 = getelementptr inbounds i16, ptr %13, i32 %23
-  %27 = load i16, ptr %26, align 2, !tbaa !10
+  %27 = load i16, ptr %26, align 2, !tbaa !7
   %28 = icmp eq i16 %27, %3
   br i1 %28, label %29, label %31
 
@@ -520,7 +637,7 @@ define dso_local i32 @gfx_cell_runs(ptr noundef readonly captures(none) %0, i32 
 
 34:                                               ; preds = %31
   %35 = getelementptr inbounds i16, ptr %13, i32 %32
-  %36 = load i16, ptr %35, align 2, !tbaa !10
+  %36 = load i16, ptr %35, align 2, !tbaa !7
   %37 = icmp eq i16 %36, %3
   br i1 %37, label %40, label %38
 
@@ -536,18 +653,18 @@ define dso_local i32 @gfx_cell_runs(ptr noundef readonly captures(none) %0, i32 
 43:                                               ; preds = %40
   %44 = trunc i32 %23 to i8
   %45 = getelementptr inbounds i8, ptr %4, i32 %18
-  store i8 %44, ptr %45, align 1, !tbaa !13
+  store i8 %44, ptr %45, align 1, !tbaa !12
   %46 = sub nsw i32 %32, %23
   %47 = trunc i32 %46 to i8
   %48 = getelementptr i8, ptr %45, i32 1
-  store i8 %47, ptr %48, align 1, !tbaa !13
+  store i8 %47, ptr %48, align 1, !tbaa !12
   %49 = add nuw nsw i32 %19, 1
   br label %17
 
 50:                                               ; preds = %17, %22
   %51 = trunc i32 %19 to i8
   %52 = getelementptr inbounds i8, ptr %4, i32 %9
-  store i8 %51, ptr %52, align 1, !tbaa !13
+  store i8 %51, ptr %52, align 1, !tbaa !12
   %53 = add nuw nsw i32 %8, 1
   br label %7, !llvm.loop !25
 
@@ -558,7 +675,7 @@ define dso_local i32 @gfx_cell_runs(ptr noundef readonly captures(none) %0, i32 
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @gfx_blit_runs(i32 noundef %0, i32 noundef %1, ptr noundef %2, i32 noundef %3, i32 noundef %4, ptr noundef readonly captures(none) %5) local_unnamed_addr #1 {
-  tail call void @gd_wait() #7
+  tail call void @gd_wait() #10
   %7 = mul nsw i32 %1, 240
   %8 = add nsw i32 %7, %0
   %9 = shl nsw i32 %8, 1
@@ -580,12 +697,12 @@ define dso_local void @gfx_blit_runs(i32 noundef %0, i32 noundef %1, ptr noundef
   %21 = add i32 %20, %3
   %22 = add i32 %1, -1
   %23 = add i32 %22, %4
-  tail call void @gfx_damage(i32 noundef %0, i32 noundef %1, i32 noundef %21, i32 noundef %23) #8
+  tail call void @gfx_damage(i32 noundef %0, i32 noundef %1, i32 noundef %21, i32 noundef %23) #11
   ret void
 
 24:                                               ; preds = %13
   %25 = getelementptr inbounds nuw i8, ptr %17, i32 1
-  %26 = load i8, ptr %17, align 1, !tbaa !13
+  %26 = load i8, ptr %17, align 1, !tbaa !12
   %27 = zext i8 %26 to i32
   %28 = add nsw i32 %15, %1
   %29 = icmp ugt i32 %28, 239
@@ -608,11 +725,11 @@ define dso_local void @gfx_blit_runs(i32 noundef %0, i32 noundef %1, ptr noundef
   br i1 %29, label %87, label %40
 
 40:                                               ; preds = %38
-  %41 = load i8, ptr %31, align 1, !tbaa !13
+  %41 = load i8, ptr %31, align 1, !tbaa !12
   %42 = zext i8 %41 to i32
   %43 = add nsw i32 %0, %42
   %44 = getelementptr inbounds nuw i8, ptr %31, i32 1
-  %45 = load i8, ptr %44, align 1, !tbaa !13
+  %45 = load i8, ptr %44, align 1, !tbaa !12
   %46 = zext i8 %45 to i32
   %47 = add nsw i32 %43, %46
   %48 = tail call i32 @llvm.smax.i32(i32 %43, i32 0)
@@ -631,9 +748,9 @@ define dso_local void @gfx_blit_runs(i32 noundef %0, i32 noundef %1, ptr noundef
 
 58:                                               ; preds = %51
   %59 = inttoptr i32 %55 to ptr
-  %60 = load i16, ptr %59, align 2, !tbaa !10
+  %60 = load i16, ptr %59, align 2, !tbaa !7
   %61 = inttoptr i32 %54 to ptr
-  store i16 %60, ptr %61, align 2, !tbaa !10
+  store i16 %60, ptr %61, align 2, !tbaa !7
   %62 = add nuw nsw i32 %48, 1
   %63 = add i32 %54, 2
   %64 = add i32 %55, 2
@@ -654,10 +771,10 @@ define dso_local void @gfx_blit_runs(i32 noundef %0, i32 noundef %1, ptr noundef
   %75 = shl i32 %74, 1
   %76 = add i32 %75, %14
   %77 = inttoptr i32 %76 to ptr
-  %78 = load i16, ptr %77, align 2, !tbaa !10
+  %78 = load i16, ptr %77, align 2, !tbaa !7
   %79 = add i32 %75, %16
   %80 = inttoptr i32 %79 to ptr
-  store i16 %78, ptr %80, align 2, !tbaa !10
+  store i16 %78, ptr %80, align 2, !tbaa !7
   br label %81
 
 81:                                               ; preds = %72, %65
@@ -668,7 +785,7 @@ define dso_local void @gfx_blit_runs(i32 noundef %0, i32 noundef %1, ptr noundef
 84:                                               ; preds = %81
   %85 = sub nuw nsw i32 %82, %66
   %86 = shl nuw nsw i32 %85, 1
-  tail call void @gdma_copy(i32 noundef %67, i32 noundef %68, i32 noundef %86) #7
+  tail call void @gdma_copy(i32 noundef %67, i32 noundef %68, i32 noundef %86) #10
   br label %87
 
 87:                                               ; preds = %38, %81, %84, %40
@@ -677,7 +794,7 @@ define dso_local void @gfx_blit_runs(i32 noundef %0, i32 noundef %1, ptr noundef
 }
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: write)
-define dso_local void @gfx_disc_cell(i32 noundef %0, i32 noundef %1, i16 noundef zeroext %2, i16 noundef zeroext %3, ptr noundef writeonly captures(none) %4) local_unnamed_addr #5 {
+define dso_local void @gfx_disc_cell(i32 noundef %0, i32 noundef %1, i16 noundef zeroext %2, i16 noundef zeroext %3, ptr noundef writeonly captures(none) %4) local_unnamed_addr #8 {
   %6 = shl nsw i32 %1, 2
   %7 = mul nsw i32 %6, %1
   br label %8
@@ -717,13 +834,13 @@ define dso_local void @gfx_disc_cell(i32 noundef %0, i32 noundef %1, i16 noundef
   %30 = icmp sgt i32 %29, %7
   %31 = select i1 %30, i16 %3, i16 %2
   %32 = getelementptr i16, ptr %18, i32 %20
-  store i16 %31, ptr %32, align 2, !tbaa !10
+  store i16 %31, ptr %32, align 2, !tbaa !7
   %33 = add nuw i32 %20, 1
   br label %19, !llvm.loop !29
 }
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: write)
-define dso_local void @gfx_glyph_cell(i32 noundef %0, i16 noundef zeroext %1, i16 noundef zeroext %2, ptr noundef writeonly captures(none) %3) local_unnamed_addr #5 {
+define dso_local void @gfx_glyph_cell(i32 noundef %0, i16 noundef zeroext %1, i16 noundef zeroext %2, ptr noundef writeonly captures(none) %3) local_unnamed_addr #8 {
   %5 = shl i32 %0, 3
   %6 = and i32 %5, 1016
   %7 = getelementptr inbounds nuw [1024 x i8], ptr @fbfont, i32 0, i32 %6
@@ -740,7 +857,7 @@ define dso_local void @gfx_glyph_cell(i32 noundef %0, i16 noundef zeroext %1, i1
 
 13:                                               ; preds = %8
   %14 = getelementptr inbounds nuw i8, ptr %7, i32 %9
-  %15 = load i8, ptr %14, align 1, !tbaa !13
+  %15 = load i8, ptr %14, align 1, !tbaa !12
   %16 = zext i8 %15 to i32
   %17 = getelementptr inbounds nuw i16, ptr %3, i32 %10
   br label %18
@@ -761,14 +878,14 @@ define dso_local void @gfx_glyph_cell(i32 noundef %0, i16 noundef zeroext %1, i1
   %27 = icmp eq i32 %26, 0
   %28 = select i1 %27, i16 %2, i16 %1
   %29 = getelementptr inbounds nuw i16, ptr %17, i32 %20
-  store i16 %28, ptr %29, align 2, !tbaa !10
+  store i16 %28, ptr %29, align 2, !tbaa !7
   %30 = add nsw i32 %20, -1
   %31 = shl i32 %19, 1
   br label %18, !llvm.loop !31
 }
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(argmem: readwrite)
-define dso_local void @gfx_sprite(ptr noundef readonly captures(none) %0, i32 noundef %1, i32 noundef %2, i16 noundef zeroext %3, i16 noundef zeroext %4, ptr noundef writeonly captures(none) %5) local_unnamed_addr #4 {
+define dso_local void @gfx_sprite(ptr noundef readonly captures(none) %0, i32 noundef %1, i32 noundef %2, i16 noundef zeroext %3, i16 noundef zeroext %4, ptr noundef writeonly captures(none) %5) local_unnamed_addr #7 {
   %7 = sub nsw i32 32, %1
   %8 = shl nuw i32 1, %7
   br label %9
@@ -805,26 +922,32 @@ define dso_local void @gfx_sprite(ptr noundef readonly captures(none) %0, i32 no
   %28 = icmp eq i32 %27, 0
   %29 = select i1 %28, i16 %4, i16 %3
   %30 = getelementptr i16, ptr %17, i32 %26
-  store i16 %29, ptr %30, align 2, !tbaa !10
+  store i16 %29, ptr %30, align 2, !tbaa !7
   %31 = shl i32 %19, 1
   br label %18, !llvm.loop !33
 }
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
-declare i32 @llvm.smax.i32(i32, i32) #6
+declare i32 @llvm.smax.i32(i32, i32) #9
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
-declare i32 @llvm.smin.i32(i32, i32) #6
+declare i32 @llvm.smin.i32(i32, i32) #9
+
+; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+declare i32 @llvm.umin.i32(i32, i32) #9
 
 attributes #0 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(readwrite, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #2 = { minsize optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #3 = { minsize nofree norecurse nosync nounwind optsize memory(readwrite, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #4 = { minsize nofree norecurse nosync nounwind optsize memory(argmem: readwrite) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #5 = { minsize nofree norecurse nosync nounwind optsize memory(argmem: write) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #6 = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
-attributes #7 = { minsize nobuiltin nounwind optsize "no-builtins" }
-attributes #8 = { minsize nobuiltin optsize "no-builtins" }
+attributes #3 = { minsize nofree noinline norecurse nosync nounwind optsize memory(argmem: write) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #4 = { minsize nofree norecurse nosync nounwind optsize memory(readwrite, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #5 = { minsize nofree norecurse nosync nounwind optsize memory(write, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #6 = { minsize mustprogress nofree noinline norecurse nosync nounwind optsize willreturn memory(none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #7 = { minsize nofree norecurse nosync nounwind optsize memory(argmem: readwrite) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #8 = { minsize nofree norecurse nosync nounwind optsize memory(argmem: write) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #9 = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
+attributes #10 = { minsize nobuiltin nounwind optsize "no-builtins" }
+attributes #11 = { minsize nobuiltin optsize "no-builtins" }
 
 !llvm.module.flags = !{!0, !1}
 !llvm.ident = !{!2}
@@ -836,30 +959,30 @@ attributes #8 = { minsize nobuiltin optsize "no-builtins" }
 !4 = !{!"int", !5, i64 0}
 !5 = !{!"omnipotent char", !6, i64 0}
 !6 = !{!"Simple C/C++ TBAA"}
-!7 = distinct !{!7, !8, !9}
-!8 = !{!"llvm.loop.mustprogress"}
-!9 = !{!"llvm.loop.unroll.disable"}
-!10 = !{!11, !11, i64 0}
-!11 = !{!"short", !5, i64 0}
-!12 = distinct !{!12, !8, !9}
-!13 = !{!5, !5, i64 0}
-!14 = distinct !{!14, !8, !9}
-!15 = distinct !{!15, !8, !9}
-!16 = distinct !{!16, !8, !9}
-!17 = distinct !{!17, !8, !9}
-!18 = distinct !{!18, !8, !9}
-!19 = distinct !{!19, !8, !9}
-!20 = distinct !{!20, !8, !9}
-!21 = distinct !{!21, !8, !9}
-!22 = distinct !{!22, !8, !9}
-!23 = distinct !{!23, !8, !9}
-!24 = distinct !{!24, !8, !9}
-!25 = distinct !{!25, !8, !9}
-!26 = distinct !{!26, !8, !9}
-!27 = distinct !{!27, !8, !9}
-!28 = distinct !{!28, !8, !9}
-!29 = distinct !{!29, !8, !9}
-!30 = distinct !{!30, !8, !9}
-!31 = distinct !{!31, !8, !9}
-!32 = distinct !{!32, !8, !9}
-!33 = distinct !{!33, !8, !9}
+!7 = !{!8, !8, i64 0}
+!8 = !{!"short", !5, i64 0}
+!9 = distinct !{!9, !10, !11}
+!10 = !{!"llvm.loop.mustprogress"}
+!11 = !{!"llvm.loop.unroll.disable"}
+!12 = !{!5, !5, i64 0}
+!13 = distinct !{!13, !10, !11}
+!14 = distinct !{!14, !10, !11}
+!15 = distinct !{!15, !10, !11}
+!16 = distinct !{!16, !10, !11}
+!17 = distinct !{!17, !10, !11}
+!18 = distinct !{!18, !10, !11}
+!19 = distinct !{!19, !10, !11}
+!20 = distinct !{!20, !10, !11}
+!21 = distinct !{!21, !10, !11}
+!22 = distinct !{!22, !10, !11}
+!23 = distinct !{!23, !10, !11}
+!24 = distinct !{!24, !10, !11}
+!25 = distinct !{!25, !10, !11}
+!26 = distinct !{!26, !10, !11}
+!27 = distinct !{!27, !10, !11}
+!28 = distinct !{!28, !10, !11}
+!29 = distinct !{!29, !10, !11}
+!30 = distinct !{!30, !10, !11}
+!31 = distinct !{!31, !10, !11}
+!32 = distinct !{!32, !10, !11}
+!33 = distinct !{!33, !10, !11}

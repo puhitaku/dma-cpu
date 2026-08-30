@@ -45,9 +45,10 @@
  *
  * Two homes, and the split is the whole reason N could be raised:
  *
- *  (1) The eleven NP-SCALING arrays — the ten shorts/ushorts plus the
- *      group byte — sit at the BOTTOM of the gamepico's scene-exclusive
- *      span (boards.GameFreeBase = 0x2002E000 up to the machine's
+ *  (1) The twelve NP-SCALING arrays — the ten shorts/ushorts plus the
+ *      group byte and the shown-fraction byte — sit at the BOTTOM of
+ *      the gamepico's scene-exclusive span
+ *      (boards.GameFreeBase = 0x2002E000 up to the machine's
  *      scratch word at 0x2003FE00, 73216 contiguous bytes). This scene
  *      claims the span whole, which means it claims fx.c's audio ring
  *      at 0x20038000 along with it — see radio_run's aud_borrow /
@@ -64,7 +65,7 @@
  *      ever live there, and setup() must therefore write every byte it
  *      later reads.
  *
- * At N=24 the arrays want 64680 B of the 73216 and the corner grid
+ * At N=24 the arrays want 67760 B of the 73216 and the corner grid
  * 6250 B of the 8192, so both budgets are two thirds to three quarters
  * spent. There is no next step to argue about: PSIZE and PSIZEF both
  * have to divide 240 exactly, which leaves N in {4, 8, 12, 16, 20, 24,
@@ -76,10 +77,10 @@
  * 0..240. */
 #include "g.h"
 
-/* The surround behind the opening. Already clear of the panel's black
- * floor (levels 1, 2, 2) and it is the ONLY color in the scene that
- * does not come out of tone() — so with tone()'s remap in place
- * nothing this demo paints sits at channel code 0. */
+/* The surround behind the opening: levels 1, 2, 2, and the ONLY color
+ * in the scene that does not come out of tone(). It is a flat frame
+ * around the box opening, not part of the render, so it takes no
+ * dither. */
 #define C_BG RGB(8, 8, 16)
 
 #define N 24        /* patches per wall edge; must divide 240 */
@@ -158,11 +159,17 @@ static const ushort CGOFF[NBF] = {0, 9, 34, 43, 134, 143, 152, 161, 170, 219};
 #define uR ((ushort *)(RAD_RAM + 6 * PSTRIDE))
 #define uG ((ushort *)(RAD_RAM + 7 * PSTRIDE))
 #define uB ((ushort *)(RAD_RAM + 8 * PSTRIDE))
+/* What the patch is currently SHOWING, and therefore what repaint
+ * compares against: the levels as an RGB565 word, plus the three
+ * quarter-fractions the dither is spending on top of them (two bits
+ * each). Both, because two patches with the same levels and different
+ * fractions are different pictures. */
 #define shown ((ushort *)(RAD_RAM + 9 * PSTRIDE))
 /* pgrp: 0..4 the five walls, 5+f the ten box faces, 15 the front
  * mirror — the one lookup that replaced the receiver loop's divisions */
 #define pgrp ((uchar *)(RAD_RAM + 10 * PSTRIDE))
-#define RAD_USED (10 * PSTRIDE + NP)
+#define shfrc ((uchar *)(RAD_RAM + 10 * PSTRIDE + NP))
+#define RAD_USED (10 * PSTRIDE + 2 * NP)
 
 #if RAD_USED > RAD_SPAN
 #error "radiosity arrays overflow the scene-exclusive span: lower N"
@@ -225,61 +232,92 @@ is_light(int w, int i, int k)
          k >= LIGHT_LO && k < LIGHT_LO + LIGHT_N;
 }
 
-/* The panel's black floor, in 8-bit codes. Measured with the Gradient
- * app (2026-08-31): this ST7789 renders luminance LINEAR in channel
- * code — the checker-vs-solid matching screen puts the black floor at
- * 0 steps on R/B and +1 on G, so there is no curve in the panel at
- * all (it evidently ignores its gamma registers; two programming
- * attempts changed nothing and were reverted). A linear panel is why
- * the dark end of a linear-light ramp reads as cliffs: the eye judges
- * contrast RATIOS, and level 1 -> 2 is a 2x jump while 28 -> 29 is
- * 3%. The fix is the encoding every display pipeline applies and this
- * panel omits: tone() gamma-encodes (^1/2.2) so equal code steps are
- * equal perceptual steps. True black still maps to 0; the smallest
- * lit value lands on level 1+ and the dark gradient gets most of the
- * code range. Table over arithmetic: 255*(v/255)^(1/2.2) per entry,
- * one byte load per channel per repaint. */
-static const uchar gam[256] = {
-    0, 21, 28, 34, 39, 43, 46, 50, 53, 56, 59, 61,
-    64, 66, 68, 70, 72, 74, 76, 78, 80, 82, 84, 85,
-    87, 89, 90, 92, 93, 95, 96, 98, 99, 101, 102, 103,
-    105, 106, 107, 109, 110, 111, 112, 114, 115, 116, 117, 118,
-    119, 120, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131,
-    132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143,
-    144, 144, 145, 146, 147, 148, 149, 150, 151, 151, 152, 153,
-    154, 155, 156, 156, 157, 158, 159, 160, 160, 161, 162, 163,
-    164, 164, 165, 166, 167, 167, 168, 169, 170, 170, 171, 172,
-    173, 173, 174, 175, 175, 176, 177, 178, 178, 179, 180, 180,
-    181, 182, 182, 183, 184, 184, 185, 186, 186, 187, 188, 188,
-    189, 190, 190, 191, 192, 192, 193, 194, 194, 195, 195, 196,
-    197, 197, 198, 199, 199, 200, 200, 201, 202, 202, 203, 203,
-    204, 205, 205, 206, 206, 207, 207, 208, 209, 209, 210, 210,
-    211, 212, 212, 213, 213, 214, 214, 215, 215, 216, 217, 217,
-    218, 218, 219, 219, 220, 220, 221, 221, 222, 223, 223, 224,
-    224, 225, 225, 226, 226, 227, 227, 228, 228, 229, 229, 230,
-    230, 231, 231, 232, 232, 233, 233, 234, 234, 235, 235, 236,
-    236, 237, 237, 238, 238, 239, 239, 240, 240, 241, 241, 242,
-    242, 243, 243, 244, 244, 245, 245, 246, 246, 247, 247, 248,
-    248, 249, 249, 249, 250, 250, 251, 251, 252, 252, 253, 253,
-    254, 254, 255, 255};
+/* --- tone: the measured-panel answer -------------------------------
+ *
+ * What the Gradient app measured (2026-08-31): this ST7789 renders
+ * luminance LINEAR in channel code. The checker-vs-solid matching
+ * screen puts the black floor at 0 steps on R/B and +1 on G, so there
+ * is no curve in the panel at all — it evidently ignores its gamma
+ * registers, and two programming attempts changed nothing and were
+ * reverted. What is left is not a curve problem but a STRUCTURAL one:
+ * between level 0 (the pixel off) and level 1 there is no luminance,
+ * and on a linear 5-bit ramp the dark steps are enormous contrast
+ * RATIOS — 1 -> 2 is a doubling where 28 -> 29 is three percent. So
+ * dark gradients band, and the 0/1 boundary is a cliff.
+ *
+ * Two software answers were tried on the panel and both were
+ * rejected by eye:
+ *
+ *  - a TONE_MIN floor, mapping 0..255 onto [8, 255] so nothing the
+ *    scene paints sits at code 0. It stepped over the cliff by
+ *    turning every black in the room grey, which is worse than the
+ *    cliff.
+ *  - a gamma-encode LUT (^1/2.2) in this very slot. It cannot work,
+ *    and the reason is arithmetic: a re-map of codes to codes still
+ *    lands on the SAME 32 levels the panel has. It spends the code
+ *    range differently but adds no luminances, so the missing ones
+ *    between 0 and 1 stay missing and the banding just moves.
+ *
+ * The answer is not a curve at all. The panel's levels are a PALETTE,
+ * and every brightness between two of them is rendered the way a GIF
+ * or a halftone renders it — spatially, by mixing the two adjacent
+ * levels at the right density. tone() therefore stays LINEAR and
+ * stops rounding: it hands gfx_dither an 8-bit CODE per channel, and
+ * gfx_dither keeps both the level that code lands on and the fraction
+ * of the way to the next one, in quarters, then spends that fraction
+ * as density over a 2x2 ordered (Bayer) tile — see gfx.c for the tile
+ * and gfx_dfill for how a patch lays it down. Five effective
+ * sub-levels per channel step, EVERYWHERE — including 0-vs-1 at the
+ * bottom, which is the cliff dissolved: a quarter-density of level 1
+ * on black is a luminance the panel has no code for, and the eye
+ * integrates it at this pitch.
+ *
+ * RADIO_K is the OTHER half of the answer, and it is deliberately
+ * still zero. gcomp (g.h) bends the code axis down toward black by K
+ * sixteenths — the widening-gap curve a linear panel does not have,
+ * and one that is only renderable BECAUSE the dither can land between
+ * levels. How much bend is a judgement to be made by eye on silicon,
+ * not a number to guess here, so this wave ships the solver's true
+ * linear value with nothing on it but the sub-level smoothing. At
+ * K = 0 gcomp is the identity and clang folds it out of the image
+ * entirely; adopting whatever the bench settles on is this one
+ * constant and nothing else. */
+#define RADIO_K 0
 
-/* tone map a radiosity channel to 0..255 (soft linear, <16 shift),
- * then gamma-encode for the measured-linear panel (table above). */
-static uint
+static __attribute__((noinline)) uint
 tone(uint v)
 {
   uint c = v >> 3;
   if (c > 255)
     c = 255;
-  return gam[c];
+  return gcomp(c, RADIO_K);
 }
 
+/* The three fractions the brush (gfx_tile) is currently spending,
+ * packed two bits each: repaint's change key needs those as well as
+ * the levels, because two patches with the same levels and different
+ * fractions are different pictures. Per PATCH, not per pixel — a
+ * patch is one flat color pair, so the brush is loaded once and the
+ * fill machinery below just lays it down. */
+static uchar dfrc;
+
+/* Load the brush and hand back the LEVELS as an RGB565 word — the
+ * color the patch would be if it were not dithered, and the other
+ * half of the change key. */
 static ushort
-patch_color(int p, int lit)
+patch_tone(int p, int lit)
 {
-  if (lit)
-    return RGB(255, 255, 240);
-  return (ushort)RGB(tone(bR[p]), tone(bG[p]), tone(bB[p]));
+  uint rc = 248, gc = 252, bc = 240; /* the lamp: RGB(255, 255, 240) */
+  if (!lit) {
+    rc = tone(bR[p]);
+    gc = tone(bG[p]);
+    bc = tone(bB[p]);
+  }
+  dfrc = (uchar)gfx_dither(rc, gc, bc);
+  /* tile[2] is the position whose threshold is 3, which no fraction
+   * can beat: the bare levels, read back out of the brush instead of
+   * packed a second time */
+  return gfx_tile[2];
 }
 
 /* --- box geometry helpers (local -> world, Q8 rotation) --- */
@@ -481,6 +519,8 @@ setup(void)
     bR[q] = bG[q] = bB[q] = 0;
     uR[q] = uG[q] = uB[q] = 0;
     shown[q] = 0xFFFF;
+    shfrc[q] = 0xFF; /* no fraction word can be this: forces the first
+                      * repaint even where the level word matches */
   }
   /* the lamp's initial energy rides the ushort ceiling to buy flux */
   for (int k = LIGHT_LO; k < LIGHT_LO + LIGHT_N; k++) {
@@ -495,8 +535,15 @@ setup(void)
 
 /* --- painting --- */
 
+/* Every fill below paints with the BRUSH (gfx_tile) rather than a
+ * color argument: the brush is per patch and the caller has just
+ * loaded it.
+ * gfx_dfill anchors the brush's phase to the screen, so the row and
+ * column parities these walks happen to land on need no bookkeeping
+ * here — a span starting on an odd column continues the checker its
+ * neighbour left off. */
 static void
-fill_htrap(int y0, int y1, int xl0, int xl1, int xr0, int xr1, ushort c)
+fill_htrap(int y0, int y1, int xl0, int xl1, int xr0, int xr1)
 {
   int h = y1 - y0;
   if (h <= 0)
@@ -506,14 +553,14 @@ fill_htrap(int y0, int y1, int xl0, int xl1, int xr0, int xr1, ushort c)
   for (int y = y0; y < y1; y++) {
     int a = l >> 12, b = r >> 12;
     if (b > a)
-      gfx_fill(a, y, b - a, 1, c);
+      gfx_dfill(a, y, b - a, 1);
     l += dl;
     r += dr;
   }
 }
 
 static void
-fill_vtrap(int x0, int x1, int yt0, int yt1, int yb0, int yb1, ushort c)
+fill_vtrap(int x0, int x1, int yt0, int yt1, int yb0, int yb1)
 {
   int wd = x1 - x0;
   if (wd <= 0)
@@ -523,7 +570,7 @@ fill_vtrap(int x0, int x1, int yt0, int yt1, int yb0, int yb1, ushort c)
   for (int x = x0; x < x1; x++) {
     int a = t >> 12, e = b >> 12;
     if (e > a)
-      gfx_fill(x, a, 1, e - a, c);
+      gfx_dfill(x, a, 1, e - a);
     t += dt;
     b += db;
   }
@@ -535,7 +582,7 @@ fill_vtrap(int x0, int x1, int yt0, int yt1, int yb0, int yb1, ushort c)
  * fill. Inclusive x range: adjacent patches overdraw a shared 1-px
  * column, which is invisible and keeps silhouettes gap-free. */
 static void
-fill_quad(const int *qx, const int *qy, ushort c)
+fill_quad(const int *qx, const int *qy)
 {
   int minx = qx[0], maxx = qx[0];
   int slope[4];
@@ -576,12 +623,12 @@ fill_quad(const int *qx, const int *qy, ushort c)
         hi = y;
     }
     if (hi > lo)
-      gfx_fill(x, lo, 1, hi - lo, c);
+      gfx_dfill(x, lo, 1, hi - lo);
   }
 }
 
 static void
-draw_wall_patch(int w, int i, int k, ushort c)
+draw_wall_patch(int w, int i, int k)
 {
   const uchar *c00 = corn + CI(w, i, k);
   const uchar *c10 = corn + CI(w, i + 1, k);
@@ -589,25 +636,25 @@ draw_wall_patch(int w, int i, int k, ushort c)
   const uchar *c11 = corn + CI(w, i + 1, k + 1);
   switch (w) {
   case W_BACK:
-    gfx_fill(c00[0], c00[1], c11[0] - c00[0], c11[1] - c00[1], c);
+    gfx_dfill(c00[0], c00[1], c11[0] - c00[0], c11[1] - c00[1]);
     break;
   case W_FLOOR:
-    fill_htrap(c01[1], c00[1], c01[0], c00[0], c11[0], c10[0], c);
+    fill_htrap(c01[1], c00[1], c01[0], c00[0], c11[0], c10[0]);
     break;
   case W_CEIL:
-    fill_htrap(c00[1], c01[1], c00[0], c01[0], c10[0], c11[0], c);
+    fill_htrap(c00[1], c01[1], c00[0], c01[0], c10[0], c11[0]);
     break;
   case W_LEFT:
-    fill_vtrap(c00[0], c01[0], c00[1], c01[1], c10[1], c11[1], c);
+    fill_vtrap(c00[0], c01[0], c00[1], c01[1], c10[1], c11[1]);
     break;
   default:
-    fill_vtrap(c01[0], c00[0], c01[1], c00[1], c11[1], c10[1], c);
+    fill_vtrap(c01[0], c00[0], c01[1], c00[1], c11[1], c10[1]);
     break;
   }
 }
 
 static void
-draw_box_patch(int p, ushort c)
+draw_box_patch(int p)
 {
   int rel = p - NWALL, f = pgrp[p] - 5;
   if (!fvis[f])
@@ -622,7 +669,7 @@ draw_box_patch(int p, ushort c)
   qx[1] = b[0]; qy[1] = b[1];
   qx[2] = d[0]; qy[2] = d[1];
   qx[3] = e[0]; qy[3] = e[1];
-  fill_quad(qx, qy, c);
+  fill_quad(qx, qy);
 }
 
 /* boxes paint over walls, so any wall repaint under them must be
@@ -636,10 +683,11 @@ repaint(int all)
    * divisions that recovered them per patch were pure rt_udm tax */
   int w = 0, i = 0, k = 0;
   for (int p = 0; p < NWALL; p++) {
-    ushort c = patch_color(p, is_light(w, i, k));
-    if (all || c != shown[p]) {
+    ushort c = patch_tone(p, is_light(w, i, k));
+    if (all || c != shown[p] || dfrc != shfrc[p]) {
       shown[p] = c;
-      draw_wall_patch(w, i, k, c);
+      shfrc[p] = dfrc;
+      draw_wall_patch(w, i, k);
       wallchanged = 1;
     }
     if (++i == N) {
@@ -651,11 +699,12 @@ repaint(int all)
     }
   }
   for (int p = NWALL; p < NFRONT; p++) {
-    ushort c = patch_color(p, 0);
-    if (!all && !wallchanged && c == shown[p])
+    ushort c = patch_tone(p, 0);
+    if (!all && !wallchanged && c == shown[p] && dfrc == shfrc[p])
       continue;
     shown[p] = c;
-    draw_box_patch(p, c);
+    shfrc[p] = dfrc;
+    draw_box_patch(p);
   }
   /* NFRONT..NP: the invisible front wall — never drawn */
   gfx_present();

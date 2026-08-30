@@ -11,11 +11,19 @@
  * it grows. The visible bands are the display's OWN 5/6/5
  * quantization, which is the point: R and B step every 8 codes, G
  * every 4, and a step that does not fall on one of those boundaries is
- * the panel's, not ours.
+ * the panel's, not ours. The band is still the quantum, but the band
+ * is now DITHERED (gfx_dither): green's quantum is the band exactly,
+ * so green shows its native levels, while red and blue quantize half
+ * as often and carry the half-step the band leaves over. What the
+ * bands measure has not changed; what they look like has.
  *
- * A second screen lives here too — the MATCHING screen, which turns
- * the eye into a null detector and puts a NUMBER on the panel's black
- * floor instead of a code. It has its own block below.
+ * Two more screens live here, each with its own block below. The
+ * MATCHING screen turns the eye into a null detector and puts a
+ * NUMBER on the panel's black floor instead of a code. The COMPENSATE
+ * screen asks the opposite question — not what the panel does, but
+ * how far the software should bend away from it — and hands its
+ * answer, a strength K, to the radiosity demo. A hold of A walks the
+ * three in one cycle; a tap is back.
  *
  * The emulator renders all of it bit-true but models no panel, so the
  * answers this scene exists to give only appear on silicon.
@@ -104,7 +112,8 @@ static char hdr[] = "tap back hold match 000-000";
 #define M_Y HDR_H
 #define M_H (LCD_H - HDR_H)
 
-static uchar mon;   /* the matching screen is up */
+/* 0 the ramps, 1 the matching screen, 2 Compensate (below) */
+static uchar mode;
 static uchar mchan; /* 0 R, 1 G, 2 B, 3 W */
 static uchar mn;    /* the checker's bright level */
 static uchar mm;    /* ...and the solid half's */
@@ -122,6 +131,35 @@ static char mhdr[] = "C  N 00  M 00  floor +000";
 #define MH_M 11
 #define MH_SGN 21
 #define MH_F 22
+
+/* --- the Compensate screen ------------------------------------------
+ *
+ * The third screen, and the one that hands a NUMBER to the radiosity
+ * demo. The panel is luminance-linear — that is what the matching
+ * screen above established — so a picture rendered at its true linear
+ * value has no perceptual room at the dark end: the eye judges
+ * contrast RATIOS, and level 1 -> 2 is a doubling where 28 -> 29 is
+ * three percent. The cure is to bend the curve down toward black, and
+ * a bend is worthless on a 32-level palette because it just re-lands
+ * on the same levels. It becomes possible only once the dither can
+ * render BETWEEN two levels, which is what the fraction gfx_dither
+ * spends is for.
+ *
+ * So: how much bend? That is a judgement, not a measurement, and it
+ * is made here. The ramps run through gcomp (g.h) at strength K and
+ * up/down walk K from 0 — the identity, which is what the ramp screen
+ * itself shows — to 16, a gamma-2 darkening. Whatever K reads right
+ * at the bench is copied into radio.c's RADIO_K, which is why every
+ * step echoes to the UART as well as to the header.
+ *
+ * The screen is the ramp screen with the window borrowed whole
+ * (lo = 0, span = 256) and given back on the way out: ONE painter,
+ * because the two differ in nothing but K. */
+#define KH_K 23
+static char khdr[] = "tap back hold ramps  K 00/16";
+static uint kk;  /* the compensation strength, 0..16 */
+static int klo;  /* the ramp window, parked while this screen has it */
+static uint kqs;
 
 /* Green counts in 6-bit codes, everything else (W included, since its
  * grey is built from the 5-bit code) in 5-bit. */
@@ -217,6 +255,16 @@ mstep(uint act)
   uputs("\n");
 }
 
+/* The compensation curve at this screen's K. Out of line so redraw's
+ * band walk carries ONE copy of it and not one per band: g.h's gcomp
+ * is three multiplies, and this machine pays for a multiply in code
+ * bytes as well as cycles. */
+static __attribute__((noinline)) uint
+kcurve(uint v)
+{
+  return gcomp(v, kk);
+}
+
 /* redraw: ONE walk of the window's 4-code quanta — the finest band
  * this panel can show — paints all four bars and numbers three of
  * them. The band is the unit of BOTH the ramp and its scale, so the
@@ -241,14 +289,28 @@ redraw(void)
   int x0 = 0;
   while (x0 < LCD_W) {
     xfp += qfp;
-    int x1 = (int)(xfp >> 16); /* the last band runs off; gfx_fill clips */
-    ushort cr = (ushort)(r5 << 11), cg = (ushort)(g6 << 5);
-    ushort cb = (ushort)r5;
+    int x1 = (int)(xfp >> 16); /* the last band runs off; gfx_dfill clips */
     int w = x1 - x0;
-    gfx_fill(x0, Y_R, w, BAR_H, cr);
-    gfx_fill(x0, Y_G, w, BAR_H, cg);
-    gfx_fill(x0, Y_B, w, BAR_H, cb);
-    gfx_fill(x0, Y_W, w, BAR_H, (ushort)(cr | cg | cb));
+    /* The band's own 8-bit code, through the compensation curve and
+     * then through the dither. ONE paint path for both screens: the
+     * ramps hold K at 0, where gcomp is the identity, green's quantum
+     * IS the band so its fraction is zero and the ramp is the panel's
+     * own levels exactly as it always was — while red and blue, which
+     * quantize half as often, pick up the half-step the band leaves
+     * over. So the ramps already show the dither at its weakest, and
+     * Compensate shows the rest of it. (g6 can run past 63 on the
+     * last, clipped band of a zoomed window; K is 0 there, gcomp
+     * passes any v through untouched and gfx_dither clamps at the top
+     * level, so nothing has to guard it.) */
+    uint c = kcurve((uint)g6 << 2);
+    gfx_dither(c, 0, 0);
+    gfx_dfill(x0, Y_R, w, BAR_H);
+    gfx_dither(0, c, 0);
+    gfx_dfill(x0, Y_G, w, BAR_H);
+    gfx_dither(0, 0, c);
+    gfx_dfill(x0, Y_B, w, BAR_H);
+    gfx_dither(c, c, c);
+    gfx_dfill(x0, Y_W, w, BAR_H);
     if (lab8 && x0 + 18 <= LCD_W) { /* room for the numeral itself */
       if (lab4) {
         numsp(lbl, 2, g6);
@@ -266,11 +328,91 @@ redraw(void)
     if (!(g6 & 1))
       r5++;
   }
-  numstr(hdr + HDR_LO, 3, (uint)lo);
-  hdr[HDR_LO + 3] = '-'; /* numstr NUL-terminates over the separator */
-  numstr(hdr + HDR_LO + 4, 3, (uint)lo + (q << 4) - 1);
-  gfx_text(4, 4, hdr, C_HDR, C_BG);
+  if (mode == 2) {
+    numstr(khdr + KH_K, 2, kk);
+    khdr[KH_K + 2] = '/'; /* numstr NUL-terminates over the slash */
+    gfx_text(4, 4, khdr, C_HDR, C_BG);
+  } else {
+    numstr(hdr + HDR_LO, 3, (uint)lo);
+    hdr[HDR_LO + 3] = '-'; /* numstr NUL-terminates over the separator */
+    numstr(hdr + HDR_LO + 4, 3, (uint)lo + (q << 4) - 1);
+    gfx_text(4, 4, hdr, C_HDR, C_BG);
+  }
   gfx_present();
+}
+
+/* The K readout, on the header line and on the UART, so the value
+ * picked at the bench lands in the serial log too. */
+static __attribute__((noinline)) void
+kecho(void)
+{
+  uputs("grad: comp ");
+  uputs(khdr + KH_K - 2);
+  uputs("\n");
+}
+
+/* Enter one of the three screens and paint it. Out of line and NOT in
+ * .ramtext on purpose: grad_frame is resident and only has to work out
+ * WHICH screen the gesture asks for — the switch itself runs once per
+ * press and can live in flash beside the painters it calls. */
+static __attribute__((noinline)) void
+gomode(uint m)
+{
+  if (m == 2) { /* Compensate takes the whole axis, and gives the
+                 * window back exactly as it found it */
+    klo = lo;
+    kqs = q;
+    lo = 0;
+    q = Q_MAX;
+  } else if (mode == 2) {
+    lo = klo;
+    q = kqs;
+    kk = 0; /* ...and the ramps are the K=0 end of the same curve */
+  }
+  mode = (uchar)m;
+  gfx_clear(C_BG);
+  if (m == 1) {
+    /* the channel walk restarts at R, and the levels come down with it
+     * if green's 6-bit range was left above a 5-bit one */
+    mchan = 0;
+    if (mn > 31)
+      mn = 31;
+    if (mm > 31)
+      mm = 31;
+    mredraw();
+    uputs("grad: match ");
+    uputs(mhdr);
+    uputs("\n");
+    return;
+  }
+  redraw();
+  if (m == 0) {
+    uputs("grad: ramps\n");
+    return;
+  }
+  kecho();
+}
+
+/* The stick on the Compensate screen: up/down walk K, which is the
+ * only thing there is to choose here. Left and right do nothing — the
+ * window is pinned to the whole axis, and that is the point of the
+ * screen. A step that would leave 0..16 is not taken and does not
+ * repaint, so the console line means the value really changed. */
+static __attribute__((noinline)) void
+kstep(uint act)
+{
+  if (act & BTN_UP) {
+    if (kk >= 16)
+      return;
+    kk++;
+  } else if (act & BTN_DOWN) {
+    if (kk == 0)
+      return;
+    kk--;
+  } else
+    return;
+  redraw();
+  kecho();
 }
 
 /* One frame's input and response. Returns nonzero to leave the scene.
@@ -306,42 +448,47 @@ grad_frame(void)
     uint held = ahold;
     ahold = 0;
     if (held <= A_HOLD) {
-      if (!mon) { /* the same press-to-go-back the other
-                   * non-game scenes answer */
+      if (!mode) { /* the same press-to-go-back the other
+                    * non-game scenes answer */
         led(0, 0);
         uputs("grad: back\n");
         return 1;
       }
-      mon = 0;
-      gfx_clear(C_BG);
-      redraw();
-      uputs("grad: ramps\n");
+      gomode(0); /* ...and from either of the others, back to the
+                  * ramps, which is where back-to-the-menu lives */
       return 0;
     }
   }
   if (ahold == A_HOLD + 1) {
-    if (mon) { /* next channel; the levels follow it down when green's
-                * 6-bit range hands over to a 5-bit one */
-      mchan = (uchar)((mchan + 1) & 3);
+    /* The hold walks ONE cycle through the scene: ramps -> matching ->
+     * Compensate -> ramps. The matching screen's four channels are a
+     * SUB-cycle inside its stop, because the stick there is spent on N
+     * and M and the hold is the only key left over: R, G, B, W in
+     * turn, and the fifth hold moves on. */
+    if (mode == 1 && mchan < 3) {
+      mchan++;
       uint top = mtop();
       if (mn > top)
         mn = (uchar)top;
       if (mm > top)
         mm = (uchar)top;
-    } else {
-      mon = 1;
-      gfx_clear(C_BG);
+      mredraw();
+      uputs("grad: match ");
+      uputs(mhdr);
+      uputs("\n");
+      return 0;
     }
-    mredraw();
-    uputs("grad: match ");
-    uputs(mhdr);
-    uputs("\n");
+    gomode(mode == 0 ? 1u : (mode == 1 ? 2u : 0u));
     return 0;
   }
   uint act = in_edge & (BTN_UP | BTN_DOWN | BTN_LEFT | BTN_RIGHT);
-  if (mon) {
-    if (act)
-      mstep(act);
+  if (mode) {
+    if (act) {
+      if (mode == 1)
+        mstep(act);
+      else
+        kstep(act);
+    }
     return 0;
   }
   int nlo = lo;
@@ -393,8 +540,9 @@ grad_run(void)
   lo = 0;
   q = Q_MAX;
   ahold = 0;
-  mon = 0;
+  mode = 0;
   mchan = 0;
+  kk = 0;
   /* The floorless match point (N = 2M) is where the matching screen
    * opens, so the very first seam the eye sees IS the floor. */
   mn = 16;

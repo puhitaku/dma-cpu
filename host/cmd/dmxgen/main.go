@@ -861,10 +861,13 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 			 * window with a few hundred bytes left and a .ramtext
 			 * window with 9 KiB spare. grad.c's redraw stays behind —
 			 * moving it too overruns .ramtext — and mstep/mtop are
-			 * inlined away.
+			 * inlined away. gomode joined when the Compensate
+			 * screen arrived, for the same reason and by the same
+			 * arithmetic.
 			 * MIRRORS game_test.go's gameResident; see the note there. */
 			ResidentFuncs: []string{"shoot", "clearance", "in_box",
-				"grad_run", "grad_frame", "mredraw", "mrows", "mcolor"},
+				"grad_run", "grad_frame", "mredraw", "mrows", "mcolor",
+				"gomode"},
 			/* size everywhere, speed on the measured hot paths (host/pgo):
 			 * HotSites decides the compare form one site at a time,
 			 * HotFuncs gates the outliner */

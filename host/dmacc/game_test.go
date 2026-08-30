@@ -1,6 +1,7 @@
 package dmacc_test
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -48,7 +49,14 @@ var btnBit = map[int]uint32{pinUp: 0x1, pinDown: 0x2, pinLeft: 0x4,
 //     to a .ramtext window with 9 KiB going spare. Placement is
 //     placement-only — the gfx, lcd and grt calls it makes stay in
 //     flash — which for a scene this cold is exactly the trade
-//     wanted.
+//     wanted. gomode, the screen switch the Compensate screen brought
+//     with it, is here for the same reason and by the same
+//     arithmetic: it was the one new grad.c body whose move leaves
+//     BOTH windows a margin. Moving kstep as well overran .ramtext,
+//     because residency is not free there either — dmaasm's
+//     inline-compare trampoline arena lands in that window and grows
+//     in whole 256-byte banks, so the second move cost more SRAM than
+//     the flash it handed back.
 //
 // Two absences in that second group are deliberate. redraw, the ramp
 // painter, is the one grad.c body big enough that moving it too would
@@ -58,7 +66,7 @@ var btnBit = map[int]uint32{pinUp: 0x1, pinDown: 0x2, pinLeft: 0x4,
 // rejects a ResidentFuncs name it cannot find — the check that keeps
 // this list honest as the scene changes.
 var gameResident = []string{"shoot", "clearance", "in_box",
-	"grad_run", "grad_frame", "mredraw", "mrows", "mcolor"}
+	"grad_run", "grad_frame", "mredraw", "mrows", "mcolor", "gomode"}
 
 // compileGameDasm compiles the gamepico bare-metal image. It mirrors
 // dmxgen's buildGame exactly: the harness must share the shipped
@@ -787,6 +795,131 @@ func benchExpect() map[string][2]uint32 { // name -> {ops, sum}
 	return exp
 }
 
+// tileSum adds a screen-aligned 2x2 dither tile up per channel, at the
+// tile whose top-left pixel is (x, y) — both even. See TestGameRadio
+// for why a dithered surface may only be judged a tile at a time.
+func tileSum(p *lcdPanel, x, y int) (int, int, int) {
+	var r, g, b int
+	for dy := 0; dy < 2; dy++ {
+		for dx := 0; dx < 2; dx++ {
+			c := p.px[(y+dy)*240+x+dx]
+			r += int(c >> 11)
+			g += int((c >> 5) & 0x3F)
+			b += int(c & 0x1F)
+		}
+	}
+	return r, g, b
+}
+
+// bayerLit is the 2x2 Bayer matrix {{0,2},{3,1}} resolved: bayerLit[f]
+// marks, per tile position i = ((y&1)<<1)|(x&1), whether a channel
+// whose sub-level fraction is f shows its NEXT level up there. It is
+// the rule gfx.c's dbmp table encodes, written out independently so
+// this test proves the rule and not the table.
+var bayerLit = [4][4]bool{
+	{false, false, false, false}, // f=0: thresholds 0,2,3,1 all unbeaten
+	{true, false, false, false},
+	{true, false, false, true},
+	{true, true, false, true},
+}
+
+// tileFrac reads one channel's four tile values back as the (level,
+// fraction) pair that produced them, or reports that they are not a
+// dither tile at all: the four values must be one level q and its
+// neighbour q+1, and the positions carrying q+1 must be EXACTLY one of
+// bayerLit's rows.
+func tileFrac(v [4]int) (int, int, bool) {
+	q, hi := v[0], v[0]
+	for _, x := range v[1:] {
+		if x < q {
+			q = x
+		}
+		if x > hi {
+			hi = x
+		}
+	}
+	if hi != q && hi != q+1 {
+		return 0, 0, false
+	}
+	var up [4]bool
+	for i, x := range v {
+		up[i] = x == q+1
+	}
+	for f := range bayerLit {
+		if up == bayerLit[f] {
+			return q, f, true
+		}
+	}
+	return 0, 0, false
+}
+
+// tileAt reads the screen-aligned 2x2 tile whose top-left pixel is
+// (x, y), both even.
+func tileAt(p *lcdPanel, x, y int) [4]uint16 {
+	return [4]uint16{p.px[y*240+x], p.px[y*240+x+1],
+		p.px[(y+1)*240+x], p.px[(y+1)*240+x+1]}
+}
+
+// radioDither is the dither's own unit check, run against a real frame
+// of the scene. A patch is one flat (level, fraction) triple, so its
+// interior is that patch's tile stamped over and over: a tile whose
+// four neighbouring tiles are identical to it is INSIDE one patch, not
+// a straddle of two patches' colors, and it must therefore decode
+// exactly — adjacent levels only, and the positions carrying the upper
+// level lit in Bayer order and no other.
+//
+// That the check works on SCREEN-aligned tiles at all is the phase
+// anchoring. Were the pattern laid out per patch instead, every patch
+// that starts on an odd column would stamp its tile a half period
+// across and these tiles would decode as garbage.
+//
+// It also insists the dither is actually FIRING — that some interior
+// tile carries a non-zero fraction — because every predicate above
+// would pass just as well on a frame with no dither in it at all.
+func radioDither(t *testing.T, p *lcdPanel) {
+	t.Helper()
+	chans := []struct{ shift, mask uint16 }{{11, 0x1F}, {5, 0x3F}, {0, 0x1F}}
+	inside, mixed, bad := 0, 0, 0
+	for y := 2; y < 236; y += 2 {
+		for x := 2; x < 236; x += 2 {
+			tile := tileAt(p, x, y)
+			if tileAt(p, x-2, y) != tile || tileAt(p, x+2, y) != tile ||
+				tileAt(p, x, y-2) != tile || tileAt(p, x, y+2) != tile {
+				continue // a patch edge runs through here
+			}
+			inside++
+			for ch, sh := range chans {
+				var v [4]int
+				for i, c := range tile {
+					v[i] = int((c >> sh.shift) & sh.mask)
+				}
+				_, f, ok := tileFrac(v)
+				if !ok {
+					if bad++; bad <= 4 {
+						t.Errorf("tile %v at (%d,%d) is not a 2x2 dither of "+
+							"one level pair on channel %d: %v", tile, x, y, ch, v)
+					}
+					continue
+				}
+				if f != 0 {
+					mixed++
+				}
+			}
+		}
+	}
+	if bad > 4 {
+		t.Errorf("...and %d more tiles that do not decode", bad-4)
+	}
+	if inside < 500 {
+		t.Errorf("only %d patch-interior tiles on the panel: the frame is "+
+			"too broken up to say anything about the dither", inside)
+	}
+	if mixed < 200 {
+		t.Errorf("only %d of %d interior tiles mix two levels: the dither "+
+			"is not firing", mixed, inside)
+	}
+}
+
 func TestGameRadio(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
@@ -810,41 +943,53 @@ func TestGameRadio(t *testing.T) {
 	at = runUntil(t, m, "radio: shot 48", at, 40_000_000_000)
 
 	p := decodeLCD(m, 16)
+	// Every one of these is a TILE test, not a pixel test. The scene
+	// renders sub-level brightness as density over a screen-aligned 2x2
+	// ordered-dither tile (target/game/src/gfx.c), so one pixel of a
+	// flat surface alternates between two adjacent levels and says
+	// nothing on its own; the tile's SUM is the density mean times
+	// four, which is the luminance the eye integrates and the only
+	// quantity a predicate over a dithered region may name. The
+	// thresholds below are the old pixel ones scaled by that four and
+	// the counts are the old counts over four, so each proves exactly
+	// what it proved before the dither arrived.
+	//
 	// the 2x2 ceiling light renders near-white in the upper middle
 	lit := 0
-	for y := 5; y < 60; y++ {
-		for x := 90; x < 150; x++ {
-			c := p.px[y*240+x]
-			if c>>11 >= 28 && (c>>5)&0x3F >= 56 { // bright r and g
+	for y := 6; y < 60; y += 2 {
+		for x := 90; x < 150; x += 2 {
+			r, g, _ := tileSum(p, x, y)
+			if r >= 4*28 && g >= 4*56 { // bright r and g
 				lit++
 			}
 		}
 	}
-	if lit < 100 {
-		t.Errorf("ceiling light: %d bright pixels", lit)
+	if lit < 25 {
+		t.Errorf("ceiling light: %d bright tiles", lit)
 	}
 	// left wall red-dominant, right wall green-dominant
 	redish, greenish := 0, 0
-	for y := 100; y < 140; y++ {
-		for x := 5; x < 40; x++ {
-			c := p.px[y*240+x]
-			if c>>11 > 2*((c>>5)&0x3F)/4 && c>>11 > 0 {
+	for y := 100; y < 140; y += 2 {
+		for x := 6; x < 40; x += 2 {
+			r, g, _ := tileSum(p, x, y)
+			if 2*r > g && r > 0 {
 				redish++
 			}
 		}
-		for x := 200; x < 235; x++ {
-			c := p.px[y*240+x]
-			if (c>>5)&0x3F > 0 && (c>>5)&0x3F/2 >= c>>11 {
+		for x := 200; x < 234; x += 2 {
+			r, g, _ := tileSum(p, x, y)
+			if g > 0 && g >= 2*r {
 				greenish++
 			}
 		}
 	}
-	if redish < 200 {
-		t.Errorf("left wall: %d red-dominant pixels", redish)
+	if redish < 50 {
+		t.Errorf("left wall: %d red-dominant tiles", redish)
 	}
-	if greenish < 200 {
-		t.Errorf("right wall: %d green-dominant pixels", greenish)
+	if greenish < 50 {
+		t.Errorf("right wall: %d green-dominant tiles", greenish)
 	}
+	radioDither(t, p)
 	dumpPNG(t, p, "radio.png")
 
 	// press exits back to the menu
@@ -895,6 +1040,17 @@ func gradLabels(p *lcdPanel, ybar int) int {
 // right channels, each running dark to bright with no reversal, the
 // window responding to the stick, and the numerals appearing only once
 // a band is wide enough to hold one.
+//
+// The ramps are DITHERED now (grad.c's Compensate screen shares their
+// painter, and at K=0 — which is what the ramp screen holds — the band
+// is exactly green's quantum, so green shows its native levels while
+// red and blue, quantizing half as often, pick up the half-step the
+// band leaves over). So every level here is read as a 2x2 tile SUM:
+// four times the density mean, and the only quantity a dithered
+// surface has. The sum of a tile is 4q+f for a solid band and the
+// mean of two neighbouring bands' where a boundary runs through it,
+// and BOTH are monotone in the code, so "never runs backwards" is
+// still exactly what the walk below proves.
 func TestGameGrad(t *testing.T) {
 	t.Parallel()
 	m, prog := bootGame(t)
@@ -903,12 +1059,9 @@ func TestGameGrad(t *testing.T) {
 		t.Fatal(err) // let the default view finish its flush
 	}
 	p := decodeLCD(m, 16)
-	// The four bars start below the 16-px header; sample a row well
+	// The four bars start below the 16-px header; sample a tile well
 	// clear of the numeral band at the bottom of each.
-	lev := func(y, x int) (int, int, int) {
-		c := p.px[y*240+x]
-		return int(c >> 11), int((c >> 5) & 0x3F), int(c & 0x1F)
-	}
+	lev := func(y, x int) (int, int, int) { return tileSum(p, x&^1, y&^1) }
 	bars := []struct {
 		name string
 		y    int
@@ -939,25 +1092,26 @@ func TestGameGrad(t *testing.T) {
 			}
 		default:
 			lo, hi = r0, r1
-			// grey: the 6-bit green carries one extra bit of the
-			// same code, so g>>1 is r and b exactly
+			// grey: the 6-bit green carries one extra bit of the same
+			// code, so g>>1 is r and b exactly — of the tile sums,
+			// which is where a dithered grey's balance actually lives
 			if r0 != b0 || r1 != b1 || g0>>1 != r0 || g1>>1 != r1 {
 				t.Errorf("W bar is not grey: %d,%d,%d .. %d,%d,%d",
 					r0, g0, b0, r1, g1, b1)
 			}
 		}
-		// green counts in 6-bit codes, the rest in 5-bit
-		want := 28
+		// green counts in 6-bit codes, the rest in 5-bit; x4 for the tile
+		want := 4 * 28
 		if b.ch == 1 {
-			want = 56
+			want = 4 * 56
 		}
-		if lo > 4 || hi < want {
-			t.Errorf("%s bar ramp: level %d at x=8, %d at x=230 (want <=4 .. >=%d)",
-				b.name, lo, hi, want)
+		if lo > 4*4 || hi < want {
+			t.Errorf("%s bar ramp: tile %d at x=8, %d at x=230 (want <=%d .. >=%d)",
+				b.name, lo, hi, 4*4, want)
 		}
 		// and it never runs backwards across the width
 		prev := 0
-		for x := 0; x < 240; x++ {
+		for x := 0; x < 240; x += 2 {
 			r, g, bl := lev(b.y, x)
 			v := r
 			if b.ch == 1 {
@@ -995,8 +1149,8 @@ func TestGameGrad(t *testing.T) {
 			tailLines(string(m.ConsoleOut), 6))
 	}
 	p = decodeLCD(m, 16)
-	if r, _, _ := lev(30, 4); r < 12 {
-		t.Errorf("zoomed R bar starts at level %d, want >=12", r)
+	if r, _, _ := lev(30, 4); r < 4*12 {
+		t.Errorf("zoomed R bar starts at tile %d, want >=%d", r, 4*12)
 	}
 	for _, ybar := range []int{16, 72, 128} {
 		if n := gradLabels(p, ybar); n < 200 {
@@ -1158,6 +1312,93 @@ func TestGameGradMatch(t *testing.T) {
 	at = runUntil(t, m, "menu up", at, 200_000_000)
 	press(t, m, prog, pinDown)
 	runUntil(t, m, "menu: LANWalk", at, 200_000_000)
+}
+
+// TestGameGradComp: the Compensate screen, the Gradient app's third
+// instrument and the one that hands a number to the radiosity demo.
+// The panel is luminance-linear, so a dark gradient rendered at its
+// true value has no perceptual room; gcomp (target/game/src/g.h) bends
+// the code axis down toward black by K sixteenths, and the bend is
+// only renderable because the 2x2 dither can land between the panel's
+// levels. How much bend is a judgement made by eye on silicon, so what
+// the emulator can check is that the instrument offers the choice and
+// that the curve under it behaves: it darkens as K rises, it leaves
+// the top of the range exactly where it was, and the value is echoed
+// so the bench can write it down.
+//
+// Five holds to get there, not two. The hold walks one cycle — ramps
+// -> matching -> Compensate -> ramps — but the matching screen's four
+// channels are a sub-cycle inside its own stop, because the stick
+// there is spent on N and M and the hold is the only key left over.
+func TestGameGradComp(t *testing.T) {
+	t.Parallel()
+	m, prog := bootGame(t)
+	at := gradEnter(t, m, prog)
+	for _, marker := range []string{"grad: match R", "grad: match G",
+		"grad: match B", "grad: match W", "grad: comp K 00/16"} {
+		at = holdA(t, m, prog, marker, at)
+	}
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 60_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	p0 := decodeLCD(m, 16)
+
+	// up walks K, and every step echoes: the value picked at the bench
+	// has to reach the serial log, not just the panel.
+	for k := 1; k <= 4; k++ {
+		press(t, m, prog, pinUp)
+		at = runUntil(t, m, fmt.Sprintf("grad: comp K %02d/16", k), at,
+			200_000_000)
+	}
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 60_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	p4 := decodeLCD(m, 16)
+
+	// The curve, read off the W ramp. Mid-grey has to have moved DOWN
+	// (that is the whole point of the screen)...
+	mid0, _, _ := tileSum(p0, 120, 200)
+	mid4, _, _ := tileSum(p4, 120, 200)
+	if mid4 >= mid0 {
+		t.Errorf("mid-grey did not darken at K=4: tile %d, was %d", mid4, mid0)
+	}
+	// ...and the top of the range has to be exactly where it was: the
+	// gap term carries a factor of (255-v), so D(255) = 255 at every K,
+	// and a curve that dimmed the whites would be the wrong curve.
+	top0r, top0g, top0b := tileSum(p0, 238, 200)
+	top4r, top4g, top4b := tileSum(p4, 238, 200)
+	if top0r != top4r || top0g != top4g || top0b != top4b {
+		t.Errorf("the top of the ramp moved at K=4: %d,%d,%d was %d,%d,%d",
+			top4r, top4g, top4b, top0r, top0g, top0b)
+	}
+	// The ramp is still a ramp: monotone across the width, dither and
+	// all (see TestGameGrad for why that is read a tile at a time).
+	prev := 0
+	for x := 0; x < 240; x += 2 {
+		v, _, _ := tileSum(p4, x, 200)
+		if v < prev {
+			t.Fatalf("compensated W ramp falls at x=%d: %d after %d", x, v, prev)
+		}
+		prev = v
+	}
+	dumpPNG(t, p4, "grad-comp.png")
+
+	// down walks it back, and a step that would leave 0..16 is not
+	// taken at all — so the console line means the value really moved.
+	press(t, m, prog, pinDown)
+	at = runUntil(t, m, "grad: comp K 03/16", at, 200_000_000)
+
+	// A tap returns to the ramps, and the ramp window comes back as it
+	// was left: Compensate borrows the whole axis while it is up and
+	// gives it back on the way out.
+	press(t, m, prog, pinA)
+	at = runUntil(t, m, "grad: ramps", at, 200_000_000)
+	press(t, m, prog, pinUp)
+	at = runUntil(t, m, "grad: view 064-191", at, 200_000_000)
+	// ...and a tap THERE still exits to the menu, unchanged.
+	press(t, m, prog, pinA)
+	at = runUntil(t, m, "grad: back", at, 200_000_000)
+	runUntil(t, m, "menu up", at, 200_000_000)
 }
 
 // tailLines returns the last n lines of s, for failure messages that
