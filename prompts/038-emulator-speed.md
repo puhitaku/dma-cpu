@@ -73,3 +73,11 @@ sweep decoded it. Silicon score at 300 MHz: 21/21 HIL PASS,
 fc0-measured clk_sys=300000 kHz, video untouched (126 MHz HSTX
 PLL), fbtest 22 s -> 5 s, slide load 1.55 -> 1.04 s (SPI wire is
 the floor now), ticks 2x (kernel-bound, as always).
+
+("Kernel-bound, as always" was the whole problem, and it took until
+prompts/044 to say so: the tick counter is quanta DELIVERED, so
+everything that had been reading it for elapsed time — log stamps,
+`SYS_uptime`, timed sleeps — was reading a number that stops while
+the kernel runs. That is why the slide load above had to be timed
+with a stopwatch. Wallclock now comes off TIMERAWL at the point of
+use; `ticks` still means exactly what it meant here.)

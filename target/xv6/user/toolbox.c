@@ -86,9 +86,12 @@ t_free(void)
   emitn(mi[5]);
   emit("/");
   emitn(mi[6]);
-  emit("  uptime ");
+  /* Quanta the scheduler actually delivered, which is NOT uptime:
+   * the kernel has no safepoints, so a long kernel stay delivers
+   * none. Wallclock uptime is what SYS_uptime returns. */
+  emit("  ticks ");
   emitn(mi[7]);
-  emit(" ticks\n");
+  emit("\n");
   flush();
   return 0;
 }

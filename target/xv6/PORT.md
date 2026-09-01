@@ -55,6 +55,23 @@ missing device by dropping a binary from a board's app set.
   degenerate to no-ops (acquire/release keep their API), and
   `push_off/pop_off` becomes dispatch-thunk save/restore if ever
   needed.
+- Time: `ticks` counts scheduler quanta the injector DELIVERED, and
+  nothing else. The kernel has no safepoints and the injector is
+  one-shot (re-armed at `kexit`), so a long kernel stay — one
+  `SYS_read` that paints a 640x480 slide — delivers at most one.
+  WALLCLOCK is the TIMER block's free-running microsecond counter,
+  read at the point of use through the `__dma_timerawl` /
+  `__dma_timerawh` MMIO globals dmacc resolves per SKU. `klogts()`
+  stamps and `SYS_uptime` compute elapsed since a boot epoch in
+  hand-rolled 32-bit pairs (the machine is ILP32 with no i64 — see
+  `wall_now` / `wall_since` / `us_div` in `dma/kproc.c`), and a timed
+  sleep stores a microsecond DEADLINE, so `pause(n)` waits n × 100 us
+  of real time however many quanta went missing. `SYS_uptime` keeps
+  its 100 us unit; `SYS_meminfo`'s tick field keeps its meaning
+  (delivered quanta — `toolbox free` prints it as "ticks", not
+  uptime). Do not reconcile the two counters: a tick count that
+  claims to be time is the bug this rule exists to prevent, and a
+  time source that pretends missing quanta were delivered is worse.
 
 ## File disposition (kernel/)
 
@@ -269,6 +286,12 @@ a different screen.
   files straight from the machine (`xv6/dma/kgpio.c`, front ends in
   `user/hwtools.c`), and devfs lists the machine's resources as
   readable files under /dev (`xv6/dma/kdev.c`).
+- [x] A real timebase (prompts/044): `klogts()`, `SYS_uptime` and the
+  timed sleeps stopped asking the tick counter what time it was and
+  started reading the TIMER block's microsecond counter. `show` had
+  been reporting a 40 ms slide draw as 0.00s — the draw is one
+  `SYS_read`, and the kernel it stays inside delivers no quanta.
+  See the "Time" rule above; `ticks` itself is unchanged.
 
 ## Presentation goals (beyond xv6)
 

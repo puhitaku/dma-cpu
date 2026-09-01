@@ -390,6 +390,10 @@ func (a *asm) mmioAddr(name string) (uint32, bool) {
 		return a.v.UARTDRAddr(), true
 	case "uartfr":
 		return a.v.UARTFRAddr(), true
+	case "timerawl":
+		return a.v.TimerRawL, true
+	case "timerawh":
+		return a.v.TimerRawH(), true
 	case "cnt8w":
 		if a.opts.Compact {
 			return emu.ChanRegAddr(emu.CompactSize8W, emu.OffAl2TransCount), true

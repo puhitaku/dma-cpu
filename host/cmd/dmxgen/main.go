@@ -275,7 +275,7 @@ const (
 	pfPid
 	pfPpid
 	pfChan
-	pfWakeTick
+	pfWakeUS
 	pfXstate
 	pfPdispatch
 	pfPirqresume
@@ -998,6 +998,10 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	// applies the init Writes (register banks, dispatch presets) —
 	// exactly what the firmware's dmx_load replays.
 	m := emu.NewMachine(v)
+	// Free-running timer: the game's panel bring-up and frame pacing
+	// wait out real microseconds (emu/timer.go, TimerFreeRun), which an
+	// honest counter would make this verification boot actually spend.
+	m.Timer = emu.TimerFreeRun
 	m.Flash = make([]byte, bd.FlashSize)
 	copy(m.Flash[gameSFXHome-0x10000000:], sfxBlob)
 	for pin := PinJoyAUp; pin < PinJoyAUp+10; pin++ {

@@ -135,6 +135,12 @@ func bootGameImage(t *testing.T, prog *dmaasm.Result) *emu.Machine {
 		t.Fatal(err)
 	}
 	m := emu.NewMachine(v)
+	// The game spends real microseconds on purpose: 280 ms of ST7789
+	// reset delays at bring-up and a TIMERAWL-paced frame loop. Under
+	// the honest timer model an emulated boot would burn 42M cycles
+	// before the first pixel and then pace at 60 Hz — so this machine
+	// keeps the free-running model (emu/timer.go).
+	m.Timer = emu.TimerFreeRun
 	m.Flash = make([]byte, bd.FlashSize)
 	sfx, drums, ballHome := stageSFX(t, m)
 	for pin := 2; pin <= 11; pin++ {

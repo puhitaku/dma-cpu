@@ -45,6 +45,18 @@
 extern volatile unsigned int __dma_uart_dr; /* mapped to UART0 DR by dmacc */
 extern volatile unsigned int __dma_uart_fr; /* mapped to UART0 FR */
 
+/* The TIMER block's free-running microsecond counter, mapped by dmacc
+ * (hwMMIO) so the address stays SKU-correct. TIMERAWH is the high
+ * word and lives BELOW TIMERAWL in the block (+0x24 vs +0x28).
+ *
+ * This is the system's ONLY wallclock. `ticks` below is not one: it
+ * counts scheduler quanta the injector actually DELIVERED, and the
+ * kernel has no safepoints, so a long kernel stay (one SYS_read that
+ * paints a 307200-byte slide) advances it at most once. Anything that
+ * wants elapsed time reads these two words at the point of use. */
+extern volatile unsigned int __dma_timerawl;
+extern volatile unsigned int __dma_timerawh;
+
 #define NPROC 8
 
 struct dma_sysmail {
@@ -62,7 +74,9 @@ struct proc {
   uint pid;        /* 1 */
   uint ppid;       /* 2 */
   uint chan;       /* 3: sleep channel (an address token, 0 = none) */
-  uint wake_tick;  /* 4: for sleeps on &ticks */
+  uint wake_us;    /* 4: TIMERAWL deadline for a timed sleep (see
+                    * SYS_pause); compared wrap-safe, so the horizon
+                    * is 2^31 us ~ 35 minutes */
   uint xstate;     /* 5: exit status (int) */
   uint pdispatch;  /* 6 */
   uint pirqresume; /* 7 */
@@ -81,7 +95,26 @@ struct proc {
 
 struct proc proc[NPROC];
 uint curr;
+
+/* ticks: scheduler quanta DELIVERED, not elapsed time. The injector
+ * is one-shot and re-armed at kexit, so this stops advancing for as
+ * long as the kernel stays in — by design, and never to be papered
+ * over with reconciliation. Wallclock is __dma_timeraw{l,h} read at
+ * the point of use; see wall_now() and klogts(). */
 uint ticks;
+
+/* Boot epoch: the 64-bit microsecond counter as of the kernel's
+ * one-time init (kenter). Zero until then, which just means elapsed
+ * is measured from machine start — honest either way. */
+static uint wall0_hi, wall0_lo;
+
+/* ntimed: how many processes hold a wake_us deadline. A HINT, not a
+ * refcount — tick_income recounts it during its walk, so a sleeper
+ * woken by anything else (sel_wake, kill, terminate) costs one extra
+ * walk and then settles. What it buys is the common case: with no
+ * timed sleeper the resident tick path does one load and one branch
+ * and never touches the proc table or the timer at all. */
+static uint ntimed;
 
 /* kernel.dasm interface words (loader-patched pointers). */
 uint *volatile kw_pcurdisp;
@@ -558,15 +591,91 @@ cputc(int c)
  * -2 (EAGAIN) when none is ready — the usys read() wrapper retries. */
 void kconswrite(const char *b, int n);
 
-/* klogts: "[seconds.millis] " from the scheduler-tick epoch, for
- * kernel log lines (fb bring-up, the SD driver, panics). User
- * console output never comes through here. */
+/* --- Wallclock (prompts/044): 64-bit microseconds out of the TIMERAW
+ * pair, in hand-rolled 32-bit halves. dmacc has no i64, so every wide
+ * value here is a (hi, lo) pair and every operation on one is spelled
+ * out. All three users are cold — a log stamp, SYS_uptime, and the
+ * boot anchor — so the 32-round long division below is bought at a
+ * price nobody pays twice. The SLEEP path deliberately does NOT come
+ * through here: it works in the 32-bit low word alone, where a
+ * wrap-safe compare is one subtract (see SYS_pause). --- */
+
+/* wall_now: the counter, read coherently. The two halves latch
+ * independently, so a low-word wrap between the reads would pair a
+ * stale high with a fresh low — one second reported as 4295. Read
+ * high, low, high and retry if the high moved; the loop runs at most
+ * twice, since a second wrap would need another 71.6 minutes. */
+static void
+wall_now(uint *hi, uint *lo)
+{
+  uint h = __dma_timerawh;
+  for (;;) {
+    uint l = __dma_timerawl;
+    uint h2 = __dma_timerawh;
+    if (h2 == h) {
+      *hi = h;
+      *lo = l;
+      return;
+    }
+    h = h2;
+  }
+}
+
+/* wall_since: microseconds elapsed since the (hi, lo) epoch, as a
+ * pair. Borrow-propagating 64-bit subtract. */
+static void
+wall_since(uint ehi, uint elo, uint *hi, uint *lo)
+{
+  uint nh, nl;
+  wall_now(&nh, &nl);
+  *lo = nl - elo;
+  *hi = nh - ehi - (nl < elo ? 1u : 0u);
+}
+
+/* us_div: divide the pair in place by d (0 < d < 2^31) and return the
+ * remainder. Long division: the high word goes through the machine's
+ * own 32-bit divide, then the low word is brought down a bit at a
+ * time, restoring shift-and-subtract.
+ *
+ * The low word is READ through a descending mask instead of being
+ * shifted out of. Spelled the obvious way — rem = (rem << 1) | (l >>
+ * 31) beside l <<= 1 — clang recognizes the pair as a funnel shift
+ * and emits llvm.fshl.i32 no matter how the two halves are written
+ * (x + x and a comparison get canonicalized straight back into it),
+ * and this machine's compiler does not implement that intrinsic.
+ * With l left alone there is no pair to match. */
+static uint
+us_div(uint *hi, uint *lo, uint d)
+{
+  uint l = *lo, qh = *hi / d, ql = 0, rem = *hi % d;
+  for (uint bit = 0x80000000u; bit != 0; bit >>= 1) {
+    rem = rem + rem; /* rem < d < 2^31: rem + rem + 1 cannot overflow */
+    if (l & bit)
+      rem += 1u;
+    ql = ql + ql;
+    if (rem >= d) {
+      rem -= d;
+      ql += 1u;
+    }
+  }
+  *hi = qh;
+  *lo = ql;
+  return rem;
+}
+
+/* klogts: "[seconds.millis] " since the boot epoch, for kernel log
+ * lines (fb bring-up, the SD driver, panics). User console output
+ * never comes through here. Reads the wallclock, so a stamp is
+ * honest even when it lands in the middle of a long kernel stay that
+ * delivered no ticks at all. */
 void
 klogts(void)
 {
-  uint t = ticks;
-  uint sec = t / 10000u;
-  uint ms = (t % 10000u) / 10u;
+  uint hi, lo;
+  wall_since(wall0_hi, wall0_lo, &hi, &lo);
+  uint us = us_div(&hi, &lo, 1000000u);
+  uint sec = lo; /* hi is zero short of 136 years */
+  uint ms = us / 1000u;
   char b[20];
   int n = 0;
   b[n++] = '[';
@@ -621,7 +730,7 @@ kconsread(uint dst, int n)
  * select that SLEEPS is therefore always waiting on the console, and
  * the wake can deposit the caller's full mask without re-checking
  * per-fd state. Two channels split the deadline bookkeeping: timed
- * sleepers park on selwait_to (tick_income scans their wake_tick),
+ * sleepers park on selwait_to (tick_income scans their wake_us),
  * untimed on selwait_inf. */
 static uint selwait_inf, selwait_to;
 
@@ -725,15 +834,29 @@ tick_income(void)
   rearm = 1;
   /* wakeup(&ticks): timer sleepers whose deadline passed — and timed
    * select sleepers, whose 0-on-timeout return was deposited at sleep
-   * time. */
-  for (int i = 0; i < NPROC; i++) {
-    struct proc *p = &proc[i];
-    if (p->state == SLEEPING &&
-        (p->chan == (uint)&ticks || p->chan == (uint)&selwait_to) &&
-        (int)(ticks - p->wake_tick) >= 0) {
-      p->chan = 0;
-      p->state = RUNNABLE;
+   * time. Deadlines are TIMERAWL microseconds, so a sleeper woken
+   * here slept the time it asked for even if the ticks that should
+   * have counted it out were never delivered; the compare is
+   * wrap-safe. This is resident code (dmxgen kernResident): the whole
+   * walk, the timer read included, stays behind the ntimed hint so an
+   * idle system pays a load and a branch. */
+  if (ntimed) {
+    uint now = __dma_timerawl;
+    uint left = 0;
+    for (int i = 0; i < NPROC; i++) {
+      struct proc *p = &proc[i];
+      if (p->state != SLEEPING)
+        continue;
+      if (p->chan != (uint)&ticks && p->chan != (uint)&selwait_to)
+        continue;
+      if ((int)(now - p->wake_us) >= 0) {
+        p->chan = 0;
+        p->state = RUNNABLE;
+        continue;
+      }
+      left = 1;
     }
+    ntimed = left;
   }
   /* Drain the RX FIFO every tick, not just on SYS_read: Ctrl-C must
    * be seen even while a compute-bound foreground job runs and the
@@ -879,6 +1002,44 @@ deliver_sigint(void)
  * this closed a real silicon hang (prompts/017). */
 static uint entry_disp, entry_thunk;
 
+/* kboot_init: the kernel's one-time bring-up, on the first entry
+ * after the loader configured dma_disk. Out of line, and kept that
+ * way, because its only caller is RESIDENT: kenter lives in the
+ * .ramtext window (dmxgen kernResident) and this code runs exactly
+ * once, before the display is up, so it has no business spending the
+ * scarcest memory in the system. */
+static __attribute__((noinline)) void
+kboot_init(void)
+{
+  /* Boot epoch, before the first stamp: every klogts() and every
+   * SYS_uptime is measured from here. (kmain is only a GC anchor —
+   * this function IS the kernel's init.) */
+  wall_now(&wall0_hi, &wall0_lo);
+  /* The one-time boot banner: the port's commit (loader-patched;
+   * 0000000 in unwired test builds) over the upstream lineage. */
+  klogts();
+  kconswrite("xv6-dma version ", 16);
+  {
+    const char *hx = "0123456789abcdef";
+    char h[8];
+    for (int i = 0; i < 7; i++)
+      h[i] = hx[(xv6_commit >> (24 - 4 * i)) & 0xFu];
+    kconswrite(h, 7);
+  }
+  kconswrite(" based on xv6-riscv & xv6-ns (rp2dma-xv6-dmacc)\n", 48);
+  int fbkb = kfb_init();
+  if (fbkb > 0) {
+    kfbcon_reset();
+    klogts();
+    kconswrite("fb: 640x480x8 on hstx-dvi\n", 26);
+  } else if (fbkb < 0) {
+    klogts();
+    kconswrite("fb: psram fail\n", 15);
+  }
+  kfs_start();
+  kflash_init();
+}
+
 /* Consume any fire that landed on curr's dispatch word or in
  * tickpending, then aim in-kernel fires at tickpending. */
 static void
@@ -887,31 +1048,8 @@ kenter(void)
   rearm = 0;
   tick_taken = 0;
   kcons_aim(0); /* in-kernel wake fires land on kcons's scrap word */
-  if (!fsready && dma_disk) {
-    /* The one-time boot banner: the port's commit (loader-patched;
-     * 0000000 in unwired test builds) over the upstream lineage. */
-    klogts();
-    kconswrite("xv6-dma version ", 16);
-    {
-      const char *hx = "0123456789abcdef";
-      char h[8];
-      for (int i = 0; i < 7; i++)
-        h[i] = hx[(xv6_commit >> (24 - 4 * i)) & 0xFu];
-      kconswrite(h, 7);
-    }
-    kconswrite(" based on xv6-riscv & xv6-ns (rp2dma-xv6-dmacc)\n", 48);
-    int fbkb = kfb_init();
-    if (fbkb > 0) {
-      kfbcon_reset();
-      klogts();
-      kconswrite("fb: 640x480x8 on hstx-dvi\n", 26);
-    } else if (fbkb < 0) {
-      klogts();
-      kconswrite("fb: psram fail\n", 15);
-    }
-    kfs_start();
-    kflash_init();
-  }
+  if (!fsready && dma_disk)
+    kboot_init();
   waspark = parked;
   if (parked) {
     /* Woken from the park loop by the fire that detoured us here
@@ -1222,9 +1360,19 @@ dma_ksyscall(void)
   case SYS_getpid:
     ret = p->pid;
     break;
-  case SYS_uptime:
-    ret = ticks;
+  case SYS_uptime: { /* elapsed since boot in 100 us units — the unit
+                      * upstream's sys_uptime returned ticks in, and
+                      * the one show.c formats seconds out of. The
+                      * VALUE is now wallclock, so a draw that pinned
+                      * the kernel for 40 ms reports 40 ms instead of
+                      * zero. Wraps at 2^32 units (~4.9 days), as the
+                      * tick count did. */
+    uint hi, lo;
+    wall_since(wall0_hi, wall0_lo, &hi, &lo);
+    us_div(&hi, &lo, 100u);
+    ret = lo;
     break;
+  }
   case SYS_write: {
     int r;
     if (badbuf(p, m->a1, m->a2))
@@ -1298,15 +1446,22 @@ dma_ksyscall(void)
                   * way — no paging) */
     ret = ksbrk(p, (int)m->a0);
     break;
-  case SYS_pause: /* sleep a0 ticks on &ticks (upstream sys_sleep) */
-    p->wake_tick = ticks + m->a0;
+  case SYS_pause: /* sleep a0 ticks on &ticks (upstream sys_sleep).
+                   * The deadline is wallclock: TIMERAWL now plus the
+                   * requested 100 us units, in the 32-bit low word
+                   * alone. Sleeps here are short — the longest in the
+                   * tree is pause(1000), 100 ms — and the wrap-safe
+                   * compare in tick_income carries 2^31 us of them. */
+    ntimed++;
+    p->wake_us = __dma_timerawl + m->a0 * 100u;
     sleep((uint)&ticks);
     ret = 0;
     block = 1;
     break;
   case SYS_select: { /* a0: fd readiness bitmask (fds 0..30); a1:
-                      * timeout in ticks, 0 = wait forever. Returns the
-                      * ready subset of a0, 0 on timeout. */
+                      * timeout in 100 us units, 0 = wait forever.
+                      * Returns the ready subset of a0, 0 on timeout.
+                      * The wait is wallclock, like SYS_pause's. */
     uint mask = m->a0, rdy = 0;
     for (uint fd = 0; fd < 31; fd++) {
       if (!((mask >> fd) & 1))
@@ -1320,7 +1475,8 @@ dma_ksyscall(void)
       break;
     }
     if (m->a1 != 0) {
-      p->wake_tick = ticks + m->a1;
+      ntimed++;
+      p->wake_us = __dma_timerawl + m->a1 * 100u;
       sleep((uint)&selwait_to);
     } else {
       sleep((uint)&selwait_inf);
@@ -1556,7 +1712,10 @@ dma_ksyscall(void)
                        * [2] largest free block
                        * [3] heap bytes (live sbrk chunks, w/ headers)
                        * [4] exec bytes (live images + argv areas)
-                       * [5] proc slots used  [6] NPROC  [7] ticks */
+                       * [5] proc slots used  [6] NPROC
+                       * [7] ticks DELIVERED (not uptime — see the
+                       *     `ticks` declaration; SYS_uptime is the
+                       *     wallclock one) */
     if (badbuf(p, m->a0, 32))
       break;
     uint *o = (uint *)m->a0;

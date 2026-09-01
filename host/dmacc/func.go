@@ -641,7 +641,7 @@ func (fc *funcCtx) op(v *llir.Value) (string, error) {
 		}
 		return fmt.Sprintf("$0x%x", c), nil
 	case llir.VGlobal, llir.VFunc:
-		if uartMMIO(v.Name) != "" {
+		if hwMMIO(v.Name) != "" {
 			return "", fmt.Errorf("the address of %s cannot be taken (hardware register)", v.Name)
 		}
 		return "$" + fc.globalOperand(v), nil
@@ -685,7 +685,7 @@ func (fc *funcCtx) forward(res string, src *llir.Value) error {
 func (fc *funcCtx) directAddr(v *llir.Value) (string, bool) {
 	switch v.Kind {
 	case llir.VGlobal:
-		if m := uartMMIO(v.Name); m != "" {
+		if m := hwMMIO(v.Name); m != "" {
 			return m, true
 		}
 		return fc.globalOperand(v), true

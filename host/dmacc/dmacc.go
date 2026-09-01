@@ -324,14 +324,26 @@ type gen struct {
 	loopLabels map[string]bool
 }
 
-// uartMMIO maps the compiler-known UART globals to dmaasm MMIO operands
-// (SKU-resolved at assembly time). C declares them in <dma/mmio.h>.
-func uartMMIO(name string) string {
+// hwMMIO maps the compiler-known hardware globals to dmaasm MMIO
+// operands (SKU-resolved at assembly time). C declares them extern
+// volatile and never defines them; taking their address is an error.
+//
+// The TIMERAW pair is the free-running microsecond counter — the only
+// wallclock the machine has, since the scheduler tick counts delivered
+// quanta and stops while the kernel runs (target/xv6/dma/kproc.c).
+// Going through the operand table rather than a literal address keeps
+// it SKU-correct: the TIMER block sits at 0x40054000 on RP2040 and
+// 0x400B0000 on RP2350.
+func hwMMIO(name string) string {
 	switch name {
 	case "__dma_uart_dr":
 		return "%uartdr"
 	case "__dma_uart_fr":
 		return "%uartfr"
+	case "__dma_timerawl":
+		return "%timerawl"
+	case "__dma_timerawh":
+		return "%timerawh"
 	}
 	return ""
 }
@@ -449,7 +461,7 @@ func (g *gen) run() error {
 		}
 	}
 	for _, gl := range g.m.Globals {
-		if uartMMIO(gl.Name) != "" {
+		if hwMMIO(gl.Name) != "" {
 			continue // hardware register, not storage
 		}
 		if err := g.emitGlobal(gl, g.opts.XIPText && gl.Const && !ramGlob[gl.Name]); err != nil {

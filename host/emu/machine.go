@@ -33,7 +33,15 @@ type Machine struct {
 	// Keyed by the alias-normalized address.
 	mmio map[uint32]uint32
 
-	Cycle      uint64
+	Cycle uint64
+
+	// Timer is the TIMERAWH:TIMERAWL model (timer.go). The zero value
+	// is TimerHonest — one microsecond per DefaultCyclesPerUS cycles,
+	// the mapping the scheduler tick's own arming implies. Set
+	// TimerFreeRun on machines that busy-wait fixed microsecond
+	// intervals they do not need to actually spend (the gamepico).
+	Timer TimerModel
+
 	GPIOEvents []GPIOEvent
 	gpioLevel  [64]byte // last level per pin: OUTOVER writes or SetPadIn
 
@@ -282,6 +290,9 @@ func (m *Machine) Read(addr uint32, size int) (uint32, error) {
 		m.streamCtr--
 		return v, nil
 	case addr >= 0x40000000 && addr < 0x60000000:
+		if v, ok := m.timerRead(addr); ok {
+			return v, nil
+		}
 		if v, ok := m.flashRead(addr); ok {
 			return v, nil
 		}

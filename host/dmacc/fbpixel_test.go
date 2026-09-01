@@ -117,10 +117,16 @@ func TestXv6FbconPixels(t *testing.T) {
 
 // fbPixelGolden is what the session above renders, captured from
 // kfbcon.c as it stood before the per-byte path was reworked.
+//
+// The first three phases were re-recorded for prompts/044: the boot
+// banner is still on screen under them, and one of its klogts()
+// stamps is now the honest [0.004] the framebuffer bring-up takes
+// instead of the [0.000] a stopped tick counter used to report. Three
+// glyphs of a kernel log line, and nothing about the renderer.
 var fbPixelGolden = []string{
-	"7c7fba23aa612909", // echo
-	"f307d4d68b5b228d", // edit
-	"d8ff3ec04b7679bd", // escapes
+	"4644613854373639", // echo
+	"f8436a50256bc4fd", // edit
+	"bb5a7d764da0ff2d", // escapes
 	"4f13cb23697277dd", // scroll
 	"61f3584764f48f15", // clear
 	"af897c4b882ea0fd", // after clear

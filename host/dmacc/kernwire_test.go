@@ -13,7 +13,7 @@ const (
 	pfPid
 	pfPpid
 	pfChan
-	pfWakeTick
+	pfWakeUS
 	pfXstate
 	pfPdispatch
 	pfPirqresume

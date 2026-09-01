@@ -19,7 +19,7 @@ type Variant struct {
 	PadsBank0Base uint32
 	PIO0Base      uint32 // PIO1/PIO2 follow at +0x100000 strides
 	UART0Base     uint32
-	TimerRawL     uint32 // TIMERAWL: the free-running us counter
+	TimerRawL     uint32 // TIMERAWL: the free-running us counter (low word)
 	SPI0Base      uint32 // PL022; DR captured into Machine.SPIOut
 	DreqSPI0TX    uint32 // level-modeled while SSPDMACR.TXDMAE is set
 	DreqSPI0RX    uint32 // level-modeled while the SD model holds RX bytes
@@ -315,6 +315,12 @@ func (v *Variant) SniffDataAddr() uint32    { return DMABase + v.offSniffData }
 func (v *Variant) SniffDataXORAddr() uint32 { return DMABase + AliasXOR + v.offSniffData }
 func (v *Variant) SniffDataSetAddr() uint32 { return DMABase + AliasSet + v.offSniffData }
 func (v *Variant) SniffDataClrAddr() uint32 { return DMABase + AliasClr + v.offSniffData }
+
+// TimerRawH returns TIMERAWH, the free-running counter's high word.
+// The TIMER block puts it at +0x24, four bytes BELOW TIMERAWL (+0x28)
+// on both SKUs — +0x2C is DBGPAUSE, and reading it for the high word
+// would hand a driver a debug-control register instead of time.
+func (v *Variant) TimerRawH() uint32 { return v.TimerRawL - 4 }
 
 // TimerAddr returns the address of pacing timer i (0–3).
 func (v *Variant) TimerAddr(i int) uint32 { return DMABase + v.offTimer0 + uint32(i)*4 }
