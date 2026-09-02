@@ -6,6 +6,7 @@
 #   xsh/<command>/<cold|warm>    TestZZBenchXsh, machine cycles
 #   vi/<phase>                   TestZZBenchVi, machine cycles      [DMACC_BENCH]
 #   fbcon/<board>/<workload>     TestZZBenchFbcon, machine cycles   [DMACC_BENCH]
+#   nyancat/<figure>             TestZZBenchNyancat, cycles/frame   [DMACC_BENCH]
 #   game/<figure>                TestGameBench, as printed          [DMACC_BENCH]
 #
 # Every entry is exact: the emulator is deterministic, so any drift —
@@ -44,6 +45,9 @@ game/us/rand	177301760
 game/us/shr1	75305472
 game/us/sieve	1449423360
 game/us/sort	1155172864
+nyancat/bytes/frame	1259
+nyancat/frame/free	21716666
+nyancat/frame/paced	24750000
 size/fs-kern-xip/data	49480
 size/fs-kern-xip/ramtext	44256
 size/fs-kern-xip/text	204400

@@ -1,6 +1,7 @@
 package dmacc_test
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"strings"
@@ -279,4 +280,78 @@ func TestZZBenchFbcon(t *testing.T) {
 		fmt.Printf("%-44s %12d %12d %+12d\n", k, feather[k], pico2[k], int64(feather[k])-int64(pico2[k]))
 	}
 	pinSet(t, "fbcon/", pin)
+}
+
+// TestZZBenchNyancat prices the framebuffer console's heaviest
+// application, which is also the only colour-dense one in the tree:
+// nyancat paints 1,131 cells of background escape a frame, addressed
+// as changed runs against the previous frame, and every byte of that
+// goes to the display AND out the UART.
+//
+// Two sessions, and the difference between them is the point. Paced is
+// the wire the boards actually run (TXPace 13000 = 115200 baud), so it
+// says what a person sees; free-running takes the transmitter away and
+// leaves the machine's own compute. When the paced figure is the larger
+// of the two the UART is setting the pace and no amount of kernel work
+// will move the frame.
+//
+// A frame is the interval between counter lines, and the recorded
+// figure is the mean over a whole twelve-frame animation cycle starting
+// at the second frame — the first is a full redraw, which the port does
+// once and then never again. Console bytes per frame ride along,
+// because they are what both consumers are actually being handed.
+//
+//	DMACC_BENCH=1 go test ./dmacc/ -run TestZZBenchNyancat -v
+func TestZZBenchNyancat(t *testing.T) {
+	if os.Getenv("DMACC_BENCH") == "" {
+		t.Skip("set DMACC_BENCH=1 to run the cycle benchmark")
+	}
+	const cycle = 12 // frames in the animation before it repeats
+	session := func(pace uint64) (uint64, uint64) {
+		m, _ := bootXshBoard(t, nil, boards.Feather)
+		m.TXPace = pace
+		m.FeedConsole("nyancat\r")
+		frames := 0
+		var atCyc uint64
+		var atOut int
+		var first uint64
+		var firstOut int
+		for spent := uint64(0); spent < 6_000_000_000; {
+			rr, err := m.Run(emu.RunConfig{MaxCycles: 200_000})
+			if err != nil {
+				t.Fatalf("%v (console tail %q)", err, tail(m.ConsoleOut, 200))
+			}
+			spent += rr.Cycles
+			n := bytes.Count(m.ConsoleOut, []byte("seconds!"))
+			if n == frames {
+				continue
+			}
+			frames = n
+			atCyc, atOut = m.Cycle, len(m.ConsoleOut)
+			if frames == 2 { // the opening full redraw is behind us
+				first, firstOut = atCyc, atOut
+			}
+			if frames == 2+cycle {
+				return (atCyc - first) / cycle, uint64(atOut-firstOut) / cycle
+			}
+		}
+		t.Fatalf("nyancat drew %d frames of %d; console tail %q",
+			frames, 2+cycle, tail(m.ConsoleOut, 200))
+		return 0, 0
+	}
+	paced, bytesPerFrame := session(13000)
+	free, _ := session(0)
+	fmt.Printf("%-24s %14s %14s\n", "nyancat", "cycles/frame", "ms/frame")
+	for _, r := range []struct {
+		name string
+		cyc  uint64
+	}{{"paced (115200 baud)", paced}, {"free-running", free}} {
+		fmt.Printf("%-24s %14d %14.1f\n", r.name, r.cyc, float64(r.cyc)/150000)
+	}
+	fmt.Printf("%-24s %14d\n", "console bytes/frame", bytesPerFrame)
+	pinSet(t, "nyancat/", map[string]uint64{
+		"nyancat/frame/paced": paced,
+		"nyancat/frame/free":  free,
+		"nyancat/bytes/frame": bytesPerFrame,
+	})
 }

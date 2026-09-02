@@ -43,6 +43,7 @@ const ratchetHead = `# The size and cycle ratchet (prompts/042 §8). Generated b
 #   xsh/<command>/<cold|warm>    TestZZBenchXsh, machine cycles
 #   vi/<phase>                   TestZZBenchVi, machine cycles      [DMACC_BENCH]
 #   fbcon/<board>/<workload>     TestZZBenchFbcon, machine cycles   [DMACC_BENCH]
+#   nyancat/<figure>             TestZZBenchNyancat, cycles/frame   [DMACC_BENCH]
 #   game/<figure>                TestGameBench, as printed          [DMACC_BENCH]
 #
 # Every entry is exact: the emulator is deterministic, so any drift —

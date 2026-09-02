@@ -131,14 +131,15 @@ pgo:
 # TestZZAllSizes' and TestDeploySizes' figures and TestZZBenchXsh's
 # six-command cold/warm cycle table, all of which `make test` then
 # verifies EXACTLY — a regression AND an unrecorded improvement both
-# fail. Add DMACC_BENCH=1 to include the heavy figures (vi, fbcon, the
-# game benchmark); without it those rows carry over untouched.
+# fail. Add DMACC_BENCH=1 to include the heavy figures (vi, fbcon,
+# nyancat, the game benchmark); without it those rows carry over
+# untouched.
 #   make ratchet
 #   make ratchet DMACC_BENCH=1
 .PHONY: ratchet
 ratchet:
 	GEN_RATCHET=1 go test -count=1 -timeout 2h ./host/dmacc/ \
-	  -run 'TestZZAllSizes|TestDeploySizes|TestZZBenchXsh|TestZZBenchVi|TestZZBenchFbcon|TestGameBench' -v
+	  -run 'TestZZAllSizes|TestDeploySizes|TestZZBenchXsh|TestZZBenchVi|TestZZBenchFbcon|TestZZBenchNyancat|TestGameBench' -v
 
 # --- Compiler goldens (Phase 4) ---
 # Regenerate the committed IR goldens and host-truth expectations for the
