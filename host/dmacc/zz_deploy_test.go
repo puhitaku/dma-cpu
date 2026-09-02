@@ -70,6 +70,21 @@ func TestDeploySizes(t *testing.T) {
 	sizes["deploy/feather-vi/arenaclaim"] = uint64(claim)
 	fmt.Printf("DEP vi:     text=%d data=%d rtext=%d  (arena claim %d of %d)\n",
 		len(text), len(data), len(rt), claim, bd.ArenaEnd-bd.Arena)
+	// The toolbox, the OTHER pre-relocated image and the one whose
+	// arena claim is paid over and over: every hard link on it execs
+	// this blob. The three lengths are home-independent (pre-relocation
+	// fills addresses in, it does not resize the encoding — checked at
+	// three homes), so pricing it at AppsHome measures exactly what the
+	// registry ships a few kilobytes further up.
+	tbRes, tbText, tbRT, tbData, _ := buildUserResident(t, v, bd, bd.AppsHome, "toolbox")
+	_ = tbRes
+	tbClaim := ((len(tbRT)+len(tbData))+255)&^255 + 0x100
+	sizes["deploy/feather-toolbox/text"] = uint64(len(tbText))
+	sizes["deploy/feather-toolbox/data"] = uint64(len(tbData))
+	sizes["deploy/feather-toolbox/ramtext"] = uint64(len(tbRT))
+	sizes["deploy/feather-toolbox/arenaclaim"] = uint64(tbClaim)
+	fmt.Printf("DEP toolbox:text=%d data=%d rtext=%d  (arena claim %d of %d)\n",
+		len(tbText), len(tbData), len(tbRT), tbClaim, bd.ArenaEnd-bd.Arena)
 	// The game: bare metal on the gamepico, data growing toward the
 	// pin under the scene-exclusive span (boards.GameFreeBase), which
 	// stops it 40 KiB short of fx.c's fixed audio ring at 0x20038000.

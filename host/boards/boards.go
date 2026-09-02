@@ -192,7 +192,12 @@ var stdApps = []string{"echo", "cat", "ls", "toolbox", "hwtools",
 // (show left the set: profiling its slide renders found the 2x
 // descriptor-compare cost running ~1.8M times per slide through the
 // shared millicode — the speed tax outgrew the 3K arena win.)
-var SizeApps = map[string]bool{"toolbox": true, "hwtools": true}
+// (toolbox left it when it joined XIPApps below, for exactly the
+// reason the sh/kernel sentence gives: its text is flash now, so
+// OptSize buys no SRAM — the arena claim is 2,560 B either way — and
+// the descriptor form was pure tax. Measured: `free` -3.6% more
+// cycles on top of the pre-relocation win, +436 B of flash text.)
+var SizeApps = map[string]bool{"hwtools": true}
 
 // XIPApps run pre-relocated on registry (flash-apps) boards: compiled
 // XIPText and assembled at their final addresses, text executes in
@@ -209,14 +214,40 @@ var SizeApps = map[string]bool{"toolbox": true, "hwtools": true}
 // and a load-anywhere image pays all of it into the arena (25 KiB
 // measured, on a feather arena of 76.75). Pre-relocated it keeps the
 // frames in flash and claims 5.25 KiB.
-var XIPApps = map[string]bool{"nyancat": true}
+// toolbox is here for its SPEED, and it is the reason the flag pays
+// on a small program at all. It is the most-exec'd image in the tree
+// — every multi-call name below runs it — and exec applies its
+// relocations ONE AT A TIME: 2294 of them, a cost every link paid on
+// every invocation, and one that grew with the blob (ps alone added
+// 482). Pre-relocated there are none, the 9.5 KiB of text stops being
+// copied into the arena, and the rodata the relocs pointed at moves
+// into flash text with it: the claim falls 14,592 -> 2,560 B and
+// `free` runs 58% fewer cycles (prompts/042 §8, the xsh ratchet).
+// THE LIMIT the shared SRAM home imposes is real here in a way it was
+// not for vi and nyancat, which are whole-screen programs nobody
+// pipes: a pre-relocated image cannot be placed while ANY live exec
+// holds the arena's bottom block, so `ls | ps` — a load-anywhere
+// stage racing a toolbox stage — can print "exec ps failed". It is
+// survivable because no toolbox applet reads stdin: ps, free, kill,
+// sync, mount, mkdir, rm and clear are all sinks for a pipe, so the
+// position that breaks is the one no meaningful command uses. The
+// useful direction, `ps | cat`, is the one that works — the toolbox
+// stage execs first and owns the bottom. Fixing it outright wants a
+// reserved arena floor the allocator never hands out (kproc.c
+// kalloc), and the cheap version of that — moving load-anywhere
+// images to the arena's top instead — was measured and rejected: it
+// splits a process's data from its argv across the compact encoding's
+// address windows and costs +3% to +21% on every command.
+var XIPApps = map[string]bool{"nyancat": true, "toolbox": true}
 
 // spin/trap (signal demos), wc, and help left the toolbox: help is an
 // sh builtin now (it streams /dev/apps) and the rest earned no keep.
 // ps joined it — the proc table's front end is free-class work, one
 // syscall and a formatter, and the blob already carries the ulib it
-// needs. The blob is copied into the arena per invocation, so that
-// choice costs every other tool in it what ps weighs.
+// needs. Adding it used to cost every OTHER tool in the blob what ps
+// weighs, because the blob was copied and relocated into the arena
+// per invocation; pre-relocation (XIPApps) retired that bill, and
+// what a new applet costs the rest of them now is flash.
 var stdLinks = []string{"kill", "free", "ps", "sync", "mount",
 	"umount", "mkdir", "rm", "clear"}
 

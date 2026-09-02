@@ -307,6 +307,21 @@ a different screen.
   the arena claim is 5.25 KiB instead of 25. Every escape it emits was
   already in kfbcon's vocabulary — the port grew the console by
   nothing.
+- [x] The `toolbox` pre-relocated too (`boards.XIPApps`): the tree's
+  most-exec'd image stopped paying 2,294 relocations, applied one at a
+  time, on every invocation of every hard link. Text executes in place
+  from its flash home, the rodata the relocations pointed at went with
+  it, and the per-exec arena claim fell 14,592 -> 2,560 B. `free` runs
+  in 690,024 cycles where it took 1,770,021 (-61%), which is well past
+  the `ps` regression that prompted it (1,545,001). It left `SizeApps`
+  in the same move: OptSize buys no SRAM once text is flash, so the
+  descriptor-compare form was pure tax (-3.6% of what remained, +436 B
+  of flash). The cost is the shared-SRAM-home limit, now visible on a
+  command people pipe: a pre-relocated image cannot be placed while
+  another live exec holds the arena's bottom block, so `ls | ps` can
+  answer "exec ps failed". No toolbox applet reads stdin, so the
+  position that breaks is the one no meaningful pipeline uses; the
+  useful direction, `ps | cat`, works.
 
 ## Presentation goals (beyond xv6)
 

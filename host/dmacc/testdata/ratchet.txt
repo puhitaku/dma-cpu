@@ -17,6 +17,10 @@ deploy/feather-kernel/text	232260
 deploy/feather-sh/data	8960
 deploy/feather-sh/ramtext	3952
 deploy/feather-sh/text	47088
+deploy/feather-toolbox/arenaclaim	2560
+deploy/feather-toolbox/data	1540
+deploy/feather-toolbox/ramtext	560
+deploy/feather-toolbox/text	12812
 deploy/feather-vi/arenaclaim	26624
 deploy/feather-vi/data	11880
 deploy/feather-vi/ramtext	14488
@@ -76,7 +80,7 @@ vi/phase/replace char (rX)	3000000
 vi/phase/subst %s/a/A/g	2500000
 vi/phase/yank aaa (yy)	2000000
 vi/phase/yank line (yy)	1000000
-xsh/((((echo deep))))/cold	1182531
+xsh/((((echo deep))))/cold	1136180
 xsh/((((echo deep))))/warm	1139994
 xsh/cat README | wc/cold	1559986
 xsh/cat README | wc/warm	1560011
@@ -84,7 +88,7 @@ xsh/cat README/cold	1033626
 xsh/cat README/warm	990006
 xsh/echo hi/cold	1225842
 xsh/echo hi/warm	721105
-xsh/free/cold	1772645
-xsh/free/warm	1770021
+xsh/free/cold	708995
+xsh/free/warm	690024
 xsh/ls/cold	2342143
 xsh/ls/warm	2355000

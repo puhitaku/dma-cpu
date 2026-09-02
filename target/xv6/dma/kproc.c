@@ -254,7 +254,20 @@ struct kimg {
    * exec only places [ramtext][data] at sramhome, the arena's first
    * allocation (first-fit hands out the bottom, so the address is
    * deterministic — or busy, and the exec fails cleanly). No relocs;
-   * ramtext carries the self-modifying records XIPText split out. */
+   * ramtext carries the self-modifying records XIPText split out.
+   *
+   * "Or busy" is the mechanism's standing limit, and the toolbox
+   * (boards.XIPApps) is what makes it visible: two live execs cannot
+   * both have the bottom, so `ls | ps` can answer "exec ps failed"
+   * when the load-anywhere stage wins the race. It stays survivable
+   * only because no toolbox applet reads stdin — the pipe position
+   * that breaks is the one no meaningful command uses, and the useful
+   * direction (`ps | cat`) is the one that works. The real repair is
+   * an arena floor kalloc never hands out; the cheap substitute —
+   * moving load-anywhere images to kalloc_top — was measured and
+   * rejected, because separating a process's data from its argv
+   * across the compact encoding's address windows cost +3%..+21% on
+   * every shell command. */
   uint sramhome;
   uint rtext, rtextlen; /* ramtext blob source + byte length */
 };
