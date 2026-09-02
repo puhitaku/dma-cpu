@@ -248,3 +248,99 @@ func TestXv6Nyancat(t *testing.T) {
 		t.Errorf("shell not alive after nyancat: %q", string(m.ConsoleOut[before:]))
 	}
 }
+
+// TestXv6NyancatDelta is the frame diff's oracle. After the first
+// frame the port stops redrawing and emits only the cells whose color
+// changed, addressed absolutely (user/nyancat.c delta_frame), which
+// means every frame from the second on is built by TRUSTING what is
+// already on the screen. One stale byte of that bookkeeping and the
+// cat grows a seam no color census would notice.
+//
+// The animation is twelve frames and then it repeats, so the port's
+// thirteenth frame draws animation frame 0 for the second time — the
+// first time as a full redraw, this time as a diff against the twelve
+// frames in between. The two screens have to be pixel-identical over
+// the whole crop, gutter included; frame 2 is captured as well, so a
+// delta path that emitted NOTHING could not pass by standing still.
+func TestXv6NyancatDelta(t *testing.T) {
+	t.Parallel()
+	bd := boards.Feather
+	m, _ := bootXshBoard(t, nil, bd)
+	m.TXPace = 0
+	// The crop's 29 cell rows of 16 px. The counter line below them is
+	// left out on purpose: its second count is meant to differ.
+	const cropPx = 29 * 16 * 640
+	shot := func() []byte {
+		b := make([]byte, 0, cropPx)
+		for off := uint32(0); off < cropPx; off += 4 {
+			w := m.Peek32(bd.FbBuf + off)
+			b = append(b, byte(w), byte(w>>8), byte(w>>16), byte(w>>24))
+		}
+		return b
+	}
+	// Advance to the point where n frames have been emitted AND the
+	// port has gone back to sleep, so the screen holds a whole frame.
+	// Every frame ends with the counter line, which is the only place
+	// the word appears.
+	frames := func(n int) {
+		t.Helper()
+		var spent uint64
+		quiet, last := 0, len(m.ConsoleOut)
+		for spent < 2_000_000_000 {
+			rr, err := m.Run(emu.RunConfig{MaxCycles: 1_000_000})
+			if err != nil {
+				t.Fatalf("%v\nconsole tail: %q", err, tailB(m.ConsoleOut, 300))
+			}
+			spent += rr.Cycles
+			if len(m.ConsoleOut) != last {
+				last, quiet = len(m.ConsoleOut), 0
+				continue
+			}
+			quiet++
+			if quiet >= 4 && bytes.Count(m.ConsoleOut, []byte("seconds!")) >= n {
+				return
+			}
+		}
+		t.Fatalf("frame %d never arrived (saw %d)\nconsole tail: %q", n,
+			bytes.Count(m.ConsoleOut, []byte("seconds!")), tailB(m.ConsoleOut, 300))
+	}
+	m.FeedConsole("nyancat\r")
+	frames(1)
+	full := shot()
+	frames(2)
+	moved := shot()
+	frames(13)
+	delta := shot()
+
+	if bytes.Equal(moved, full) {
+		t.Fatal("frame 2 left the crop untouched: the diff emitted nothing")
+	}
+	if !bytes.Equal(delta, full) {
+		n, first := 0, -1
+		for i := range delta {
+			if delta[i] != full[i] {
+				if first < 0 {
+					first = i
+				}
+				n++
+			}
+		}
+		t.Errorf("frame 13 differs from the full redraw of the same animation "+
+			"frame in %d px (first at row %d, col %d): the diff lost track of "+
+			"the screen", n, first/640, first%640)
+	}
+
+	// And the exit path still ends the run and hands the shell back.
+	m.FeedConsole("q")
+	var quit uint64
+	for quit < 200_000_000 && !bytes.HasSuffix(m.ConsoleOut, []byte("$ ")) {
+		rr, err := m.Run(emu.RunConfig{MaxCycles: 5_000_000})
+		if err != nil {
+			t.Fatal(err)
+		}
+		quit += rr.Cycles
+	}
+	if !bytes.HasSuffix(m.ConsoleOut, []byte("$ ")) {
+		t.Fatalf("no prompt after the keypress\nconsole tail: %q", tailB(m.ConsoleOut, 300))
+	}
+}
