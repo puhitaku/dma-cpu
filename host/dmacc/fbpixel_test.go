@@ -129,10 +129,17 @@ func TestXv6FbconPixels(t *testing.T) {
 // the phase is twelve `ls /dev`, /dev/apps is the registry rendered as
 // text, and two more names took it from 98 bytes to 109 — one more
 // digit in a size column, twelve times over. Also not the renderer.
+//
+// And re-recorded again when lut_build moved onto the DMA copier: the
+// stamp on the same line reads [0.003] now, because the bring-up it
+// times is a millisecond shorter. The last three phases — the ones
+// that scroll or clear the banner off the screen — are byte-identical
+// across that change, which is the evidence that the renderer draws
+// exactly what it drew before.
 var fbPixelGolden = []string{
-	"4644613854373639", // echo
-	"f8436a50256bc4fd", // edit
-	"bb5a7d764da0ff2d", // escapes
+	"5b5ef22631ecb9e1", // echo
+	"93835f9f154627a5", // edit
+	"2b38bc282bcc7015", // escapes
 	"0c96f66b41c21189", // scroll
 	"61f3584764f48f15", // clear
 	"af897c4b882ea0fd", // after clear

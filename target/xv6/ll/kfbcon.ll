@@ -16,14 +16,14 @@ target triple = "thumbv6m-unknown-none-eabi"
 @frowa = internal unnamed_addr global i32 0, align 4
 @fbpal = internal unnamed_addr constant [16 x i8] c"\00\80\10\90\02\82\12\DB\92\E0\1C\FC\03\E3\1F\FF", align 1
 @nibmask = internal unnamed_addr constant [16 x i32] [i32 0, i32 -16777216, i32 16711680, i32 -65536, i32 65280, i32 -16711936, i32 16776960, i32 -256, i32 255, i32 -16776961, i32 16711935, i32 -65281, i32 65535, i32 -16711681, i32 16777215, i32 -1], align 4
-@flut16 = internal unnamed_addr global [16 x i32] zeroinitializer, align 4
-@fluthi = internal unnamed_addr global [256 x i32] zeroinitializer, align 4
-@flutlo = internal unnamed_addr global [256 x i32] zeroinitializer, align 4
+@flut16 = internal global [16 x i32] zeroinitializer, align 4
+@fluthi = internal global [256 x i32] zeroinitializer, align 4
+@flutlo = internal global [256 x i32] zeroinitializer, align 4
 @fbfont = internal unnamed_addr constant [1024 x i8] c"\00\00\00\00\00\00\00\00<B\A5\81\A5\99B<<~\DB\FF\FF\DBf<l\FE\FE\FE|8\10\00\108|\FE|8\10\00\108T\FET\108\00\108|\FE\FE\108\00\00\00\0000\00\00\00\FF\FF\FF\E7\E7\FF\FF\FF8D\82\82\82D8\00\C7\BB}}}\BB\C7\FF\0F\03\05y\88\88\88p8DDD8\10|\100($$( \E0\C0<$<$$\E4\DC\18\10T8\EE8T\10\00\80\C0\E0\F0\E0\C0\80\00\01\03\07\0F\07\03\01\00\10\10\10|\10\10\10\10\FCHHH\E8\08P |\A8\A8h(((\008@0HH0\08p\00\00\00<<\00\00\00  p p  \00\FF\FF\00\00\00\00\00\00\00\00\00\00\00\00\FF\FF\03\03\03\03\03\03\03\03\C0\C0\C0\C0\C0\C0\C0\C0\00\10\10\FF\10\10\00\00\00 P\88P \00\00\00\00\00\00\108|\FE\FE|8\10\00\00\00\00\00\00\00\00\00\00\00\00    \00\00 \00PPP\00\00\00\00\00PP\F8P\F8PP\00 x\A0p(\F0 \00\C0\C8\10 @\98\18\00@\A0@\A8\90\98`\00\10 @\00\00\00\00\00\10 @@@ \10\00@ \10\10\10 @\00 \A8p p\A8 \00\00  \F8  \00\00\00\00\00\00\00  @\00\00\00x\00\00\00\00\00\00\00\00\00``\00\00\00\08\10 @\80\00p\88\98\A8\C8\88p\00 `\A0   \F8\00p\88\08\10`\80\F8\00p\88\080\08\88p\00\100P\90\F8\10\10\00\F8\80\E0\10\08\10\E0\000@\80\F0\88\88p\00\F8\88\10    \00p\88\88p\88\88p\00p\88\88x\08\10`\00\00\00 \00\00 \00\00\00\00 \00\00  @\00\10 @ \10\00\00\00\00\F8\00\F8\00\00\00\00@ \10 @\00\00p\88\08\10 \00 \00\00p\A8\A8\B0\80p\00 P\88\88\F8\88\88\00\F0HHpHH\F0\000H\80\80\80H0\00\E0PHHHP\E0\00\F8\80\80\F0\80\80\F8\00\F8\80\80\F0\80\80\80\00p\88\80\B8\88\88p\00\88\88\88\F8\88\88\88\00p     p\008\10\10\10\90\90`\00\88\90\A0\C0\A0\90\88\00\80\80\80\80\80\80\F8\00\88\D8\A8\A8\88\88\88\00\88\C8\C8\A8\98\98\88\00p\88\88\88\88\88p\00\F0\88\88\F0\80\80\80\00p\88\88\88\A8\90h\00\F0\88\88\F0\A0\90\88\00p\88\80p\08\88p\00\F8      \00\88\88\88\88\88\88p\00\88\88\88\88PP \00\88\88\88\A8\A8\D8\88\00\88\88P P\88\88\00\88\88\88p   \00\F8\08\10 @\80\F8\00p@@@@@p\00\00\00\80@ \10\08\00p\10\10\10\10\10p\00 P\88\00\00\00\00\00\00\00\00\00\00\00\F8\00@ \10\00\00\00\00\00\00\00p\08x\88x\00\80\80\B0\C8\88\C8\B0\00\00\00p\88\80\88p\00\08\08h\98\88\98h\00\00\00p\88\F8\80p\00\10( \F8   \00\00\00h\98\98h\08p\80\80\F0\88\88\88\88\00 \00`   p\00\10\000\10\10\10\90`@@HP`PH\00`     p\00\00\00\D0\A8\A8\A8\A8\00\00\00\B0\C8\88\88\88\00\00\00p\88\88\88p\00\00\00\B0\C8\C8\B0\80\80\00\00h\98\98h\08\08\00\00\B0\C8\80\80\80\00\00\00x\80\F0\08\F0\00@@\F0@@H0\00\00\00\90\90\90\90h\00\00\00\88\88\88P \00\00\00\88\A8\A8\A8P\00\00\00\88P P\88\00\00\00\88\88\98h\08p\00\00\F8\10 @\F8\00\18  @  \18\00   \00   \00\C0  \10  \C0\00@\A8\10\00\00\00\00\00\00\00 P\F8\00\00\00", align 1
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @kfbcon_reset() local_unnamed_addr #0 {
-  %1 = tail call i32 @kfb_active() #6
+  %1 = tail call i32 @kfb_active() #5
   %2 = icmp eq i32 %1, 0
   br i1 %2, label %5, label %3
 
@@ -36,8 +36,8 @@ define dso_local void @kfbcon_reset() local_unnamed_addr #0 {
   store i32 0, ptr @fbg, align 4, !tbaa !3
   store i32 0, ptr @fstate, align 4, !tbaa !3
   store i1 false, ptr @fcursor, align 4
-  tail call fastcc void @lut_build() #7
-  tail call fastcc void @clear_screen() #7
+  tail call fastcc void @lut_build() #6
+  tail call fastcc void @clear_screen() #6
   br label %5
 
 5:                                                ; preds = %0, %3
@@ -47,8 +47,8 @@ define dso_local void @kfbcon_reset() local_unnamed_addr #0 {
 ; Function Attrs: minsize optsize
 declare dso_local i32 @kfb_active() local_unnamed_addr #1
 
-; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(readwrite, argmem: none, inaccessiblemem: none)
-define internal fastcc void @lut_build() unnamed_addr #2 {
+; Function Attrs: minsize nounwind optsize
+define internal fastcc void @lut_build() unnamed_addr #0 {
   %1 = load i32, ptr @ffg, align 4, !tbaa !3
   %2 = getelementptr inbounds nuw [16 x i8], ptr @fbpal, i32 0, i32 %1
   %3 = load i8, ptr %2, align 1, !tbaa !7
@@ -78,53 +78,50 @@ define internal fastcc void @lut_build() unnamed_addr #2 {
   %22 = add nuw nsw i32 %12, 1
   br label %11, !llvm.loop !8
 
-23:                                               ; preds = %11, %35
-  %24 = phi i32 [ %32, %35 ], [ 0, %11 ]
-  %25 = phi i32 [ %36, %35 ], [ 0, %11 ]
+23:                                               ; preds = %11, %28
+  %24 = phi i32 [ %31, %28 ], [ ptrtoint (ptr @fluthi to i32), %11 ]
+  %25 = phi i32 [ %32, %28 ], [ 0, %11 ]
   %26 = icmp eq i32 %25, 16
   br i1 %26, label %27, label %28
 
 27:                                               ; preds = %23
-  ret void
+  tail call void @kdmacpy(i32 noundef ptrtoint (ptr @flutlo to i32), i32 noundef ptrtoint (ptr @flut16 to i32), i32 noundef 64) #5
+  br label %33
 
 28:                                               ; preds = %23
   %29 = getelementptr inbounds nuw [16 x i32], ptr @flut16, i32 0, i32 %25
   %30 = load i32, ptr %29, align 4, !tbaa !3
-  br label %31
-
-31:                                               ; preds = %37, %28
-  %32 = phi i32 [ %24, %28 ], [ %42, %37 ]
-  %33 = phi i32 [ 0, %28 ], [ %43, %37 ]
-  %34 = icmp eq i32 %33, 16
-  br i1 %34, label %35, label %37
-
-35:                                               ; preds = %31
-  %36 = add nuw nsw i32 %25, 1
+  tail call void @kdmaset(i32 noundef %24, i32 noundef %30, i32 noundef 64) #5
+  %31 = add i32 %24, 64
+  %32 = add nuw nsw i32 %25, 1
   br label %23, !llvm.loop !11
 
-37:                                               ; preds = %31
-  %38 = getelementptr inbounds nuw [256 x i32], ptr @fluthi, i32 0, i32 %32
-  store i32 %30, ptr %38, align 4, !tbaa !3
-  %39 = getelementptr inbounds nuw [16 x i32], ptr @flut16, i32 0, i32 %33
-  %40 = load i32, ptr %39, align 4, !tbaa !3
-  %41 = getelementptr inbounds nuw [256 x i32], ptr @flutlo, i32 0, i32 %32
-  store i32 %40, ptr %41, align 4, !tbaa !3
-  %42 = add i32 %32, 1
-  %43 = add nuw nsw i32 %33, 1
-  br label %31, !llvm.loop !12
+33:                                               ; preds = %37, %27
+  %34 = phi i32 [ 64, %27 ], [ %39, %37 ]
+  %35 = icmp ult i32 %34, 1024
+  br i1 %35, label %37, label %36
+
+36:                                               ; preds = %33
+  ret void
+
+37:                                               ; preds = %33
+  %38 = add i32 %34, ptrtoint (ptr @flutlo to i32)
+  tail call void @kdmacpy(i32 noundef %38, i32 noundef ptrtoint (ptr @flutlo to i32), i32 noundef %34) #5
+  %39 = shl nuw nsw i32 %34, 1
+  br label %33, !llvm.loop !12
 }
 
 ; Function Attrs: minsize nounwind optsize
 define internal fastcc void @clear_screen() unnamed_addr #0 {
   %1 = load i32, ptr @fb_base, align 4, !tbaa !3
-  %2 = tail call fastcc i32 @bg_word() #7
-  tail call void @kdmaset(i32 noundef %1, i32 noundef %2, i32 noundef 307200) #6
+  %2 = tail call fastcc i32 @bg_word() #6
+  tail call void @kdmaset(i32 noundef %1, i32 noundef %2, i32 noundef 307200) #5
   ret void
 }
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
-  %2 = tail call i32 @kfb_condark() #6
+  %2 = tail call i32 @kfb_condark() #5
   %3 = icmp eq i32 %2, 0
   br i1 %3, label %4, label %226
 
@@ -139,7 +136,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   br i1 %9, label %10, label %11
 
 10:                                               ; preds = %8
-  tail call fastcc void @cursor_xor() #7
+  tail call fastcc void @cursor_xor() #6
   br label %11
 
 11:                                               ; preds = %10, %8
@@ -229,7 +226,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   ]
 
 48:                                               ; preds = %47, %47
-  tail call fastcc void @clear_screen() #7
+  tail call fastcc void @clear_screen() #6
   store i32 0, ptr @fcx, align 4, !tbaa !3
   store i32 0, ptr @fcy, align 4, !tbaa !3
   %49 = load i32, ptr @fb_base, align 4, !tbaa !3
@@ -313,7 +310,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   ]
 
 90:                                               ; preds = %89
-  tail call fastcc void @clear_screen() #7
+  tail call fastcc void @clear_screen() #6
   br label %225
 
 91:                                               ; preds = %89, %98
@@ -325,11 +322,11 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
 95:                                               ; preds = %91
   %96 = load i32, ptr @fcx, align 4, !tbaa !3
   %97 = add nsw i32 %96, 1
-  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %93, i32 noundef %97) #7
+  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %93, i32 noundef %97) #6
   br label %225
 
 98:                                               ; preds = %91
-  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %92, i32 noundef 80) #7
+  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %92, i32 noundef 80) #6
   %99 = add nuw nsw i32 %92, 1
   br label %91, !llvm.loop !13
 
@@ -337,7 +334,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   %101 = load i32, ptr @fcx, align 4, !tbaa !3
   %102 = load i32, ptr @fcy, align 4, !tbaa !3
   %103 = sub nsw i32 80, %101
-  tail call fastcc void @clear_cells(i32 noundef %101, i32 noundef %102, i32 noundef %103) #7
+  tail call fastcc void @clear_cells(i32 noundef %101, i32 noundef %102, i32 noundef %103) #6
   %104 = load i32, ptr @fcy, align 4, !tbaa !3
   br label %105
 
@@ -348,7 +345,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
 
 108:                                              ; preds = %105
   %109 = add nsw i32 %106, 1
-  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %109, i32 noundef 80) #7
+  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %109, i32 noundef 80) #6
   br label %105, !llvm.loop !14
 
 110:                                              ; preds = %50
@@ -359,21 +356,21 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
 
 111:                                              ; preds = %110
   %112 = load i32, ptr @fcy, align 4, !tbaa !3
-  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %112, i32 noundef 80) #7
+  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %112, i32 noundef 80) #6
   br label %225
 
 113:                                              ; preds = %110
   %114 = load i32, ptr @fcy, align 4, !tbaa !3
   %115 = load i32, ptr @fcx, align 4, !tbaa !3
   %116 = add nsw i32 %115, 1
-  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %114, i32 noundef %116) #7
+  tail call fastcc void @clear_cells(i32 noundef 0, i32 noundef %114, i32 noundef %116) #6
   br label %225
 
 117:                                              ; preds = %110
   %118 = load i32, ptr @fcx, align 4, !tbaa !3
   %119 = load i32, ptr @fcy, align 4, !tbaa !3
   %120 = sub nsw i32 80, %118
-  tail call fastcc void @clear_cells(i32 noundef %118, i32 noundef %119, i32 noundef %120) #7
+  tail call fastcc void @clear_cells(i32 noundef %118, i32 noundef %119, i32 noundef %120) #6
   br label %225
 
 121:                                              ; preds = %50
@@ -485,7 +482,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   br label %129, !llvm.loop !15
 
 169:                                              ; preds = %129
-  tail call fastcc void @lut_build() #7
+  tail call fastcc void @lut_build() #6
   br label %225
 
 170:                                              ; preds = %4
@@ -540,7 +537,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   br i1 %205, label %206, label %225
 
 206:                                              ; preds = %202
-  tail call fastcc void @newline() #7
+  tail call fastcc void @newline() #6
   br label %225
 
 207:                                              ; preds = %170
@@ -548,7 +545,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   br i1 %208, label %209, label %210
 
 209:                                              ; preds = %207
-  tail call fastcc void @cursor_xor() #7
+  tail call fastcc void @cursor_xor() #6
   br label %210
 
 210:                                              ; preds = %209, %207
@@ -562,7 +559,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   ]
 
 212:                                              ; preds = %210
-  tail call fastcc void @newline() #7
+  tail call fastcc void @newline() #6
   br label %225
 
 213:                                              ; preds = %210
@@ -592,7 +589,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   br label %225
 
 225:                                              ; preds = %105, %169, %117, %113, %111, %95, %90, %73, %69, %65, %58, %51, %50, %48, %47, %45, %40, %36, %33, %24, %210, %206, %202, %213, %218, %215, %220, %214, %212, %16, %15
-  tail call fastcc void @cursor_xor() #7
+  tail call fastcc void @cursor_xor() #6
   store i1 true, ptr @fcursor, align 4
   br label %226
 
@@ -604,7 +601,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
 declare dso_local i32 @kfb_condark() local_unnamed_addr #1
 
 ; Function Attrs: minsize nofree norecurse nounwind optsize
-define internal fastcc void @cursor_xor() unnamed_addr #3 {
+define internal fastcc void @cursor_xor() unnamed_addr #2 {
   %1 = load i32, ptr @frowa, align 4, !tbaa !3
   %2 = load i32, ptr @fcx, align 4, !tbaa !3
   %3 = shl i32 %2, 3
@@ -655,10 +652,10 @@ define internal fastcc void @newline() unnamed_addr #0 {
 8:                                                ; preds = %0
   %9 = load i32, ptr @fb_base, align 4, !tbaa !3
   %10 = add i32 %9, 10240
-  tail call void @kdmacpy(i32 noundef %9, i32 noundef %10, i32 noundef 296960) #6
+  tail call void @kdmacpy(i32 noundef %9, i32 noundef %10, i32 noundef 296960) #5
   %11 = add i32 %9, 296960
-  %12 = tail call fastcc i32 @bg_word() #7
-  tail call void @kdmaset(i32 noundef %11, i32 noundef %12, i32 noundef 10240) #6
+  %12 = tail call fastcc i32 @bg_word() #6
+  tail call void @kdmaset(i32 noundef %11, i32 noundef %12, i32 noundef 10240) #5
   br label %13
 
 13:                                               ; preds = %8, %3
@@ -668,8 +665,11 @@ define internal fastcc void @newline() unnamed_addr #0 {
 ; Function Attrs: minsize optsize
 declare dso_local void @kdmaset(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
 
+; Function Attrs: minsize optsize
+declare dso_local void @kdmacpy(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
+
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, argmem: none, inaccessiblemem: none)
-define internal fastcc i32 @bg_word() unnamed_addr #4 {
+define internal fastcc i32 @bg_word() unnamed_addr #3 {
   %1 = load i32, ptr @fbg, align 4, !tbaa !3
   %2 = getelementptr inbounds nuw [16 x i8], ptr @fbpal, i32 0, i32 %1
   %3 = load i8, ptr %2, align 1, !tbaa !7
@@ -685,7 +685,7 @@ define internal fastcc i32 @bg_word() unnamed_addr #4 {
 
 ; Function Attrs: minsize nounwind optsize
 define internal fastcc void @clear_cells(i32 noundef %0, i32 noundef %1, i32 noundef range(i32 -2147483647, -2147483648) %2) unnamed_addr #0 {
-  %4 = tail call fastcc i32 @bg_word() #7
+  %4 = tail call fastcc i32 @bg_word() #6
   %5 = load i32, ptr @fb_base, align 4, !tbaa !3
   %6 = mul i32 %1, 10240
   %7 = shl i32 %0, 3
@@ -709,7 +709,7 @@ define internal fastcc void @clear_cells(i32 noundef %0, i32 noundef %1, i32 nou
   br i1 %18, label %37, label %19
 
 19:                                               ; preds = %15
-  tail call void @kdmaset(i32 noundef %16, i32 noundef %4, i32 noundef %14) #6
+  tail call void @kdmaset(i32 noundef %16, i32 noundef %4, i32 noundef %14) #5
   %20 = add i32 %16, 640
   %21 = add nsw i32 %17, -1
   br label %15, !llvm.loop !18
@@ -742,32 +742,28 @@ define internal fastcc void @clear_cells(i32 noundef %0, i32 noundef %1, i32 nou
   ret void
 }
 
-; Function Attrs: minsize optsize
-declare dso_local void @kdmacpy(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #1
+; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+declare i32 @llvm.smin.i32(i32, i32) #4
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
-declare i32 @llvm.smin.i32(i32, i32) #5
+declare i32 @llvm.umax.i32(i32, i32) #4
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
-declare i32 @llvm.umax.i32(i32, i32) #5
+declare i32 @llvm.usub.sat.i32(i32, i32) #4
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
-declare i32 @llvm.usub.sat.i32(i32, i32) #5
+declare i32 @llvm.smax.i32(i32, i32) #4
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
-declare i32 @llvm.smax.i32(i32, i32) #5
-
-; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
-declare i32 @llvm.umin.i32(i32, i32) #5
+declare i32 @llvm.umin.i32(i32, i32) #4
 
 attributes #0 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #1 = { minsize optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #2 = { minsize nofree norecurse nosync nounwind optsize memory(readwrite, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #3 = { minsize nofree norecurse nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #4 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #5 = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
-attributes #6 = { minsize nobuiltin nounwind optsize "no-builtins" }
-attributes #7 = { minsize nobuiltin optsize "no-builtins" }
+attributes #2 = { minsize nofree norecurse nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #3 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(read, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #4 = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
+attributes #5 = { minsize nobuiltin nounwind optsize "no-builtins" }
+attributes #6 = { minsize nobuiltin optsize "no-builtins" }
 
 !llvm.module.flags = !{!0, !1}
 !llvm.ident = !{!2}

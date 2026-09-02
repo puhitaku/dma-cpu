@@ -12,8 +12,8 @@
 # regression OR unrecorded improvement — fails the build. Regenerating
 # is a measurement to report, not a golden to refresh.
 deploy/feather-kernel/data	34780
-deploy/feather-kernel/ramtext	56296
-deploy/feather-kernel/text	232260
+deploy/feather-kernel/ramtext	56248
+deploy/feather-kernel/text	232084
 deploy/feather-sh/data	8960
 deploy/feather-sh/ramtext	3952
 deploy/feather-sh/text	47088
@@ -30,8 +30,8 @@ deploy/gamepico-game/ramtext	44616
 deploy/gamepico-game/text	274036
 fbcon/feather/cat README	1199996
 fbcon/feather/echo 0123456789012345678901234567890123456789	2309857
-fbcon/feather/ls /dev	5955001
-fbcon/feather/scroll (12x ls /dev)	95127501
+fbcon/feather/ls /dev	5955000
+fbcon/feather/scroll (12x ls /dev)	95127571
 fbcon/pico2/cat README	990006
 fbcon/pico2/echo 0123456789012345678901234567890123456789	2010001
 fbcon/pico2/ls /dev	4560006

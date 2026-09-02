@@ -78,6 +78,18 @@ static const uint nibmask[16] = {
     0x0000FFFF, 0xFF00FFFF, 0x00FFFFFF, 0xFFFFFFFF,
 };
 
+/* lut_build: the two 256-word tables, rebuilt on every color change —
+ * which on colour-dense traffic is the console's single largest bill.
+ * (Measured on the nyancat port: 208 SGRs a frame, 147 ms of the
+ * frame's 217, when this was a 16x16 loop storing 512 words through
+ * the compiler's interpreted control-block traffic.)
+ *
+ * Neither table needs a loop, because neither has 256 distinct values.
+ * fluthi is flut16[h] repeated sixteen times per h: sixteen DMA FILLS.
+ * flutlo is flut16 itself repeated sixteen times: one copy of the
+ * 16-word pattern and then four doublings, each moving what is already
+ * there onto the half above it. Twenty-one channel setups in place of
+ * 512 compiled stores, and the words move a bus slot each. */
 static void
 lut_build(void)
 {
@@ -86,15 +98,15 @@ lut_build(void)
     uint m = nibmask[n];
     flut16[n] = (fgw & m) | (bgw & ~m);
   }
-  uint idx = 0;
+  uint a = (uint)&fluthi[0];
   for (uint h = 0; h < 16; h++) {
-    uint hw = flut16[h];
-    for (uint l = 0; l < 16; l++) {
-      fluthi[idx] = hw;
-      flutlo[idx] = flut16[l];
-      idx++;
-    }
+    kdmaset(a, flut16[h], 64);
+    a += 64;
   }
+  uint lo = (uint)&flutlo[0];
+  kdmacpy(lo, (uint)&flut16[0], 64);
+  for (uint n = 64; n < 1024; n += n)
+    kdmacpy(lo + n, lo, n);
 }
 
 /* Screen cells map straight onto fb rows (scroll moves the pixels; the
