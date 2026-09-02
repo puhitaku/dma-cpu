@@ -1529,3 +1529,104 @@ func TestXv6ShDeepRecursion(t *testing.T) {
 		}
 	}
 }
+
+// TestXv6IdleIsFiller pins the scheduling policy kproc.c's pick()
+// states. The orphan adopter (initpid, prompts/024) is a busy loop,
+// so it is RUNNABLE forever; a plain round-robin therefore treated it
+// as a peer and alternated it with whatever real process was running,
+// handing away every second quantum it could preempt. It is a FILLER
+// now: scheduled only when the round is otherwise empty.
+//
+// Both halves of that are checked, because either one alone is easy
+// to satisfy by accident — a scheduler that never runs the adopter
+// passes the second half, and today's round-robin passes the first.
+func TestXv6IdleIsFiller(t *testing.T) {
+	t.Parallel()
+	bd := boards.Pico2
+	m, kernC := bootXshBoard(t, nil, bd)
+	m.TXPace = 0
+	const procWords = 18 // struct proc, all-uint (kproc.c)
+	const stRunnable, stRunning = 3, 4
+	gproc := mustSym(t, kernC, "g_proc")
+	field := func(slot int, w uint32) uint32 {
+		return m.Peek32(gproc + uint32(slot)*4*procWords + 4*w)
+	}
+	curr := func() int { return int(m.Peek32(mustSym(t, kernC, "g_curr"))) }
+	// The adopter is the slot holding initpid — the same identity
+	// pick() schedules by.
+	initpid := m.Peek32(mustSym(t, kernC, "g_initpid"))
+	adopter := -1
+	for i := 0; i < 8; i++ {
+		if field(i, 0) != 0 && field(i, 1) == initpid {
+			adopter = i
+		}
+	}
+	if adopter < 0 {
+		t.Fatalf("no live slot holds initpid %d", initpid)
+	}
+	// busy reports whether any process OTHER than the adopter has a
+	// claim on the machine.
+	busy := func() bool {
+		for i := 0; i < 8; i++ {
+			if i == adopter {
+				continue
+			}
+			if s := field(i, 0); s == stRunnable || s == stRunning {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Half one: an idle prompt. The shell is asleep on the console and
+	// the adopter is the only thing left, so it has to be running —
+	// the machine must not park while a RUNNABLE process exists.
+	if _, err := m.Run(emu.RunConfig{MaxCycles: 3_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	if busy() {
+		t.Fatalf("something other than the adopter is runnable at an idle prompt")
+	}
+	if field(adopter, 0) != stRunnable && field(adopter, 0) != stRunning {
+		t.Fatalf("the adopter is not runnable (state %d)", field(adopter, 0))
+	}
+	if c := curr(); c != adopter {
+		t.Errorf("curr is slot %d at an idle prompt, want the adopter's slot %d: "+
+			"with nothing else runnable the filler has to be what runs", c, adopter)
+	}
+
+	// Half two: a command in the foreground. Sampled finely enough to
+	// see individual 100 us quanta, the adopter must not be holding
+	// the machine while a real process wants it.
+	mark := len(m.ConsoleOut)
+	m.FeedConsole("ls\r")
+	var contended, stolen int
+	for i := 0; i < 20000; i++ {
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 1000}); err != nil {
+			t.Fatal(err)
+		}
+		if busy() {
+			contended++
+			if curr() == adopter {
+				stolen++
+			}
+		}
+		if len(m.ConsoleOut) > mark && strings.HasSuffix(string(m.ConsoleOut), "$ ") {
+			break
+		}
+	}
+	if !strings.Contains(string(m.ConsoleOut[mark:]), "README") {
+		t.Fatalf("ls did not run: %q", tailB(m.ConsoleOut, 200))
+	}
+	if contended < 500 {
+		t.Fatalf("only %d samples with a real process runnable: too few to judge", contended)
+	}
+	// A wake that lands after kexit has already published the adopter
+	// costs one quantum of latency and cannot be avoided, so this is a
+	// share and not a zero. The round-robin it replaces sat at 10%+.
+	if pct := 100 * stolen / contended; pct > 2 {
+		t.Errorf("the adopter held the machine in %d of %d samples (%d%%) with a "+
+			"real process runnable: it is being scheduled as a peer, not as a filler",
+			stolen, contended, pct)
+	}
+}

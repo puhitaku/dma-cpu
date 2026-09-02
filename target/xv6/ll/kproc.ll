@@ -1167,118 +1167,135 @@ define internal fastcc void @terminate(ptr noundef %0, i32 noundef %1) unnamed_a
 ; Function Attrs: minsize nounwind optsize
 define internal fastcc void @swtch() unnamed_addr #1 {
   %1 = load i32, ptr @curr, align 4
-  br label %2
+  %2 = load i32, ptr @initpid, align 4
+  br label %3
 
-2:                                                ; preds = %5, %0
-  %3 = phi i32 [ 1, %0 ], [ %11, %5 ]
-  %4 = icmp eq i32 %3, 9
-  br i1 %4, label %12, label %5
+3:                                                ; preds = %17, %0
+  %4 = phi i32 [ -1, %0 ], [ %18, %17 ]
+  %5 = phi i32 [ 1, %0 ], [ %19, %17 ]
+  %6 = icmp eq i32 %5, 9
+  br i1 %6, label %20, label %7
 
-5:                                                ; preds = %2
-  %6 = add i32 %3, %1
-  %7 = and i32 %6, 7
-  %8 = getelementptr inbounds nuw [8 x %struct.proc], ptr @proc, i32 0, i32 %7
-  %9 = load i32, ptr %8, align 4, !tbaa !15
-  %10 = icmp eq i32 %9, 3
-  %11 = add nuw nsw i32 %3, 1
-  br i1 %10, label %62, label %2, !llvm.loop !47
+7:                                                ; preds = %3
+  %8 = add i32 %5, %1
+  %9 = and i32 %8, 7
+  %10 = getelementptr inbounds nuw [8 x %struct.proc], ptr @proc, i32 0, i32 %9
+  %11 = load i32, ptr %10, align 4, !tbaa !15
+  %12 = icmp eq i32 %11, 3
+  br i1 %12, label %13, label %17
 
-12:                                               ; preds = %2
-  %13 = load i32, ptr @entry_disp, align 4, !tbaa !6
-  %14 = icmp eq i32 %13, 0
-  br i1 %14, label %21, label %15
+13:                                               ; preds = %7
+  %14 = getelementptr inbounds nuw i8, ptr %10, i32 4
+  %15 = load i32, ptr %14, align 4, !tbaa !17
+  %16 = icmp eq i32 %15, %2
+  br i1 %16, label %17, label %72
 
-15:                                               ; preds = %12
-  %16 = inttoptr i32 %13 to ptr
-  %17 = load volatile i32, ptr %16, align 4, !tbaa !6
-  %18 = load i32, ptr @entry_thunk, align 4, !tbaa !6
-  %19 = icmp eq i32 %17, %18
-  br i1 %19, label %21, label %20
+17:                                               ; preds = %13, %7
+  %18 = phi i32 [ %4, %7 ], [ %9, %13 ]
+  %19 = add nuw nsw i32 %5, 1
+  br label %3, !llvm.loop !47
 
-20:                                               ; preds = %15
-  store volatile i32 %18, ptr %16, align 4, !tbaa !6
+20:                                               ; preds = %3
+  %21 = icmp slt i32 %4, 0
+  br i1 %21, label %22, label %72
+
+22:                                               ; preds = %20
+  %23 = load i32, ptr @entry_disp, align 4, !tbaa !6
+  %24 = icmp eq i32 %23, 0
+  br i1 %24, label %31, label %25
+
+25:                                               ; preds = %22
+  %26 = inttoptr i32 %23 to ptr
+  %27 = load volatile i32, ptr %26, align 4, !tbaa !6
+  %28 = load i32, ptr @entry_thunk, align 4, !tbaa !6
+  %29 = icmp eq i32 %27, %28
+  br i1 %29, label %31, label %30
+
+30:                                               ; preds = %25
+  store volatile i32 %28, ptr %26, align 4, !tbaa !6
   tail call fastcc void @fire_income() #16
-  br label %21
+  br label %31
 
-21:                                               ; preds = %20, %15, %12
-  %22 = load volatile ptr, ptr @kw_park, align 4, !tbaa !40
-  %23 = ptrtoint ptr %22 to i32
-  %24 = load volatile ptr, ptr @kw_parkvec, align 4, !tbaa !40
-  store i32 %23, ptr %24, align 4, !tbaa !6
-  %25 = load volatile ptr, ptr @kw_parkvec, align 4, !tbaa !40
-  %26 = ptrtoint ptr %25 to i32
-  %27 = load volatile ptr, ptr @kw_pcurdisp, align 4, !tbaa !40
-  store i32 %26, ptr %27, align 4, !tbaa !6
-  %28 = load volatile ptr, ptr @kw_park, align 4, !tbaa !40
-  %29 = ptrtoint ptr %28 to i32
-  %30 = load volatile ptr, ptr @kw_curthunk, align 4, !tbaa !40
-  store i32 %29, ptr %30, align 4, !tbaa !6
-  %31 = load volatile ptr, ptr @kw_parkvec, align 4, !tbaa !40
-  %32 = ptrtoint ptr %31 to i32
-  %33 = load volatile ptr, ptr @kw_pcurresume, align 4, !tbaa !40
-  store i32 %32, ptr %33, align 4, !tbaa !6
-  %34 = load volatile ptr, ptr @kw_park, align 4, !tbaa !40
-  %35 = ptrtoint ptr %34 to i32
-  %36 = load volatile ptr, ptr @kw_nextresume, align 4, !tbaa !40
-  store i32 %35, ptr %36, align 4, !tbaa !6
-  %37 = load volatile ptr, ptr @kw_parkvec, align 4, !tbaa !40
-  %38 = ptrtoint ptr %37 to i32
-  %39 = load i32, ptr @inj_wreg, align 4, !tbaa !6
-  %40 = inttoptr i32 %39 to ptr
-  store volatile i32 %38, ptr %40, align 4, !tbaa !6
+31:                                               ; preds = %30, %25, %22
+  %32 = load volatile ptr, ptr @kw_park, align 4, !tbaa !40
+  %33 = ptrtoint ptr %32 to i32
+  %34 = load volatile ptr, ptr @kw_parkvec, align 4, !tbaa !40
+  store i32 %33, ptr %34, align 4, !tbaa !6
+  %35 = load volatile ptr, ptr @kw_parkvec, align 4, !tbaa !40
+  %36 = ptrtoint ptr %35 to i32
+  %37 = load volatile ptr, ptr @kw_pcurdisp, align 4, !tbaa !40
+  store i32 %36, ptr %37, align 4, !tbaa !6
+  %38 = load volatile ptr, ptr @kw_park, align 4, !tbaa !40
+  %39 = ptrtoint ptr %38 to i32
+  %40 = load volatile ptr, ptr @kw_curthunk, align 4, !tbaa !40
+  store i32 %39, ptr %40, align 4, !tbaa !6
+  %41 = load volatile ptr, ptr @kw_parkvec, align 4, !tbaa !40
+  %42 = ptrtoint ptr %41 to i32
+  %43 = load volatile ptr, ptr @kw_pcurresume, align 4, !tbaa !40
+  store i32 %42, ptr %43, align 4, !tbaa !6
+  %44 = load volatile ptr, ptr @kw_park, align 4, !tbaa !40
+  %45 = ptrtoint ptr %44 to i32
+  %46 = load volatile ptr, ptr @kw_nextresume, align 4, !tbaa !40
+  store i32 %45, ptr %46, align 4, !tbaa !6
+  %47 = load volatile ptr, ptr @kw_parkvec, align 4, !tbaa !40
+  %48 = ptrtoint ptr %47 to i32
+  %49 = load i32, ptr @inj_wreg, align 4, !tbaa !6
+  %50 = inttoptr i32 %49 to ptr
+  store volatile i32 %48, ptr %50, align 4, !tbaa !6
   store i1 true, ptr @parked, align 4
-  %41 = load i32, ptr @tickpending, align 4, !tbaa !6
-  %42 = icmp eq i32 %41, 0
-  br i1 %42, label %44, label %43
-
-43:                                               ; preds = %21
-  store i32 0, ptr @tickpending, align 4, !tbaa !6
-  tail call fastcc void @fire_income() #16
-  br label %44
-
-44:                                               ; preds = %43, %21
-  %45 = tail call i32 @kcons_on() #17
-  %46 = icmp eq i32 %45, 0
-  br i1 %46, label %57, label %47
-
-47:                                               ; preds = %44
-  %48 = load i32, ptr @fgpid, align 4, !tbaa !6
-  %49 = icmp eq i32 %48, 0
-  br i1 %49, label %54, label %50
-
-50:                                               ; preds = %47
-  %51 = tail call i32 @kcons_pending() #17
+  %51 = load i32, ptr @tickpending, align 4, !tbaa !6
   %52 = icmp eq i32 %51, 0
   br i1 %52, label %54, label %53
 
-53:                                               ; preds = %50
-  tail call fastcc void @cons_poll() #16
+53:                                               ; preds = %31
+  store i32 0, ptr @tickpending, align 4, !tbaa !6
+  tail call fastcc void @fire_income() #16
   br label %54
 
-54:                                               ; preds = %53, %50, %47
+54:                                               ; preds = %53, %31
+  %55 = tail call i32 @kcons_on() #17
+  %56 = icmp eq i32 %55, 0
+  br i1 %56, label %67, label %57
+
+57:                                               ; preds = %54
+  %58 = load i32, ptr @fgpid, align 4, !tbaa !6
+  %59 = icmp eq i32 %58, 0
+  br i1 %59, label %64, label %60
+
+60:                                               ; preds = %57
+  %61 = tail call i32 @kcons_pending() #17
+  %62 = icmp eq i32 %61, 0
+  br i1 %62, label %64, label %63
+
+63:                                               ; preds = %60
+  tail call fastcc void @cons_poll() #16
+  br label %64
+
+64:                                               ; preds = %63, %60, %57
   tail call void @kcons_kick() #17
-  %55 = load volatile ptr, ptr @kw_parkvec, align 4, !tbaa !40
-  %56 = ptrtoint ptr %55 to i32
-  tail call void @kcons_aim(i32 noundef %56) #17
-  br label %57
+  %65 = load volatile ptr, ptr @kw_parkvec, align 4, !tbaa !40
+  %66 = ptrtoint ptr %65 to i32
+  tail call void @kcons_aim(i32 noundef %66) #17
+  br label %67
 
-57:                                               ; preds = %54, %44
-  %58 = load i1, ptr @rearm, align 4
-  br i1 %58, label %59, label %65
+67:                                               ; preds = %64, %54
+  %68 = load i1, ptr @rearm, align 4
+  br i1 %68, label %69, label %76
 
-59:                                               ; preds = %57
-  %60 = load i32, ptr @inj_treg, align 4, !tbaa !6
-  %61 = inttoptr i32 %60 to ptr
-  store volatile i32 1, ptr %61, align 4, !tbaa !6
-  br label %65
+69:                                               ; preds = %67
+  %70 = load i32, ptr @inj_treg, align 4, !tbaa !6
+  %71 = inttoptr i32 %70 to ptr
+  store volatile i32 1, ptr %71, align 4, !tbaa !6
+  br label %76
 
-62:                                               ; preds = %5
-  %63 = getelementptr inbounds nuw [8 x %struct.proc], ptr @proc, i32 0, i32 %7, i32 10
-  %64 = load i32, ptr %63, align 4, !tbaa !39
-  tail call fastcc void @kexit(i32 noundef %7, i32 noundef %64) #16
-  br label %65
+72:                                               ; preds = %13, %20
+  %73 = phi i32 [ %4, %20 ], [ %9, %13 ]
+  %74 = getelementptr inbounds nuw [8 x %struct.proc], ptr @proc, i32 0, i32 %73, i32 10
+  %75 = load i32, ptr %74, align 4, !tbaa !39
+  tail call fastcc void @kexit(i32 noundef %73, i32 noundef %75) #16
+  br label %76
 
-65:                                               ; preds = %57, %59, %62
+76:                                               ; preds = %67, %69, %72
   ret void
 }
 

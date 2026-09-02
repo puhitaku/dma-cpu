@@ -1114,16 +1114,35 @@ kenter(void)
 /* Round-robin: next RUNNABLE slot after curr (curr itself last). The
  * wrap stays UNSIGNED: signed % is a full runtime division on this
  * machine (~2k records), and it sat in the tick path — the scheduler
- * was spending more records picking a process than running it. */
+ * was spending more records picking a process than running it.
+ *
+ * With one exception, and it is worth a paragraph. The orphan adopter
+ * (`initpid`, prompts/024) is a busy loop — the smallest schedulable
+ * program in the tree — and it is therefore RUNNABLE forever. A plain
+ * round-robin treats it as a peer, so every tick delivered in user
+ * mode alternated the real process with the spinner and handed away
+ * half of every quantum it could preempt. Measured on the nyancat
+ * port: 103 quanta a frame went to the adopter, ~6% of the frame.
+ *
+ * So the adopter is a FILLER: it is picked only when the round is
+ * otherwise empty. That is a policy statement about the process, not
+ * about the slot — a real init, which sleeps in wait(), is never a
+ * candidate here anyway, and nothing else about it changes. When no
+ * adopter is configured (initpid = 0) no live pid can match it, and
+ * the loop is exactly the round-robin it was. */
 static int
 pick(void)
 {
+  int filler = -1;
   for (int off = 1; off <= NPROC; off++) {
     int i = (int)((curr + (uint)off) % (uint)NPROC);
-    if (proc[i].state == RUNNABLE)
-      return i;
+    if (proc[i].state == RUNNABLE) {
+      if (proc[i].pid != initpid)
+        return i;
+      filler = i;
+    }
   }
-  return -1;
+  return filler;
 }
 
 /* Publish `next` to the dasm side and leave the kernel. `resume` is
