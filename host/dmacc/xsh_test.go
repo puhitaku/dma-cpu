@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -326,8 +327,8 @@ func buildXshBoard(t *testing.T, flash []byte, bd *boards.Board) (*emu.Machine, 
 		}
 	}
 	wireKernelEnc(t, m, v, kern, kernC, []kproc{
-		{sh, entrySh, 1, 0, true},
-		{idle, entryI, 2, 0, false},
+		{sh, entrySh, 1, 0, true, "sh"},
+		{idle, entryI, 2, 0, false, "idle"},
 	}, true)
 	if bd.MachineSDExec { /* ksd.c: the machine drives the card itself */
 		m.Poke32(mustSym(t, kernC, "g_sd_spi"), v.SPI0Base)
@@ -1422,6 +1423,59 @@ func TestXv6Sh(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("console missing %q", want)
 		}
+	}
+}
+
+// TestXv6Ps: `ps` reading the kernel's proc table through
+// SYS_procinfo. The table is what is under test, not the column
+// widths, so the assertions are rows: the shell and the loader-placed
+// init proc are always on it, the shell is asleep in wait() while its
+// child runs, and the tool naming itself `ps` proves exec renamed the
+// slot it inherited from the fork.
+//
+// The pipeline is the discriminating half. `ps | cat` puts a second
+// generation on the table — sh's vfork child, which has forked again
+// for the left-hand side and has NOT yet exec'd cat — and that child
+// still carries `sh`, which is the only evidence that fork copies the
+// name rather than leaving whatever the slot held last.
+func TestXv6Ps(t *testing.T) {
+	t.Parallel()
+	m, _ := bootXsh(t)
+	m.FeedConsole("ps\rps | cat\r")
+	runScript(t, m, 900_000_000)
+	out := strings.ReplaceAll(string(m.ConsoleOut), "\r", "")
+	t.Logf("console:\n%s", out)
+	const header = "  PID  PPID STATE    CMD\n"
+	for _, want := range []string{
+		header,
+		"    1     0 sleeping sh\n",   // the shell, blocked in wait()
+		"    2     0 runnable idle\n", // the init proc, named by the loader
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("console missing %q", want)
+		}
+	}
+	// The tool itself, a child of the shell, under whichever pid the
+	// slot allocator handed it.
+	if !regexp.MustCompile(`(?m)^ +[0-9]+ +1 (?:runnable|running) +ps$`).MatchString(out) {
+		t.Errorf("no row for ps itself as a child of pid 1")
+	}
+	// The second table (after `ps | cat`) and its extra generation.
+	last := out[strings.LastIndex(out, header):]
+	rows := regexp.MustCompile(`(?m)^ +([0-9]+) +([0-9]+) +([a-z]+) +(\S+)$`).
+		FindAllStringSubmatch(last, -1)
+	if len(rows) < 4 {
+		t.Fatalf("`ps | cat` should show at least 4 live procs, got %d:\n%s",
+			len(rows), last)
+	}
+	forked := false
+	for _, r := range rows {
+		if r[4] == "sh" && r[1] != "1" {
+			forked = true
+		}
+	}
+	if !forked {
+		t.Errorf("no forked-but-not-yet-exec'd child inheriting sh's name:\n%s", last)
 	}
 }
 

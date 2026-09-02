@@ -85,18 +85,18 @@ func TestShellSystem(t *testing.T) {
 	for _, v := range emu.Variants {
 		t.Run(v.Name, func(t *testing.T) {
 			kern, err := dmaasm.Assemble(ksrc, dmaasm.Options{
-				Variant: v, TextBase: 0x20000000, DataBase: 0x20004000})
+				Variant: v, TextBase: 0x20000000, DataBase: 0x20001000})
 			if err != nil {
 				t.Fatal(err)
 			}
-			kernC := buildKernelC(t, v, 0x2001E000, 0x20018800) // text ~99 KiB since kdma
+			kernC := buildKernelC(t, v, 0x20018000, 0x20012000) // 128 KiB of text
 			shell, err := dmaasm.Assemble(shellDasm, dmaasm.Options{
-				Variant: v, TextBase: 0x20006000, DataBase: 0x20016000})
+				Variant: v, TextBase: 0x20002000, DataBase: 0x20010000})
 			if err != nil {
 				t.Fatal(err)
 			}
 			procB, err := dmaasm.Assemble(procDasm, dmaasm.Options{
-				Variant: v, TextBase: 0x2001C000, DataBase: 0x2001D000})
+				Variant: v, TextBase: 0x20016000, DataBase: 0x20017000})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -127,8 +127,8 @@ func TestShellSystem(t *testing.T) {
 			// Phase 5d proc-table wiring: shell is slot 0 (always
 			// runnable — it never syscalls), counter is slot 1.
 			wireKernel(t, m, v, kern, kernC, []kproc{
-				{shell, entryA, 1, 0, true},
-				{procB, entryB, 2, 0, false},
+				{shell, entryA, 1, 0, true, "shell"},
+				{procB, entryB, 2, 0, false, "procB"},
 			})
 			// Registry for `run`: upstream echo, linked at arbitrary
 			// bases (the kernel places it).
@@ -142,12 +142,12 @@ func TestShellSystem(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			end := registerImage(t, m, kernC, 0, "echo", echoImg, 0x2003B000)
+			end := registerImage(t, m, kernC, 0, "echo", echoImg, 0x20038000)
 			end = registerImage(t, m, kernC, 1, "hello", helloImg, end)
-			if end > 0x2003D000 {
+			if end > 0x2003A000 {
 				t.Fatalf("blob storage overflow: %#x", end)
 			}
-			m.Poke32(mustSym(t, kernC, "g_arena"), 0x2003D000)
+			m.Poke32(mustSym(t, kernC, "g_arena"), 0x2003A000)
 			m.Poke32(mustSym(t, kernC, "g_arena_end"), 0x2003FE00)
 			m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)
 			m.Poke32(mustSym(t, kernC, "g_k_sysentry"), mustSym(t, kern, "sys_entry"))

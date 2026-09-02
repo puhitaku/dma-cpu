@@ -14,6 +14,10 @@ int kill(int);
 #define SIGINT 2
 int signal(int, void (*)(int));
 int meminfo(uint *);
+// One 6-word row per live proc slot: pid, ppid, state (enum
+// procstate, kproc.c), then 12 bytes of NUL-terminated name.
+#define PROCINFO_WORDS 6
+int procinfo(uint *, int);
 int mount(const char *, const char *);
 int umount(const char *);
 int ttyraw(int);

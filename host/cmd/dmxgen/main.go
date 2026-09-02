@@ -302,7 +302,8 @@ type kprocSpec struct {
 	data      uint32 // image data base (for patchData)
 	entry     uint32
 	pid, ppid uint32
-	syscall   bool // image links usys (mailbox + syscall vector)
+	syscall   bool   // image links usys (mailbox + syscall vector)
+	name      string // proc-table name (`ps`); exec renames the slot
 }
 
 // buildKernelPair assembles kernel.dasm and the compiled kproc.c.
@@ -368,6 +369,7 @@ func wireKernel(kern *dmaasm.Result, kData uint32, kernC *dmaasm.Result, cData u
 		patch{kernC.Image, cData, sy(kernC, "g_kw_parkvec"), sy(kern, "parkvec")},
 	)
 	base := sy(kernC, "g_proc")
+	pnames := sy(kernC, "g_procname")
 	pf := func(slot, field int, val uint32) {
 		ps = append(ps, patch{kernC.Image, cData,
 			base + uint32(slot*procWords+field)*4, val})
@@ -380,6 +382,15 @@ func wireKernel(kern *dmaasm.Result, kData uint32, kernC *dmaasm.Result, cData u
 		pf(i, pfState, state)
 		pf(i, pfPid, p.pid)
 		pf(i, pfPpid, p.ppid)
+		// The slot's name, the way exec would leave it: the loader
+		// placed this image, so the loader names it (kproc.c
+		// procname, which lives beside the table, not in it).
+		var nb [12]byte
+		copy(nb[:], p.name)
+		for w := 0; w < 3; w++ {
+			ps = append(ps, patch{kernC.Image, cData,
+				pnames + uint32(i*12+w*4), binary.LittleEndian.Uint32(nb[w*4:])})
+		}
 		pf(i, pfPdispatch, sy(p.res, "dispatch"))
 		pf(i, pfPirqresume, sy(p.res, "irqresume"))
 		pf(i, pfPlr, sy(p.res, "lr"))
@@ -532,7 +543,7 @@ func libcPaths(first ...string) ([]string, error) {
 // buildSched: the scheduler-only bundle (two counter processes, no
 // syscalls). Fits the narrow rp2040 layout.
 func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
-	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x1E000)
+	kern, kernC, err := buildKernelPair(v, lay.text, lay.text+0x800, lay.text+0x1000, lay.text+0x20000)
 	if err != nil {
 		return nil, err
 	}
@@ -540,20 +551,20 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x21000, DataBase: lay.text + 0x22000})
+	procA, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x23000, DataBase: lay.text + 0x24000})
 	if err != nil {
 		return nil, err
 	}
-	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x23000, DataBase: lay.text + 0x24000})
+	procB, err := dmaasm.Assemble(pdasm, dmaasm.Options{Variant: v, TextBase: lay.text + 0x25000, DataBase: lay.text + 0x26000})
 	if err != nil {
 		return nil, err
 	}
 	b := &kernBundle{names: []string{"kernel", "kernc", "proca", "procb"}, sym: map[string]uint32{}}
-	b.entry0 = lay.text + 0x21000 + procA.Image.EntryOff
-	entryB := lay.text + 0x23000 + procB.Image.EntryOff
-	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x1E000, []kprocSpec{
-		{procA, lay.text + 0x22000, b.entry0, 1, 0, false},
-		{procB, lay.text + 0x24000, entryB, 2, 0, false},
+	b.entry0 = lay.text + 0x23000 + procA.Image.EntryOff
+	entryB := lay.text + 0x25000 + procB.Image.EntryOff
+	if err := wireKernel(kern, lay.text+0x800, kernC, lay.text+0x20000, []kprocSpec{
+		{procA, lay.text + 0x24000, b.entry0, 1, 0, false, "procA"},
+		{procB, lay.text + 0x26000, entryB, 2, 0, false, "procB"},
 	}); err != nil {
 		return nil, err
 	}
@@ -607,11 +618,11 @@ func buildSched(v *emu.Variant, lay layout) (*kernBundle, error) {
 // Needs the wide rp2350 layout.
 func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x21800
-	sText, sData := lay.text+0x24800, lay.text+0x37000
-	pText, pData := lay.text+0x33000, lay.text+0x34000
-	blobHome := lay.text + 0x3F000
-	arena, arenaEnd := lay.text+0x41000, lay.text+0x57000
+	cText, cData := lay.text+0x4000, lay.text+0x23800
+	sText, sData := lay.text+0x26800, lay.text+0x39000
+	pText, pData := lay.text+0x35000, lay.text+0x36000
+	blobHome := lay.text + 0x41000
+	arena, arenaEnd := lay.text+0x43000, lay.text+0x59000
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {
 		return nil, err
@@ -640,8 +651,8 @@ func buildShell(v *emu.Variant, lay layout) (*kernBundle, error) {
 	b.entry0 = sText + shell.Image.EntryOff
 	entryB := pText + procB.Image.EntryOff
 	if err := wireKernel(kern, kData, kernC, cData, []kprocSpec{
-		{shell, sData, b.entry0, 1, 0, true},
-		{procB, pData, entryB, 2, 0, false},
+		{shell, sData, b.entry0, 1, 0, true, "shell"},
+		{procB, pData, entryB, 2, 0, false, "procB"},
 	}); err != nil {
 		return nil, err
 	}
@@ -1110,7 +1121,7 @@ func kernResident(bd *boards.Board) []string {
 // generator fills (struct kimg kimages[NIMG]). Every kernel-side
 // lookup loop is bounded by NIMG, so a row written past it would land
 // in flash and stay invisible forever.
-const nimgRows = 20
+const nimgRows = 24
 
 // buildXsh: UPSTREAM user/sh.c as the boot shell on the FULL
 // filesystem kernel, the WHOLE SYSTEM in Tier-C compact encoding
@@ -1330,8 +1341,8 @@ func buildXsh(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 	b.entry0 = sTextXIP + sh.Image.EntryOff
 	entryI := iText + idle.Image.EntryOff
 	if err := wireKernel(kern, kData, kernC, cData, []kprocSpec{
-		{sh, sData, b.entry0, 1, 0, true},
-		{idle, iData, entryI, 2, 0, false},
+		{sh, sData, b.entry0, 1, 0, true, "sh"},
+		{idle, iData, entryI, 2, 0, false, "idle"},
 	}); err != nil {
 		return nil, err
 	}
@@ -1681,9 +1692,9 @@ const sysWantConsole = "hello from pid 1 via SYS_write\n" +
 // (dmacc/testdata/xv6sys.c + xv6/dma/usys.c). Wide layout.
 func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x21800
-	aText, aData := lay.text+0x24800, lay.text+0x28800
-	bText, bData := lay.text+0x2C800, lay.text+0x30800
+	cText, cData := lay.text+0x4000, lay.text+0x23800
+	aText, aData := lay.text+0x26800, lay.text+0x2A800
+	bText, bData := lay.text+0x2E800, lay.text+0x32800
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {
 		return nil, err
@@ -1704,8 +1715,8 @@ func buildSyscall(v *emu.Variant, lay layout) (*kernBundle, error) {
 	b.entry0 = aText + procA.Image.EntryOff
 	entryB := bText + procB.Image.EntryOff
 	if err := wireKernel(kern, kData, kernC, cData, []kprocSpec{
-		{procA, aData, b.entry0, 1, 0, true},
-		{procB, bData, entryB, 2, 0, true},
+		{procA, aData, b.entry0, 1, 0, true, "procA"},
+		{procB, bData, entryB, 2, 0, true, "procB"},
 	}); err != nil {
 		return nil, err
 	}
@@ -2012,11 +2023,11 @@ func stageBlobsEmu(m *emu.Machine, blobs [][]byte, names []string, syms map[stri
 // kernel places, relocates and runs it at exec() time.
 func buildExec(v *emu.Variant, lay layout) (*kernBundle, error) {
 	kText, kData := lay.text, lay.text+0x2000
-	cText, cData := lay.text+0x4000, lay.text+0x21800
-	aText, aData := lay.text+0x24800, lay.text+0x28800
-	bText, bData := lay.text+0x2C800, lay.text+0x30800
-	blobHome := lay.text + 0x31000
-	arena, arenaEnd := lay.text+0x35000, lay.text+0x3E000
+	cText, cData := lay.text+0x4000, lay.text+0x23800
+	aText, aData := lay.text+0x26800, lay.text+0x2A800
+	bText, bData := lay.text+0x2E800, lay.text+0x32800
+	blobHome := lay.text + 0x33000
+	arena, arenaEnd := lay.text+0x37000, lay.text+0x40000
 
 	kern, kernC, err := buildKernelPair(v, kText, kData, cText, cData)
 	if err != nil {
@@ -2049,8 +2060,8 @@ func buildExec(v *emu.Variant, lay layout) (*kernBundle, error) {
 	b.entry0 = aText + idle.Image.EntryOff
 	entryP := bText + parent.Image.EntryOff
 	if err := wireKernel(kern, kData, kernC, cData, []kprocSpec{
-		{idle, aData, b.entry0, 1, 0, true},
-		{parent, bData, entryP, 2, 0, true},
+		{idle, aData, b.entry0, 1, 0, true, "idle"},
+		{parent, bData, entryP, 2, 0, true, "parent"},
 	}); err != nil {
 		return nil, err
 	}

@@ -56,7 +56,7 @@ libc:
 # The curated list grows as the port proceeds; goldens in target/xv6/ll are
 # committed and linked by dmacc like the libc ones.
 XV6_SRCS = kernel/string.c user/umalloc.c user/ulib.c user/printf.c user/echo.c user/sh.c \
-           user/cat.c user/ls.c user/wc.c user/vi.c \
+           user/cat.c user/ls.c user/wc.c user/vi.c user/nyancat.c \
            user/toolbox.c user/hwtools.c user/fbtest.c user/show.c \
            user/spin.c user/killprog.c user/syncprog.c user/trap.c \
            dma/usys.c dma/kproc.c dma/kcons.c dma/kconsstub.c dma/kgpio.c dma/kfb.c dma/kfbcon.c \

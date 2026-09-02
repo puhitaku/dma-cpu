@@ -260,6 +260,16 @@ meminfo(uint *out)
   return dma_trap();
 }
 
+/* One row per live proc slot into out[]: pid, ppid, state, name[12].
+ * `max` is how many rows the caller's buffer holds; the return is how
+ * many were written. */
+int
+procinfo(uint *out, int max)
+{
+  fill(SYS_procinfo, (uint)out, (uint)max, 0);
+  return dma_trap();
+}
+
 int
 mount(const char *src, const char *target)
 {

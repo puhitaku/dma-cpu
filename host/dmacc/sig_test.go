@@ -48,7 +48,7 @@ func TestXv6Signal(t *testing.T) {
 				}
 				return res
 			}
-			driver := asm(0x20021000, 0x20024000)
+			driver := asm(0x20023000, 0x20025000)
 			idle := asm(0x20026000, 0x2002A000)
 
 			m := emu.NewMachine(v)
@@ -66,8 +66,8 @@ func TestXv6Signal(t *testing.T) {
 				}
 			}
 			wireKernel(t, m, v, kern, kernC, []kproc{
-				{driver, entries[0], 1, 0, true},
-				{idle, entries[1], 2, 0, true},
+				{driver, entries[0], 1, 0, true, "driver"},
+				{idle, entries[1], 2, 0, true, "idle"},
 			})
 			m.Poke32(mustSym(t, kernC, "g_fgpid"), 1)
 			m.Poke32(mustSym(t, kernC, "g_nextpid"), 3)

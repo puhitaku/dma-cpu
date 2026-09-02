@@ -57,8 +57,8 @@ func TestCompactSched(t *testing.T) {
 				t.Fatal(err)
 			}
 			wireKernelEnc(t, m, v, kern, kernC, []kproc{
-				{procA, entryA, 1, 0, false},
-				{procB, entryB, 2, 0, false},
+				{procA, entryA, 1, 0, false, "procA"},
+				{procB, entryB, 2, 0, false, "procB"},
 			}, true)
 			if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
 				Compact: true, Entry: entryA, Scratch: 0x2003FF00,

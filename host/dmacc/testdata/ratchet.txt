@@ -11,9 +11,9 @@
 # Every entry is exact: the emulator is deterministic, so any drift —
 # regression OR unrecorded improvement — fails the build. Regenerating
 # is a measurement to report, not a golden to refresh.
-deploy/feather-kernel/data	34260
-deploy/feather-kernel/ramtext	55984
-deploy/feather-kernel/text	229360
+deploy/feather-kernel/data	34780
+deploy/feather-kernel/ramtext	56296
+deploy/feather-kernel/text	232260
 deploy/feather-sh/data	8960
 deploy/feather-sh/ramtext	3952
 deploy/feather-sh/text	47088
@@ -24,14 +24,14 @@ deploy/feather-vi/text	160840
 deploy/gamepico-game/data	143104
 deploy/gamepico-game/ramtext	44616
 deploy/gamepico-game/text	274036
-fbcon/feather/cat README	1889021
-fbcon/feather/echo 0123456789012345678901234567890123456789	2324810
-fbcon/feather/ls /dev	5954990
-fbcon/feather/scroll (12x ls /dev)	93326730
-fbcon/pico2/cat README	990004
-fbcon/pico2/echo 0123456789012345678901234567890123456789	2069999
-fbcon/pico2/ls /dev	4514998
-fbcon/pico2/scroll (12x ls /dev)	54196835
+fbcon/feather/cat README	1199996
+fbcon/feather/echo 0123456789012345678901234567890123456789	2309857
+fbcon/feather/ls /dev	5955001
+fbcon/feather/scroll (12x ls /dev)	95127501
+fbcon/pico2/cat README	990006
+fbcon/pico2/echo 0123456789012345678901234567890123456789	2010001
+fbcon/pico2/ls /dev	4560006
+fbcon/pico2/scroll (12x ls /dev)	54676864
 game/us/bogo	2131188992
 game/us/div	3115336960
 game/us/mem	7705344
@@ -40,19 +40,19 @@ game/us/rand	177301760
 game/us/shr1	75305472
 game/us/sieve	1449423360
 game/us/sort	1155173120
-size/fs-kern-xip/data	48696
-size/fs-kern-xip/ramtext	43720
-size/fs-kern-xip/text	201624
-size/fs-kernel/data	41132
-size/fs-kernel/text	223976
-size/fs-xip-Os/data	44824
-size/fs-xip-Os/ramtext	43720
-size/fs-xip-Os/text	196376
-size/fs-xip-pgo/data	45896
-size/fs-xip-pgo/ramtext	43976
-size/fs-xip-pgo/text	205360
-size/lean/data	10472
-size/lean/text	118640
+size/fs-kern-xip/data	49444
+size/fs-kern-xip/ramtext	44032
+size/fs-kern-xip/text	204384
+size/fs-kernel/data	41748
+size/fs-kernel/text	226776
+size/fs-xip-Os/data	45520
+size/fs-xip-Os/ramtext	44032
+size/fs-xip-Os/text	199072
+size/fs-xip-pgo/data	46596
+size/fs-xip-pgo/ramtext	44288
+size/fs-xip-pgo/text	208080
+size/lean/data	11088
+size/lean/text	122704
 size/ls/data	2752
 size/ls/text	12512
 size/sh(K2)/data	12396
@@ -76,15 +76,15 @@ vi/phase/replace char (rX)	3000000
 vi/phase/subst %s/a/A/g	2500000
 vi/phase/yank aaa (yy)	2000000
 vi/phase/yank line (yy)	1000000
-xsh/((((echo deep))))/cold	1228151
-xsh/((((echo deep))))/warm	1274999
-xsh/cat README | wc/cold	1496593
-xsh/cat README | wc/warm	1560012
-xsh/cat README/cold	1052057
-xsh/cat README/warm	989971
-xsh/echo hi/cold	1202584
-xsh/echo hi/warm	660009
-xsh/free/cold	1544346
-xsh/free/warm	1545001
-xsh/ls/cold	2246459
-xsh/ls/warm	2294995
+xsh/((((echo deep))))/cold	1182531
+xsh/((((echo deep))))/warm	1139994
+xsh/cat README | wc/cold	1559986
+xsh/cat README | wc/warm	1560011
+xsh/cat README/cold	1033626
+xsh/cat README/warm	990006
+xsh/echo hi/cold	1225842
+xsh/echo hi/warm	721105
+xsh/free/cold	1772645
+xsh/free/warm	1770021
+xsh/ls/cold	2342143
+xsh/ls/warm	2355000

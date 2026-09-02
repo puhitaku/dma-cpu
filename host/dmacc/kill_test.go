@@ -46,7 +46,7 @@ func TestXv6Kill(t *testing.T) {
 				}
 				return res
 			}
-			killer := asm(0x20021000, 0x20024000)
+			killer := asm(0x20023000, 0x20025000)
 			idle := asm(0x20026000, 0x2002A000)
 			victim := asm(0x2002C000, 0x20030000)
 			orphan := asm(0x20032000, 0x20036000)
@@ -66,10 +66,10 @@ func TestXv6Kill(t *testing.T) {
 				}
 			}
 			wireKernel(t, m, v, kern, kernC, []kproc{
-				{killer, entries[0], 1, 0, true},
-				{idle, entries[1], 2, 0, true},
-				{victim, entries[2], 3, 1, true},
-				{orphan, entries[3], 4, 3, true},
+				{killer, entries[0], 1, 0, true, "killer"},
+				{idle, entries[1], 2, 0, true, "idle"},
+				{victim, entries[2], 3, 1, true, "victim"},
+				{orphan, entries[3], 4, 3, true, "orphan"},
 			})
 			m.Poke32(mustSym(t, kernC, "g_initpid"), 2)
 			if err := emu.SetupFetchExec(m, emu.FetchExecConfig{

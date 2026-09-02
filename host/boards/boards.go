@@ -180,7 +180,7 @@ func (b *Board) HasBundle(name string) bool {
 // and show run everywhere and print "no fb" on displayless boards
 // (the kernel's fb stub answers -ENODEV; PORT.md, "Device absence").
 var stdApps = []string{"echo", "cat", "ls", "toolbox", "hwtools",
-	"fbtest", "show"}
+	"fbtest", "show", "nyancat"}
 
 // SizeApps compile with dmacc's OptSize (outlined comparison sites).
 // Exec copies a disk app's text+data whole into the arena, so every
@@ -204,11 +204,20 @@ var SizeApps = map[string]bool{"toolbox": true, "hwtools": true}
 // disk-file boards and DMX files on the fs ignore the flag — those
 // stay load-anywhere by design. vi is always pre-relocated where
 // installed (Board.ViHome).
-var XIPApps = map[string]bool{}
+// nyancat is here for its DATA, not its speed: the twelve 64x64
+// animation frames are ~14 KiB of literals and a 3 KiB pointer table,
+// and a load-anywhere image pays all of it into the arena (25 KiB
+// measured, on a feather arena of 76.75). Pre-relocated it keeps the
+// frames in flash and claims 5.25 KiB.
+var XIPApps = map[string]bool{"nyancat": true}
 
 // spin/trap (signal demos), wc, and help left the toolbox: help is an
 // sh builtin now (it streams /dev/apps) and the rest earned no keep.
-var stdLinks = []string{"kill", "free", "sync", "mount",
+// ps joined it — the proc table's front end is free-class work, one
+// syscall and a formatter, and the blob already carries the ulib it
+// needs. The blob is copied into the arena per invocation, so that
+// choice costs every other tool in it what ps weighs.
+var stdLinks = []string{"kill", "free", "ps", "sync", "mount",
 	"umount", "mkdir", "rm", "clear"}
 
 // LinksFor returns the multi-call names linked onto the given app

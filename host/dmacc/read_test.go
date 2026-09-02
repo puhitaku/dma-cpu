@@ -51,7 +51,7 @@ func TestXv6Read(t *testing.T) {
 			}
 			kernC := buildKernelC(t, v, 0x20004000, 0x20038000)
 			idle, err := dmaasm.Assemble(idasm, dmaasm.Options{
-				Variant: v, TextBase: 0x20021000, DataBase: 0x20024000})
+				Variant: v, TextBase: 0x20023000, DataBase: 0x20025000})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -76,8 +76,8 @@ func TestXv6Read(t *testing.T) {
 				}
 			}
 			wireKernel(t, m, v, kern, kernC, []kproc{
-				{idle, entryI, 1, 0, false},
-				{reader, entryR, 2, 0, true},
+				{idle, entryI, 1, 0, false, "idle"},
+				{reader, entryR, 2, 0, true, "reader"},
 			})
 			if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
 				Fetch: 0, Exec: 1, Fix: 2, Entry: entryI, Scratch: 0x2003FF00,

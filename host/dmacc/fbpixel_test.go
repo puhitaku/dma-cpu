@@ -14,6 +14,7 @@ package dmacc_test
 // a changed golden is a changed display.
 
 import (
+	"bytes"
 	"fmt"
 	"hash/fnv"
 	"os"
@@ -123,11 +124,127 @@ func TestXv6FbconPixels(t *testing.T) {
 // stamps is now the honest [0.004] the framebuffer bring-up takes
 // instead of the [0.000] a stopped tick counter used to report. Three
 // glyphs of a kernel log line, and nothing about the renderer.
+//
+// "scroll" was re-recorded when `ps` and `nyancat` joined the app set:
+// the phase is twelve `ls /dev`, /dev/apps is the registry rendered as
+// text, and two more names took it from 98 bytes to 109 — one more
+// digit in a size column, twelve times over. Also not the renderer.
 var fbPixelGolden = []string{
 	"4644613854373639", // echo
 	"f8436a50256bc4fd", // edit
 	"bb5a7d764da0ff2d", // escapes
-	"4f13cb23697277dd", // scroll
+	"0c96f66b41c21189", // scroll
 	"61f3584764f48f15", // clear
 	"af897c4b882ea0fd", // after clear
+}
+
+// The RGB332 bytes kfbcon paints for the ANSI colors nyancat uses
+// (kfbcon.c fbpal, quantized from the SimpleTerminal colormap). Named
+// here so the assertions below read as colors and not as hex.
+const (
+	fbBrightBlue    = 0x03 // 104: the sky the whole frame sits on
+	fbBrightMagenta = 0xE3 // 105: the poptart body and the cheeks
+	fbGray          = 0x92 // 100: the cat
+	fbBrightRed     = 0xE0 // 101: the rainbow's top stripe
+	fbBrightYellow  = 0xFC // 103: the rainbow's yellow stripe
+	fbBrightGreen   = 0x1C // 102: the rainbow's green stripe
+	fbDarkBlue      = 0x02 // 44:  the rainbow's bottom stripe
+	fbBlack         = 0x00 // 40:  the sprite outline, and a clear screen
+)
+
+// TestXv6Nyancat runs the nyancat port on the feather's framebuffer
+// console and looks at the pixels it leaves. There is no golden digest
+// here on purpose: the frame the run happens to stop on is a property
+// of the cycle budget, while what the port has to get right is that
+// the 16-color background escapes it emits reach kfbcon's palette at
+// all — so the assertion is a color census, which every frame of the
+// animation satisfies and a broken color table cannot.
+//
+// The exit path is the other half: nyancat parks in select() on the
+// console, so one keystroke has to end it, put the console back in
+// cooked mode, reset the colors and hand the shell a live prompt.
+func TestXv6Nyancat(t *testing.T) {
+	t.Parallel()
+	bd := boards.Feather
+	m, _ := bootXshBoard(t, nil, bd)
+	m.TXPace = 0
+	census := func() map[byte]int {
+		h := map[byte]int{}
+		for off := uint32(0); off < 640*480; off += 4 {
+			w := m.Peek32(bd.FbBuf + off)
+			for k := 0; k < 4; k++ {
+				h[byte(w>>(8*k))]++
+			}
+		}
+		return h
+	}
+	// A fixed budget, which the deterministic emulator turns into a
+	// fixed number of frames: ~5 at the port's 90 ms pacing.
+	spin := func(budget uint64) {
+		var spent uint64
+		for spent < budget {
+			rr, err := m.Run(emu.RunConfig{MaxCycles: 20_000_000})
+			if err != nil {
+				t.Fatalf("%v\nconsole tail: %q", err, tailB(m.ConsoleOut, 300))
+			}
+			spent += rr.Cycles
+		}
+	}
+	m.FeedConsole("nyancat\r")
+	spin(300_000_000)
+
+	h := census()
+	for _, want := range []struct {
+		px   byte
+		name string
+		min  int
+	}{
+		{fbBrightBlue, "sky", 100_000},
+		{fbBrightMagenta, "poptart pink", 10_000},
+		{fbGray, "cat", 10_000},
+		{fbBlack, "sprite outline", 10_000},
+		{fbBrightRed, "rainbow red", 2_000},
+		{fbBrightYellow, "rainbow yellow", 2_000},
+		{fbBrightGreen, "rainbow green", 2_000},
+		{fbDarkBlue, "rainbow dark blue", 2_000},
+	} {
+		if h[want.px] < want.min {
+			t.Errorf("framebuffer has %d px of %s (rgb332 %#02x), want >= %d",
+				h[want.px], want.name, want.px, want.min)
+		}
+	}
+	// 640x480 is 307200 px and the animation fills all of it: an
+	// unpainted gutter or a half-drawn frame shows up here.
+	if h[fbBlack] > 60_000 {
+		t.Errorf("%d px still black: the frame did not cover the screen", h[fbBlack])
+	}
+
+	// One keystroke, and the port must land back at a prompt.
+	m.FeedConsole("q")
+	var quit uint64
+	for quit < 200_000_000 && !bytes.HasSuffix(m.ConsoleOut, []byte("$ ")) {
+		rr, err := m.Run(emu.RunConfig{MaxCycles: 5_000_000})
+		if err != nil {
+			t.Fatal(err)
+		}
+		quit += rr.Cycles
+	}
+	if !bytes.HasSuffix(m.ConsoleOut, []byte("$ ")) {
+		t.Fatalf("no prompt after the keypress\nconsole tail: %q", tailB(m.ConsoleOut, 300))
+	}
+	// Colors reset AND the screen given back: SGR 0 put the console's
+	// background at palette 0, so the clear that follows paints black
+	// and the only lit pixels left are the prompt's own glyph.
+	h = census()
+	if h[fbBlack] < 640*480-2_000 {
+		t.Errorf("%d px black after exit: the screen was not cleared to the "+
+			"default background (colors not reset?)", h[fbBlack])
+	}
+	// And the shell is really alive, not just echoing a stale prompt.
+	before := len(m.ConsoleOut)
+	m.FeedConsole("echo alive\r")
+	runScript(t, m, 200_000_000)
+	if !strings.Contains(string(m.ConsoleOut[before:]), "alive") {
+		t.Errorf("shell not alive after nyancat: %q", string(m.ConsoleOut[before:]))
+	}
 }

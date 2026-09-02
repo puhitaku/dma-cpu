@@ -45,12 +45,12 @@ func TestPreemptiveScheduler(t *testing.T) {
 			}
 			kernC := buildKernelC(t, v, 0x20004000, 0x20038000)
 			procA, err := dmaasm.Assemble(dasm, dmaasm.Options{
-				Variant: v, TextBase: 0x20021000, DataBase: 0x20023000})
+				Variant: v, TextBase: 0x20023000, DataBase: 0x20025000})
 			if err != nil {
 				t.Fatal(err)
 			}
 			procB, err := dmaasm.Assemble(dasm, dmaasm.Options{
-				Variant: v, TextBase: 0x20024000, DataBase: 0x20027000})
+				Variant: v, TextBase: 0x20026000, DataBase: 0x20028000})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -70,8 +70,8 @@ func TestPreemptiveScheduler(t *testing.T) {
 				t.Fatal(err)
 			}
 			wireKernel(t, m, v, kern, kernC, []kproc{
-				{procA, entryA, 1, 0, false},
-				{procB, entryB, 2, 0, false},
+				{procA, entryA, 1, 0, false, "procA"},
+				{procB, entryB, 2, 0, false, "procB"},
 			})
 			if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
 				Fetch: 0, Exec: 1, Fix: 2, Entry: entryA, Scratch: 0x2003FF00,

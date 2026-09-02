@@ -203,7 +203,7 @@ func TestXv6Proc(t *testing.T) {
 				}
 				return res
 			}
-			idle := asm(0x20021000, 0x20024000)
+			idle := asm(0x20023000, 0x20025000)
 			parent := asm(0x20026000, 0x2002A000)
 			child := asm(0x2002C000, 0x20030000)
 
@@ -222,9 +222,9 @@ func TestXv6Proc(t *testing.T) {
 				}
 			}
 			wireKernel(t, m, v, kern, kernC, []kproc{
-				{idle, entries[0], 1, 0, true},
-				{parent, entries[1], 2, 1, true},
-				{child, entries[2], 3, 2, true},
+				{idle, entries[0], 1, 0, true, "idle"},
+				{parent, entries[1], 2, 1, true, "parent"},
+				{child, entries[2], 3, 2, true, "child"},
 			})
 			if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
 				Fetch: 0, Exec: 1, Fix: 2, Entry: entries[0], Scratch: 0x2003FF00,

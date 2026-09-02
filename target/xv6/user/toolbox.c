@@ -1,6 +1,6 @@
 /* toolbox: the dma utilities as ONE multi-call binary, dispatched on
  * argv[0] busybox-style — one blob carries hard links named kill,
- * free, sync, mount, umount, mkdir, rm, clear (fsimg AddLink), so
+ * free, ps, sync, mount, umount, mkdir, rm, clear (fsimg AddLink), so
  * usys/ulib are paid for once instead of per tool
  * (prompts/029; the disk budget is real memory too). Printf-free. */
 #include "kernel/types.h"
@@ -93,6 +93,69 @@ t_free(void)
   emitn(mi[7]);
   emit("\n");
   flush();
+  return 0;
+}
+
+/* --- ps: the proc table (SYS_procinfo) ---
+ * Slot count is NPROC (8, kproc.c) and the kernel skips UNUSED rows,
+ * so the buffer is a fixed 8x6 words and never grows. */
+#define PS_MAX 8
+
+/* enum procstate, in the kernel's order (kproc.c). */
+static const char *const pstate[] = {
+    "unused", "used", "sleeping", "runnable", "running", "zombie"};
+
+/* v right-aligned in a w-wide field, and s left-aligned in one. Both
+ * lean on emit/emitn rather than carrying their own conversion or
+ * copy: the whole multi-call blob is copied into the arena on every
+ * invocation of every tool in it, so a byte of ps is a byte `kill`
+ * pays for too. */
+static void
+emitpad(uint v, int w)
+{
+  int n = 1;
+  for (uint t = v; t >= 10; t /= 10)
+    n++;
+  while (n++ < w)
+    obuf[olen++] = ' ';
+  emitn(v);
+}
+
+static void
+emitleft(const char *s, int w)
+{
+  int n = 0;
+  while (*s) {
+    obuf[olen++] = *s++;
+    n++;
+  }
+  while (n++ < w)
+    obuf[olen++] = ' ';
+}
+
+static uint psbuf[PS_MAX * PROCINFO_WORDS];
+
+static int
+t_ps(void)
+{
+  int n = procinfo(psbuf, PS_MAX);
+  if (n < 0) {
+    write(2, "ps: procinfo failed\n", 20);
+    return 1;
+  }
+  emit("  PID  PPID STATE    CMD\n");
+  flush();
+  for (int i = 0; i < n; i++) {
+    uint *r = &psbuf[i * PROCINFO_WORDS];
+    emitpad(r[0], 5);
+    emitpad(r[1], 6);
+    obuf[olen++] = ' ';
+    emitleft(r[2] < 6 ? pstate[r[2]] : "?", 9);
+    /* An unnamed slot is one the loader placed and never exec'd. */
+    emit(*(char *)&r[3] ? (const char *)&r[3] : "-");
+    obuf[olen++] = '\n';
+    flush();
+  }
   return 0;
 }
 
@@ -208,6 +271,8 @@ main(int argc, char **argv)
     exit(t_kill(argc, argv));
   if (streq(base, "free"))
     exit(t_free());
+  if (streq(base, "ps"))
+    exit(t_ps());
   if (streq(base, "sync"))
     exit(t_sync());
   if (streq(base, "clear"))
@@ -224,7 +289,7 @@ main(int argc, char **argv)
    * the previous literal had drifted from the dispatch AND ran one
    * byte long, writing its own NUL to the console. */
   static const char usage[] =
-      "toolbox: kill free sync clear mount umount mkdir rm\n";
+      "toolbox: kill free ps sync clear mount umount mkdir rm\n";
   write(2, usage, sizeof(usage) - 1);
   exit(1);
 }

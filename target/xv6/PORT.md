@@ -22,8 +22,8 @@ come back:
 - `kernel/` — the kernel: upstream sources, patched in place.
 - `user/` — user space: the library (ulib/umalloc/printf) and EVERY
   user command, upstream or DMA-native alike (`show`, `fbtest`,
-  `toolbox`, `hwtools`, the signal demos). A user program never
-  lives in `dma/`.
+  `toolbox`, `hwtools`, `nyancat`, the signal demos). A user program
+  never lives in `dma/`.
 - `dma/` — the machine layer only: kernel-side replacements and
   drivers (`k*.c`), the syscall veneer (`usys.c`, this machine's
   "ecall"), the `shim/` headers, and bare-metal probe images that
@@ -292,6 +292,21 @@ a different screen.
   been reporting a 40 ms slide draw as 0.00s — the draw is one
   `SYS_read`, and the kernel it stays inside delivers no quanta.
   See the "Time" rule above; `ticks` itself is unchanged.
+- [x] `ps` command: SYS_procinfo hands out one row per live slot (pid,
+  ppid, `enum procstate`, and the name exec left), and `ps` — a
+  toolbox applet, like `free` — prints them. The name is the addition
+  the table needed: it lives BESIDE `struct proc` rather than in it,
+  because fork copies the struct whole and twelve more bytes there
+  cost 240 bytes of the feather kernel's .ramtext window. The loader
+  names the boot slots (`sh`, `idle`) exactly as it sets their pids.
+- [x] `nyancat` (`user/nyancat.c`, frames verbatim in
+  `user/nyancat_anim.h`; NCSA, K. Lange — see LICENSE): the port keeps
+  the render loop and drops everything that describes a terminal or a
+  telnet session. It is the tree's first XIP registry app
+  (`boards.XIPApps`): 14 KiB of animation literals live in flash and
+  the arena claim is 5.25 KiB instead of 25. Every escape it emits was
+  already in kfbcon's vocabulary — the port grew the console by
+  nothing.
 
 ## Presentation goals (beyond xv6)
 

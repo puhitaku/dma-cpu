@@ -132,8 +132,8 @@ func bootExam(t *testing.T, arg string) *emu.Machine {
 		}
 	}
 	wireKernelEnc(t, m, v, kern, kernC, []kproc{
-		{ut, entryU, 1, 0, true},
-		{idle, entryI, 2, 0, false},
+		{ut, entryU, 1, 0, true, "ut"},
+		{idle, entryI, 2, 0, false, "idle"},
 	}, true)
 
 	// Small disk: exectest execs echo.

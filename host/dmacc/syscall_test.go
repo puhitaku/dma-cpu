@@ -45,7 +45,7 @@ func TestXv6Syscalls(t *testing.T) {
 			}
 			kernC := buildKernelC(t, v, 0x20004000, 0x20038000)
 			procA, err := dmaasm.Assemble(procDasm, dmaasm.Options{
-				Variant: v, TextBase: 0x20021000, DataBase: 0x20024000})
+				Variant: v, TextBase: 0x20023000, DataBase: 0x20025000})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -73,8 +73,8 @@ func TestXv6Syscalls(t *testing.T) {
 			// its uptime spin, and vice versa after pid 1 exits: the
 			// bg counter only pauses(0), waking the same tick.
 			wireKernel(t, m, v, kern, kernC, []kproc{
-				{procA, entryA, 1, 0, true},
-				{procB, entryB, 2, 0, true},
+				{procA, entryA, 1, 0, true, "procA"},
+				{procB, entryB, 2, 0, true, "procB"},
 			})
 			if err := emu.SetupFetchExec(m, emu.FetchExecConfig{
 				Fetch: 0, Exec: 1, Fix: 2, Entry: entryA, Scratch: 0x2003FF00,

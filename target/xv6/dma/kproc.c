@@ -96,6 +96,31 @@ struct proc {
 struct proc proc[NPROC];
 uint curr;
 
+/* What each slot is RUNNING, basename only and NUL-terminated: the
+ * one thing the table carried no record of, and the only reason `ps`
+ * (SYS_procinfo, toolbox.c) can name a row. The loader names the boot
+ * slots exactly as it sets their pids; exec renames from there.
+ *
+ * It sits BESIDE struct proc rather than in it, and that is a
+ * measurement, not a preference. fork copies the struct whole
+ * (*c = *p); twelve more bytes inside it widened that copy — and
+ * every other whole-struct move — by 240 bytes of the kernel's
+ * .ramtext window, which on the video board is the scarcest window
+ * there is (XIPText turns each self-modified record into a resident
+ * stub; TestDeploySizes prints what is left). Beside the table, fork
+ * pays one explicit copy and the window pays for one. */
+char procname[NPROC][12];
+
+/* The kernel's only name copy: fork's inheritance and procinfo's
+ * readout share it, so the .ramtext window buys one load/store pair
+ * instead of two. Kept out of line for exactly that reason. */
+__attribute__((noinline)) static void
+namecpy(char *d, const char *s)
+{
+  for (int j = 0; j < 12; j++)
+    d[j] = s[j];
+}
+
 /* ticks: scheduler quanta DELIVERED, not elapsed time. The injector
  * is one-shot and re-armed at kexit, so this stops advancing for as
  * long as the kernel stays in — by design, and never to be papered
@@ -212,7 +237,7 @@ static uint tick_taken; /* this kernel entry consumed the timer fire */
  * now lives in the kernel. Packed reloc word: bit31 = target segment
  * (0 text, 1 data), bit30 = referenced segment, low 30 bits = byte
  * offset within the target segment. */
-#define NIMG 20 /* flash-resident apps: one row per NAME (toolbox
+#define NIMG 24 /* flash-resident apps: one row per NAME (toolbox
               * links each get a row aliasing the same blob) */
 
 struct kimg {
@@ -1525,6 +1550,7 @@ dma_ksyscall(void)
     }
     struct proc *c = &proc[ci];
     *c = *p;
+    namecpy(procname[ci], procname[curr]); /* until the child execs */
     if (fsready)
       kfs_forkcopy((int)curr, ci);
     c->pid = nextpid++;
@@ -1690,6 +1716,25 @@ dma_ksyscall(void)
     uint regs = db + im->dispoff - 0x54; /* .regs base */
     W(regs + 0) = argc;                  /* r0 */
     W(regs + 4) = argvdst;               /* r1 */
+    /* Name the slot after what was exec'd: the basename of a0, which
+     * for a registry image is the row name the shell typed — so a
+     * toolbox link shows as `free`, not as `toolbox`. Scanned and
+     * copied in ONE pass: a separate basename scan would cost a
+     * second .ramtext record for the same bytes, and this kernel's
+     * window is measured in hundreds. It reads the caller's path from
+     * the same place the argv copy above reads its strings, and every
+     * failure path is behind it — a refused exec never renames. */
+    {
+      char *d = procname[curr];
+      int j = 0;
+      for (const char *q = (const char *)m->a0; *q; q++) {
+        if (*q == '/')
+          j = 0;
+        else if (j < 11)
+          d[j++] = *q;
+      }
+      d[j] = 0;
+    }
     vfork_release(p);
     /* exec does not return: continue at the fresh image's crt0. */
     p->state = RUNNING;
@@ -1745,6 +1790,31 @@ dma_ksyscall(void)
     o[6] = NPROC;
     o[7] = ticks;
     ret = 0;
+    break;
+  }
+  case SYS_procinfo: { /* a0: rows out, a1: how many the buffer holds.
+                        * One 6-word row per LIVE slot — [0] pid
+                        * [1] ppid [2] state (enum procstate)
+                        * [3..5] the 12-byte name — and the row count
+                        * is the return value. `ps` is the whole
+                        * consumer; meminfo's o[5]/o[6] stay the cheap
+                        * slot census, which is all `free` wanted. */
+    uint max = m->a1 > NPROC ? NPROC : m->a1;
+    if (badbuf(p, m->a0, max * 24))
+      break;
+    uint *o = (uint *)m->a0;
+    uint n = 0;
+    for (int i = 0; i < NPROC && n < max; i++) {
+      if (proc[i].state == UNUSED)
+        continue;
+      o[0] = proc[i].pid;
+      o[1] = proc[i].ppid;
+      o[2] = proc[i].state;
+      namecpy((char *)&o[3], procname[i]);
+      o += 6;
+      n++;
+    }
+    ret = n;
     break;
   }
   case SYS_ttyraw: /* a0: 1 = raw console (uncooked, unechoed), 0 =

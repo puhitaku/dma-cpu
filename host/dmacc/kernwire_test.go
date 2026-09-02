@@ -1,6 +1,7 @@
 package dmacc_test
 
 import (
+	"encoding/binary"
 	"testing"
 
 	"github.com/puhitaku/dma-cpu/host/dmaasm"
@@ -45,7 +46,8 @@ type kproc struct {
 	entry   uint32
 	pid     uint32
 	ppid    uint32
-	syscall bool // image links usys (has a mailbox + syscall vector)
+	syscall bool   // image links usys (has a mailbox + syscall vector)
+	name    string // proc-table name (`ps`); exec renames the slot
 }
 
 // wireKernel pokes the Phase 5d kernel wiring: the kernel.dasm words,
@@ -97,6 +99,14 @@ func wireKernelEnc(t *testing.T, m *emu.Machine, v *emu.Variant,
 		pf(i, pfState, state)
 		pf(i, pfPid, p.pid)
 		pf(i, pfPpid, p.ppid)
+		// The slot's name, as the loader leaves it for `ps` (dmxgen
+		// wireKernel does the same); exec renames it from there.
+		var nb [12]byte
+		copy(nb[:], p.name)
+		for w := 0; w < 3; w++ {
+			m.Poke32(kc("g_procname")+uint32(i*12+w*4),
+				binary.LittleEndian.Uint32(nb[w*4:]))
+		}
 		pf(i, pfPdispatch, sym(p.res, "dispatch"))
 		pf(i, pfPirqresume, sym(p.res, "irqresume"))
 		pf(i, pfPlr, sym(p.res, "lr"))

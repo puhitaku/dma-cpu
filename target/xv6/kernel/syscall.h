@@ -33,3 +33,4 @@
 #define SYS_fb     32
 #define SYS_seek   33
 #define SYS_select 34
+#define SYS_procinfo 35
