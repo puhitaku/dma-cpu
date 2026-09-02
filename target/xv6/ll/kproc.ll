@@ -242,6 +242,7 @@ define dso_local void @kconswrite(ptr noundef readonly captures(none) %0, i32 no
   br i1 %5, label %7, label %6
 
 6:                                                ; preds = %3
+  tail call void @kfbcon_cursor() #17
   ret void
 
 7:                                                ; preds = %3
@@ -271,6 +272,9 @@ define internal fastcc void @cputc(i32 noundef range(i32 -128, -2147483648) %0) 
   tail call void @kfbcon_putc(i32 noundef %0) #17
   ret void
 }
+
+; Function Attrs: minsize optsize
+declare dso_local void @kfbcon_cursor() local_unnamed_addr #5
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local i32 @kconsread(i32 noundef %0, i32 noundef %1) local_unnamed_addr #1 {
@@ -671,6 +675,7 @@ define internal fastcc void @cons_poll() unnamed_addr #1 {
   br label %88
 
 205:                                              ; preds = %10, %17, %2
+  tail call void @kfbcon_cursor() #17
   %206 = load i32, ptr @cons_w, align 4, !tbaa !6
   %207 = icmp eq i32 %206, %1
   br i1 %207, label %235, label %208
@@ -733,7 +738,7 @@ define dso_local range(i32 0, 2) i32 @kcons_ready() local_unnamed_addr #0 {
 }
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(read, argmem: none, inaccessiblemem: none)
-define dso_local range(i32 9, 8) i32 @kfind_sleeper(i32 noundef %0) local_unnamed_addr #5 {
+define dso_local range(i32 9, 8) i32 @kfind_sleeper(i32 noundef %0) local_unnamed_addr #6 {
   br label %2
 
 2:                                                ; preds = %13, %1
@@ -763,7 +768,7 @@ define dso_local range(i32 9, 8) i32 @kfind_sleeper(i32 noundef %0) local_unname
 }
 
 ; Function Attrs: minsize mustprogress nofree norecurse nounwind optsize willreturn
-define dso_local i32 @kmail_get(i32 noundef %0, i32 noundef %1) local_unnamed_addr #6 {
+define dso_local i32 @kmail_get(i32 noundef %0, i32 noundef %1) local_unnamed_addr #7 {
   %3 = getelementptr inbounds [8 x %struct.proc], ptr @proc, i32 0, i32 %0, i32 11
   %4 = load i32, ptr %3, align 4, !tbaa !28
   %5 = add i32 %1, -1
@@ -832,7 +837,7 @@ define dso_local i32 @kblock_self_slot() local_unnamed_addr #0 {
 }
 
 ; Function Attrs: minsize mustprogress nofree norecurse nounwind optsize willreturn
-define dso_local void @kblock_current(i32 noundef %0) local_unnamed_addr #6 {
+define dso_local void @kblock_current(i32 noundef %0) local_unnamed_addr #7 {
   %2 = load i32, ptr @curr, align 4, !tbaa !6
   %3 = getelementptr inbounds nuw [8 x %struct.proc], ptr @proc, i32 0, i32 %2
   %4 = getelementptr inbounds nuw i8, ptr %3, i32 32
@@ -3075,7 +3080,7 @@ define dso_local void @dma_ksyscall() local_unnamed_addr #1 {
 }
 
 ; Function Attrs: minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(argmem: read)
-define internal fastcc range(i32 0, 2) i32 @badbuf(ptr noundef readonly captures(none) %0, i32 noundef %1, i32 noundef %2) unnamed_addr #7 {
+define internal fastcc range(i32 0, 2) i32 @badbuf(ptr noundef readonly captures(none) %0, i32 noundef %1, i32 noundef %2) unnamed_addr #8 {
   %4 = getelementptr inbounds nuw i8, ptr %0, i32 56
   %5 = load i32, ptr %4, align 4, !tbaa !60
   %6 = icmp ne i32 %2, 0
@@ -3101,52 +3106,52 @@ define internal fastcc range(i32 0, 2) i32 @badbuf(ptr noundef readonly captures
 }
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_write(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_write(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_open(i32 noundef, i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_open(i32 noundef, i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_close(i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_close(i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_dup(i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_dup(i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_fstat(i32 noundef, i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_fstat(i32 noundef, i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_seek(i32 noundef, i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_seek(i32 noundef, i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_pipe(i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_pipe(i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_chdir(i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_chdir(i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_mkdir(i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_mkdir(i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_link(i32 noundef, i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_link(i32 noundef, i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_unlink(i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_unlink(i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local void @kfb_pause() local_unnamed_addr #8
+declare dso_local void @kfb_pause() local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kflash_sync() local_unnamed_addr #8
+declare dso_local i32 @kflash_sync() local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local void @kfb_resume() local_unnamed_addr #8
+declare dso_local void @kfb_resume() local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_read(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_read(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_selready(i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_selready(i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: mustprogress nocallback nofree nounwind willreturn memory(argmem: readwrite)
 declare void @llvm.memcpy.p0.p0.i32(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i32, i1 immarg) #9
@@ -3173,16 +3178,16 @@ define internal fastcc void @namecpy(ptr noundef writeonly captures(none) %0, pt
 }
 
 ; Function Attrs: minsize optsize
-declare dso_local void @kfs_forkcopy(i32 noundef, i32 noundef) local_unnamed_addr #8
+declare dso_local void @kfs_forkcopy(i32 noundef, i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_iopen(ptr noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_iopen(ptr noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_iread(i32 noundef, i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_iread(i32 noundef, i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local void @kfs_iclose(i32 noundef) local_unnamed_addr #8
+declare dso_local void @kfs_iclose(i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(readwrite, inaccessiblemem: none)
 define internal fastcc i32 @kalloc(i32 noundef %0) unnamed_addr #11 {
@@ -3334,7 +3339,7 @@ define internal fastcc void @kfree(i32 noundef %0) unnamed_addr #11 {
 }
 
 ; Function Attrs: minsize optsize
-declare dso_local void @kdmacpy(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #8
+declare dso_local void @kdmacpy(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize nofree norecurse nosync nounwind optsize memory(readwrite, inaccessiblemem: none)
 define internal fastcc void @kfree_exec(i32 noundef %0) unnamed_addr #11 {
@@ -3548,22 +3553,22 @@ define internal fastcc void @kexit(i32 noundef %0, i32 noundef %1) unnamed_addr 
 }
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_mount(i32 noundef, i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_mount(i32 noundef, i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfs_umount(i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfs_umount(i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kgpio(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kgpio(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kpinmux(i32 noundef, i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kpinmux(i32 noundef, i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kpio(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kpio(i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfb_syscall(i32 noundef, i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kfb_syscall(i32 noundef, i32 noundef, i32 noundef, i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize nounwind optsize
 define dso_local noundef i32 @kmain() local_unnamed_addr #1 {
@@ -3611,16 +3616,16 @@ define internal fastcc void @cputc_wire(i32 noundef range(i32 0, 256) %0) unname
 }
 
 ; Function Attrs: minsize optsize
-declare dso_local void @kfbcon_putc(i32 noundef) local_unnamed_addr #8
+declare dso_local void @kfbcon_putc(i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kcons_tx(i32 noundef) local_unnamed_addr #8
+declare dso_local i32 @kcons_tx(i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kcons_rx() local_unnamed_addr #8
+declare dso_local i32 @kcons_rx() local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local void @kcons_aim(i32 noundef) local_unnamed_addr #8
+declare dso_local void @kcons_aim(i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize noinline nounwind optsize
 define internal fastcc void @kboot_init() unnamed_addr #13 {
@@ -3679,19 +3684,19 @@ define internal fastcc void @kboot_init() unnamed_addr #13 {
 }
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfb_init() local_unnamed_addr #8
+declare dso_local i32 @kfb_init() local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local void @kfbcon_reset() local_unnamed_addr #8
+declare dso_local void @kfbcon_reset() local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local void @kfs_start() local_unnamed_addr #8
+declare dso_local void @kfs_start() local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local void @kflash_init() local_unnamed_addr #8
+declare dso_local void @kflash_init() local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kcons_on() local_unnamed_addr #8
+declare dso_local i32 @kcons_on() local_unnamed_addr #5
 
 ; Function Attrs: minsize nounwind optsize
 define internal fastcc void @tick_income() unnamed_addr #1 {
@@ -3769,19 +3774,19 @@ define internal fastcc void @tick_income() unnamed_addr #1 {
 }
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kcons_pending() local_unnamed_addr #8
+declare dso_local i32 @kcons_pending() local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local void @kcons_kick() local_unnamed_addr #8
+declare dso_local void @kcons_kick() local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local i32 @kfb_owner() local_unnamed_addr #8
+declare dso_local i32 @kfb_owner() local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local void @kfb_setowner(i32 noundef) local_unnamed_addr #8
+declare dso_local void @kfb_setowner(i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: minsize optsize
-declare dso_local void @kfs_exit(i32 noundef) local_unnamed_addr #8
+declare dso_local void @kfs_exit(i32 noundef) local_unnamed_addr #5
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
 declare i32 @llvm.umin.i32(i32, i32) #14
@@ -3794,10 +3799,10 @@ attributes #1 = { minsize nounwind optsize "no-builtins" "no-trapping-math"="tru
 attributes #2 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
 attributes #3 = { minsize nofree norecurse nounwind optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #4 = { minsize nofree norecurse nosync nounwind optsize memory(argmem: readwrite) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #5 = { minsize nofree norecurse nosync nounwind optsize memory(read, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #6 = { minsize mustprogress nofree norecurse nounwind optsize willreturn "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #7 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(argmem: read) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
-attributes #8 = { minsize optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #5 = { minsize optsize "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #6 = { minsize nofree norecurse nosync nounwind optsize memory(read, argmem: none, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #7 = { minsize mustprogress nofree norecurse nounwind optsize willreturn "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
+attributes #8 = { minsize mustprogress nofree norecurse nosync nounwind optsize willreturn memory(argmem: read) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #9 = { mustprogress nocallback nofree nounwind willreturn memory(argmem: readwrite) }
 attributes #10 = { minsize nofree noinline norecurse nosync nounwind optsize memory(argmem: readwrite) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }
 attributes #11 = { minsize nofree norecurse nosync nounwind optsize memory(readwrite, inaccessiblemem: none) "no-builtins" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="cortex-m0" "target-features"="+armv6-m,+strict-align,+thumb-mode,-aes,-bf16,-d32,-dotprod,-fp-armv8,-fp-armv8d16,-fp-armv8d16sp,-fp-armv8sp,-fp16,-fp16fml,-fp64,-fpregs,-fullfp16,-mve.fp,-neon,-sha2,-vfp2,-vfp2sp,-vfp3,-vfp3d16,-vfp3d16sp,-vfp3sp,-vfp4,-vfp4d16,-vfp4d16sp,-vfp4sp" }

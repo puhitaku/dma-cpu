@@ -79,3 +79,8 @@ void
 kfbcon_reset(void)
 {
 }
+
+void
+kfbcon_cursor(void)
+{
+}

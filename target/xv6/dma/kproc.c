@@ -197,6 +197,7 @@ extern void kfb_pause(void);
 extern void kfb_resume(void);
 extern int kfb_syscall(uint op, uint a1, uint pid, int badinfo);
 extern void kfbcon_putc(int c);
+extern void kfbcon_cursor(void); /* the batch's cursor, once at the end */
 extern void kfbcon_reset(void);
 
 /* Tick injector registers (family-common DMA base). Classic machines
@@ -739,6 +740,7 @@ kconswrite(const char *b, int n)
 {
   for (int i = 0; i < n; i++)
     cputc(b[i]);
+  kfbcon_cursor(); /* one underline for the whole write, not per byte */
 }
 
 static void cons_poll(void);
@@ -861,6 +863,7 @@ cons_poll(void)
         cons_w = cons_e;
     }
   }
+  kfbcon_cursor(); /* the echo above is a batch like any other */
   if (cons_w != w0)
     sel_wake(); /* committed input: readiness for select sleepers */
 }

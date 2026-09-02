@@ -133,11 +133,11 @@ func compileKernelFull(t *testing.T, key kernKey, tweak ...func(*dmacc.Options))
 			"kcons_on", "kcons_rx", "kcons_tx", "kcons_pending"}
 		if fb {
 			// dmxgen's kernResident: the display half of the console
-			// tee — the cursor redraw and the putc every console byte
-			// runs through — is the kernel's densest XIP-text read
-			// source, and the one the scanout must never wait on.
-			opts.ResidentFuncs = append(opts.ResidentFuncs,
-				"cursor_xor", "kfbcon_putc")
+			// tee — the putc every console byte runs through — is the
+			// kernel's densest XIP-text read source, and the one the
+			// scanout must never wait on. cursor_xor is not in it: the
+			// cursor brackets a whole write now, from flash.
+			opts.ResidentFuncs = append(opts.ResidentFuncs, "kfbcon_putc")
 		}
 	}
 	for _, f := range tweak {

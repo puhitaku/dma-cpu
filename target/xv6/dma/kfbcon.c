@@ -29,7 +29,8 @@
  * immutable descriptor table, so the old O(1) vertical pan has no
  * consumer anymore. The screen has no text shadow buffer; the cursor
  * is an XOR-inverted underline (cell rows 6-7) so it un-draws by
- * re-XOR. */
+ * re-XOR, and it is drawn once per BATCH of console bytes
+ * (kfbcon_cursor), not once per byte. */
 
 #include "kernel/types.h"
 
@@ -400,8 +401,17 @@ csi_byte(int c)
  * AHEAD of the printable path. The escape states stay behind a single
  * branch: their bytes are rare and pay for the extra hop.
  *
- * The cursor is drawn on exit and un-drawn on entry, except on the
- * printable path, which lets the glyph blit do the un-drawing. */
+ * The cursor is a BATCH thing, not a per-byte one: kfbcon_cursor puts
+ * the underline back once a whole write is on the screen, and this
+ * function only ever takes it down. Drawing it per byte cost eight
+ * read-modify-writes per printable character to paint something the
+ * next character immediately erased — 4,768 calls a frame on the
+ * nyancat port, 5% of everything the kernel executed.
+ *
+ * Which leaves at most ONE un-draw per batch, on the first byte, and
+ * the printable path does not even pay that: the glyph covers the
+ * WHOLE cell, cursor rows included, so the blit is the un-draw and
+ * clearing the flag is a store with no comparison in front of it. */
 void
 kfbcon_putc(int c)
 {
@@ -409,8 +419,10 @@ kfbcon_putc(int c)
     return;
   c &= 0xFF;
   if (fstate != 0) {
-    if (fcursor)
+    if (fcursor) {
       cursor_xor();
+      fcursor = 0;
+    }
     if (fstate == 1) {
       if (c == '[') {
         fstate = 2;
@@ -424,16 +436,15 @@ kfbcon_putc(int c)
       csi_byte(c);
     }
   } else if ((uint)(c - ' ') < 0x5Fu) {
-    /* No entry un-draw here: the glyph covers the WHOLE cell, cursor
-     * rows included, so the blit erases the old underline itself. That
-     * is one of the two cursor_xor calls every printable byte used to
-     * pay, and the more expensive half of the cursor. */
     draw_glyph(c);
+    fcursor = 0;
     if (++fcx >= COLS)
       newline();
   } else {
-    if (fcursor)
+    if (fcursor) {
       cursor_xor();
+      fcursor = 0;
+    }
     if (c == '\n') {
       newline();
     } else if (c == 0x1B) {
@@ -449,6 +460,24 @@ kfbcon_putc(int c)
         fcx = COLS - 1;
     }
   }
+}
+
+/* kfbcon_cursor: the underline goes back on the screen once a batch of
+ * console bytes has been rendered. cputc has exactly two callers —
+ * kconswrite's loop and cons_poll's echo (kproc.c) — and each ends
+ * with this. Both run from flash, so the call is nothing the scanout
+ * can feel, and with the per-byte path down to at most one un-draw a
+ * batch, cursor_xor stops needing a place in the resident window at
+ * all.
+ *
+ * What the user sees does not change: between kernel entries the
+ * underline stands exactly where the last byte left it, which is the
+ * only moment anyone is looking. */
+void
+kfbcon_cursor(void)
+{
+  if (kfb_condark() || fcursor)
+    return;
   cursor_xor();
   fcursor = 1;
 }

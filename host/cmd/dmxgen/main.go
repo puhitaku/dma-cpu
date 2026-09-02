@@ -1073,8 +1073,12 @@ func buildGame(v *emu.Variant, bd *boards.Board) (*kernBundle, error) {
 // driver's .ramtext histogram still puts them at 100M+ reads over a
 // shell + vi session.
 //
-// cursor_xor and kfbcon_putc join on framebuffer boards — the display
-// half of the console tee, which every console byte runs through. The
+// kfbcon_putc joins on framebuffer boards — the display half of the
+// console tee, which every console byte runs through. (cursor_xor used
+// to join it and no longer does: the cursor became a per-BATCH thing
+// bracketing a whole console write, so its only caller is
+// kfbcon_cursor, which runs from flash like the kconswrite and
+// cons_poll that call IT. That gave the window 480 bytes back.) The
 // ranking behind that pair is host/trace's, re-taken on the current
 // tree over the fbcon workload (`cat README` + 12x `ls /dev`, the
 // shapes TestZZBenchFbcon prices), as XIP-text reads by owner:
@@ -1111,7 +1115,7 @@ func kernResident(bd *boards.Board) []string {
 		"fire_income", "tick_income", "kcons_aim", "kcons_kick",
 		"kcons_on", "kcons_rx", "kcons_tx", "kcons_pending"}
 	if bd.FbBuf != 0 {
-		fs = append(fs, "cursor_xor", "kfbcon_putc")
+		fs = append(fs, "kfbcon_putc")
 	}
 	return fs
 }

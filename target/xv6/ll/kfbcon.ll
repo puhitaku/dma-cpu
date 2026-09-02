@@ -123,7 +123,7 @@ define internal fastcc void @clear_screen() unnamed_addr #0 {
 define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   %2 = tail call i32 @kfb_condark() #5
   %3 = icmp eq i32 %2, 0
-  br i1 %3, label %4, label %226
+  br i1 %3, label %4, label %225
 
 4:                                                ; preds = %1
   %5 = and i32 %0, 255
@@ -137,6 +137,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
 
 10:                                               ; preds = %8
   tail call fastcc void @cursor_xor() #6
+  store i1 false, ptr @fcursor, align 4
   br label %11
 
 11:                                               ; preds = %10, %8
@@ -530,6 +531,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   br label %180, !llvm.loop !16
 
 202:                                              ; preds = %180
+  store i1 false, ptr @fcursor, align 4
   %203 = load i32, ptr @fcx, align 4, !tbaa !3
   %204 = add nsw i32 %203, 1
   store i32 %204, ptr @fcx, align 4, !tbaa !3
@@ -546,6 +548,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
 
 209:                                              ; preds = %207
   tail call fastcc void @cursor_xor() #6
+  store i1 false, ptr @fcursor, align 4
   br label %210
 
 210:                                              ; preds = %209, %207
@@ -588,12 +591,7 @@ define dso_local void @kfbcon_putc(i32 noundef %0) local_unnamed_addr #0 {
   store i32 %224, ptr @fcx, align 4
   br label %225
 
-225:                                              ; preds = %105, %169, %117, %113, %111, %95, %90, %73, %69, %65, %58, %51, %50, %48, %47, %45, %40, %36, %33, %24, %210, %206, %202, %213, %218, %215, %220, %214, %212, %16, %15
-  tail call fastcc void @cursor_xor() #6
-  store i1 true, ptr @fcursor, align 4
-  br label %226
-
-226:                                              ; preds = %1, %225
+225:                                              ; preds = %105, %169, %117, %113, %111, %95, %90, %73, %69, %65, %58, %51, %50, %48, %47, %45, %40, %36, %33, %24, %210, %206, %202, %213, %218, %215, %220, %214, %212, %16, %15, %1
   ret void
 }
 
@@ -659,6 +657,25 @@ define internal fastcc void @newline() unnamed_addr #0 {
   br label %13
 
 13:                                               ; preds = %8, %3
+  ret void
+}
+
+; Function Attrs: minsize nounwind optsize
+define dso_local void @kfbcon_cursor() local_unnamed_addr #0 {
+  %1 = tail call i32 @kfb_condark() #5
+  %2 = icmp eq i32 %1, 0
+  br i1 %2, label %3, label %6
+
+3:                                                ; preds = %0
+  %4 = load i1, ptr @fcursor, align 4
+  br i1 %4, label %6, label %5
+
+5:                                                ; preds = %3
+  tail call fastcc void @cursor_xor() #6
+  store i1 true, ptr @fcursor, align 4
+  br label %6
+
+6:                                                ; preds = %0, %3, %5
   ret void
 }
 
