@@ -19,18 +19,24 @@ package pgo
 // one for that reason alone. Everything below the bar is code the
 // workload touched once or never.
 //
-// Sites in .ramtext (RAMTextFuncs) never appear: their descriptors
-// would live in flash text, so they stay four-move and are not
-// profiled. Names are not validated by dmacc — a board linking a
-// different module set simply never asks about some of them.
+// Sites in .ramtext never appear, and the reason is that naming one
+// would do nothing: a resident site's descriptor would live in flash
+// text and be loaded with the XIP window down, so dmacc keeps it
+// four-move whatever the profile says (compare.go, siteFourMove). They
+// ARE profiled now — the ranking below is drawn from the flash half
+// of that measurement, and the resident half feeds InlineSites, the one
+// form that can still change a resident site. Names are not validated
+// by dmacc — a board linking a different module set simply never asks
+// about some of them.
 
-// KernelHotSites: 362 of the image's 1773 comparison sites; 408 of them
-// were executed at all, and the set covers 99.97% of the 570963
-// comparisons the workload made.
+// KernelHotSites: 368 of the image's 1975 comparison sites; 414 of them
+// were executed at all, and the set covers 99.97% of the 571802
+// comparisons the workload made outside .ramtext.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, seven frames of nyancat on the framebuffer
 // console, then an editing session in vi.
 var KernelHotSites = map[string]bool{
+	"cws_arm_timed_1":      true,
 	"cws_badbuf_1":         true,
 	"cws_badbuf_2":         true,
 	"cws_badbuf_3":         true,
@@ -362,6 +368,11 @@ var KernelHotSites = map[string]bool{
 	"cws_terminate_7":      true,
 	"cws_terminate_8":      true,
 	"cws_terminate_9":      true,
+	"cws_tick_wake_1":      true,
+	"cws_tick_wake_2":      true,
+	"cws_tick_wake_3":      true,
+	"cws_tick_wake_4":      true,
+	"cws_tick_wake_5":      true,
 	"cws_us_div_1":         true,
 	"cws_us_div_2":         true,
 	"cws_us_div_3":         true,
@@ -768,21 +779,44 @@ var GameHotSites = map[string]bool{
 //
 // Those candidates are then TRIMMED, hottest first, to what the image's
 // tightest board can hold — and for both images that trim, not the
-// bar, is what decides the set. The kernel is bounded in SRAM: every
-// inline compare burns a pair of slots in dmaasm's sign-dispatch
-// trampoline arena, which is appended after the last instruction and
-// so, in a split image, lands in .ramtext, growing in whole 256-byte
-// banks of 16 pairs — and the kernel's window has less than one bank
-// free on feather, so only the candidates the current bank still has
-// slots for can ship. The game is bounded in FLASH: its text runs at
-// the asset blob's home. Deploying the rest of either ranking needs a
+// bar, is what decides the set. The game is bounded in FLASH: its text
+// runs at the asset blob's home. The kernel is bounded in SRAM, on the
+// tightest instance of the tightest window in the tree — pico and
+// pico2's, whose kernels carry no framebuffer driver and whose .ramtext
+// is sized to match. Deploying the rest of either ranking needs a
 // window move, not a setting (prompts/042 §1).
+//
+// The kernel's trim runs in two stages, because its two kinds of
+// candidate are not priced alike. A site in flash text spends .ramtext
+// on one pair of slots in dmaasm's sign-dispatch trampoline arena —
+// 16 bytes, and only when a bank of 16 rolls over. A site that EXECUTES
+// in .ramtext spends it on the macro's own records, about 160. So the
+// flash half is chosen first against its own population and its own
+// bar, and the resident half is fitted into the window that is left.
+// Ranking them as one list instead spends the whole window on the
+// resident sites — they are the hotter code, tenfold price and all
+// — and that was measured: eight resident sites in, all forty flash
+// sites out, 2-11% onto every xsh and fbcon row to buy 0.15% of a
+// nyancat frame.
+//
+// The resident candidates are worth their bytes for a reason no other
+// set expresses: 86% of the records the kernel executes during a
+// colour-dense frame run out of .ramtext, and inlining is the only form
+// that can change one of them — a resident site is four-move by rule
+// (dmacc siteFourMove) and four-move still calls the millicode.
 
-// KernelInlineSites: 40 sites covering 87.44% of the 570963 comparisons
-// the workload made, trimmed by the board fit (arena slack in .ramtext,
-// flash text room) from the 40 candidates over the 1427-execution bar
-// (87.44% together). Ladder (bar: sites, coverage) — 1000: 53, 90%;
-// 3000: 35, 86%; 10000: 15, 68%; 20000: 8, 51%; 30000: 5, 38%.
+// KernelInlineSites: 43 sites covering 41.36% of the 5916298
+// comparisons the workload made, trimmed by the board fit (arena slack
+// in .ramtext, flash text room) from the 83 candidates over the
+// 1429-execution bar in flash and 13361 in .ramtext, each a share of
+// its own half (97.21% together). Ladder (bar: sites, coverage) —
+// 1000: 122, 99%; 3000: 84, 98%; 10000: 59, 96%; 20000: 47, 93%; 30000:
+// 44, 91%; 100000: 11, 55%; 300000: 2, 28%; 1000000: 1, 20%.
+// 3 of them execute in .ramtext and carry 32.93% of all comparisons on
+// their own — 3 of the 43 resident candidates (88.77%), the rest
+// priced out of the window the flash half left. The other 40 sites are
+// the flash half, 87.31% of the 571802 comparisons made outside
+// .ramtext.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, seven frames of nyancat on the framebuffer
 // console, then an editing session in vi.
@@ -810,6 +844,7 @@ var KernelInlineSites = map[string]bool{
 	"cws_dma_ksyscall_44":  true,
 	"cws_dma_ksyscall_46":  true,
 	"cws_dma_ksyscall_94":  true,
+	"cws_kcons_aim_2":      true,
 	"cws_kconswrite_1":     true,
 	"cws_kdmacpy_1":        true,
 	"cws_kdmacpy_10":       true,
@@ -827,6 +862,8 @@ var KernelInlineSites = map[string]bool{
 	"cws_lut_build_2":      true,
 	"cws_lut_build_3":      true,
 	"cws_memmove_15":       true,
+	"cws_swtch_1":          true,
+	"cws_swtch_2":          true,
 }
 
 // GameInlineSites: 62 sites covering 90.35% of the 1934274 comparisons

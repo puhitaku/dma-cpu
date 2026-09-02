@@ -23,14 +23,21 @@ package dmacc_test
 //      ~45% of every record the kernel executes.
 //   2. Which of those sites got a fast form. Options.OptSize gives
 //      every site the two-record descriptor unless the profile named
-//      it (pgo.KernelHotSites / KernelInlineSites), and the driver's
-//      site ranking reads the XIP-text window ONLY. Everything the
-//      kernel keeps resident — the 10 kHz tick path, the console rings,
-//      and kfbcon_putc with csi/sgr/draw_glyph inlined into it — is
-//      therefore descriptor-form by omission rather than by
-//      measurement. The "descriptor share" line per window is that
-//      fact, in numbers, and it is why this probe prints per window
-//      instead of per image.
+//      it (pgo.KernelHotSites / KernelInlineSites) — with one rule on
+//      top that the pgo sets do not express: a site in .ramtext is
+//      four-move whatever the profile says, because its descriptor
+//      would live in flash text and be read with the XIP window down
+//      (dmacc siteFourMove, fc.inRAM). This probe used to ask the pgo
+//      sets alone and so reported every resident site as DESCRIPTOR,
+//      which read as a whole window's worth of code left slow by
+//      omission. It was not: those sites were already fast. `form`
+//      below asks the same question dmacc does, which is what makes
+//      the "descriptor share" line per window mean anything.
+//
+//      What the resident half IS missing is the top of the ladder —
+//      inlining, the only form that removes the millicode call itself.
+//      The driver ranks resident sites for it now (zz_pgogen_test.go),
+//      and the board's .ramtext window decides how many fit.
 //
 //	RADIO_PROBES=1 go test ./dmacc/ -run TestProfileConsole -v
 
@@ -54,11 +61,16 @@ func TestProfileConsole(t *testing.T) {
 	}
 	bd := boards.Feather
 	// The form Options.OptSize gave each site, from the settings the
-	// kernel about to run was compiled with.
-	form := func(s string) string {
+	// kernel about to run was compiled with — asked in dmacc's own
+	// order (siteInline, then siteFourMove), residency included, so
+	// what this prints is the form the image HAS and not the form its
+	// profile entry would have asked for.
+	form := func(s string, resident bool) string {
 		switch {
 		case pgo.KernelInlineSites[s]:
 			return "inline"
+		case resident:
+			return "4-move (.ramtext)"
 		case pgo.KernelHotSites[s]:
 			return "4-move"
 		}
@@ -95,9 +107,10 @@ func TestProfileConsole(t *testing.T) {
 			name, xip, res, 100*float64(res)/float64(xip+res))
 
 		for _, w := range []struct {
-			tag string
-			win window
-		}{{"XIP text", txt}, {".ramtext", ram}} {
+			tag      string
+			win      window
+			resident bool
+		}{{"XIP text", txt, false}, {".ramtext", ram, true}} {
 			sites, tot, n := siteCounts(kernC, w.win, litSet(kernC))
 			type kv struct {
 				k string
@@ -107,7 +120,7 @@ func TestProfileConsole(t *testing.T) {
 			var desc uint64
 			for k, v := range sites {
 				ss = append(ss, kv{k, v})
-				if form(k) == "DESCRIPTOR" {
+				if form(k, w.resident) == "DESCRIPTOR" {
 					desc += v
 				}
 			}
@@ -125,7 +138,7 @@ func TestProfileConsole(t *testing.T) {
 					break
 				}
 				fmt.Printf("CONSPROF   %-28s %10d  %5.1f%%  %s\n", e.k, e.v,
-					100*float64(e.v)/float64(tot), form(e.k))
+					100*float64(e.v)/float64(tot), form(e.k, w.resident))
 			}
 		}
 	}

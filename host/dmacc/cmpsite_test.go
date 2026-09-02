@@ -265,10 +265,15 @@ func TestCmpSiteInlineSites(t *testing.T) {
 			dmacc.Options{InlineSites: in},
 			map[string]string{"cws_sites_1": "four", "cws_sites_2": "inline",
 				"cws_sites_3": "four", "cws_sites_4": "four"}},
-		{".ramtext stays outlined, listed or not",
+		// Residency rules out the DESCRIPTOR form — the descriptor would
+		// live in flash text and be loaded with the XIP window down —
+		// and nothing else. The macro has no descriptor and no helper
+		// call, so a named resident site takes it; its unnamed siblings
+		// fall to four-move rather than to descriptors.
+		{".ramtext: descriptors are out, the macro is not",
 			dmacc.Options{OptSize: true, InlineSites: in,
 				RAMTextFuncs: []string{"sites"}},
-			map[string]string{"cws_sites_1": "four", "cws_sites_2": "four",
+			map[string]string{"cws_sites_1": "four", "cws_sites_2": "inline",
 				"cws_sites_3": "four", "cws_sites_4": "four"}},
 	} {
 		got := siteForms(compileSites(t, tc.opts))

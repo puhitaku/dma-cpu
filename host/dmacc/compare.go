@@ -313,13 +313,25 @@ func (fc *funcCtx) siteFourMove(site string) bool {
 // which is why, unlike the four-move/descriptor question, this one is
 // not gated on OptSize.
 //
-// .ramtext is the exception, for the reason siteFourMove keeps those
-// sites four-move: that window is scarce (the kernel's already runs
-// close to full) and an inline site costs three times a four-move one
-// there. The profile cannot name one anyway — the driver's site scan
-// only covers XIP text (zz_pgogen_test.go, siteCounts).
+// .ramtext used to be excluded here, on the grounds that the window is
+// scarce and an inline site costs three times a four-move one in it.
+// That is a fit argument, and fits belong to the trim that prices them
+// (zz_pgogen_test.go, inlineFit), not to a blanket rule in the code
+// generator: the driver profiles .ramtext now, so the resident sites
+// are ranked with the rest and the board's window decides how many
+// survive. Where the argument came from is a measurement that was never
+// taken — the site scan only covered XIP text, so no resident site
+// could ever be named and the exclusion never had to be right.
+//
+// What the exclusion WAS covering for, and siteFourMove still does, is
+// the descriptor form: a resident site's descriptor would live in flash
+// text and be loaded with the XIP window down. An inline site has no
+// descriptor and no helper call. Its only indirection is the
+// sign-dispatch trampoline pair, which is assembler-private and, for a
+// split image, lands in .ramtext with the arena — so an inline site is
+// if anything the more flash-independent of the three forms.
 func (fc *funcCtx) siteInline(site string) bool {
-	if len(fc.g.opts.InlineSites) == 0 || fc.inRAM {
+	if len(fc.g.opts.InlineSites) == 0 {
 		return false
 	}
 	return fc.g.opts.InlineSites[site]

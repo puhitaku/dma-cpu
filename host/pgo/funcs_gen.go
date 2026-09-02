@@ -14,8 +14,8 @@ package pgo
 // that links a different module set (the displayless kernels take the
 // fb stub) simply has no function by some of these names.
 
-// KernelHotFuncs: 18 of 91 executed functions, covering 97.1% of the
-// 23499671 text reads the workload made.
+// KernelHotFuncs: 19 of 93 executed functions, covering 97.2% of the
+// 23540389 text reads the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
 // run cold and warm, seven frames of nyancat on the framebuffer
 // console, then an editing session in vi.
@@ -34,6 +34,7 @@ var KernelHotFuncs = map[string]bool{
 	"kdmacpy":      true,
 	"kdmaset":      true,
 	"kfb_condark":  true,
+	"kfs_read":     true,
 	"kfs_write":    true,
 	"lut_build":    true,
 	"memmove":      true,

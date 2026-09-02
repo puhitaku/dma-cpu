@@ -442,10 +442,31 @@ func TestXv6TickGuard(t *testing.T) {
 	if n := walks(); n != 1 {
 		t.Errorf("%d walks to wake one due sleeper, want exactly 1", n)
 	}
-	if got := m.Peek32(mustSym(t, kernC, "g_ntimed")); got != 0 {
-		t.Errorf("ntimed is %d with no timed sleeper left; the walk recounts it", got)
+	// ntimed is the hint the whole guard hangs off, and the one thing it
+	// may never be is stale LOW — next_us has no "none" sentinel, so
+	// ntimed == 0 is what tells arm_timed to SET the cache instead of
+	// minimizing into a value from an older epoch. Check that direction,
+	// not the count: by the time the wake is observable another process
+	// may legitimately have armed one (the run continues in whole
+	// chunks), and a nonzero hint with nobody sleeping is merely the
+	// documented stale-EARLY case.
+	timed := 0
+	for s := 0; s < 8; s++ {
+		if procField(m, kernC, s, pfState) != stSleeping {
+			continue
+		}
+		if ch := procField(m, kernC, s, pfChan); ch == tk ||
+			ch == mustSym(t, kernC, "g_selwait_to") {
+			timed++
+		}
 	}
-	t.Logf("deadline reached: %d walk, sleeper woke, ntimed back to 0", walks())
+	if timed > 0 && m.Peek32(mustSym(t, kernC, "g_ntimed")) == 0 {
+		t.Errorf("ntimed is 0 with %d timed sleeper(s) parked; the hint may "+
+			"run high but never low — arm_timed reads it as \"next_us holds "+
+			"nothing\"", timed)
+	}
+	t.Logf("deadline reached: %d walk, sleeper woke, ntimed %d with %d timed "+
+		"sleeper(s) left", walks(), m.Peek32(mustSym(t, kernC, "g_ntimed")), timed)
 }
 
 // TestXv6TickGuardStaleEarly: the other half of the next_us invariant.
