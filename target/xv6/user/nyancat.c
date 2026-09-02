@@ -120,8 +120,11 @@
 
 /* Upstream's default 90 ms frame delay, in the kernel's 100 us ticks.
  * pause()/select() have honored wallclock since the timer rework, so
- * this is 90 ms and not "however long 900 quanta take". */
+ * this is 90 ms and not "however long 900 quanta take". -s overrides
+ * it per run (milliseconds; a select() timeout of 0 means "forever",
+ * so the floor is one tick). */
 #define DELAY_TICKS 900
+static uint delay_ticks = DELAY_TICKS;
 
 /* The 16-color palette, upstream's TERM=linux branch: one background
  * SGR per frame character. kfbcon parses 40-47 and 100-107, which is
@@ -348,14 +351,27 @@ delta_frame(uint i)
 int
 main(int argc, char **argv)
 {
-  /* -f N: stop after N frames (upstream's --frames). The other
+  /* -f N: stop after N frames (upstream's --frames); -s MS: the
+   * per-frame sleep in milliseconds (default 90). The other upstream
    * options describe a terminal or a telnet session this port does
    * not have. */
   uint frame_count = 0;
-  if (argc == 3 && argv[1][0] == '-' && argv[1][1] == 'f' && argv[1][2] == 0) {
-    frame_count = (uint)atoi(argv[2]);
-  } else if (argc > 1) {
-    write(2, "usage: nyancat [-f frames]\n", 27);
+  int ai = 1;
+  while (ai < argc) {
+    char *a = argv[ai];
+    if (a[0] == '-' && a[2] == 0 && ai + 1 < argc && (a[1] == 'f' || a[1] == 's')) {
+      uint v = (uint)atoi(argv[ai + 1]);
+      if (a[1] == 'f') {
+        frame_count = v;
+      } else {
+        delay_ticks = v * 10;
+        if (delay_ticks == 0)
+          delay_ticks = 1;
+      }
+      ai += 2;
+      continue;
+    }
+    write(2, "usage: nyancat [-f frames] [-s sleep_ms]\n", 41);
     exit(1);
   }
 
@@ -417,7 +433,7 @@ main(int argc, char **argv)
     /* Sleep the frame delay, but wake the instant a key arrives:
      * select() on fd 0 with a timeout is the honest form of
      * "usleep(delay) unless the user is done". */
-    if (select(1u, DELAY_TICKS) != 0)
+    if (select(1u, delay_ticks) != 0)
       break;
   }
 
