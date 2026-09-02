@@ -14,38 +14,34 @@ package pgo
 // that links a different module set (the displayless kernels take the
 // fb stub) simply has no function by some of these names.
 
-// KernelHotFuncs: 23 of 84 executed functions, covering 97.1% of the
-// 10509947 text reads the workload made.
+// KernelHotFuncs: 18 of 91 executed functions, covering 97.1% of the
+// 23499671 text reads the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
-// run cold and warm, then an editing session in vi.
+// run cold and warm, seven frames of nyancat on the framebuffer
+// console, then an editing session in vi.
 var KernelHotFuncs = map[string]bool{
-	"badbuf":        true,
-	"bread":         true,
-	"clear_cells":   true,
-	"cons_poll":     true,
-	"cputc":         true,
-	"cputc_wire":    true,
-	"dma_ksyscall":  true,
-	"fileread":      true,
-	"filewrite":     true,
-	"iget":          true,
-	"kconsread":     true,
-	"kconswrite":    true,
-	"kdmacpy":       true,
-	"kdmaset":       true,
-	"kfb_condark":   true,
-	"kfs_forkcopy":  true,
-	"kfs_read":      true,
-	"kfs_selready":  true,
-	"kfs_write":     true,
-	"memmove":       true,
-	"readi":         true,
-	"terminate":     true,
-	"vfork_release": true,
+	"badbuf":       true,
+	"bread":        true,
+	"clear_cells":  true,
+	"cons_poll":    true,
+	"cputc":        true,
+	"cputc_wire":   true,
+	"cursor_xor":   true,
+	"dma_ksyscall": true,
+	"fileread":     true,
+	"filewrite":    true,
+	"kconswrite":   true,
+	"kdmacpy":      true,
+	"kdmaset":      true,
+	"kfb_condark":  true,
+	"kfs_write":    true,
+	"lut_build":    true,
+	"memmove":      true,
+	"readi":        true,
 }
 
-// GameHotFuncs: 29 of 84 executed functions, covering 97.3% of the
-// 89257197 text reads the workload made.
+// GameHotFuncs: 29 of 84 executed functions, covering 97.2% of the
+// 83569659 text reads the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
 // Benchmark run to completion.

@@ -77,6 +77,7 @@ package dmacc_test
 // re-deriving the game's settings; carry them over and say so.
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"sort"
@@ -1161,7 +1162,8 @@ func workloadOf(img string) string {
 			"paste x10, delete, replace, substitute, quit)"
 	}
 	return "a feather boot to the prompt, the xsh benchmark command " +
-		"set run cold and warm, then an editing session in vi"
+		"set run cold and warm, seven frames of nyancat on the " +
+		"framebuffer console, then an editing session in vi"
 }
 
 // wrapComment writes text as a Go line comment block at the width the
@@ -1256,6 +1258,35 @@ func profileXsh(t *testing.T) (*imgProfile, *imgProfile, *imgProfile) {
 			runScript(t, m, 3_000_000_000)
 		}
 	}
+	// The display half. Every command above is plain text: it fills
+	// the screen with glyphs and scrolls it, and it never sets a
+	// colour, so the console's escape parser, its SGR handler and the
+	// LUT rebuild that hangs off it were invisible to every setting
+	// this file emits — as were the compare sites inside them, which
+	// therefore all took the descriptor form. nyancat is the workload
+	// that has them: 208 SGRs and a thousand cursor addresses a frame,
+	// which is what a colour-dense terminal application looks like.
+	// Six frames past the first, so the profile sees the frame DIFF
+	// the port settles into and not just its opening full redraw.
+	m.FeedConsole("nyancat\r")
+	for spent := uint64(0); spent < 1_500_000_000; {
+		if bytes.Count(m.ConsoleOut, []byte("seconds!")) >= 7 {
+			break
+		}
+		rr, err := m.Run(emu.RunConfig{MaxCycles: 2_000_000})
+		if err != nil {
+			t.Fatalf("nyancat: %v (tail %q)", err, tail(m.ConsoleOut, 200))
+		}
+		spent += rr.Cycles
+	}
+	if n := bytes.Count(m.ConsoleOut, []byte("seconds!")); n < 7 {
+		t.Fatalf("nyancat drew %d frames, wanted 7; tail %q", n, tail(m.ConsoleOut, 200))
+	}
+	feedQuiet(t, m, "q", 3_000_000_000)
+	if !strings.HasSuffix(string(m.ConsoleOut), "$ ") {
+		t.Fatalf("nyancat did not exit to the prompt; tail %q", tail(m.ConsoleOut, 200))
+	}
+
 	// The editor half: TestZZBenchVi's session.
 	for _, s := range viBenchSteps {
 		feedQuiet(t, m, s.feed, 20_000_000_000)

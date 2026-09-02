@@ -24,11 +24,12 @@ package pgo
 // profiled. Names are not validated by dmacc — a board linking a
 // different module set simply never asks about some of them.
 
-// KernelHotSites: 343 of the image's 1735 comparison sites; 390 of them
-// were executed at all, and the set covers 99.94% of the 312642
+// KernelHotSites: 362 of the image's 1773 comparison sites; 408 of them
+// were executed at all, and the set covers 99.97% of the 570963
 // comparisons the workload made.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
-// run cold and warm, then an editing session in vi.
+// run cold and warm, seven frames of nyancat on the framebuffer
+// console, then an editing session in vi.
 var KernelHotSites = map[string]bool{
 	"cws_badbuf_1":         true,
 	"cws_badbuf_2":         true,
@@ -48,6 +49,8 @@ var KernelHotSites = map[string]bool{
 	"cws_brelse_1":         true,
 	"cws_clear_cells_1":    true,
 	"cws_clear_cells_2":    true,
+	"cws_clear_cells_3":    true,
+	"cws_clear_cells_4":    true,
 	"cws_cons_poll_1":      true,
 	"cws_cons_poll_2":      true,
 	"cws_cons_poll_4":      true,
@@ -59,6 +62,7 @@ var KernelHotSites = map[string]bool{
 	"cws_cons_poll_55":     true,
 	"cws_cputc_1":          true,
 	"cws_cputc_wire_1":     true,
+	"cws_cursor_xor_1":     true,
 	"cws_dev_getnode_1":    true,
 	"cws_dev_getnode_2":    true,
 	"cws_dev_getnode_4":    true,
@@ -89,14 +93,17 @@ var KernelHotSites = map[string]bool{
 	"cws_dma_ksyscall_110": true,
 	"cws_dma_ksyscall_111": true,
 	"cws_dma_ksyscall_112": true,
-	"cws_dma_ksyscall_119": true,
-	"cws_dma_ksyscall_121": true,
+	"cws_dma_ksyscall_113": true,
+	"cws_dma_ksyscall_114": true,
+	"cws_dma_ksyscall_115": true,
 	"cws_dma_ksyscall_122": true,
-	"cws_dma_ksyscall_123": true,
 	"cws_dma_ksyscall_124": true,
 	"cws_dma_ksyscall_125": true,
 	"cws_dma_ksyscall_126": true,
-	"cws_dma_ksyscall_143": true,
+	"cws_dma_ksyscall_127": true,
+	"cws_dma_ksyscall_128": true,
+	"cws_dma_ksyscall_136": true,
+	"cws_dma_ksyscall_153": true,
 	"cws_dma_ksyscall_17":  true,
 	"cws_dma_ksyscall_18":  true,
 	"cws_dma_ksyscall_19":  true,
@@ -137,6 +144,7 @@ var KernelHotSites = map[string]bool{
 	"cws_dma_ksyscall_86":  true,
 	"cws_dma_ksyscall_87":  true,
 	"cws_dma_ksyscall_88":  true,
+	"cws_dma_ksyscall_89":  true,
 	"cws_dma_ksyscall_9":   true,
 	"cws_dma_ksyscall_90":  true,
 	"cws_dma_ksyscall_91":  true,
@@ -225,6 +233,8 @@ var KernelHotSites = map[string]bool{
 	"cws_kdmaset_2":        true,
 	"cws_kdmaset_3":        true,
 	"cws_kdmaset_5":        true,
+	"cws_kfbcon_cursor_1":  true,
+	"cws_kfbcon_cursor_2":  true,
 	"cws_kfind_sleeper_1":  true,
 	"cws_kfind_sleeper_2":  true,
 	"cws_kfind_sleeper_3":  true,
@@ -291,6 +301,9 @@ var KernelHotSites = map[string]bool{
 	"cws_kfs_write_1":      true,
 	"cws_kfs_write_2":      true,
 	"cws_kfs_write_3":      true,
+	"cws_lut_build_1":      true,
+	"cws_lut_build_2":      true,
+	"cws_lut_build_3":      true,
 	"cws_memmove_1":        true,
 	"cws_memmove_10":       true,
 	"cws_memmove_11":       true,
@@ -301,6 +314,7 @@ var KernelHotSites = map[string]bool{
 	"cws_memmove_16":       true,
 	"cws_memmove_2":        true,
 	"cws_memmove_3":        true,
+	"cws_namecpy_1":        true,
 	"cws_namex_1":          true,
 	"cws_namex_10":         true,
 	"cws_namex_11":         true,
@@ -348,6 +362,10 @@ var KernelHotSites = map[string]bool{
 	"cws_terminate_7":      true,
 	"cws_terminate_8":      true,
 	"cws_terminate_9":      true,
+	"cws_us_div_1":         true,
+	"cws_us_div_2":         true,
+	"cws_us_div_3":         true,
+	"cws_us_div_4":         true,
 	"cws_vfork_release_1":  true,
 	"cws_vfork_release_2":  true,
 	"cws_vfork_release_3":  true,
@@ -373,10 +391,12 @@ var KernelHotSites = map[string]bool{
 	"cws_vfs_resolve_9":    true,
 	"cws_vfs_stati_1":      true,
 	"cws_vfs_stati_2":      true,
+	"cws_wall_now_1":       true,
+	"cws_wall_since_1":     true,
 }
 
-// GameHotSites: 350 of the image's 1480 comparison sites; 402 of them
-// were executed at all, and the set covers 99.99% of the 2068776
+// GameHotSites: 349 of the image's 1480 comparison sites; 402 of them
+// were executed at all, and the set covers 99.99% of the 1934274
 // comparisons the workload made.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
@@ -679,7 +699,6 @@ var GameHotSites = map[string]bool{
 	"cws_relight_4":        true,
 	"cws_relight_5":        true,
 	"cws_relight_6":        true,
-	"cws_relight_7":        true,
 	"cws_snd_tick_1":       true,
 	"cws_snd_tick_2":       true,
 	"cws_snd_tick_3":       true,
@@ -759,13 +778,14 @@ var GameHotSites = map[string]bool{
 // the asset blob's home. Deploying the rest of either ranking needs a
 // window move, not a setting (prompts/042 §1).
 
-// KernelInlineSites: 38 sites covering 82.91% of the 312642 comparisons
+// KernelInlineSites: 40 sites covering 87.44% of the 570963 comparisons
 // the workload made, trimmed by the board fit (arena slack in .ramtext,
-// flash text room) from the 45 candidates over the 781-execution bar
-// (85.04% together). Ladder (bar: sites, coverage) — 1000: 38, 83%;
-// 3000: 15, 70%; 10000: 9, 59%; 20000: 5, 42%; 30000: 1, 16%.
+// flash text room) from the 40 candidates over the 1427-execution bar
+// (87.44% together). Ladder (bar: sites, coverage) — 1000: 53, 90%;
+// 3000: 35, 86%; 10000: 15, 68%; 20000: 8, 51%; 30000: 5, 38%.
 // Workload: a feather boot to the prompt, the xsh benchmark command set
-// run cold and warm, then an editing session in vi.
+// run cold and warm, seven frames of nyancat on the framebuffer
+// console, then an editing session in vi.
 var KernelInlineSites = map[string]bool{
 	"cws_badbuf_1":         true,
 	"cws_badbuf_2":         true,
@@ -777,42 +797,44 @@ var KernelInlineSites = map[string]bool{
 	"cws_bread_8":          true,
 	"cws_bread_9":          true,
 	"cws_clear_cells_2":    true,
-	"cws_cons_poll_4":      true,
+	"cws_clear_cells_4":    true,
 	"cws_cputc_1":          true,
 	"cws_cputc_wire_1":     true,
+	"cws_cursor_xor_1":     true,
 	"cws_dma_ksyscall_1":   true,
 	"cws_dma_ksyscall_102": true,
 	"cws_dma_ksyscall_103": true,
 	"cws_dma_ksyscall_104": true,
 	"cws_dma_ksyscall_105": true,
-	"cws_dma_ksyscall_2":   true,
 	"cws_dma_ksyscall_37":  true,
 	"cws_dma_ksyscall_44":  true,
 	"cws_dma_ksyscall_46":  true,
 	"cws_dma_ksyscall_94":  true,
-	"cws_filewrite_1":      true,
-	"cws_filewrite_2":      true,
-	"cws_filewrite_3":      true,
-	"cws_filewrite_6":      true,
-	"cws_filewrite_7":      true,
 	"cws_kconswrite_1":     true,
+	"cws_kdmacpy_1":        true,
+	"cws_kdmacpy_10":       true,
 	"cws_kdmacpy_12":       true,
+	"cws_kdmacpy_2":        true,
+	"cws_kdmacpy_3":        true,
+	"cws_kdmacpy_4":        true,
+	"cws_kdmacpy_8":        true,
+	"cws_kdmacpy_9":        true,
 	"cws_kdmaset_1":        true,
 	"cws_kdmaset_2":        true,
 	"cws_kdmaset_3":        true,
 	"cws_kdmaset_5":        true,
-	"cws_kfs_write_1":      true,
-	"cws_kfs_write_2":      true,
-	"cws_kfs_write_3":      true,
+	"cws_lut_build_1":      true,
+	"cws_lut_build_2":      true,
+	"cws_lut_build_3":      true,
 	"cws_memmove_15":       true,
 }
 
-// GameInlineSites: 62 sites covering 90.38% of the 2068776 comparisons
+// GameInlineSites: 62 sites covering 90.35% of the 1934274 comparisons
 // the workload made, trimmed by the board fit (arena slack in .ramtext,
-// flash text room) from the 63 candidates over the 5171-execution bar
-// (90.64% together). Ladder (bar: sites, coverage) — 1000: 131, 98%;
-// 3000: 77, 93%; 10000: 42, 84%; 20000: 21, 72%; 30000: 17, 67%;
-// 100000: 5, 41%.
+// flash text room) from the 62 candidates over the 4835-execution bar
+// (90.35% together). Ladder (bar: sites, coverage) — 1000: 128, 98%;
+// 3000: 76, 93%; 10000: 31, 79%; 20000: 20, 71%; 30000: 17, 68%;
+// 100000: 4, 35%.
 // Workload: gamepico boot to the menu, menu navigation, then the Dino,
 // LANWalk and Yacht scenes played to their first scoring event, and the
 // Benchmark run to completion.
@@ -824,7 +846,6 @@ var GameInlineSites = map[string]bool{
 	"cws_gdma_rows_3":     true,
 	"cws_gdma_rows_4":     true,
 	"cws_gdma_spi_rows_2": true,
-	"cws_gdma_spi_rows_3": true,
 	"cws_gdma_spi_rows_4": true,
 	"cws_gfx_blit_runs_1": true,
 	"cws_gfx_blit_runs_3": true,
@@ -867,6 +888,7 @@ var GameInlineSites = map[string]bool{
 	"cws_menu_run_4":      true,
 	"cws_menu_run_6":      true,
 	"cws_menu_run_8":      true,
+	"cws_menu_run_9":      true,
 	"cws_pcm_tick_1":      true,
 	"cws_snd_tick_1":      true,
 	"cws_spi_put8_1":      true,
