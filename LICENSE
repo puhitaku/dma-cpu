@@ -132,3 +132,16 @@ The following files contain derived portions from SimpleTerminal:
  - target/xv6/dma/kfbfont.h (the embedded 8x8 font, regenerated verbatim)
  - target/xv6/dma/kfbcon.c (VT subset and 16-color palette, reimplemented)
  - target/firmware/generated/images.h (the compiled kernel image)
+
+
+** nyancat **
+
+The nyancat application is a port of K. Lange's nyancat (the classic
+terminal Nyan Cat), used under the NCSA license, © 2011-2018 K. Lange
+— the full license text is the header of
+/references/nyancat/src/nyancat.c. The animation itself originates
+from prguitarman.
+
+The following files contain derived portions from nyancat:
+ - target/xv6/user/nyancat.c (patched port; the original header is retained)
+ - target/xv6/user/nyancat_anim.h (the animation frames, verbatim from src/animation.c)
