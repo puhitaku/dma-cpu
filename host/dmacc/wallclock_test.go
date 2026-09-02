@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/puhitaku/dma-cpu/host/boards"
+	"github.com/puhitaku/dma-cpu/host/dmaasm"
 	"github.com/puhitaku/dma-cpu/host/emu"
 	"github.com/puhitaku/dma-cpu/host/fsimg"
 )
@@ -335,4 +336,221 @@ func TestXv6PauseDeadline(t *testing.T) {
 			woke)
 	}
 	t.Logf("woke %d delivered tick(s) after the deadline passed", woke)
+}
+
+// parkFbtest runs `fbtest` to its pause(1000) and returns the slot it
+// parked in. The 100 ms deadline is the longest sleep in the tree and
+// the one a 10 kHz tick has to skip a thousand ticks' worth of walk
+// for, which is what these tests are about.
+func parkFbtest(t *testing.T, m *emu.Machine, kernC *dmaasm.Result) int {
+	t.Helper()
+	before := strings.Count(string(m.ConsoleOut), "test card up")
+	m.FeedConsole("fbtest\r")
+	for i := 0; i < 20000; i++ {
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 100_000}); err != nil {
+			t.Fatalf("%v\nconsole:\n%s", err, m.ConsoleOut)
+		}
+		if strings.Count(string(m.ConsoleOut), "test card up") <= before {
+			continue
+		}
+		for s := 0; s < 8; s++ {
+			if procField(m, kernC, s, pfState) == stSleeping &&
+				procField(m, kernC, s, pfChan) == mustSym(t, kernC, "g_ticks") {
+				return s
+			}
+		}
+	}
+	t.Fatalf("fbtest never parked in pause()\nconsole:\n%s", m.ConsoleOut)
+	return -1
+}
+
+// TestXv6TickGuard: the cached earliest deadline (kproc.c next_us)
+// makes the deadline walk per-DEADLINE work instead of per-tick work.
+//
+// Before it, every delivered tick with any timed sleeper standing read
+// TIMERAWL and compared all eight proc slots. A 10 kHz tick against
+// pause(1000) does that a thousand times to wake one process once; on
+// the nyancat frame loop it was 7.9% of every record the kernel ran,
+// ~900 of ~1050 walks a frame waking nobody.
+//
+// The probe is the walk's own entry word. tick_wake is a whole
+// function outside .ramtext now, so a profile window over the kernel's
+// XIP text counts its first instruction fetch exactly once per call —
+// the walk count, with no counter in the shipped kernel to pay for it.
+func TestXv6TickGuard(t *testing.T) {
+	t.Parallel()
+	bd := boards.Feather
+	m, kernC := bootXshBoard(t, nil, bd)
+	v := m.Variant()
+	tk := mustSym(t, kernC, "g_ticks")
+	kTxt := textWindow(kernC, bd.KernTextXIP)
+	entry := mustSym(t, kernC, "f_tick_wake")
+	if entry < kTxt[0] || entry >= kTxt[1] {
+		t.Fatalf("tick_wake sits at %#x, outside the kernel's XIP text "+
+			"[%#x,%#x) — the walk belongs in flash, not in the resident "+
+			"window (kproc.c, dmxgen kernResident)", entry, kTxt[0], kTxt[1])
+	}
+	walks := func() uint32 { return m.ProfileCountsAt(0)[(entry-kTxt[0])/4] }
+
+	slot := parkFbtest(t, m, kernC)
+	deadline := procField(m, kernC, slot, pfWakeUS)
+	if got := m.Peek32(mustSym(t, kernC, "g_next_us")); got != deadline {
+		t.Errorf("next_us is %#x with the only timed sleeper due at %#x — "+
+			"arm_timed must fold every deadline into the cache", got, deadline)
+	}
+	if m.Peek32(mustSym(t, kernC, "g_ntimed")) == 0 {
+		t.Fatal("ntimed is 0 with a sleeper parked on &ticks")
+	}
+
+	// Ticks well short of the deadline: the guard skips every one of
+	// them. 300 quanta is 30 ms against a 100 ms sleep.
+	m.ProfileWindows([][2]uint32{kTxt})
+	const quiet = 300
+	for at := m.Peek32(tk); m.Peek32(tk)-at < quiet; {
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 200_000}); err != nil {
+			t.Fatalf("%v\nconsole:\n%s", err, m.ConsoleOut)
+		}
+	}
+	if now, err := m.Read(v.TimerRawL, 4); err == nil && int32(now-deadline) >= 0 {
+		t.Fatalf("the deadline passed during the quiet phase (now %#x, "+
+			"deadline %#x) — the test measured the wrong thing", now, deadline)
+	}
+	if n := walks(); n != 0 {
+		t.Errorf("%d deadline walk(s) over %d delivered ticks that could not "+
+			"wake anybody; the next_us guard should have skipped all of them",
+			n, quiet)
+	}
+	t.Logf("%d delivered ticks short of the deadline: %d walks", quiet, walks())
+
+	// The deadline arrives. Exactly one walk, and it wakes the sleeper.
+	now, err := m.Read(v.TimerRawL, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Cycle += uint64(uint32(deadline-now)+50) * emu.DefaultCyclesPerUS
+	m.ProfileWindows([][2]uint32{kTxt})
+	woke := false
+	for i := 0; i < 200 && !woke; i++ {
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 20_000}); err != nil {
+			t.Fatalf("%v\nconsole:\n%s", err, m.ConsoleOut)
+		}
+		woke = procField(m, kernC, slot, pfState) != stSleeping
+	}
+	if !woke {
+		t.Fatal("the sleeper never woke after its deadline passed")
+	}
+	if n := walks(); n != 1 {
+		t.Errorf("%d walks to wake one due sleeper, want exactly 1", n)
+	}
+	if got := m.Peek32(mustSym(t, kernC, "g_ntimed")); got != 0 {
+		t.Errorf("ntimed is %d with no timed sleeper left; the walk recounts it", got)
+	}
+	t.Logf("deadline reached: %d walk, sleeper woke, ntimed back to 0", walks())
+}
+
+// TestXv6TickGuardStaleEarly: the other half of the next_us invariant.
+// The cache is allowed to run EARLY and never late, so the interesting
+// case is a timed sleeper that leaves by a door other than its own
+// deadline — and the tree has exactly one program that opens it.
+// nyancat parks in select(fd 0, DELAY_TICKS) once a frame; a keystroke
+// commits input, cons_poll calls sel_wake, and the sleeper is RUNNABLE
+// with a deadline nobody holds still standing in next_us.
+//
+// What must survive that: the next timed sleeper still wakes. The
+// stale minimum is allowed to cost ONE walk that wakes nobody — the
+// walk that recomputes it — and nothing more.
+func TestXv6TickGuardStaleEarly(t *testing.T) {
+	t.Parallel()
+	bd := boards.Feather
+	m, kernC := bootXshBoard(t, nil, bd)
+	v := m.Variant()
+	tk := mustSym(t, kernC, "g_ticks")
+	selTo := mustSym(t, kernC, "g_selwait_to")
+	nextUS := mustSym(t, kernC, "g_next_us")
+	kTxt := textWindow(kernC, bd.KernTextXIP)
+	entry := mustSym(t, kernC, "f_tick_wake")
+	walks := func() uint32 { return m.ProfileCountsAt(0)[(entry-kTxt[0])/4] }
+
+	// Park nyancat in its per-frame select.
+	m.FeedConsole("nyancat\r")
+	slot := -1
+	for i := 0; i < 40000 && slot < 0; i++ {
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 500_000}); err != nil {
+			t.Fatalf("nyancat: %v (tail %q)", err, tailB(m.ConsoleOut, 200))
+		}
+		for s := 0; s < 8; s++ {
+			if procField(m, kernC, s, pfState) == stSleeping &&
+				procField(m, kernC, s, pfChan) == selTo {
+				slot = s
+			}
+		}
+	}
+	if slot < 0 {
+		t.Fatalf("nyancat never parked in a timed select (tail %q)",
+			tailB(m.ConsoleOut, 200))
+	}
+	sel := procField(m, kernC, slot, pfWakeUS)
+	if got := m.Peek32(nextUS); got != sel {
+		t.Errorf("next_us is %#x with the only timed sleeper — a select "+
+			"timeout — due at %#x; SYS_select must arm through arm_timed too",
+			got, sel)
+	}
+
+	// A keystroke, not the deadline. nyancat's select returns nonzero
+	// and it leaves; next_us keeps pointing at a timeout that will
+	// never be claimed.
+	m.FeedConsole("q")
+	for i := 0; i < 40000; i++ {
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 500_000}); err != nil {
+			t.Fatalf("nyancat exit: %v (tail %q)", err, tailB(m.ConsoleOut, 200))
+		}
+		if strings.HasSuffix(string(m.ConsoleOut), "$ ") {
+			break
+		}
+	}
+	if !strings.HasSuffix(string(m.ConsoleOut), "$ ") {
+		t.Fatalf("nyancat did not return to the prompt (tail %q)",
+			tailB(m.ConsoleOut, 200))
+	}
+
+	// The next timed sleeper, armed on top of whatever the early wake
+	// left behind.
+	m.ProfileWindows([][2]uint32{kTxt})
+	fb := parkFbtest(t, m, kernC)
+	deadline := procField(m, kernC, fb, pfWakeUS)
+	armWalks := walks()
+	if armWalks > 1 {
+		t.Errorf("%d walks between the early wake and the next arming; a "+
+			"stale-early next_us costs one walk that wakes nobody and then "+
+			"settles", armWalks)
+	}
+	for at := m.Peek32(tk); m.Peek32(tk)-at < 200; {
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 200_000}); err != nil {
+			t.Fatalf("%v\nconsole:\n%s", err, m.ConsoleOut)
+		}
+	}
+	if n := walks() - armWalks; n > 1 {
+		t.Errorf("%d walks over 200 ticks short of the new deadline; the "+
+			"first one recomputes the minimum and the rest should be skipped", n)
+	}
+	// And the wake itself is not lost, which is what stale-LATE would
+	// have cost.
+	now, err := m.Read(v.TimerRawL, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Cycle += uint64(uint32(deadline-now)+50) * emu.DefaultCyclesPerUS
+	woke := false
+	for i := 0; i < 200 && !woke; i++ {
+		if _, err := m.Run(emu.RunConfig{MaxCycles: 20_000}); err != nil {
+			t.Fatalf("%v\nconsole:\n%s", err, m.ConsoleOut)
+		}
+		woke = procField(m, kernC, fb, pfState) != stSleeping
+	}
+	if !woke {
+		t.Fatal("the sleeper armed after an early wake never woke — a " +
+			"stale-LATE next_us is a missed wake, which is the one thing " +
+			"the cache may not do")
+	}
+	t.Logf("early wake left %d cleanup walk(s); the next deadline still woke", armWalks)
 }

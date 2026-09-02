@@ -141,6 +141,32 @@ static uint wall0_hi, wall0_lo;
  * and never touches the proc table or the timer at all. */
 static uint ntimed;
 
+/* next_us: the EARLIEST wake_us any timed sleeper holds, cached so the
+ * common tick — one where a sleeper exists but none is due yet — can
+ * skip the eight-slot walk behind a single wrap-safe compare. Measured
+ * on the nyancat frame loop, ~900 of the ~1050 walks a frame woke
+ * nobody at all, and the walk was 7.9% of every record the kernel ran.
+ *
+ * The invariant, and it is one-sided:
+ *
+ *   stale-EARLY is harmless. A next_us older than the true minimum
+ *   (a sleeper woken by sel_wake, kill or terminate, or a deadline
+ *   that has simply passed) costs one walk that wakes nobody and then
+ *   recomputes — exactly the behaviour before this cache existed.
+ *   stale-LATE would MISS a wake, and is a bug. So: every path that
+ *   ARMS a deadline folds it in (arm_timed), and every walk that runs
+ *   recomputes the minimum over the sleepers it leaves behind.
+ *
+ * "No timed sleeper" needs no sentinel value: ntimed is never stale
+ * LOW (the walk recounts it, and only the walk clears it), so ntimed
+ * == 0 already means next_us holds nothing, and arm_timed SETS rather
+ * than minimizes in that case — which is also what keeps a next_us
+ * from an older epoch out of the comparison.
+ *
+ * Wrap horizon is wake_us's own: 32 bits of TIMERAWL microseconds
+ * compared as signed differences, 2^31 us of headroom either side. */
+static uint next_us;
+
 /* kernel.dasm interface words (loader-patched pointers). */
 uint *volatile kw_pcurdisp;
 uint *volatile kw_curthunk;
@@ -868,36 +894,69 @@ cons_poll(void)
     sel_wake(); /* committed input: readiness for select sleepers */
 }
 
+/* tick_wake: the eight-slot walk, run only when a deadline has come
+ * due. wakeup(&ticks) for timer sleepers — and for timed select
+ * sleepers, whose 0-on-timeout return was deposited at sleep time.
+ * Deadlines are TIMERAWL microseconds, so a sleeper woken here slept
+ * the time it asked for even if the ticks that should have counted it
+ * out were never delivered; the compare is wrap-safe.
+ *
+ * It also RECOMPUTES next_us over the sleepers it leaves behind, which
+ * is the half of that invariant stale-LATE would break.
+ *
+ * Deliberately NOT resident and deliberately noinline: this body is the
+ * bulk of the tick path's code and almost none of its executions, so it
+ * pays its way better as an XIP call from tick_income (which already
+ * calls out to flash for cons_poll) than as .ramtext the boards with no
+ * framebuffer have no room for. Ticks that land while the kernel is
+ * running are absorbed by tickpending, so a flash session — the one
+ * time XIP is down — never reaches here. */
+__attribute__((noinline)) static void
+tick_wake(uint now)
+{
+  uint left = 0, soon = 0;
+  for (int i = 0; i < NPROC; i++) {
+    struct proc *p = &proc[i];
+    if (p->state != SLEEPING)
+      continue;
+    if (p->chan != (uint)&ticks && p->chan != (uint)&selwait_to)
+      continue;
+    if ((int)(now - p->wake_us) >= 0) {
+      p->chan = 0;
+      p->state = RUNNABLE;
+      continue;
+    }
+    /* the running minimum. `!left` is a cheaper "unset" test than
+     * seeding soon with a far-future constant, which costs a pool word
+     * and a load. */
+    if (!left || (int)(p->wake_us - soon) < 0)
+      soon = p->wake_us;
+    left = 1;
+  }
+  ntimed = left;
+  next_us = soon; /* dead when left == 0: arm_timed sets it then */
+}
+
 static void
 tick_income(void)
 {
   ticks++;
   rearm = 1;
-  /* wakeup(&ticks): timer sleepers whose deadline passed — and timed
-   * select sleepers, whose 0-on-timeout return was deposited at sleep
-   * time. Deadlines are TIMERAWL microseconds, so a sleeper woken
-   * here slept the time it asked for even if the ticks that should
-   * have counted it out were never delivered; the compare is
-   * wrap-safe. This is resident code (dmxgen kernResident): the whole
-   * walk, the timer read included, stays behind the ntimed hint so an
-   * idle system pays a load and a branch. */
+  /* Two gates, both resident (dmxgen kernResident), and nothing else:
+   *
+   *   ntimed   no timed sleeper at all — the idle system, and the whole
+   *            cost is a load and a branch.
+   *   next_us  a sleeper exists but the earliest deadline anyone holds
+   *            has not arrived, so nothing can be due. A 10 kHz tick
+   *            against a 100 ms sleep lands short of it a thousand
+   *            times in a row; measured on the nyancat frame loop, ~900
+   *            of the ~1050 walks a frame were of this kind.
+   *
+   * Past both, the walk itself is an ordinary XIP call (tick_wake). */
   if (ntimed) {
     uint now = __dma_timerawl;
-    uint left = 0;
-    for (int i = 0; i < NPROC; i++) {
-      struct proc *p = &proc[i];
-      if (p->state != SLEEPING)
-        continue;
-      if (p->chan != (uint)&ticks && p->chan != (uint)&selwait_to)
-        continue;
-      if ((int)(now - p->wake_us) >= 0) {
-        p->chan = 0;
-        p->state = RUNNABLE;
-        continue;
-      }
-      left = 1;
-    }
-    ntimed = left;
+    if ((int)(now - next_us) >= 0)
+      tick_wake(now);
   }
   /* Drain the RX FIFO every tick, not just on SYS_read: Ctrl-C must
    * be seen even while a compute-bound foreground job runs and the
@@ -1251,6 +1310,25 @@ sleep(uint chan)
   p->state = SLEEPING;
 }
 
+/* arm_timed: give p a wallclock deadline `units` * 100 us out and fold
+ * it into the cached minimum. THE arming path — both SYS_pause and
+ * SYS_select's timeout come through here, which is what makes
+ * "stale-LATE is impossible" a property of one function instead of a
+ * rule two call sites have to remember (see next_us).
+ *
+ * With no timed sleeper next_us holds nothing, so set it; otherwise
+ * take the wrap-safe minimum, and let a deadline later than the
+ * standing one leave the cache alone. */
+static void
+arm_timed(struct proc *p, uint units)
+{
+  uint d = __dma_timerawl + units * 100u;
+  p->wake_us = d;
+  if (ntimed == 0 || (int)(d - next_us) < 0)
+    next_us = d;
+  ntimed++;
+}
+
 /* --- Scheduler fence for the fs layer (kpipe.c): sleeper lookup,
  * mailbox access, deposit-completion, and voluntary blocking, without
  * exposing the ABI proc table. Mail fields: 1 a0, 2 a1, 3 a2, 4 ret,
@@ -1512,8 +1590,7 @@ dma_ksyscall(void)
                    * alone. Sleeps here are short — the longest in the
                    * tree is pause(1000), 100 ms — and the wrap-safe
                    * compare in tick_income carries 2^31 us of them. */
-    ntimed++;
-    p->wake_us = __dma_timerawl + m->a0 * 100u;
+    arm_timed(p, m->a0);
     sleep((uint)&ticks);
     ret = 0;
     block = 1;
@@ -1535,8 +1612,7 @@ dma_ksyscall(void)
       break;
     }
     if (m->a1 != 0) {
-      ntimed++;
-      p->wake_us = __dma_timerawl + m->a1 * 100u;
+      arm_timed(p, m->a1);
       sleep((uint)&selwait_to);
     } else {
       sleep((uint)&selwait_inf);
