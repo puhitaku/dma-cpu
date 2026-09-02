@@ -11,3 +11,6 @@
 [submodule "references/simpleterminal"]
 	path = references/simpleterminal
 	url = git@github.com:haoict/SimpleTerminal.git
+[submodule "references/nyancat"]
+	path = references/nyancat
+	url = https://github.com/klange/nyancat.git
