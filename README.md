@@ -92,6 +92,7 @@ else is docs, examples, and vendored dependencies.
   `target/libc/picolibc`, which *is* compiled and linked. The reference
   article stays untracked (see Coding rules in `prompts/overview.md`).
 - `examples/` — standalone programs built through the toolchain.
+- `hw/` — KiCad project with JLCPCB-ready production data.
 
 ## Build and test
 
